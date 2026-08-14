@@ -1598,7 +1598,14 @@ class MainWindow(QMainWindow):
         self.actionOur_Institute = QAction(self)
         self.actionOur_Institute.setObjectName("actionOur_Institute")
         self.actionOur_Institute.setText("Our Institute")
-        
+
+        # License — GPL-3.0. Links to the formal LICENSE file, the
+        # plain-language installer_assets/license.txt, and the Developer
+        # Guide's licensing-intent section.
+        self.actionLicense = QAction(self)
+        self.actionLicense.setObjectName("actionLicense")
+        self.actionLicense.setText("License")
+
         # Other existing actions
         self.actionSave = QAction(self)
         self.actionSave.setObjectName("actionSave")
@@ -1703,7 +1710,9 @@ class MainWindow(QMainWindow):
         self.menuHelp.addSeparator()
         self.menuHelp.addAction(self.actionOur_Group)
         self.menuHelp.addAction(self.actionOur_Institute)
-        
+        self.menuHelp.addSeparator()
+        self.menuHelp.addAction(self.actionLicense)
+
         # Add actions to other menus
         self.menuImport.addAction(self.actionImport_new)
         self.menuImport.addAction(self.actionImport_add)

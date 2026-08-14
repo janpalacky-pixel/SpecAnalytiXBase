@@ -88,6 +88,7 @@ _REGISTRY = {
     'band_markers':            ('src.help.band_markers_help', 'get_band_markers_help_title', 'get_band_markers_help_content'),
     'quick_start':             ('src.help.quick_start_help', 'get_quick_start_help_title', 'get_quick_start_help_content'),
     'installation':            ('src.help.installation_help', 'get_installation_help_title', 'get_installation_help_content'),
+    'license':                 ('src.help.license_help', 'get_license_help_title', 'get_license_help_content'),
     'user_guide':              ('src.help.user_guide_help', 'get_user_guide_help_title', 'get_user_guide_help_content'),
     'developer_guide':         ('src.help.developer_guide_help', 'get_developer_guide_help_title', 'get_developer_guide_help_content'),
     'plot_controls':           ('src.help.plot_controls_help', 'get_plot_controls_help_title', 'get_plot_controls_help_content'),

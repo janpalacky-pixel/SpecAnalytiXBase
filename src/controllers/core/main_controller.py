@@ -1358,6 +1358,7 @@ class MainController(QMainWindow):
         self.view.actionQuickStart.triggered.connect(self.show_quick_start_help)
         self.view.actionInstallationHelp.triggered.connect(self.show_installation_help)
         self.view.actionDeveloperGuide.triggered.connect(self.show_developer_guide_help)
+        self.view.actionLicense.triggered.connect(self.show_license_help)
         self.view.help_operations_pushButton.clicked.connect(self.show_user_guide_help)
         self.view.actionInteractiveSubtractionHelp.triggered.connect(self.show_interactive_subtraction_help)
         self.view.actionCombineSpectraHelp.triggered.connect(self.show_combine_spectra_help)
@@ -1672,6 +1673,13 @@ class MainController(QMainWindow):
         for anyone reading or extending the source."""
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'developer_guide')
+
+    def show_license_help(self):
+        """Show the License page: GPL-3.0 summary and links to the formal
+        LICENSE file, the installer's plain-language license.txt, and the
+        Developer Guide's licensing-intent section."""
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'license')
 
     def show_data_range_help(self):
         """Show help for data range operation."""
