@@ -1,0 +1,19 @@
+# Build / packaging output — regenerate via SpecAnalytiXBase.spec / installer.iss
+build/
+dist/
+installer/*.exe
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+*.pyo
+
+# pytest cache
+.pytest_cache/
+
+# profiler output
+*.pstats
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

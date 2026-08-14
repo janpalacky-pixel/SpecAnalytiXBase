@@ -1,0 +1,42 @@
+License Agreement
+
+SpecAnalytiXBase is open-source software, developed at the Institute of
+Biophysics of the Czech Academy of Sciences (BFU). By installing or
+using it, you agree to the following terms.
+
+    Permitted use: You are free to use, copy, and modify this software,
+    including for your own projects, and to share or redistribute it or
+    any modified version of it.
+
+    Condition on redistribution: If you share or distribute a modified
+    version of this software, its source code must be made available
+    too, under these same terms. The intent is that improvements stay
+    shareable rather than disappearing into a closed copy.
+
+    No warranty: This software is provided "as-is," without warranty of
+    any kind, express or implied, including but not limited to
+    warranties of merchantability or fitness for a particular purpose.
+
+    Limitation of liability: In no event shall the authors, the
+    Institute of Biophysics of the Czech Academy of Sciences, or its
+    affiliates be liable for any damages arising from the use of, or
+    inability to use, this software, including any direct, indirect,
+    incidental, or consequential damages.
+
+This is a plain-language summary of the license terms, not formal
+license text. The source code is available for inspection and reuse;
+if you need the exact legal text (for a publication's code-availability
+statement, a public repository, or any other formal purpose), refer to
+the GNU General Public License, version 3 (GPL-3.0):
+
+    https://www.gnu.org/licenses/gpl-3.0.html
+
+By clicking "I Agree" below, you acknowledge that you have read and
+understand the terms of this License Agreement.
+
+For any inquiries, please contact:
+
+    Institute of Biophysics of the Czech Academy of Sciences (BFU)
+    Email: janpalacky@ibp.cz
+    Institute website: https://www.ibp.cz/en/
+    Research group page: https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile

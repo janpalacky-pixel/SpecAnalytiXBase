@@ -1,0 +1,138 @@
+SpecAnalytiXBase - Installation & Running
+==========================================
+
+This file explains the two ways to get SpecAnalytiXBase running, and how
+to build your own installer from the source code if you prefer not to
+run a pre-built one.
+
+The installer-based method (sections 1 and 3 below) is Windows-only.
+Running from Python source (section 2) also works on macOS and Linux,
+since the application itself (PyQt5) is cross-platform - only the
+packaging tools (PyInstaller/Inno Setup) target Windows here.
+
+
+--------------------------------------------------------------------
+1. INSTALL USING THE INSTALLER (Windows, recommended for most users)
+--------------------------------------------------------------------
+
+The installer is a single file, named:
+
+    Setup_for_SpecAnalytiXBase_ver_<version>.exe
+
+found in the "installer" folder of this project once it has been built.
+
+You have two options for getting that file:
+
+  a) Use an installer you were already given, or
+
+  b) Build a brand-new one yourself from this source code - useful if
+     you would rather not trust a pre-built .exe from someone else and
+     want to compile it yourself. See section 3 below.
+
+Either way, once you have the .exe, run it and follow the setup wizard.
+It installs the application, creates a Start Menu entry, and offers an
+optional desktop shortcut.
+
+Note: the installer is not digitally signed, so Windows SmartScreen or
+your antivirus software may flag it or show a warning when you run it.
+This is expected for an installer from a small, independent project - a
+code-signing certificate costs money that isn't currently in the budget
+- and is not a sign that anything is actually wrong with the file. If
+you see a SmartScreen prompt, choose "More info" and then "Run anyway".
+If your antivirus blocks or removes the file outright, you may need to
+allow it manually or add an exception. As always, only do this for an
+installer you trust the source of; if you'd rather not, build your own
+from the source code instead (see section 3 below), which avoids the
+issue entirely.
+
+
+--------------------------------------------------------------------
+2. RUN FROM THE PYTHON SOURCE CODE (Windows / macOS / Linux)
+--------------------------------------------------------------------
+
+Do this if you want to inspect, modify, or debug the application, or if
+you simply prefer not to run a pre-built .exe at all.
+
+Requirements:
+
+  - Python 3.9-3.12 recommended, from https://www.python.org/downloads/
+    (PyQt5 5.15.x, this application's GUI toolkit, has the most
+    reliable pre-built wheels in that range; a very new Python version
+    may not yet have a matching PyQt5 wheel available - if installation
+    fails, try a slightly older Python version from that range.)
+  - The packages listed in requirements.txt (see that file for exactly
+    which ones, and why each is needed).
+
+Steps, from a command prompt/terminal opened in the project folder (the
+one containing main.py):
+
+  1. Create a virtual environment - recommended, so these packages are
+     kept separate from anything else on your system:
+
+         python -m venv venv
+
+  2. Activate it:
+
+         venv\Scripts\activate            (Windows)
+         source venv/bin/activate         (macOS / Linux)
+
+  3. Install the required packages:
+
+         pip install -r requirements.txt
+
+  4. Run the application:
+
+         python main.py
+
+
+--------------------------------------------------------------------
+3. BUILDING THE INSTALLER FROM SOURCE (Windows)
+--------------------------------------------------------------------
+
+Do this to produce your own installer .exe instead of using a pre-built
+one, or after you have made changes to the source code that you want to
+package up.
+
+In addition to the Python environment set up in section 2, you need:
+
+  - PyInstaller, installed into the same environment:
+
+         pip install pyinstaller
+
+  - Inno Setup 6 (free), which turns the PyInstaller output into a
+    proper Windows installer. Download from the official site:
+
+         https://jrsoftware.org/isdl.php
+
+    Note: BuildInstaller.bat currently expects Inno Setup at its
+    default install location for version 6:
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe". If you install a
+    newer major version (7 or later) instead, either install Inno
+    Setup 6 alongside it, or edit that path in BuildInstaller.bat to
+    point at wherever ISCC.exe actually is on your machine.
+
+Then, from the project root, simply run:
+
+         BuildInstaller.bat
+
+This does two things in sequence:
+
+  1. Runs PyInstaller to bundle the application (main.py plus the
+     resources folder) into a standalone folder under dist\.
+  2. Runs Inno Setup (installer.iss) to package that folder into a
+     single installer .exe, written to the "installer" folder.
+
+The resulting .exe is exactly the same kind of file described in
+section 1 - copy it anywhere, or hand it to someone else to install
+the application without them needing Python at all.
+
+
+--------------------------------------------------------------------
+Questions, bug reports, collaboration
+--------------------------------------------------------------------
+
+  Email:               janpalacky@ibp.cz
+  Research group page: https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile
+
+This is open-source software - see installer_assets/license.txt for the
+exact terms.
