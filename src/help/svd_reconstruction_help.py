@@ -202,11 +202,34 @@ def get_svd_reconstruction_help_content():
     <p><strong>Explained variance</strong> of component i:
     <span class="fm">EV_i = s_i&sup2; / &sum;s_j&sup2; &times; 100%</span></p>
 
+    <div class="note">
+        <strong>Mean-centering (SVD settings, "Mean-center spectra before
+        SVD"):</strong> unchecked by default here — <strong>X</strong> above
+        is decomposed exactly as written, with nothing subtracted first.
+        That's the traditional raw-SVD convention this dialog follows, and
+        it's why component 1 here usually looks close to a typical raw
+        spectrum rather than a deviation from average. Check the box and
+        each row of <strong>X</strong> (one wavelength, across every
+        selected spectrum) has its own mean subtracted before the
+        decomposition — the standard convention for textbook PCA, and the
+        default in the related <a href="help://pca_scores">PCA / SVD
+        Scores &amp; Loadings</a> dialog instead. Toggling it recomputes
+        the whole decomposition instantly (not just how many components
+        are kept), since centering changes U, s, and V<sup>T</sup>
+        themselves. See that dialog's help for the verified rationale
+        (uncentered PC1 mostly tracks the plain per-point mean; centered
+        PC1 correlates with uncentered PC2) if you're deciding which
+        convention to use for a given analysis.
+    </div>
+
     <hr>
     <h2>Workflow</h2>
     <ol>
         <li>Select and preprocess spectra (data range, baseline, normalization, smoothing).</li>
-        <li>Open SVD Analysis — decomposition runs automatically on the selected spectra.</li>
+        <li>Open SVD Analysis — decomposition runs automatically on the selected
+            spectra, uncentered by default (tick <strong>Mean-center spectra
+            before SVD</strong> in SVD settings to switch conventions — see
+            Mathematical foundation above).</li>
         <li>Switch to the <strong>Diagnostics</strong> tab to assess how many components carry
             real signal (singular values plot, residual errors plot, cumulative variance).</li>
         <li>Browse individual subspectra with ◀ / ▶ / Jump to inspect them visually.</li>
@@ -238,6 +261,15 @@ def get_svd_reconstruction_help_content():
 
     <hr>
     <h2>Dialog controls reference</h2>
+
+    <div class="cat">
+        <h3>SVD settings</h3>
+        <p>Currently just the <strong>Mean-center spectra before SVD</strong>
+        checkbox (unchecked by default) — see Mathematical foundation above
+        for what it does and why it defaults off here. Sits above View SVD
+        Components since it's a decomposition-wide setting, not a
+        display/navigation one.</p>
+    </div>
 
     <div class="cat">
         <h3>View SVD Components</h3>

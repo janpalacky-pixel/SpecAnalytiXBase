@@ -18,26 +18,31 @@ class SVDAnalysisController:
         self.controller = main_controller
         self.manager = SVDAnalysisManager()
         
-    def compute_svd_analysis(self, spectra):
+    def compute_svd_analysis(self, spectra, mean_center=False):
         """
         Compute SVD analysis from spectra.
-        
+
         Args:
             spectra: List of spectrum dictionaries to analyze
-            
+            mean_center: if True, subtract the mean spectrum before
+                decomposing — see SVDAnalysisManager.compute_svd_from_spectra's
+                docstring. Default False keeps this dialog's traditional
+                raw-SVD convention (PCA / SVD Scores & Loadings defaults
+                this on instead — see PcaScoresController).
+
         Returns:
             bool: True if SVD analysis was successful
         """
         if not spectra:
             logger.debug("DEBUG: No spectra provided to SVD analysis")
             return False
-            
+
         try:
             logger.debug(f"DEBUG: SVD analysis starting with {len(spectra)} spectra")
-            
+
             # Compute SVD from the input spectra
             logger.debug("DEBUG: Computing SVD from input spectra...")
-            if not self.manager.compute_svd_from_spectra(spectra):
+            if not self.manager.compute_svd_from_spectra(spectra, mean_center=mean_center):
                 logger.error("ERROR: Failed to compute SVD")
                 return False
             

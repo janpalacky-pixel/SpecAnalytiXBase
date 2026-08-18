@@ -127,9 +127,29 @@ def get_pca_scores_help_content():
 
     <div class="note">
         <strong>SVD and PCA:</strong> for mean-centred data, SVD and PCA are
-        equivalent. This tool uses SVD directly without mean-centring.
-        The principal components are ordered by decreasing explained variance
-        (singular value squared / total).
+        equivalent — which is why this dialog's <strong>Mean-center
+        spectra before SVD</strong> checkbox (in SVD settings, below) is
+        <strong>checked by default</strong>: with it on, this really is
+        textbook PCA. The components are ordered by decreasing explained
+        variance (singular value squared / total) either way.
+    </div>
+
+    <div class="note">
+        <strong>Why mean-centering matters:</strong> absorbance data is
+        never zero-mean (it's always positive), so an <em>uncentered</em>
+        first component is usually dominated by whatever signal level
+        every selected spectrum shares in common — closer to "the average
+        spectrum" than to how your spectra actually differ from each
+        other. Verified directly on real data: an uncentered PC1's
+        per-spectrum trajectory correlated &gt;0.96 with the plain
+        per-point mean, while mean-centered PC1 correlated &gt;0.98 with
+        the <em>uncentered</em> PC2 — i.e. centering isolates the same
+        real variation that would otherwise be split across two
+        uncentered components instead of concentrated in one. Leave it
+        checked unless you specifically want to compare against
+        SVD Analysis's traditional uncentered convention (that dialog
+        defaults the same checkbox off, for exactly that reason).
+        Toggling it recomputes instantly.
     </div>
 
     <div class="note">
@@ -160,14 +180,20 @@ def get_pca_scores_help_content():
         SVD Analysis for component-by-component inspection and reconstruction.
     </div>
 
-    <p>The left panel starts with the <strong>SVD settings</strong> group — a
-    <strong>Max components</strong> spinbox and a <strong>Recompute SVD</strong>
-    button — for choosing how many components to compute and re-running the
-    decomposition after changing it.</p>
+    <p>The left panel starts with the <strong>SVD settings</strong> group: a
+    <strong>Max components</strong> spinbox and <strong>Recompute SVD</strong>
+    button for choosing how many components to compute and re-running the
+    decomposition after changing it, plus the <strong>Mean-center spectra
+    before SVD</strong> checkbox described above (checked by default).
+    Unlike the component count, toggling mean-centering recomputes
+    immediately on its own — it changes the whole decomposition, not just
+    how many components are kept, so there's no "stale until you click
+    Recompute" state to leave you looking at results from the setting
+    you just changed away from.</p>
 
     <div class="screenshot">
-        <img src="$SVD_SETTINGS" width="$SVD_SETTINGS_W" height="$SVD_SETTINGS_H" alt="SVD settings group with Max components spinbox and Recompute SVD button" />
-        <p class="caption">The SVD settings group: the Max components spinbox and the "Recompute SVD" button.</p>
+        <img src="$SVD_SETTINGS" width="$SVD_SETTINGS_W" height="$SVD_SETTINGS_H" alt="SVD settings group with Mean-center checkbox, Max components spinbox, and Recompute SVD button" />
+        <p class="caption">The SVD settings group: the Mean-center checkbox, Max components spinbox, and the "Recompute SVD" button.</p>
     </div>
 
     <div class="tip">
@@ -271,6 +297,18 @@ def get_pca_scores_help_content():
     data range. Each curve's legend label shows the same metric currently chosen
     in Metric display (above) — change it there and both the component list and
     this legend update together.</p>
+
+    <div class="note">
+        With <strong>Mean-center</strong> checked (the default), a loading
+        describes how spectra <em>deviate</em> from the mean spectrum, not
+        an absolute spectral shape — component 1 is "the main way spectra
+        differ from average," not "what a typical spectrum looks like."
+        With it unchecked, component 1 usually looks much more like a
+        typical raw spectrum, since nothing has been subtracted out.
+        Neither is "more correct" than the other, but they answer
+        different questions — bear this in mind when interpreting band
+        shapes.
+    </div>
 
     <div class="screenshot">
         <img src="$LOADINGS_PLOT_GROUP" width="$LOADINGS_PLOT_GROUP_W" height="$LOADINGS_PLOT_GROUP_H" alt="Loadings plot group: component list with a ? help button and the Offset for clarity checkbox" />

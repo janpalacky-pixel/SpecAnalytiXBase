@@ -1923,6 +1923,27 @@ class SVDAnalysisDialog(QDialog):
         layout = QVBoxLayout(control_widget)
         layout.setSpacing(6)
 
+        # ── 0. SVD settings ────────────────────────────────────────────
+        svd_settings_group = QGroupBox("SVD settings")
+        svd_settings_layout = QVBoxLayout(svd_settings_group)
+        self.mean_center_cb = QCheckBox('Mean-center spectra before SVD')
+        self.mean_center_cb.setChecked(False)
+        self.mean_center_cb.setToolTip(
+            "Subtract the mean spectrum (the average of every selected "
+            "spectrum) before decomposing, so the components describe how "
+            "spectra differ from each other rather than being dominated "
+            "by whatever signal level they all share. Unchecked by "
+            "default here to match this dialog's traditional raw-SVD "
+            "convention; PCA / SVD Scores & Loadings defaults this on "
+            "instead. Toggling recomputes instantly."
+        )
+        # stateChanged passes the new Qt.CheckState int through —
+        # initialize_svd() takes no arguments, so a plain lambda discards
+        # it rather than letting PyQt pass it straight through.
+        self.mean_center_cb.stateChanged.connect(lambda _checked: self.initialize_svd())
+        svd_settings_layout.addWidget(self.mean_center_cb)
+        layout.addWidget(svd_settings_group)
+
         # ── 1. View SVD Components ─────────────────────────────────────
         components_group = QGroupBox("View SVD Components")
         comp_layout = QVBoxLayout(components_group)
@@ -2733,11 +2754,19 @@ class SVDAnalysisDialog(QDialog):
         return canvas_widget
         
     def initialize_svd(self):
-        """Initialize SVD with current spectra automatically."""
+        """Initialize SVD with current spectra automatically. Also the
+        recompute entry point when the Mean-center checkbox is toggled —
+        a full recompute is required there (unlike, say, selecting which
+        already-computed subspectra to display), since centering changes
+        the actual U/s/Vt decomposition, not just how it's presented."""
         if not self.controller or not self.spectra:
             logger.debug("DEBUG: No controller or spectra available for SVD initialization")
             return
-            
+        if getattr(self, '_svd_running', False):
+            return  # already computing — ignore a second trigger outright
+        self._svd_running = True
+        self.mean_center_cb.setEnabled(False)
+
         from PyQt5.QtWidgets import QProgressDialog, QApplication
         from PyQt5.QtGui import QCursor
         QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
@@ -2753,8 +2782,9 @@ class SVDAnalysisDialog(QDialog):
         # on its own. Manually pumping events here was contributing to the
         # stale OS "busy" cursor overlay (see showEvent for the full story).
 
+        mean_center = self.mean_center_cb.isChecked()
         self._svd_worker = _ComputeWorker(
-            lambda: self.controller.compute_svd_analysis(self.spectra), self)
+            lambda: self.controller.compute_svd_analysis(self.spectra, mean_center=mean_center), self)
         self._svd_worker.done.connect(self._on_svd_computed)
         self._svd_worker.start(QThread.LowPriority)
 
@@ -2816,6 +2846,8 @@ class SVDAnalysisDialog(QDialog):
             from PyQt5.QtWidgets import QApplication
             self._svd_progress.close()
             QApplication.restoreOverrideCursor()
+            self._svd_running = False
+            self.mean_center_cb.setEnabled(True)
 
     def populate_subspectra_list(self, n_components):
         """Populate the subspectra selection list."""

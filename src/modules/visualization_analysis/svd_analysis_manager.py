@@ -24,14 +24,22 @@ class SVDAnalysisManager:
         # plain spectrum order (1, 2, 3, ...).
         self.parameter_values = None
         self.parameter_label = None
-        
-    def compute_svd_from_spectra(self, spectra):
+        self.mean_spectrum = None      # per-wavelength mean subtracted before SVD, or None
+        self.mean_centered = False     # whether the last compute used mean-centering
+
+    def compute_svd_from_spectra(self, spectra, mean_center=False):
         """
         Compute SVD from input spectra using standard numpy SVD.
-        
+
         Args:
             spectra: List of spectrum dictionaries with 'x_scale', 'y_scale', 'label'
-            
+            mean_center: if True, subtract the mean spectrum (average of
+                every input spectrum, per wavelength) before decomposing —
+                see the identical parameter on SVDBackgroundManager.
+                compute_svd_from_spectra for the full rationale and the
+                verified numbers behind it. Default False preserves this
+                method's original (uncentered) behavior.
+
         Returns:
             bool: True if SVD computation was successful
         """
@@ -63,12 +71,19 @@ class SVDAnalysisManager:
             # Construct data matrix (wavelengths x spectra)
             self.x_axis = first_x
             data_matrix = np.column_stack(y_scales)
-            
+
             logger.debug(f"DEBUG: Data matrix shape: {data_matrix.shape}")
-            
+
             # Store spectrum labels
             self.spectrum_labels = [spectrum['label'] for spectrum in spectra]
-            
+
+            self.mean_centered = bool(mean_center)
+            if self.mean_centered:
+                self.mean_spectrum = data_matrix.mean(axis=1)
+                data_matrix = data_matrix - self.mean_spectrum[:, np.newaxis]
+            else:
+                self.mean_spectrum = None
+
             # Compute SVD using standard numpy approach
             logger.debug("DEBUG: Running numpy SVD...")
             self.U, self.s, self.Vt = np.linalg.svd(data_matrix, full_matrices=False)

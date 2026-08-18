@@ -388,6 +388,7 @@ class PcaScoresDialog(QDialog):
         closed, not gated behind an explicit "Save" action."""
         return {
             'n_components':      self._n_comp_spin.value(),
+            'mean_center':       self._mean_center_cb.isChecked(),
             'pc_label_metric':   self._pc_label_metric_combo.currentText(),
             'pc_label_format':   self._pc_label_format_combo.currentText(),
             'pc_label_decimals': self._pc_label_decimals_spin.value(),
@@ -423,6 +424,15 @@ class PcaScoresDialog(QDialog):
             n = max(self._n_comp_spin.minimum(),
                     min(int(s['n_components']), self._n_comp_spin.maximum()))
             self._n_comp_spin.setValue(n)
+
+        if 'mean_center' in s:
+            # blockSignals: setChecked() would otherwise fire stateChanged
+            # -> _compute_svd() immediately, duplicating the single
+            # showEvent-scheduled initial compute that already picks up
+            # whatever this checkbox ends up set to (_initial_compute_pending).
+            self._mean_center_cb.blockSignals(True)
+            self._mean_center_cb.setChecked(bool(s['mean_center']))
+            self._mean_center_cb.blockSignals(False)
 
         for combo, key in (
             (self._pc_label_metric_combo, 'pc_label_metric'),
@@ -540,6 +550,24 @@ class PcaScoresDialog(QDialog):
         r1.addWidget(self._n_comp_spin)
         r1.addStretch()
         sg.addLayout(r1)
+        self._mean_center_cb = QCheckBox('Mean-center spectra before SVD')
+        self._mean_center_cb.setChecked(True)
+        self._mean_center_cb.setToolTip(
+            "Standard PCA convention: subtract the mean spectrum (the "
+            "average of every selected spectrum) before decomposing, so "
+            "the components describe how spectra differ from each other "
+            "rather than being dominated by whatever signal level they "
+            "all share. Checked by default here since this dialog is "
+            "framed as PCA; SVD Analysis defaults this off to match its "
+            "traditional raw-SVD convention. Toggling recomputes "
+            "instantly."
+        )
+        # stateChanged passes the new Qt.CheckState int through — _compute_svd
+        # takes no arguments, so a plain lambda discards it rather than
+        # letting PyQt pass it straight through (which would raise a
+        # TypeError: _compute_svd() takes 1 positional argument but 2 were given).
+        self._mean_center_cb.stateChanged.connect(lambda _checked: self._compute_svd())
+        sg.addWidget(self._mean_center_cb)
         self._recompute_btn = QPushButton('Recompute SVD')
         self._recompute_btn.clicked.connect(self._compute_svd)
         sg.addWidget(self._recompute_btn)
@@ -876,13 +904,14 @@ class PcaScoresDialog(QDialog):
         # cluster_analysis_dialog.py's showEvent/run_clustering.
 
         n_requested = self._n_comp_spin.value()
+        mean_center = self._mean_center_cb.isChecked()
 
         # self.controller.compute_svd_analysis is pure computation (no Qt
         # widget access) — safe to run on the background thread. Its
         # result now lives on self.controller.manager rather than in a
         # dict passed back through the worker.
         self._svd_worker = _ComputeWorker(
-            lambda: self.controller.compute_svd_analysis(self.spectra, n_requested), self)
+            lambda: self.controller.compute_svd_analysis(self.spectra, n_requested, mean_center=mean_center), self)
         self._svd_worker.done.connect(self._on_pca_svd_computed)
         self._svd_worker.start(QThread.LowPriority)
 

@@ -19,7 +19,7 @@ class PcaScoresController:
         self.manager = PcaScoresManager()
         self.dialog = None
 
-    def compute_svd_analysis(self, spectra, n_components):
+    def compute_svd_analysis(self, spectra, n_components, mean_center=True):
         """Compute PCA/SVD from spectra. Pure computation — safe to call
         from the dialog's background QThread.
 
@@ -30,7 +30,7 @@ class PcaScoresController:
             logger.debug("DEBUG: No spectra provided to PCA/SVD analysis")
             return False
         try:
-            return self.manager.compute_svd(spectra, n_components)
+            return self.manager.compute_svd(spectra, n_components, mean_center=mean_center)
         except Exception as e:
             logger.error(f"ERROR: Exception in PCA/SVD analysis: {e}")
             logger.exception("Traceback:")

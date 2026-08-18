@@ -28,6 +28,8 @@ class PcaScoresManager:
         self.residual_err = None
         self.malinowski_ind = None
         self.last_error = None     # specific reason if compute_svd() returns False
+        self.mean_spectrum = None  # per-wavelength mean subtracted before SVD, or None
+        self.mean_centered = False  # whether the last compute used mean-centering
 
     def reset(self):
         """Clear all previous results — same purpose as
@@ -41,11 +43,18 @@ class PcaScoresManager:
     # SVD computation                                                      #
     # ------------------------------------------------------------------ #
 
-    def compute_svd(self, spectra, n_components):
+    def compute_svd(self, spectra, n_components, mean_center=True):
         """Compute SVD from spectra via SVDBackgroundManager, keeping only
         the first n_components. Pure computation — no Qt — so this is safe
         to call from a background QThread (see _ComputeWorker in the
         dialog).
+
+        Args:
+            mean_center: if True (the default here — this dialog is framed
+                as "PCA", where mean-centering before decomposing is the
+                standard convention), subtract the mean spectrum before the
+                SVD. See SVDBackgroundManager.compute_svd_from_spectra's
+                docstring for the full rationale.
 
         Returns:
             bool: True if the computation succeeded.
@@ -61,7 +70,7 @@ class PcaScoresManager:
             from src.modules.data_analysis.svd_background_manager import SVDBackgroundManager
             mgr = SVDBackgroundManager()
             mgr.max_components = n_components
-            if not mgr.compute_svd_from_spectra(spectra):
+            if not mgr.compute_svd_from_spectra(spectra, mean_center=mean_center):
                 # SVDBackgroundManager logs its own reason but doesn't expose
                 # a message attribute — the axis-mismatch case is already
                 # ruled out by validate_common_x_axis before this dialog
@@ -85,6 +94,8 @@ class PcaScoresManager:
             self.x_axis = np.asarray(mgr.x_axis, dtype=float)
             self.explained_variance = mgr.explained_variance[:n]
             self.spectrum_labels = [spectrum['label'] for spectrum in spectra]
+            self.mean_spectrum = mgr.mean_spectrum
+            self.mean_centered = mgr.mean_centered
 
             # SVD's rank is capped by min(n_wavelengths, n_spectra) — with
             # few spectra selected, the actual decomposition can have fewer

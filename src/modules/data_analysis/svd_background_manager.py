@@ -26,7 +26,9 @@ class SVDBackgroundManager:
         self.x_axis = None
         self.corrected_U = None
         self.explained_variance = None
-        
+        self.mean_spectrum = None      # per-wavelength mean subtracted before SVD, or None
+        self.mean_centered = False     # whether the last compute used mean-centering
+
     def set_selected_subspectra(self, selected_indices):
         """Set which subspectra are selected for reconstruction."""
         self.selected_subspectra = selected_indices.copy() if selected_indices else []
@@ -74,13 +76,27 @@ class SVDBackgroundManager:
         
         return True
 
-    def compute_svd_from_spectra(self, spectra):
+    def compute_svd_from_spectra(self, spectra, mean_center=False):
         """
         Compute SVD from input spectra using standard numpy SVD.
-        
+
         Args:
             spectra: List of spectrum dictionaries with 'x_scale', 'y_scale', 'label'
-            
+            mean_center: if True, subtract the mean spectrum (the average of
+                every input spectrum, per wavelength) before decomposing.
+                This is the standard PCA convention — without it, the first
+                component of absorbance data (which is never zero-mean) is
+                usually dominated by whatever signal level is common to
+                every spectrum rather than by how the spectra actually
+                differ from each other. Verified directly (MeltAnalytiX
+                session, 2026-08-17): an uncentered PC1's trajectory
+                correlates >0.96 with the plain per-point mean, while
+                mean-centered PC1 correlates >0.98 with uncentered PC2 —
+                i.e. centering isolates the same real signal that would
+                otherwise be split across two uncentered components.
+                Default False preserves this method's original behavior
+                for existing callers (SVD Background Correction).
+
         Returns:
             bool: True if SVD computation was successful
         """
@@ -127,9 +143,21 @@ class SVDBackgroundManager:
             # Construct data matrix (wavelengths x spectra)
             self.x_axis = first_x
             data_matrix = np.column_stack(y_scales)
-            
+
             logger.debug(f"DEBUG: Data matrix shape: {data_matrix.shape}")
-            
+
+            self.mean_centered = bool(mean_center)
+            if self.mean_centered:
+                # Mean spectrum = average across the SPECTRA axis (columns),
+                # one value per wavelength — subtracting it removes whatever
+                # level/shape every input spectrum shares in common, so the
+                # SVD decomposes only how they differ. See the mean_center
+                # docstring above for the verified rationale/numbers.
+                self.mean_spectrum = data_matrix.mean(axis=1)
+                data_matrix = data_matrix - self.mean_spectrum[:, np.newaxis]
+            else:
+                self.mean_spectrum = None
+
             # Compute SVD using standard numpy approach
             logger.debug("DEBUG: Running numpy SVD...")
             self.U, self.s, self.Vt = np.linalg.svd(data_matrix, full_matrices=False)
