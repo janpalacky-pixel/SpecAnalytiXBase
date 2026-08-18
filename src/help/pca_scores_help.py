@@ -514,6 +514,119 @@ def get_pca_scores_help_content():
     </ul>
 
     <hr>
+    <h2 id="technical-background">Technical background: centering, orthonormality, and why SVD = PCA</h2>
+
+    <div class="note">
+        <strong>"Normalized" means two different things here — don't
+        conflate them.</strong>
+        <ol>
+            <li><strong>Orthonormal components</strong> (unit length, at
+                right angles to each other) — this is a built-in property
+                of SVD itself. Every U column and every V column always
+                has length exactly 1 and is exactly orthogonal to every
+                other column, whether or not the input data was centered
+                or scaled. Nothing about the data needs to be
+                "normalized" first for this — it falls straight out of
+                the SVD algorithm, unconditionally.</li>
+            <li><strong>Standardizing/scaling the data</strong> (dividing
+                each wavelength's values by its own standard deviation
+                before decomposing) — a separate, optional preprocessing
+                choice, unrelated to point 1. This is what turns
+                covariance-based PCA into correlation-based PCA. It's the
+                <em>data</em> being rescaled, not the resulting components
+                (which are orthonormal either way).</li>
+        </ol>
+        This dialog's Mean-center checkbox is about centering only
+        (subtracting the mean spectrum) — it does not standardize/scale
+        wavelength channels, and deliberately doesn't offer to: see below
+        for why. To get the centered spectra themselves as new spectra in
+        your list — without running any decomposition — see the standalone
+        <a href="help://mean_centering">Mean-Center Spectra (Dataset)</a>
+        operation (Axis &amp; Unit Conversion menu), which performs this
+        exact same centering step.
+    </div>
+
+    <div class="note">
+        <strong>Why centering alone makes SVD exactly equal to PCA (no
+        scaling required):</strong> for a centered data matrix
+        <span class="fm">X<sub>c</sub></span>, its SVD
+        (<span class="fm">X<sub>c</sub> = U&middot;diag(s)&middot;V<sup>T</sup></span>)
+        and the eigendecomposition of its covariance matrix
+        (<span class="fm">X<sub>c</sub>X<sub>c</sub><sup>T</sup>/(n-1)</span>)
+        are the same computation viewed two ways: U's columns are exactly
+        the covariance matrix's eigenvectors, and
+        <span class="fm">s&sup2;/(n-1)</span> exactly equals its
+        eigenvalues. Verified directly: computing both ways on the same
+        centered data gave eigenvector/loading correlation of 1.000 and
+        eigenvalues matching <span class="fm">s&sup2;/(n-1)</span> to
+        full displayed precision. No standardization step is needed for
+        that equivalence — it's a property of centering by itself.
+    </div>
+
+    <div class="note">
+        <strong>Why this dialog doesn't offer to standardize wavelength
+        channels too:</strong> standardizing forces every channel to unit
+        variance, which erases exactly the information SVD/PCA uses to
+        decide what's signal and what's noise. Checked directly on the
+        3-transition demo dataset: a flat, uninformative baseline
+        wavelength had std&nbsp;&asymp;&nbsp;0.036, while a real
+        transition band had std&nbsp;&asymp;&nbsp;0.199 — SVD naturally
+        gives the real band about 5.6&times; more weight than the flat
+        region, which is exactly the behavior you want. Standardizing
+        first would force both regions to contribute equally, amplifying
+        whatever noise lives in the flat region up to the same importance
+        as genuine signal. (Standardizing makes more sense when combining
+        variables measured in genuinely different, incomparable units —
+        e.g. age in years alongside income in dollars — which isn't the
+        situation here: every wavelength channel is already the same
+        physical quantity on the same scale.)
+    </div>
+
+    <div class="note">
+        <strong>Why mean-centered components are uncorrelated, not just
+        orthogonal — a short proof, not just a numerical observation:</strong>
+        centering subtracts each wavelength's own mean <em>across
+        spectra</em>, so every row of <span class="fm">X<sub>c</sub></span>
+        sums to zero across the spectra it contains — equivalently,
+        <span class="fm">X<sub>c</sub>&middot;<strong>1</strong> = <strong>0</strong></span>,
+        where <strong>1</strong> is the all-ones vector in spectrum-space.
+        That puts <strong>1</strong> in <span class="fm">X<sub>c</sub></span>'s
+        null space. By the fundamental theorem of linear algebra, a
+        matrix's row space is orthogonal to its null space — and every
+        component's score vector (how strongly it shows up across your
+        spectra) lives in that row space. So every score vector must be
+        orthogonal to <strong>1</strong>, which is exactly what
+        "zero-mean" means for a vector. Zero-mean <em>and</em> orthogonal
+        (SVD already guarantees the orthogonal part) is precisely the
+        condition for zero Pearson correlation — correlation is just a
+        normalized dot product between mean-subtracted vectors. Verified
+        directly: every real (non-degenerate) component's score vector
+        had mean &asymp; 1&times;10<sup>-17</sup> (floating-point zero),
+        and cross-component correlations across several arbitrary pairs
+        all landed at the same floating-point zero — while the identical
+        check on <em>un</em>centered data gave a real, non-zero
+        correlation (0.895 between the first two components on the demo
+        dataset) despite both still being mathematically orthogonal. This
+        is why "orthogonal" and "uncorrelated" aren't the same guarantee
+        — centering is what closes the gap between them.
+    </div>
+
+    <div class="note">
+        <strong>How the "uncentered PC1 tracks the mean" finding connects
+        to "uncentered PC2 &asymp; centered PC1":</strong> SVD builds
+        components sequentially — PC1 is the best rank-1 approximation of
+        the data (Eckart&ndash;Young theorem), PC2 is the best rank-1
+        approximation of whatever's left after removing PC1, and so on.
+        If uncentered PC1 is itself close to the rank-1 "every spectrum
+        replaced by the mean spectrum" matrix — which the high correlation
+        with the plain mean confirms — then removing it leaves behind
+        something close to the mean-centered data. PC2 is then, by
+        construction, solving nearly the same problem as centered PC1.
+        That's not a coincidence needing two separate explanations; the
+        second follows mathematically from the first.
+    </div>
+
+    <hr>
     <h2 id="references">References</h2>
     <p style="font-size: 12px;">
     Malinowski, E. R. (2002). <em>Factor Analysis in Chemistry</em>, 3rd ed.

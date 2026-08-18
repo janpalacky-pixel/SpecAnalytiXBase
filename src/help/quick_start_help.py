@@ -280,6 +280,9 @@ def get_quick_start_help_content():
             <tr><td>X-axis Unit Conversion</td><td>Wavelength (nm) &harr;
                 wavenumber (cm&#8315;&sup1;) &harr; energy (eV) &harr; frequency (Hz)</td>
                 <td><a href="help://xaxis_unit_conversion">Open help</a></td></tr>
+            <tr><td>Mean-Center Spectra (Dataset)</td><td>Subtracts the ensemble
+                average spectrum of a selected batch from every spectrum in it</td>
+                <td><a href="help://mean_centering">Open help</a></td></tr>
         </table>
 
         <h3>Spike Removal</h3>

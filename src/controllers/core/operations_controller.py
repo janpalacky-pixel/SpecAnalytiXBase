@@ -853,6 +853,27 @@ class OperationsController:
                 self.current_parameters[operation] = settings
                 self.last_selection_hash = current_selection_hash
 
+        elif operation == "Mean-Center Spectra (Dataset)":
+            # Lazy-create the controller, same pattern as CD/X-axis Unit
+            # Conversion.
+            if not hasattr(self.controller, 'mean_centering_controller'):
+                from src.controllers.data_analysis.mean_centering_controller import MeanCenteringController
+                self.controller.mean_centering_controller = MeanCenteringController(self.controller)
+
+            mcc = self.controller.mean_centering_controller
+            selected_spectra = self._get_current_state_for_selected_spectra()
+
+            # Apply / Add as New are the dialog's own buttons now, handled
+            # by MeanCenteringController.commit_mean_centering() — there's
+            # nothing left to do with this dialog's result after it
+            # closes, since committing already happened inside it, if at
+            # all. The dialog itself warns and returns None if nothing is
+            # selected, same as CD/X-axis Unit Conversion above.
+            settings = mcc.show_dialog(selected_spectra, commit_callback=mcc.commit_mean_centering)
+            if settings is not None:
+                self.current_parameters[operation] = settings
+                self.last_selection_hash = current_selection_hash
+
         elif operation == "Run Batch Pipeline":
             # Lazy-create the controller, same pattern as CD/X-axis Unit
             # Conversion. Unlike those, this dialog has no single

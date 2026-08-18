@@ -1237,6 +1237,8 @@ class MainController(QMainWindow):
             lambda: oc.show_parameters_dialog_for("CD Unit Conversion"))
         self.view.actionMenuOpsXAxisUnitConversion.triggered.connect(
             lambda: oc.show_parameters_dialog_for("X-axis Unit Conversion"))
+        self.view.actionMenuOpsMeanCentering.triggered.connect(
+            lambda: oc.show_parameters_dialog_for("Mean-Center Spectra (Dataset)"))
         # Batch Pipeline
         self.view.actionMenuOpsRunBatchPipeline.triggered.connect(
             lambda: oc.show_parameters_dialog_for("Run Batch Pipeline"))
@@ -1370,6 +1372,7 @@ class MainController(QMainWindow):
         self.view.actionXAxisAlignmentHelp.triggered.connect(self.show_x_axis_alignment_help)
         self.view.actionCDUnitConversionHelp.triggered.connect(self.show_cd_unit_conversion_help)
         self.view.actionXAxisUnitConversionHelp.triggered.connect(self.show_xaxis_unit_conversion_help)
+        self.view.actionMeanCenteringHelp.triggered.connect(self.show_mean_centering_help)
         self.view.actionBatchPipelineHelp.triggered.connect(self.show_batch_pipeline_help)
         self.view.actionSpectralCalculatorHelp.triggered.connect(self.show_spectral_calculator_help)
         self.view.actionReferenceMatchingHelp.triggered.connect(self.show_reference_matching_help)
@@ -1570,6 +1573,10 @@ class MainController(QMainWindow):
     def show_xaxis_unit_conversion_help(self):
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'xaxis_unit_conversion')
+
+    def show_mean_centering_help(self):
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'mean_centering')
 
     def show_batch_pipeline_help(self):
         from src.help.help_window import open_help_topic

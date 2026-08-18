@@ -313,7 +313,8 @@ def get_user_guide_help_content():
                         <a href="#calculator">Spectral Calculator</a>,
                         <a href="#normalization">Normalization</a>,
                         <a href="#cd-unit-conversion">CD Unit Conversion</a>,
-                        <a href="#xaxis-unit-conversion">X-axis Unit Conversion</a></li>
+                        <a href="#xaxis-unit-conversion">X-axis Unit Conversion</a>,
+                        <a href="#mean-centering">Mean-Center Spectra (Dataset)</a></li>
                     <li><strong>Spike Removal:</strong>
                         <a href="#spike">Spike Removal</a>,
                         <a href="#cosmic-ray">Cosmic Ray Detection</a></li>
@@ -1095,6 +1096,30 @@ def get_user_guide_help_content():
                 that needs the excitation laser wavelength plus a reliably
                 calibrated wavelength axis, out of scope for this operation.
                 See the dedicated help page for why.</li>
+        </ul>
+
+        <!-- Mean-Center Spectra (Dataset) -->
+        <h3 id="mean-centering">Mean-Center Spectra (Dataset) <a href="help://mean_centering" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
+        <p>Computes the ensemble average spectrum across a selected batch
+        (the per-wavelength mean, averaged across every spectrum in the
+        selection) and subtracts it from every spectrum in that batch —
+        the same centering step the PCA / SVD dialogs perform internally
+        when their own "Mean-center" checkbox is on, exposed here as its
+        own standalone operation, independent of running any
+        decomposition.</p>
+        <ul>
+            <li>Every selected spectrum must share an identical x-axis —
+                same requirement as PCA/SVD, since averaging "the same
+                wavelength across spectra" only makes sense if that
+                wavelength is actually the same for all of them.</li>
+            <li>Optional checkbox also adds the computed average itself as
+                a new spectrum, useful as a reference or QC artifact.</li>
+            <li><strong>Not</strong> the same as Normalization's "Mean
+                Centering" mode, which subtracts each spectrum's own
+                scalar mean from itself (independent of the other
+                spectra) — this operation subtracts one shared average
+                computed from the whole batch. See the dedicated help
+                page for the full distinction.</li>
         </ul>
 
         <!-- Smoothing -->

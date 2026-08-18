@@ -216,10 +216,13 @@ def get_svd_reconstruction_help_content():
         Scores &amp; Loadings</a> dialog instead. Toggling it recomputes
         the whole decomposition instantly (not just how many components
         are kept), since centering changes U, s, and V<sup>T</sup>
-        themselves. See that dialog's help for the verified rationale
-        (uncentered PC1 mostly tracks the plain per-point mean; centered
-        PC1 correlates with uncentered PC2) if you're deciding which
-        convention to use for a given analysis.
+        themselves. See that dialog's help — specifically its
+        <a href="help://pca_scores#technical-background">Technical
+        background</a> section — for the verified rationale (uncentered
+        PC1 mostly tracks the plain per-point mean; centered PC1
+        correlates with uncentered PC2, and why — plus why standardizing
+        wavelength channels isn't offered as an option) if you're
+        deciding which convention to use for a given analysis.
     </div>
 
     <hr>

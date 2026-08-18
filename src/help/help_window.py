@@ -68,6 +68,7 @@ _REGISTRY = {
     'svd_interpolation':      ('src.help.svd_interpolation_help', 'get_svd_interpolation_help_title', 'get_svd_interpolation_help_content'),
     'cd_unit_conversion':     ('src.help.cd_unit_conversion_help', 'get_cd_unit_conversion_help_title', 'get_cd_unit_conversion_help_content'),
     'xaxis_unit_conversion':  ('src.help.xaxis_unit_conversion_help', 'get_xaxis_unit_conversion_help_title', 'get_xaxis_unit_conversion_help_content'),
+    'mean_centering':         ('src.help.mean_centering_help', 'get_mean_centering_help_title', 'get_mean_centering_help_content'),
 
     # Spectra Analysis & Visualization
     'svd_analysis':           ('src.help.svd_reconstruction_help', 'get_svd_reconstruction_help_title', 'get_svd_reconstruction_help_content'),

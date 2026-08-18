@@ -143,6 +143,7 @@ class OperationTreeComboBox(QWidget):
             "Normalization",
             "CD Unit Conversion",
             "X-axis Unit Conversion",
+            "Mean-Center Spectra (Dataset)",
         ]),
         ("Spike Removal", [
             "Spike removal",
@@ -1113,10 +1114,15 @@ class MainWindow(QMainWindow):
         self.actionMenuOpsXAxisUnitConversion.setObjectName("actionMenuOpsXAxisUnitConversion")
         self.actionMenuOpsXAxisUnitConversion.setText("X-axis Unit Conversion")
 
+        self.actionMenuOpsMeanCentering = QAction(self)
+        self.actionMenuOpsMeanCentering.setObjectName("actionMenuOpsMeanCentering")
+        self.actionMenuOpsMeanCentering.setText("Mean-Center Spectra (Dataset)")
+
         self.menuOpsAxisUnitConversion.addAction(self.actionMenuOpsSpectralCalculator)
         self.menuOpsAxisUnitConversion.addAction(self.actionMenuOpsNormalization)
         self.menuOpsAxisUnitConversion.addAction(self.actionMenuOpsCDUnitConversion)
         self.menuOpsAxisUnitConversion.addAction(self.actionMenuOpsXAxisUnitConversion)
+        self.menuOpsAxisUnitConversion.addAction(self.actionMenuOpsMeanCentering)
 
         # Spike Removal submenu
         self.menuOpsSpikeRemoval = QMenu(self.menuSpectraProcessingOps)
@@ -1365,6 +1371,10 @@ class MainWindow(QMainWindow):
         self.actionXAxisUnitConversionHelp = QAction(self)
         self.actionXAxisUnitConversionHelp.setObjectName("actionXAxisUnitConversionHelp")
         self.actionXAxisUnitConversionHelp.setText("X-axis Unit Conversion")
+
+        self.actionMeanCenteringHelp = QAction(self)
+        self.actionMeanCenteringHelp.setObjectName("actionMeanCenteringHelp")
+        self.actionMeanCenteringHelp.setText("Mean-Center Spectra (Dataset)")
 
         self.actionSpikeRemovalHelp = QAction(self)
         self.actionSpikeRemovalHelp.setObjectName("actionSpikeRemovalHelp")
@@ -1644,6 +1654,7 @@ class MainWindow(QMainWindow):
         self.menuHelpAxisUnitConversion.addAction(self.actionNormalizationHelp)
         self.menuHelpAxisUnitConversion.addAction(self.actionCDUnitConversionHelp)
         self.menuHelpAxisUnitConversion.addAction(self.actionXAxisUnitConversionHelp)
+        self.menuHelpAxisUnitConversion.addAction(self.actionMeanCenteringHelp)
 
         # Spike Removal — own submenu matching the CATEGORIES tree
         self.menuHelpSpikeRemoval = QMenu(self.menuSpectraProcessing)
