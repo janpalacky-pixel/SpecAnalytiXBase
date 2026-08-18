@@ -9,6 +9,7 @@ from src.modules.data_io.table_data_converter import read_table_data
 from src.modules.data_io.spe_data_converter import read_spe_data
 from src.modules.data_io.spc_data_converter import read_spc_data
 from src.modules.data_io.jasco_jws_reader import read_jws_data
+from src.modules.data_io.specord_csv_converter import read_specord_csv_data
 
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
@@ -211,6 +212,7 @@ class SpectrumManager:
         spe_use_calibration: bool = False,
         jws_selected_channels: Optional[list] = None,
         jws_channel_type_overrides: Optional[dict] = None,
+        specord_csv_format: bool = False,
     ) -> None:
         """
         Load one or more spectra from *filepath* and store them.
@@ -237,16 +239,28 @@ class SpectrumManager:
                      own value-range-based channel-type guess where the
                      import dialog's preview didn't match reality — see
                      jasco_jws_reader.py's module docstring.)
+        SpecOrd CSV : .csv, with specord_csv_format=True — row-oriented
+                     export straight off a SpecOrd spectrometer (one row
+                     per condition/temperature-step measurement, not one
+                     column per spectrum). One spectrum per row; label
+                     and metadata carry the condition, run/direction, and
+                     temperature parsed from the file — see
+                     specord_csv_converter.py's module docstring. A plain
+                     .csv (specord_csv_format=False, the default) is
+                     completely unaffected and goes through the normal
+                     text-table pipeline below as before.
 
         For Excel files the delimiter / decimal_separator parameters are
         ignored — numbers are read natively from the workbook cells.
         sheet_name selects which worksheet to read (Excel only); None
         auto-selects "spectra" or the first sheet.
 
-        For SPE, SPC, and JWS files, every parameter above except
-        zero_padding (and each format's own one or two format-specific
-        options) is ignored — none of these binary formats has a
-        delimiter/decimal/header/Layout/column-picker concept at all.
+        For SPE, SPC, JWS, and SpecOrd-CSV files, every parameter above
+        except zero_padding (and each format's own one or two
+        format-specific options) is ignored — none of these has a
+        delimiter/decimal/header/Layout/column-picker concept at all
+        (SpecOrd CSV's own delimiter/decimal are fixed by the format,
+        not configurable).
         """
         # logger.debug("load_spectrum_from_file called")
         # logger.debug("delimiter=%r, decimal_separator=%r, interlaced=%s", delimiter, decimal_separator, interlaced_format)
@@ -289,6 +303,12 @@ class SpectrumManager:
                     selected_channels=jws_selected_channels,
                     channel_type_overrides=jws_channel_type_overrides,
                 )
+            elif file_ext == '.csv' and specord_csv_format:
+                # Opt-in only — see specord_csv_converter.py. A plain
+                # .csv with this flag left at its default (False) never
+                # reaches this branch, so every existing CSV workflow is
+                # completely unaffected.
+                spectra_data = read_specord_csv_data(filepath, zero_padding=zero_padding)
             else:
                 spectra_data = read_table_data(
                     filepath,

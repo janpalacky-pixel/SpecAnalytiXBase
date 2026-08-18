@@ -1272,6 +1272,99 @@ spectra_added = pyqtSignal(object)
             break the one thing that view exists to show accurately.
         </div>
 
+        <h2 id="natural-sort">The Master Spectra List Is Always Re-sorted — <code>order_spectra()</code> Is the One Place That Controls It</h2>
+
+        <div class="rule">
+            <strong><code>MainController.order_spectra()</code> is the single
+            source of "default order" for the entire app.</strong> It's called
+            after essentially every operation that adds, renames, or replaces
+            spectra — import, copy, rename, and the post-Apply/Add-as-New
+            commit of every processing dialog (over 25 call sites, all
+            following the same <code>self.original_spectra =
+            self.order_spectra(self.original_spectra)</code> + rebuild-the-
+            list-widget pattern). Anything downstream that reads "spectrum
+            order" with no explicit sort of its own — SVD/NMF/MCR-ALS
+            concentration-profile x-axes, SVD Background Correction, the
+            default row order in export tables, etc. — is really just reading
+            whatever <code>self.original_spectra</code> currently is, i.e.
+            whatever <code>order_spectra()</code> last put it in. There is no
+            way to import spectra and have them simply keep file order; they
+            are always re-sorted by label immediately.
+        </div>
+
+        <div class="warning">
+            <strong>Confirmed real bug (2026-08-18): plain alphabetical sort
+            silently broke temperature-series ordering.</strong>
+            <code>order_spectra()</code> originally sorted with
+            <code>key=lambda s: s['label'].lower()</code> — plain text
+            comparison. SpecOrd-imported melting-curve labels embed an
+            unpadded temperature (e.g. <code>"...run3_heating T=8.60C"</code>),
+            and as plain text <code>"T=8.60"</code> sorts <em>after</em>
+            <code>"T=79.70"</code> (comparing character by character,
+            <code>'8' &gt; '7'</code>) — so a strictly-increasing-temperature
+            run displayed as 4.60, 5.60, &hellip;, 79.70, <strong>8.60</strong>,
+            80.70, &hellip;, 98.65 in the main list, and every "default order"
+            consumer downstream inherited the same corruption.
+        </div>
+
+        <div class="scheme">
+# Digit run, optionally signed — but the '-' only counts as a sign when
+# it's NOT glued onto a preceding letter/digit (distinguishes a real
+# negative value from a "sample-1" style separator hyphen).
+_NATSORT_CHUNK_RE = re.compile(r'((?&lt;![A-Za-z0-9])-?\d+)')
+
+@classmethod
+def _natural_sort_key(cls, label):
+    return tuple(
+        (0, int(chunk)) if re.fullmatch(r'-?\d+', chunk) else (1, chunk.lower())
+        for chunk in cls._NATSORT_CHUNK_RE.split(label) if chunk != ''
+    )
+        </div>
+
+        <p><strong>How it works:</strong> a label is split into alternating
+        text/number chunks; each chunk is tagged <code>(0, int)</code> for a
+        number or <code>(1, str)</code> for text, so two labels can always be
+        compared even when their chunk patterns differ in length or type at
+        some position — the leading 0/1 tag never lets the comparison reach a
+        point where Python would try to compare an <code>int</code> to a
+        <code>str</code> directly (which raises in Python&nbsp;3). Digit runs
+        compare as integers, so <code>"8"</code> vs <code>"79"</code> vs
+        <code>"80"</code> compare correctly regardless of how many characters
+        each one has, and a label with several embedded numbers (run index
+        <em>and</em> temperature, say) nests correctly because each chunk is
+        compared in turn, left to right — exactly like comparing version
+        numbers segment by segment.</p>
+
+        <div class="info">
+            <strong>The sign heuristic exists because hyphens are more often
+            separators than minus signs in spectrum labels.</strong> Without
+            the negative-lookbehind guard, a naive "digit run with optional
+            leading <code>-</code>" pattern would read <code>sample-1</code>,
+            <code>sample-2</code>, <code>sample-10</code> as the signed
+            integers &minus;1, &minus;2, &minus;10 and sort them 10, 2, 1 —
+            backwards from what anyone naming files that way would expect,
+            and this pattern (a hyphen used as an index/field separator) is
+            far more common in this codebase's labels than an actual signed
+            quantity. The lookbehind <code>(?&lt;![A-Za-z0-9])</code> only
+            allows a <code>-</code> to attach to a number when the character
+            immediately before it is <em>not</em> alphanumeric — so
+            <code>"sample-1"</code> (<code>-</code> preceded by the letter
+            <code>e</code>) keeps the hyphen as plain text and sorts 1, 2, 10
+            as intended, while <code>"T=-5.00C"</code> (<code>-</code>
+            preceded by <code>=</code>) is read as the number &minus;5 and
+            sorts correctly relative to other signed temperatures. Both
+            behaviors were verified directly against test cases covering
+            each pattern, together and separately, before this was
+            considered done — not just reasoned about.
+        </div>
+
+        <p>Purely non-numeric labels (no digits at all) are completely
+        unaffected — every chunk is a text chunk, so the result is the exact
+        same case-insensitive alphabetical order the old sort already gave.
+        This was verified explicitly: sorting a pure-text label set with the
+        old <code>.lower()</code> key and the new natural-sort key produces
+        identical output.</p>
+
         <h2 id="new-operation">Checklist: Adding a New Operation</h2>
         <ol>
             <li>Decide whether settings are uniform-for-the-whole-batch (most

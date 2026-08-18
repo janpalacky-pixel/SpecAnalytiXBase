@@ -1,5 +1,6 @@
 
 # src/controllers/core/main_controller.py
+import re
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QCheckBox,
     QListWidget, QListWidgetItem, QPushButton, QMenu, QLabel, QSizePolicy,
@@ -2245,32 +2246,68 @@ class MainController(QMainWindow):
             self.spectra_list_widget.blockSignals(False)
             self.spectrum_selector.update_spectra_count_label()
 
+    # Digit run, with an optional leading '-' — but ONLY treated as a
+    # minus sign when it's not glued onto a preceding letter/digit. That
+    # distinguishes a genuine negative number ("T=-5.00C", '-' preceded by
+    # '=') from a hyphen used as a separator ("sample-1", '-' preceded by
+    # 'e'). Without this, "sample-1" vs "sample-10" would misorder ("-1" >
+    # "-10" as signed integers), and that hyphen-as-separator pattern is
+    # far more common in spectrum labels than an actual negative value —
+    # so the lookbehind protects the common case while still fixing the
+    # negative-temperature case when it does show up.
+    _NATSORT_CHUNK_RE = re.compile(r'((?<![A-Za-z0-9])-?\d+)')
+
+    @classmethod
+    def _natural_sort_key(cls, label):
+        """Split a label into alternating text/number chunks so that
+        embedded numbers sort numerically instead of lexicographically —
+        e.g. "T=8.60" before "T=79.70" before "T=80.70", not "T=79.70" <
+        "T=8.60" < "T=80.70" the way a plain string sort would order them
+        (a real case seen with SpecOrd-imported melting curves: their
+        labels embed an unpadded temperature like "...run3_heating
+        T=8.60C", and every "default order" view in the app — SVD/NMF/
+        MCR-ALS concentration profiles, SVD background correction, etc. —
+        is just whatever order original_spectra ends up in here).
+
+        Each chunk is tagged (0, int) for a number or (1, str) for text,
+        so two labels can always be compared even when their chunk
+        patterns differ in length or type at some position: the leading
+        0/1 tag never compares an int to a str (Python 3 raises on that),
+        it just decides text-sorts-after-number-at-that-position and lets
+        the tuple comparison move on. Chunks stop at whole digit runs
+        (not full floats), so "8" vs "79" vs "80" compare as integers and
+        the literal "." / fractional part after them still fall out
+        correctly as their own numeric chunk.
+        """
+        return tuple(
+            (0, int(chunk)) if re.fullmatch(r'-?\d+', chunk) else (1, chunk.lower())
+            for chunk in cls._NATSORT_CHUNK_RE.split(label) if chunk != ''
+        )
+
     def order_spectra(self, spectra):
         """
-        Sort spectra alphabetically by label (optionally reversed).
+        Sort spectra by label using natural (numeric-aware) order,
+        optionally reversed.
         """
         # Safety check - return empty list if spectra is None
         if spectra is None:
             logger.warning("DEBUG order_spectra: Warning - spectra is None, returning empty list")
             return []
-        
+
         if not spectra:
             logger.warning("DEBUG order_spectra: Warning - spectra is empty, returning empty list")
             return []
-        
+
         reverse = self.checkBox_reverse_order.isChecked()
-        
-        logger.debug("order_spectra: Ordering %d spectra alphabetically, reverse=%s", len(spectra), reverse)
-        
+
+        logger.debug("order_spectra: Ordering %d spectra (natural order), reverse=%s", len(spectra), reverse)
+
         try:
-            # Case-insensitive: a plain sort treats "Raman..." (capital R)
-            # as always less than "a"/"b"/"c" (lowercase), splitting the
-            # list into an all-caps block and a lowercase block instead of
-            # interleaving them the way a person reading "alphabetical
-            # order" would expect. Case isn't meaningful in spectrum names
-            # here, so .lower() the sort key rather than the label itself
-            # (display text is untouched).
-            sorted_spectra = sorted(spectra, key=lambda s: s['label'].lower(), reverse=reverse)
+            # Natural sort: embedded numbers (temperature, run index, etc.)
+            # compare numerically instead of character-by-character, so
+            # "T=8.60" sorts before "T=79.70" before "T=80.70" instead of
+            # interleaving on the leading digit. See _natural_sort_key.
+            sorted_spectra = sorted(spectra, key=lambda s: self._natural_sort_key(s['label']), reverse=reverse)
             logger.debug("order_spectra: Successfully sorted %d spectra", len(sorted_spectra))
             return sorted_spectra
         except Exception as e:

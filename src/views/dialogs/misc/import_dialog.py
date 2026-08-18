@@ -701,6 +701,30 @@ class ImportDialog(QDialog):
         self._spe_calib_cb.toggled.connect(self._on_spe_calibration_toggled)
         root.addWidget(self._spe_calib_cb)
 
+        # --- SpecOrd row-per-measurement CSV export ------------------------
+        # Visible for every .csv file (not just ones this dialog has
+        # auto-detected), so a file that doesn't happen to match the exact
+        # header signature can still be told to use this reader by hand,
+        # and a false-positive auto-detection can be turned back off — same
+        # "auto-detect but always overridable" philosophy as delimiter/
+        # decimal/header above. When checked, this file bypasses the whole
+        # delimiter/decimal/header/Layout/column-picker pipeline entirely
+        # (like SPE/SPC/JWS above) — see _load_specord_preview and
+        # specord_csv_converter.py's module docstring for what the format
+        # actually is and why none of those settings apply to it.
+        self._specord_cb = QCheckBox(
+            "SpecOrd row-per-measurement CSV (each row = one spectrum)")
+        self._specord_cb.setVisible(False)
+        self._specord_cb.setToolTip(
+            "A row-oriented export straight off a SpecOrd spectrometer: "
+            "one row per (condition, temperature-step) measurement, not "
+            "one column per spectrum. Detected automatically from this "
+            "file's header row; untick to import it as a normal CSV "
+            "instead (e.g. if this was a false detection)."
+        )
+        self._specord_cb.toggled.connect(self._on_specord_toggled)
+        root.addWidget(self._specord_cb)
+
         # --- JWS channel selection (JASCO CD spectrometer files) ----------
         # Hidden entirely except when the currently-previewed file is a
         # .jws — see _load_jws_preview, the only place that populates and
@@ -835,19 +859,48 @@ class ImportDialog(QDialog):
         is_spe = file_ext == '.spe'
         is_spc = file_ext == '.spc'
         is_jws = file_ext == '.jws'
+        is_csv = file_ext == '.csv'
         is_binary = is_spe or is_spc or is_jws
+
+        # SpecOrd CSV detection: auto-detected fresh from the file's own
+        # header row the first time this file is shown; a saved per-file
+        # choice (the user having ticked/unticked it) always wins after
+        # that, exactly like every other per-file setting in this dialog.
+        saved_for_index = self._file_settings.get(index, {})
+        if is_csv:
+            if index in self._file_settings:
+                specord_checked = bool(saved_for_index.get('specord_csv_format', False))
+            else:
+                from src.modules.data_io.specord_csv_converter import looks_like_specord_csv
+                specord_checked = looks_like_specord_csv(filepath)
+            self._specord_cb.blockSignals(True)
+            self._specord_cb.setChecked(specord_checked)
+            self._specord_cb.setVisible(True)
+            self._specord_cb.blockSignals(False)
+        else:
+            specord_checked = False
+            self._specord_cb.setVisible(False)
+        is_specord = is_csv and specord_checked
 
         # SPE/SPC/JWS files (raw camera frames / GRAMS spectra / JASCO CD
         # channels) have almost no configurable import settings — no
         # delimiter, decimal, header, Layout, column pickers, or Sheet.
-        # Hide every text/Excel-oriented settings group and show a
+        # A SpecOrd-format CSV is the same story: its delimiter/decimal
+        # are fixed by the format, and its layout (one row per
+        # measurement, several metadata columns) has no Standard/
+        # Interlaced/Row-oriented/column-picker equivalent at all. Hide
+        # every text/Excel-oriented settings group for both and show a
         # dedicated info/preview instead, rather than letting the
-        # text/Excel-oriented logic below try to make sense of binary
-        # data. Zero padding is the one exception (see _padding_row below)
-        # since multi-frame SPE / multi-subfile SPC files auto-number
-        # their spectra the same way text/Excel imports do.
-        self._sep_group.setVisible(not is_binary)
-        self._gen_group.setVisible(not is_binary)
+        # text/Excel-oriented logic below try to make sense of it. Zero
+        # padding is the one exception (see _padding_row below) since
+        # multi-frame SPE / multi-subfile SPC files auto-number their
+        # spectra the same way text/Excel imports do (SpecOrd CSV spectra
+        # are already uniquely labelled from the file's own condition/
+        # run/temperature data and don't use it, but it's harmless left
+        # visible).
+        treat_as_special = is_binary or is_specord
+        self._sep_group.setVisible(not treat_as_special)
+        self._gen_group.setVisible(not treat_as_special)
         # Zero padding applies to every format except JWS, whose per-file
         # spectra are channel-named (CD/HT/Absorbance) rather than
         # auto-numbered.
@@ -859,7 +912,7 @@ class ImportDialog(QDialog):
         # table stuck on screen.
         self._spe_calib_cb.setVisible(False)
         self._jws_channels_group.setVisible(False)
-        if is_binary:
+        if treat_as_special:
             self._sheet_label.setVisible(False)
             self._sheet_combo.setVisible(False)
             if is_spe or is_spc:
@@ -877,8 +930,10 @@ class ImportDialog(QDialog):
                 self._load_spe_preview(filepath)
             elif is_spc:
                 self._load_spc_preview(filepath)
-            else:
+            elif is_jws:
                 self._load_jws_preview(filepath)
+            else:
+                self._load_specord_preview(filepath)
             if index not in self._file_settings:
                 self._capture_current_file_settings()
             self._has_loaded_once = True
@@ -1169,6 +1224,87 @@ class ImportDialog(QDialog):
                 val_item = QTableWidgetItem(f"{sp['y_scale'][r]:.4g}")
                 val_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self._preview_table.setItem(r, c + 1, val_item)
+
+    def _load_specord_preview(self, filepath: str):
+        """
+        Show a lightweight preview for a SpecOrd row-per-measurement CSV
+        export — same treatment as the SPE/SPC previews above: this
+        format has no configurable delimiter/decimal/header/Layout
+        settings (they're fixed by the format — see
+        specord_csv_converter.py), so this replaces the usual
+        settings-driven preview with a summary and a look at the first
+        few rows/spectra. Unlike SPE/SPC, "how many spectra" here is not
+        a fixed per-file count worth stating alone — it's conditions x
+        runs x temperature-steps — so the summary spells that out rather
+        than just a spectrum count.
+        """
+        try:
+            from src.modules.data_io.specord_csv_converter import read_specord_csv_data
+            spectra = read_specord_csv_data(filepath, zero_padding=self._padding_spin.value())
+        except Exception as e:
+            self._summary_label.setText(f"Could not read SpecOrd CSV file: {e}")
+            self._summary_label.setStyleSheet(
+                "color:#8a0000; background:#fff0f0; padding:2px 4px;"
+                "border-radius:3px; font-weight:bold;"
+            )
+            self._preview_table.setRowCount(0)
+            self._preview_table.setColumnCount(0)
+            return
+
+        n_spectra = len(spectra)
+        n_points = len(spectra[0]['x_scale']) if spectra else 0
+        conditions = sorted({sp['metadata']['condition_label'] for sp in spectra})
+        temps = [sp['metadata']['temperature_C'] for sp in spectra]
+        wl = spectra[0]['x_scale'] if spectra else []
+        wl_range = f"{wl[0]:.0f}–{wl[-1]:.0f} nm" if len(wl) else "?"
+        self._summary_label.setText(
+            f"SpecOrd row-per-measurement CSV — {len(conditions)} condition"
+            f"{'s' if len(conditions) != 1 else ''} "
+            f"({', '.join(conditions[:6])}{', …' if len(conditions) > 6 else ''}), "
+            f"{n_spectra} spectra total, {n_points} points each ({wl_range}), "
+            f"{min(temps):.1f}–{max(temps):.1f}°C. Each row becomes one "
+            f"spectrum; run/direction and temperature are read from the file "
+            f"and embedded in every spectrum's label."
+        )
+        self._summary_label.setStyleSheet(
+            "color:#7a5c00; background:#fff8dc; padding:2px 4px; border-radius:3px;"
+        )
+
+        # Same visual language as the SPE/SPC previews: cyan = the shared
+        # wavelength axis. Rows are wavelength points (first 8, matching
+        # the usual cap); columns are the first few (condition, T) rows
+        # actually found in the file, in file order — not necessarily
+        # one per condition, since a condition's own rows repeat many
+        # times (once per temperature step).
+        preview_specs = spectra[:5]
+        n_rows = min(8, n_points)
+        self._preview_table.setRowCount(n_rows)
+        self._preview_table.setColumnCount(1 + len(preview_specs))
+        col_headers = [
+            f"{sp['metadata']['condition_label']} {sp['metadata']['temperature_C']:.1f}°C"
+            for sp in preview_specs
+        ]
+        self._preview_table.setHorizontalHeaderLabels(['wavelength (nm)'] + col_headers)
+        for r in range(n_rows):
+            idx_item = QTableWidgetItem(f"{preview_specs[0]['x_scale'][r]:.1f}")
+            idx_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            idx_item.setBackground(Qt.GlobalColor.cyan)
+            idx_item.setForeground(Qt.GlobalColor.darkBlue)
+            self._preview_table.setItem(r, 0, idx_item)
+            for c, sp in enumerate(preview_specs):
+                val_item = QTableWidgetItem(f"{sp['y_scale'][r]:.4g}")
+                val_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._preview_table.setItem(r, c + 1, val_item)
+
+    def _on_specord_toggled(self, checked: bool):
+        """User flipped the 'SpecOrd row-per-measurement CSV' checkbox
+        for the .csv file currently on screen — persist the choice and
+        reload this file through whichever pipeline now applies (the
+        dedicated SpecOrd preview, or back to the normal text-table
+        settings/preview), the same way any other per-file setting
+        change does."""
+        self._capture_current_file_settings()
+        self._load_file(self._preview_file_index)
 
     # Channel-type combo text <-> jasco_jws_reader's internal type codes.
     _JWS_TYPE_TO_COMBO_TEXT = {
@@ -2153,6 +2289,7 @@ class ImportDialog(QDialog):
             'spe_use_calibration': self._spe_calib_cb.isChecked(),
             'jws_selected_channels': self._current_jws_selected_channels(),
             'jws_channel_type_overrides': self._current_jws_channel_type_overrides(),
+            'specord_csv_format': self._specord_cb.isChecked(),
         }
 
     def get_settings(self) -> dict:
@@ -2235,6 +2372,9 @@ class ImportDialog(QDialog):
             # than [] — see _current_jws_selected_channels.
             'jws_selected_channels': self._current_jws_selected_channels(),
             'jws_channel_type_overrides': self._current_jws_channel_type_overrides(),
+            # Same reasoning again, for the SpecOrd row-per-measurement
+            # CSV checkbox — see _load_file's is_csv/is_specord handling.
+            'specord_csv_format': self._specord_cb.isChecked(),
         }
 
     def _refresh_preview(self):

@@ -118,7 +118,8 @@ class ImportController(QObject):
                                        'label_column', 'x_scale_column',
                                        'exclude_columns', 'sheet_name',
                                        'sheet_names', 'header_row',
-                                       'index_x', 'sheet_settings')}
+                                       'index_x', 'sheet_settings',
+                                       'specord_csv_format')}
             self.main_controller.import_settings.update(persistent)
 
     def _reset_non_persistent_settings(self) -> None:
@@ -224,6 +225,7 @@ class ImportController(QObject):
                         spe_use_calibration = cfg.get('spe_use_calibration', False),
                         jws_selected_channels = cfg.get('jws_selected_channels'),
                         jws_channel_type_overrides = cfg.get('jws_channel_type_overrides'),
+                        specord_csv_format = cfg.get('specord_csv_format', False),
                     )
                     if multi:
                         # Labels are built as "<file> : <column>", so two sheets
@@ -406,6 +408,12 @@ class ImportController(QObject):
                 if fp not in successful_imports:
                     continue
                 params  = sp.metadata.get('import_parameters', {})
+                if params.get('file_format') == 'specord_csv':
+                    # Fixed format, no delimiter/decimal/header choice to
+                    # report — see specord_csv_converter.py.
+                    key = "SpecOrd row-per-measurement CSV"
+                    combos[key] = combos.get(key, 0) + 1
+                    continue
                 delim   = params.get('delimiter', '?')
                 if delim == '\t':
                     delim = 'tab'

@@ -875,6 +875,10 @@ class MeltingCurveDialog(QDialog):
         show_row.addStretch()
         v.addLayout(show_row)
 
+        # Text is rebuilt each time by _update_baseline_cross_warning (see
+        # perform_normalization) \u2014 this initial text is only a placeholder
+        # until the first normalization runs, since the real message
+        # needs the actual excluded-point count for THIS curve.
         self.baseline_cross_warning = QLabel(
             "\u26a0 Low-T and High-T baselines cross within this curve's own range \u2014 "
             "normalization is dividing by a near-zero number close to the crossing "
@@ -3168,11 +3172,46 @@ class MeltingCurveDialog(QDialog):
             return
 
         self.normalization_result = result
-        self.baseline_cross_warning.setVisible(bool(result.get('baselines_cross')))
+        self._update_baseline_cross_warning(result)
         self.x_trans = self.manager.compute_median_crossing_temperature(
             self.curve['x_temperature'], self.curve['y_raw'],
             result['baseline_low'], result['baseline_high'])
+        # Re-run each component's Arrhenius/thermodynamics against the
+        # NEW unstable_mask whenever a fit already exists and baseline
+        # regions change (dragging a slider, editing the spin boxes, or
+        # switching normalization method/order) — otherwise the
+        # thermodynamics table would keep showing values computed
+        # against the OLD (possibly unstable) normalization until the
+        # user happened to touch Span or re-run Fit. No-op if there's no
+        # fit yet (see _recompute_component_thermodynamics).
+        self._recompute_component_thermodynamics()
         self.update_plot()
+
+    def _update_baseline_cross_warning(self, result):
+        """Show/hide and fill in baseline_cross_warning's text from this
+        normalization's own 'unstable_mask' — visible whenever at least
+        one point is unstable (a strict superset of 'baselines_cross':
+        two baselines that come CLOSE without technically crossing are
+        just as unstable, see normalize_melting_curve's docstring), with
+        the actual excluded-point count so it's clear this isn't merely
+        a cosmetic warning — those points are genuinely left out of every
+        Arrhenius/van't Hoff fit from here on (see
+        _recompute_component_thermodynamics's exclude_mask)."""
+        unstable_mask = result.get('unstable_mask')
+        n_unstable = int(np.sum(unstable_mask)) if unstable_mask is not None else 0
+        if n_unstable == 0:
+            self.baseline_cross_warning.setVisible(False)
+            return
+        point_word = 'point' if n_unstable == 1 else 'points'
+        self.baseline_cross_warning.setText(
+            f"⚠ Low-T and High-T baseline fits cross (or nearly cross) within "
+            f"this curve's own range — {n_unstable} nearby {point_word} excluded "
+            f"from the van't Hoff/Arrhenius fit as unreliable (normalization was "
+            f"dividing by a near-zero number there). This is often a sign the "
+            f"shaded baseline region(s) don't actually capture a flat plateau — "
+            f"worth checking visually, not just trusting the numbers. Try "
+            f"narrower or better-placed baseline regions.")
+        self.baseline_cross_warning.setVisible(True)
 
     def _on_plot_visibility_toggled(self, state):
         if self.curve is not None:
@@ -3265,10 +3304,22 @@ class MeltingCurveDialog(QDialog):
             return
         y_measured = (self.normalization_result['y_norm']
                      if self.normalization_result is not None else self.curve['y_raw'])
+        # Points flagged unstable by the SAME normalization that produced
+        # y_measured — see normalize_melting_curve's 'unstable_mask' doc
+        # and the baseline_cross_warning label below — are excluded from
+        # every component's own Arrhenius/van't Hoff regression, not just
+        # filtered by the ordinary span threshold. Without this, a point
+        # sitting near a low-T/high-T baseline crossing can have a
+        # spurious-but-finite y_norm that passes the span filter
+        # undetected and silently distorts deltaH/Tm by an order of
+        # magnitude — confirmed on real data.
+        exclude_mask = (self.normalization_result.get('unstable_mask')
+                        if self.normalization_result is not None else None)
         self.component_thermodynamics = self.manager.compute_component_thermodynamics(
             self.curve['x_temperature'], y_measured, self.fit_result['y_fit'],
             self.fit_result['components']['params'],
-            self.fit_result['shape_name'], span=self.span_spin.value())
+            self.fit_result['shape_name'], span=self.span_spin.value(),
+            exclude_mask=exclude_mask)
 
     def _default_initial_guesses(self, n):
         """Evenly-spaced default starting guesses for n components: equal
@@ -3986,11 +4037,30 @@ class MeltingCurveDialog(QDialog):
         if ax_norm is not None and have_norm:
             y_norm = self.normalization_result['y_norm']
             threshold = self.span_spin.value()
+            # unstable_mask points are excluded from the Arrhenius/van't
+            # Hoff fit unconditionally (see
+            # normalize_melting_curve/transform_xy_for_arrhenius'
+            # exclude_mask) — regardless of whether their y_norm happens
+            # to fall inside the span. Shown as a THIRD category here
+            # (not folded into the plain threshold-excluded gray) so it's
+            # visible on the plot itself which points are gone because
+            # they're outside span vs. because normalization was
+            # dividing by a near-zero number there — a 'red = selected'
+            # point that's actually unstable would otherwise look like
+            # it's still part of the fit when it isn't.
+            unstable_mask = self.normalization_result.get('unstable_mask')
+            if unstable_mask is None:
+                unstable_mask = np.zeros_like(y_norm, dtype=bool)
             with np.errstate(invalid='ignore'):
-                selected = (y_norm >= 1 - threshold) & (y_norm <= threshold)
-            if np.any(~selected):
-                ax_norm.plot(x[~selected], y_norm[~selected], 'o', color='lightgray',
+                in_span = (y_norm >= 1 - threshold) & (y_norm <= threshold)
+            selected = in_span & ~unstable_mask
+            excluded_span = ~in_span & ~unstable_mask
+            if np.any(excluded_span):
+                ax_norm.plot(x[excluded_span], y_norm[excluded_span], 'o', color='lightgray',
                             markersize=4, label='Excluded (threshold)')
+            if np.any(unstable_mask):
+                ax_norm.plot(x[unstable_mask], y_norm[unstable_mask], 'o', color='orange',
+                            markersize=4, label='Excluded (unstable baseline)')
             if np.any(selected):
                 ax_norm.plot(x[selected], y_norm[selected], 'o', color='red',
                             markersize=4, label='Selected (threshold)')

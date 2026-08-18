@@ -119,7 +119,8 @@ class MeltingCurveManager:
     # 2. Linear-baseline normalization                                    #
     # ------------------------------------------------------------------ #
 
-    def normalize_melting_curve(self, x, y, low_range, high_range, order=1):
+    def normalize_melting_curve(self, x, y, low_range, high_range, order=1,
+                                instability_frac=0.15):
         """Normalize a melting curve using linear (order=1) or constant
         (order=0) approximations of the low-x and high-x baseline regions,
         following the handout's convention:
@@ -135,11 +136,15 @@ class MeltingCurveManager:
                 assumed here).
             order: 0 (constant/zero-order) or 1 (linear/first-order) fit
                 for each baseline region.
+            instability_frac: a point is flagged in 'unstable_mask' when
+                its own |denom| falls below this fraction of the curve's
+                own max |denom| — see 'unstable_mask' below.
 
         Returns:
             dict with 'y_norm', 'baseline_low' (evaluated over all of x),
             'baseline_high' (evaluated over all of x), 'coeffs_low',
-            'coeffs_high', or None if either region is empty.
+            'coeffs_high', 'baselines_cross', and 'unstable_mask', or None
+            if either region is empty.
         """
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
@@ -171,6 +176,31 @@ class MeltingCurveManager:
         # accept a curve with huge, physically meaningless excursions.
         baselines_cross = bool(np.any(denom > 0) and np.any(denom < 0))
 
+        # unstable_mask: True at any point whose LOCAL |denom| is small
+        # relative to the curve's own overall scale (max |denom|) — these
+        # points sit close enough to wherever the two baselines cross (or
+        # nearly cross) that y_norm there is dominated by division-by-
+        # near-zero noise rather than genuine signal, even when finite.
+        # This matters downstream, specifically for
+        # transform_xy_for_arrhenius: those points passing the ordinary
+        # 0-1 span filter (nothing about them looks obviously wrong — a
+        # spurious-but-finite y_norm value can easily land inside 0.05-
+        # 0.95) can dominate the van't Hoff linear regression precisely
+        # because the transform is most sensitive right where K=y/(1-y)
+        # crosses 1 — silently distorting the fitted slope (and hence
+        # deltaH) by an order of magnitude and dragging the fitted Tm
+        # away from the true value, while the regression's own R^2/
+        # parameter-uncertainty numbers make the fit LOOK worse (not
+        # obviously wrong in a way that points at the real cause). Not
+        # gated on baselines_cross alone: two baselines that come close
+        # without technically crossing produce the same instability, just
+        # less dramatically.
+        max_abs_denom = np.max(np.abs(denom)) if denom.size else 0.0
+        if max_abs_denom > 0:
+            unstable_mask = np.abs(denom) < (instability_frac * max_abs_denom)
+        else:
+            unstable_mask = np.zeros_like(denom, dtype=bool)
+
         return {
             'y_norm': y_norm,
             'baseline_low': baseline_low,
@@ -178,6 +208,7 @@ class MeltingCurveManager:
             'coeffs_low': coeffs_low,
             'coeffs_high': coeffs_high,
             'baselines_cross': baselines_cross,
+            'unstable_mask': unstable_mask,
         }
 
     def compute_median_crossing_temperature(self, x, y_raw, baseline_low, baseline_high):
@@ -235,7 +266,8 @@ class MeltingCurveManager:
     # 3. Arrhenius transform and thermodynamic parameters                 #
     # ------------------------------------------------------------------ #
 
-    def transform_xy_for_arrhenius(self, x_temperature, y_fraction, span=0.95):
+    def transform_xy_for_arrhenius(self, x_temperature, y_fraction, span=0.95,
+                                    exclude_mask=None):
         """Restrict to the central `span` of the 0-1 normalized curve
         (dropping points too close to either baseline, where
         ln(K)=ln(y/(1-y)) diverges) and transform to Arrhenius coordinates:
@@ -250,6 +282,17 @@ class MeltingCurveManager:
                 curve).
             span: keep points where span-side thresholds
                 1-span <= y <= span (default 0.95 keeps the central 90%).
+            exclude_mask: optional boolean array, same length as
+                x_temperature/y_fraction — True marks a point to drop
+                before the span filter even runs, regardless of where its
+                y value happens to land. Meant for
+                normalize_melting_curve's 'unstable_mask': a point near a
+                low-T/high-T baseline crossing can have a spurious-but-
+                finite y_norm that passes the ordinary span filter
+                undetected, then distorts the regression precisely
+                because this transform is most sensitive right where
+                K=y/(1-y) crosses 1. None (default) excludes nothing —
+                unchanged behavior for every existing caller.
 
         Returns:
             dict with 'x_arr' (1/T), 'y_arr' (ln K), 'K', 'ind' (indices
@@ -261,6 +304,9 @@ class MeltingCurveManager:
 
         with np.errstate(invalid='ignore'):
             ind = np.where((y >= 1 - span) & (y <= span))[0]
+        if exclude_mask is not None:
+            exclude_mask = np.asarray(exclude_mask, dtype=bool)
+            ind = ind[~exclude_mask[ind]]
         if ind.size < 2:
             return None
 
@@ -464,7 +510,7 @@ class MeltingCurveManager:
         return abs(R_GAS * Tm_kelvin ** 2 / deltaH)
 
     def compute_component_thermodynamics(self, x, y_measured, y_fit_total, component_params,
-                                        shape_name, span=0.95):
+                                        shape_name, span=0.95, exclude_mask=None):
         """Generalize the Arrhenius/thermodynamic calculation to EACH
         individual sigmoid component of a multi-transition fit.
 
@@ -537,6 +583,17 @@ class MeltingCurveManager:
             shape_name: key into SIGMOID_SHAPES, matching whichever shape
                 the fit itself used.
             span: same central-span threshold as transform_xy_for_arrhenius.
+            exclude_mask: optional boolean array, same length as x —
+                forwarded unchanged to each component's own
+                transform_xy_for_arrhenius call (see that function's own
+                exclude_mask doc). Typically normalize_melting_curve's
+                'unstable_mask' for the SAME curve y_measured came from —
+                a point unstable in the raw normalized curve is exactly
+                as unstable in every component's reconstructed curve,
+                since the reconstruction (see y_local_data below) only
+                redistributes signal between components, it doesn't fix
+                the underlying near-zero-denominator problem at that
+                temperature. None (default) excludes nothing.
 
         Returns:
             A list (same order/length as component_params) of dicts, each
@@ -567,7 +624,8 @@ class MeltingCurveManager:
             # SAME reconstruction the plot itself uses, so the numbers
             # here always match what's actually shown on screen.
             y_local_data = residual_total / factor + y_pure
-            arr = self.transform_xy_for_arrhenius(x, y_local_data, span=span)
+            arr = self.transform_xy_for_arrhenius(x, y_local_data, span=span,
+                                                  exclude_mask=exclude_mask)
             thermo = None
             if arr is not None:
                 thermo = self.compute_thermodynamic_params(arr['x_arr'], arr['y_arr'])

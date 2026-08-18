@@ -210,6 +210,16 @@ def get_import_help_content():
                 <b>Absorbance [AU]</b> — see the dedicated section below for
                 how to pick which ones to import.
             </li>
+            <li>
+                <b>SpecOrd row-per-measurement CSV</b> — a <code>.csv</code>
+                export straight off a SpecOrd spectrometer's own software,
+                with tick <b>SpecOrd row-per-measurement CSV</b> checked.
+                Structurally different from every other <code>.csv</code>
+                this app reads: one row per (condition, temperature-step)
+                measurement rather than one column per spectrum. Detected
+                automatically from the file's header row; see the dedicated
+                section below.
+            </li>
         </ul>
     </div>
 
@@ -401,6 +411,90 @@ def get_import_help_content():
     <p>
         No other settings apply to JWS files — no delimiter, decimal,
         header, or Layout concept, same as SPE/SPC.
+    </p>
+
+    <h2>SpecOrd Row-per-Measurement CSV</h2>
+    <p>
+        Some instrument software exports one row per (condition,
+        temperature-step) <i>measurement</i> instead of one column per
+        <i>spectrum</i> — confirmed on real files from a SpecOrd
+        spectrometer running a pH-titration UV-melting series, but nothing
+        about the parsing is SpecOrd-specific beyond the exact column names
+        it happens to use. Each row's header line looks like:
+    </p>
+    <p style="text-align:center;">
+        <code>No.;Type;Name;Date/Time;Note;Temperature;Temperature;230,0;231,0;&hellip;;330,0;</code>
+    </p>
+    <p>
+        i.e. semicolon-delimited, comma-as-decimal (European locale) — 7
+        metadata columns (<b>Type</b> is <code>Blank</code> or
+        <code>Sample</code>; <b>Name</b> is the condition, e.g.
+        <code>pH 7.5</code>) followed by one column per wavelength. This
+        layout has no Standard/Interlaced/Row-oriented equivalent — it
+        mixes per-row metadata with a shared wavelength axis in a way none
+        of those three options can express — so it gets its own dedicated
+        reader rather than a Layout choice.
+    </p>
+    <p>
+        <b>Auto-detection.</b> A <code>.csv</code> file whose first three
+        header columns read exactly <code>No.</code>, <code>Type</code>,
+        <code>Name</code> is recognized automatically, and the
+        <b>SpecOrd row-per-measurement CSV</b> checkbox appears pre-ticked
+        with a summary of what was found (conditions, total spectra,
+        wavelength range, temperature range). Untick it to fall back to
+        importing the file as an ordinary CSV instead (e.g. if this was a
+        false match); the checkbox is offered for every <code>.csv</code>
+        file, not just auto-detected ones, so any file sharing this layout
+        can be told to use this reader by hand.
+    </p>
+    <p>
+        <b>What each row becomes.</b> Every row in the file becomes one
+        spectrum (wavelengths as x, absorbance as y). Rows for the same
+        condition (<b>Name</b>) repeat once per temperature step in a fixed
+        cycle through every condition in the file, tracing out that
+        condition's full heating/cooling temperature trajectory — run
+        boundaries (heating vs. cooling, run 1 vs. run 2, &hellip;) are
+        found automatically from direction reversals in each condition's
+        own temperature sequence, not assumed to always be exactly 4 runs.
+        Each spectrum's label embeds the condition, run/direction, and
+        temperature, e.g.:
+    </p>
+    <p style="text-align:center;">
+        <code>250224 dC5U3 : pH_7.5 run2_cooling T=45.20C</code>
+    </p>
+    <p>
+        The same values are also stored as structured metadata
+        (<code>condition_label</code>, <code>condition_value</code>,
+        <code>run_index</code>, <code>direction</code>,
+        <code>temperature_C</code>, <code>measurement_type</code>) — open
+        any imported spectrum's Metadata dialog to see them. Embedding
+        temperature directly in the label, specifically, is deliberate: the
+        <b>Melting Curve Analysis</b> tool (see its own Help) guesses each
+        selected spectrum's temperature from the numbers in its label,
+        preferring whichever number actually <i>varies</i> across the
+        selected batch — since condition/run/direction stay fixed within
+        one such series and only temperature changes, it reads the right
+        number automatically. Select all the spectra from one condition's
+        run/direction, open Melting Curve Analysis, and the temperature
+        column populates itself correctly without manual editing (though
+        it's always editable afterward, the same as for any other import).
+    </p>
+    <div class="warning">
+        The file's header carries <b>two</b> columns both literally named
+        <code>Temperature</code>. They differ by up to roughly 0.3&deg;C on
+        real files — likely a setpoint/actual-reading pair, but nothing in
+        the exported file documents which is which. Rather than guess, each
+        row's canonical temperature is the <b>average</b> of the two. If
+        you need one specific column instead, that's not currently
+        selectable — the discrepancy is small enough that it hasn't
+        mattered for melting-curve Tm fitting on real data so far, but ask
+        if a genuine use case needs to distinguish them.
+    </div>
+    <p>
+        No other settings apply to SpecOrd CSV files — no delimiter,
+        decimal, header, Layout, or column-picker concept, same as
+        SPE/SPC/JWS. Zero Padding is likewise unused (every spectrum
+        already has a unique label from its own condition/run/temperature).
     </p>
 
     <h2>Expected Data Layout</h2>
@@ -977,24 +1071,21 @@ spectrum_B    5.5      6.6      7.7      8.8
         It's the only general setting SPE/SPC share with text/Excel
         imports — see the SPE and SPC sections above.
     </p>
-    <div class="warning">
-        <strong>Padding matters more than it looks — the spectrum list is
-        always sorted alphabetically (plain text order, not "natural"
-        numeric order).</strong> Without enough digits, numbers of different
-        lengths interleave in an unexpected order: <code>spectrum 4</code>
-        sorts <em>between</em> <code>spectrum 39</code> and
-        <code>spectrum 40</code>, because as plain text <code>"spectrum 4"</code>
-        comes after <code>"spectrum 39"</code> (comparing character by
-        character, <code>'4' &gt; '3'</code>) but before
-        <code>"spectrum 40"</code> (<code>"spectrum 4"</code> is a shorter string
-        that is itself the start of <code>"spectrum 40"</code>). Padded
-        consistently — <code>spectrum 04</code>, <code>spectrum 39</code>,
-        <code>spectrum 40</code> — the same names sort in the order you'd
-        expect. Set Zero Padding wide enough for your largest spectrum count
-        (4 digits comfortably covers up to 9&nbsp;999 spectra), and apply the
-        same discipline to any of your own numbered names — including
-        header-row labels already present in your source file — not just
-        the ones this app generates automatically.
+    <div class="info">
+        <strong>The main spectra list sorts labels in "natural" (numeric-aware)
+        order, not plain alphabetical order</strong> — embedded numbers compare
+        as numbers, not character-by-character, so <code>spectrum 4</code>
+        already sorts before <code>spectrum 39</code> and
+        <code>spectrum 40</code> without any padding. You no longer need to
+        pad numbers just to get a sensible sort order. Zero Padding here is
+        now purely a readability/consistency choice — a fixed digit width
+        keeps a long list of auto-numbered spectra visually tidy and
+        equal-width — not something the sort order depends on. See
+        <a href="help://user_guide#selection">User Guide &rarr; 2. Spectrum
+        Selection</a> for how natural sort works, including the one edge case
+        (a minus sign glued onto a preceding letter, e.g.
+        <code>sample-1</code>, is read as a plain separator rather than a
+        negative sign — see that section for the reasoning).
     </div>
 
     <h3>Analyze Rows</h3>

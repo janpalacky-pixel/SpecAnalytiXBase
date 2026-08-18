@@ -590,29 +590,63 @@ def get_user_guide_help_content():
             <tr><td>Select by range / pattern</td><td><strong>Select spectra</strong> button
                 (or right-click &rarr; <strong>Select spectra</strong>)
                 &mdash; opens a dialog to select by index range with step</td></tr>
-            <tr><td>Sort order</td><td>Always alphabetical by label. Tick
+            <tr><td>Sort order</td><td>Natural (numeric-aware) order by label. Tick
                 <strong>reverse sorting</strong>, just above the list next to the
                 spectrum counter, to flip the order.</td></tr>
         </table>
 
+        <div class="info">
+            <strong>Sort order is "natural," not plain alphabetical — embedded
+            numbers compare numerically, not character-by-character.</strong>
+            A label is split into alternating text/number chunks, and each number
+            chunk is compared as an integer rather than as text. So
+            <code>spectrum 4</code> now sorts <em>before</em>
+            <code>spectrum 39</code> and <code>spectrum 40</code>, not between them
+            the way plain text order would place it — you don't need to
+            zero-pad numbers in your labels just to get a sensible order any
+            more. This also nests correctly across several numbers in the same
+            label (e.g. <code>run2_T=9.5</code> sorts before
+            <code>run2_T=100.0</code>, which sorts before
+            <code>run10_T=1.0</code>) and is case-insensitive for the text parts,
+            exactly like the old sort was. If a label has no digits in it at
+            all, none of this changes anything — it's just plain
+            alphabetical, identical to before.
+        </div>
+
+        <div class="info">
+            <strong>There's no way to pin a custom order that isn't derivable
+            from the label itself.</strong> The list is fully rebuilt in
+            sorted order after essentially anything you do — import, rename,
+            copy, running an operation — so there's no drag-and-drop
+            reordering, and any manual arrangement wouldn't survive the next
+            action anyway. If you want spectra in a specific order for
+            reasons unrelated to alphabetical/numeric order, the only lever
+            is renaming them (or adding a numeric prefix) so the labels
+            themselves sort into the order you want.
+        </div>
+
         <div class="warning">
-            <strong>"Alphabetical" means plain text order, not "natural" numeric
-            order — pad your numbers.</strong> A name ending in an unpadded number
-            can land somewhere unexpected: <code>spectrum 4</code> sorts
-            <em>between</em> <code>spectrum 39</code> and <code>spectrum 40</code>,
-            because as plain text <code>"spectrum 4"</code> comes after
-            <code>"spectrum 39"</code> (<code>'4' &gt; '3'</code> at that character)
-            but before <code>"spectrum 40"</code> (<code>"spectrum 4"</code> is simply
-            the start of <code>"spectrum 40"</code>, and a shorter string that is a
-            prefix of a longer one always sorts first). Padded consistently —
-            <code>spectrum 04</code>, <code>spectrum 39</code>, <code>spectrum 40</code> —
-            the same names sort in the order you'd actually expect. This applies
-            equally to names already in your source file's header row and to
-            names this app generates automatically for you: see Import's
+            <strong>One edge case: a minus sign is only read as "negative" when
+            it isn't glued onto a preceding letter or digit.</strong> This
+            distinguishes a genuine negative value — e.g. a sub-zero temperature
+            like <code>T=-5.00C</code>, where the <code>-</code> follows
+            <code>=</code> — from a hyphen used as a separator, e.g.
+            <code>sample-1</code>, <code>sample-2</code>, <code>sample-10</code>,
+            where the <code>-</code> follows a letter and is treated as plain
+            text so those three still sort in count order (1, 2, 10) rather than
+            as if they were the numbers &minus;1, &minus;2, &minus;10 (which would
+            sort 10, 2, 1). If your labels mix both patterns, this heuristic
+            resolves them independently and correctly in the same list — verified
+            directly, not just assumed.
+        </div>
+
+        <div class="info">
+            Zero-padding your labels is no longer necessary for correct sort
+            order, but it's still available and still useful for readability
+            and for keeping generated names a consistent width: see Import's
             <strong>Zero Padding</strong> setting (<a href="help://import">Import
-            help</a>) — set it wide enough for your largest spectrum count, and
-            the Preview table now shows the exact padded numbers you'll get before
-            you import.
+            help</a>) — the Preview table shows the exact padded numbers you'll
+            get before you import.
         </div>
 
         <div class="screenshot">
