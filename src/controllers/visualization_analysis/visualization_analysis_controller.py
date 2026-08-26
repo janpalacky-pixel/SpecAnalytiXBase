@@ -22,6 +22,7 @@ class VisualizationAnalysisController:
         self._pls_controller = None
         self._kinetics_controller = None
         self._qc_outlier_controller = None
+        self._som_controller = None
 
     @property
     def svd_analysis_controller(self):
@@ -63,6 +64,14 @@ class VisualizationAnalysisController:
             self._qc_outlier_controller = QCOutlierController(self.controller)
         return self._qc_outlier_controller
 
+    @property
+    def som_controller(self):
+        """Lazy initialization of SOM controller."""
+        if self._som_controller is None:
+            from src.controllers.visualization_analysis.som_controller import SOMController
+            self._som_controller = SOMController(self.controller)
+        return self._som_controller
+
     def run_visualization_analysis(self, method):
         """
         Run the specified visualization analysis method.
@@ -93,6 +102,8 @@ class VisualizationAnalysisController:
             self.run_kinetics_analysis()
         elif method == "QC / Outlier Detection":
             self.run_qc_outlier_analysis()
+        elif method == "SOM":
+            self.run_som_analysis()
         else:
             QMessageBox.warning(
                 self.controller.view,
@@ -163,4 +174,17 @@ class VisualizationAnalysisController:
                 f"Error running QC / Outlier Detection:\n{str(e)}"
             )
             logger.error(f"ERROR: QC / Outlier Detection failed: {e}")
+            logger.exception("Traceback:")
+
+    def run_som_analysis(self):
+        """Run SOM (Self-Organizing Map) analysis."""
+        try:
+            self.som_controller.run_som_analysis()
+        except Exception as e:
+            QMessageBox.critical(
+                self.controller.view,
+                "SOM Error",
+                f"Error running SOM analysis:\n{str(e)}"
+            )
+            logger.error(f"ERROR: SOM analysis failed: {e}")
             logger.exception("Traceback:")

@@ -76,6 +76,7 @@ _REGISTRY = {
     'nmf':                     ('src.help.nmf_help', 'get_nmf_help_title', 'get_nmf_help_content'),
     'mcr_als':                 ('src.help.mcr_als_help', 'get_mcr_als_help_title', 'get_mcr_als_help_content'),
     'cluster_analysis':       ('src.help.cluster_analysis_help', 'get_cluster_analysis_help_title', 'get_cluster_analysis_help_content'),
+    'som':                     ('src.help.som_help', 'get_som_help_title', 'get_som_help_content'),
     'band_ratio':              ('src.help.band_ratio_help', 'get_band_ratio_help_title', 'get_band_ratio_help_content'),
     'reference_matching':     ('src.help.reference_matching_help', 'get_reference_matching_help_title', 'get_reference_matching_help_content'),
     'melting_curve':           ('src.help.melting_curve_help', 'get_melting_curve_help_title', 'get_melting_curve_help_content'),

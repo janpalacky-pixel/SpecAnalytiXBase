@@ -29,6 +29,9 @@ pandas>=1.4              # required at startup — used by Save, Cluster
                          # Operations Summary dialog's Excel export
 scikit-learn>=1.0        # required at startup — Cluster Analysis (K-Means,
                          # Hierarchical, DBSCAN) and its PCA/scaling steps
+                         # (SOM / Self-Organizing Map is implemented from
+                         # scratch in plain numpy — see som_manager.py's
+                         # own docstring — so it needs no new dependency)
 
 # openpyxl is the one genuine exception: every import of it in the codebase
 # is deferred (inside a function, only when that function actually runs),

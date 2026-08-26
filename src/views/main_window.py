@@ -106,6 +106,16 @@ SYNTHETIC_TEST_DATASETS = [
     # Reference and align the rest, or compare the recovered shifts against
     # the ones actually introduced.
     ('xaxis', 'X axis alignment demo', 'x_axis_alignment_demo_data.txt'),
+
+    # For the Self-Organizing Map tool (Analysis && Visualization ->
+    # Visualization -> SOM): two multi-class illustrations of how a SOM
+    # organizes spectra — a sharp-fingerprint Raman-like set and a broad-
+    # band UV/Vis absorption-like set, each with several distinct classes
+    # plus a "blend" class that should land between them on the trained
+    # map. See each workbook's own Ground_truth/Info sheets for the known
+    # class per spectrum and a step-by-step walkthrough.
+    ('som', 'SOM — Raman multi-class demo (240 spectra)', 'som_raman_multiclass_demo.xlsx'),
+    ('som', 'SOM — UV/Vis multi-class demo (250 spectra)', 'som_uvvis_multiclass_demo.xlsx'),
 ]
 
 class OperationTreeComboBox(QWidget):
@@ -452,6 +462,7 @@ class AnalysisTreeComboBox(OperationTreeComboBox):
             "NMF",
             "MCR-ALS",
             "Cluster analysis",
+            "SOM",
             "2D map",
             "2D Correlation",
             "PLS / PLS-DA",
@@ -1211,6 +1222,10 @@ class MainWindow(QMainWindow):
         self.actionMenuClusterAnalysis.setObjectName("actionMenuClusterAnalysis")
         self.actionMenuClusterAnalysis.setText("Cluster analysis")
 
+        self.actionMenuSOM = QAction(self)
+        self.actionMenuSOM.setObjectName("actionMenuSOM")
+        self.actionMenuSOM.setText("SOM")
+
         self.actionMenu2DMap = QAction(self)
         self.actionMenu2DMap.setObjectName("actionMenu2DMap")
         self.actionMenu2DMap.setText("2D map")
@@ -1228,6 +1243,7 @@ class MainWindow(QMainWindow):
         self.menuAnalysisVisualizationViz.addAction(self.actionMenuNMF)
         self.menuAnalysisVisualizationViz.addAction(self.actionMenuMCRALS)
         self.menuAnalysisVisualizationViz.addAction(self.actionMenuClusterAnalysis)
+        self.menuAnalysisVisualizationViz.addAction(self.actionMenuSOM)
         self.menuAnalysisVisualizationViz.addAction(self.actionMenu2DMap)
         self.menuAnalysisVisualizationViz.addAction(self.actionMenu2DCorrelation)
         self.menuAnalysisVisualizationViz.addAction(self.actionMenuPLS)
@@ -1517,6 +1533,7 @@ class MainWindow(QMainWindow):
             'kinetics': 'Kinetics Fitting',
             'qc':      'QC / Outlier Detection',
             'xaxis':   'X-Axis Alignment',
+            'som':     'Self-Organizing Map (SOM)',
         }
 
         # label -> filename; the controller resolves the folder and imports it.
@@ -1586,6 +1603,10 @@ class MainWindow(QMainWindow):
         self.actionClusterAnalysisHelp = QAction(self)
         self.actionClusterAnalysisHelp.setObjectName("actionClusterAnalysisHelp")
         self.actionClusterAnalysisHelp.setText("Cluster Analysis")
+
+        self.actionSOMHelp = QAction(self)
+        self.actionSOMHelp.setObjectName("actionSOMHelp")
+        self.actionSOMHelp.setText("SOM")
 
         self.actionPLSHelp = QAction(self)
         self.actionPLSHelp.setObjectName("actionPLSHelp")
@@ -1683,6 +1704,7 @@ class MainWindow(QMainWindow):
         self.menuHelpVizVisualization.addAction(self.actionNMFHelp)
         self.menuHelpVizVisualization.addAction(self.actionMCRALSHelp)
         self.menuHelpVizVisualization.addAction(self.actionClusterAnalysisHelp)
+        self.menuHelpVizVisualization.addAction(self.actionSOMHelp)
         self.menuHelpVizVisualization.addAction(self.action2DMapHelp)
         self.menuHelpVizVisualization.addAction(self.action2DCorrelationHelp)
         self.menuHelpVizVisualization.addAction(self.actionPLSHelp)

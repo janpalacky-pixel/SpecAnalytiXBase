@@ -1286,6 +1286,8 @@ class MainController(QMainWindow):
             lambda: self.run_visualization_analysis("Kinetics Fitting"))
         self.view.actionMenuQCOutlier.triggered.connect(
             lambda: self.run_visualization_analysis("QC / Outlier Detection"))
+        self.view.actionMenuSOM.triggered.connect(
+            lambda: self.run_visualization_analysis("SOM"))
 
     def run_visualization_analysis(self, method_name=None):
         """
@@ -1390,6 +1392,7 @@ class MainController(QMainWindow):
         self.view.actionSpikeRemovalHelp.triggered.connect(self.show_spike_removal_help)
         self.view.actionSVDAnalysisHelp.triggered.connect(self.show_svd_analysis_help)
         self.view.actionClusterAnalysisHelp.triggered.connect(self.show_cluster_analysis_help)
+        self.view.actionSOMHelp.triggered.connect(self.show_som_help)
         self.view.action2DMapHelp.triggered.connect(self.show_2d_map_help)
         self.view.action2DCorrelationHelp.triggered.connect(self.show_2d_correlation_help)
         self.view.actionPLSHelp.triggered.connect(self.show_pls_help)
@@ -1627,6 +1630,11 @@ class MainController(QMainWindow):
         """Show help for cluster analysis."""
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'cluster_analysis')
+
+    def show_som_help(self):
+        """Show help for SOM (Self-Organizing Map) analysis."""
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'som')
 
     def show_pls_help(self):
         """Show help for PLS / PLS-DA."""

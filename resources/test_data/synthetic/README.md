@@ -169,3 +169,39 @@ and the QC / Outlier Detection help page has a step-by-step walkthrough
 Running the tool with default settings (auto-select components, 95%
 confidence) flags exactly the 3 `PLANTED_*` spectra and no others.
 Regenerate with `generate_qc_outlier_test_dataset.py` in this folder.
+
+## Self-Organizing Map (SOM) demo datasets
+
+Two workbooks for the **SOM** tool (Analysis && Visualization ->
+Visualization -> SOM), each with a `Spectra` sheet (import this), a
+`Ground_truth` sheet (the true class, and a continuous "purity"/blend
+value, per spectrum), and an `Info` sheet with the full story and a
+step-by-step walkthrough. Also reachable straight from **Help -> Test
+datasets -> Synthetic -> Self-Organizing Map (SOM)**, and the SOM help
+page points back here.
+
+| File | Type | Classes | Spectra |
+|------|------|---------|---------|
+| `som_raman_multiclass_demo.xlsx` | Raman-like (sharp, all-positive fingerprint bands, 400–1800 cm⁻¹) | 5 biomolecule signatures (protein, lipid, nucleic acid, carbohydrate, silica) + 1 "Mixed/Reference" blend class | 240 |
+| `som_uvvis_multiclass_demo.xlsx` | UV/Vis-like (broad, overlapping electronic bands, 220–500 nm) | 4 chromophore classes (aromatic, extended conjugation, charge-transfer, metal d-d) + 1 "turbid/scattering" class | 250 |
+
+Both files are deliberately two different "textures" for a SOM to
+organize — many sharp bands vs. a few broad ones. Within each class a
+random purity (55–100%) scales that class's own bands and blends in a
+touch of the others at low purity, so a class isn't a single tight dot on
+the trained map but a small gradient — the property a SOM shows off that
+plain clustering doesn't (neighbouring nodes correspond to genuinely
+similar spectra, not just "same bucket"). The Raman set's extra
+"Mixed/Reference" class is a random blend of every other class's bands,
+so it should land *between* several pure-class regions on the trained
+map; the UV/Vis set's extra "turbid" class is instead defined by the
+*absence* of a strong discrete band (a scattering-dominated baseline), so
+it should form its *own separate* region instead — a deliberate contrast
+between the two files, spelled out in each one's Info sheet.
+
+Validated end-to-end against the app's own SOM engine (8x8 grid, 150
+iterations): both train cleanly and every trained node comes out
+essentially single-class (~99–100% of each node's members share the same
+`Ground_truth` class), and the Raman set's Mixed/Reference nodes are
+confirmed adjacent to 4 of the 5 pure-class regions. Regenerate both with
+`generate_som_test_datasets.py` in this folder.
