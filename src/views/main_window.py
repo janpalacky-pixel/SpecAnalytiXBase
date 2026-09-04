@@ -494,13 +494,6 @@ class MainWindow(QMainWindow):
     # ImportController connects to rather than MainWindow invoking it.
     files_dropped = pyqtSignal(list)
 
-    # Extensions accepted for drag-and-drop import — must match
-    # SpectrumManager.SUPPORTED_EXTENSIONS (src/modules/core/spectrum_manager.py).
-    # Duplicated here rather than imported to avoid the view layer
-    # depending on a core data module for one small constant; if that
-    # list ever changes, update both.
-    _DROPPABLE_EXTENSIONS = ('.txt', '.csv', '.dat', '.xlsx', '.xls', '.xlsm', '.spe', '.spc', '.jws')
-
     def __init__(self, controller):
         super().__init__()
         
@@ -520,12 +513,29 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
     def _droppable_paths(self, mime_data) -> list:
-        """Return the local file paths in *mime_data* that have a
-        supported extension, or [] if none / not a file drag."""
+        """
+        Return the local FILE paths in *mime_data* (directories excluded),
+        or [] if none / not a file drag.
+
+        Used to filter down to _DROPPABLE_EXTENSIONS, silently swallowing —
+        no error, nothing added, nothing shown — any file whose extension
+        this app didn't already recognize by name, however good the data
+        inside actually was. That's the same "ignore it, content be
+        damned" problem fixed for typed import at
+        SpectrumManager.SUPPORTED_EXTENSIONS (see _sniff_numeric_text
+        there). Now every dropped file is accepted here and handed to the
+        same import pipeline; a file with an unrecognized extension gets
+        the same content-sniff-then-ask treatment any other unrecognized-
+        extension file gets once it reaches load_spectrum_from_file,
+        instead of vanishing before the app even looked at it. A file
+        that's neither a recognized nor numeric-looking format still ends
+        up rejected — just with a clear reason in the Import Results
+        dialog instead of silent, unexplained non-import.
+        """
         if not mime_data.hasUrls():
             return []
         paths = [u.toLocalFile() for u in mime_data.urls() if u.isLocalFile()]
-        return [p for p in paths if p.lower().endswith(self._DROPPABLE_EXTENSIONS)]
+        return [p for p in paths if os.path.isfile(p)]
 
     def dragEnterEvent(self, event):
         if self._droppable_paths(event.mimeData()):

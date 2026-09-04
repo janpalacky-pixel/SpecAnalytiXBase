@@ -226,6 +226,8 @@ class ImportController(QObject):
                         jws_selected_channels = cfg.get('jws_selected_channels'),
                         jws_channel_type_overrides = cfg.get('jws_channel_type_overrides'),
                         specord_csv_format = cfg.get('specord_csv_format', False),
+                        duplicate_block_resolver = self._resolve_duplicate_block,
+                        unknown_extension_resolver = self._resolve_unknown_extension,
                     )
                     if multi:
                         # Labels are built as "<file> : <column>", so two sheets
@@ -390,6 +392,101 @@ class ImportController(QObject):
             QMessageBox.critical(self.view, "Error", "Main controller not found")
 
     # ------------------------------------------------------------------
+    # Unrecognized file extension
+    # ------------------------------------------------------------------
+
+    def _resolve_unknown_extension(self, filepath: str, sniff_info: dict) -> bool:
+        """
+        Called by SpectrumManager.load_spectrum_from_file at most once per
+        file whose extension isn't one of SpectrumManager.SUPPORTED_
+        EXTENSIONS, and only once SpectrumManager._sniff_numeric_text has
+        already found the file's CONTENT looks like numeric tabular data —
+        a file that fails that check is rejected before this is ever
+        called, with a message saying so instead of this prompt.
+
+        Offers the choice this feature exists for: a three-letter suffix
+        an instrument or collaborator happened to save a file with says
+        nothing about whether the data inside is readable, so rather than
+        rejecting on the name alone (the old, only behavior), the content
+        gets a say. Declining, or closing the dialog, returns False —
+        exactly what happened to every such file before this feature
+        existed, so saying no is never a surprise.
+        """
+        name = os.path.basename(filepath)
+        ext  = os.path.splitext(filepath)[1] or '(no extension)'
+        text = (
+            f"'{name}' has an unrecognized extension ({ext}) — it isn't "
+            f"one of this app's supported formats by name.\n\n"
+            f"But its content looks like numeric spectral data: "
+            f"{sniff_info['numeric_lines']} of the first "
+            f"{sniff_info['lines_checked']} non-blank lines checked have "
+            f"at least 2 numeric columns (about {sniff_info['likely_columns']} "
+            f"columns, typically).\n\n"
+            f"Read it anyway, using the same text-import settings "
+            f"(delimiter, decimal separator, layout, etc.) you'd use for "
+            f"a .txt file?"
+        )
+        box = QMessageBox(self.view)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Unrecognized file extension")
+        box.setText(text)
+        read_btn = box.addButton("Read as text data", QMessageBox.AcceptRole)
+        skip_btn = box.addButton("Skip this file", QMessageBox.RejectRole)
+        box.setDefaultButton(skip_btn)
+        box.exec_()
+        return box.clickedButton() is read_btn
+
+    # ------------------------------------------------------------------
+    # Repeated-scan (block-duplicate) choice
+    # ------------------------------------------------------------------
+
+    def _resolve_duplicate_block(self, spectrum_dict: dict, block_info: dict) -> str:
+        """
+        Called by SpectrumManager.load_spectrum_from_file at most once per
+        imported file/sheet, only when _detect_repeated_scan_structure found
+        that most of a spectrum's x-values repeat the same number of times —
+        the signature of several scans sharing one x-axis (a forward/reverse
+        sweep, or N spectra stacked in one column-oriented file), not just
+        the ordinary occasional-duplicate case that gets silently merged.
+
+        Offers the choice this feature exists for: merge as before (the
+        long-standing default, still correct almost all the time — most
+        spectra do NOT have this structure), or split into separate scans.
+        Cancelling/closing the dialog resolves to 'merge', so declining ever
+        does something no more surprising than what already happened before
+        this feature existed.
+        """
+        label = spectrum_dict.get('label', '?')
+        S       = block_info['repeat_count']
+        M       = block_info['unique_x_count']
+        N       = block_info['total_rows']
+        n_drop  = block_info['n_dropped_points']
+
+        text = (
+            f"'{label}' looks like {S} scans sharing the same x-axis:\n"
+            f"{N} rows, {M} unique x-values, most of them repeating {S}x.\n\n"
+            f"Read this as {S} separate spectra instead of merging the "
+            f"repeated x-values into one, as usual?"
+        )
+        if n_drop:
+            point_word = 'point' if n_drop == 1 else 'points'
+            text += (
+                f"\n\n{n_drop} {point_word} don't fit that pattern cleanly "
+                f"and would be left out of the split spectra. Choosing "
+                f"Merge instead keeps every point, as it always has."
+            )
+
+        box = QMessageBox(self.view)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Repeated-scan data detected")
+        box.setText(text)
+        split_btn = box.addButton(f"Split into {S} spectra", QMessageBox.AcceptRole)
+        merge_btn = box.addButton("Merge (default)", QMessageBox.RejectRole)
+        box.setDefaultButton(merge_btn)
+        box.exec_()
+        return 'split' if box.clickedButton() is split_btn else 'merge'
+
+    # ------------------------------------------------------------------
     # Feedback dialog
     # ------------------------------------------------------------------
 
@@ -461,6 +558,23 @@ class ImportController(QObject):
                     f"repeated x is real data for you (e.g. a forward/reverse "
                     f"sweep), the pre-merge points are kept in that spectrum's "
                     f"Metadata under 'duplicate_x_merge'."
+                )
+
+            # Mirror of the dup_merged block above, for the opposite choice —
+            # see SpectrumManager._split_into_scans / ImportController.
+            # _resolve_duplicate_block.
+            split_specs = [
+                sp for sp in self.spectrum_manager.spectra.values()
+                if sp.metadata.get('file_path') in successful_imports
+                and 'duplicate_x_split' in sp.metadata
+            ]
+            if split_specs:
+                n_spectra = len(split_specs)
+                spectrum_word = 'spectrum' if n_spectra == 1 else 'spectra'
+                parts.append(
+                    f"🔀  {n_spectra} {spectrum_word} created by splitting "
+                    f"repeated-scan data into separate spectra, per your choice "
+                    f"in the import dialog."
                 )
 
         if failed_imports:
