@@ -369,6 +369,17 @@ def get_user_guide_help_content():
             <tr><td>Row-oriented layout</td><td>any</td><td>The mirror of Standard — first row = shared x-scale, remaining rows = one spectrum each</td></tr>
         </table>
 
+        <div class="tip">
+            <strong>Unrecognized extension?</strong> Not rejected on the name alone —
+            if its content looks like numeric columns (the same check plain text
+            files get), you're asked whether to read it as text data anyway. Useful
+            for instrument or collaborator files saved under some other extension
+            (<code>.bcw</code>, etc.) that are really just ordinary x/y columns. Pick
+            <strong>All Files</strong> in the file-picker's format dropdown, or drag
+            the file onto the window, to reach one. Doesn't apply to SPE/SPC/JWS or
+            Excel, which always need their real extension.
+        </div>
+
         <h3>Import Methods</h3>
         <ul>
             <li><strong>File → Import data → new:</strong> Replace all current spectra. If every selected file fails to import, existing spectra are left untouched — nothing is cleared until at least one new file has actually loaded successfully.</li>
@@ -413,6 +424,16 @@ def get_user_guide_help_content():
             happens. See <a href="help://import">the full Import help</a> for the
             complete explanation, including how to recover the pre-merge values from
             a spectrum's metadata.
+            <br><br>
+            <strong>Exception — repeated-scan data:</strong> if most of a spectrum's
+            x-values repeat the <em>same</em> number of times S (2 or more) — a
+            forward/reverse sweep sharing an x-axis, or several spectra concatenated
+            in one long column pair — that's too consistent to be coincidental
+            duplication, so instead of merging silently you're asked, once per file:
+            <strong>split into S spectra</strong> (keeping every scan separate) or
+            <strong>merge</strong> (the default above, unchanged). The ordinary case —
+            no such pattern, or just a stray duplicate or two — is never affected by
+            this and merges silently exactly as described above.
         </div>
 
         <div class="tip">

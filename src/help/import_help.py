@@ -223,6 +223,22 @@ def get_import_help_content():
         </ul>
     </div>
 
+    <div class="info">
+        <b>File with an unrecognized extension?</b> Import doesn't reject it
+        on the name alone. If its content looks like numeric columns — the
+        same check used for plain text above — you're asked whether to read
+        it as text data; only files whose content genuinely doesn't look
+        numeric are turned away outright. This matters for instrument
+        exports and collaborator files saved under some other extension
+        (<code>.bcw</code>, <code>.dat1</code>, whatever the source software
+        happened to choose) that are otherwise ordinary x/y columns —
+        picking <b>All Files</b> in the file-picker's format dropdown (or
+        dragging the file onto the window) reaches them the same way any
+        <code>.txt</code> file would be. Binary formats (SPE/SPC/JWS) and
+        Excel aren't affected by this — those always need their real
+        extension, since sniffing binary bytes as text would be meaningless.
+    </div>
+
     <h2>SPE Files (LightField &amp; WinSpec legacy)</h2>
     <p>
         SPE is the binary format written by Princeton Instruments /
@@ -559,6 +575,46 @@ x_A      spectrum_A    x_B      spectrum_B
         genuine duplicate — treat the affected spectra as needing a closer look before
         drawing conclusions from them.
     </div>
+
+    <h3>Repeated-scan data: split instead of merge</h3>
+    <p>
+        Averaging away every duplicate is the right default, but there is one
+        common case it's wrong for: a file that is really <b>several scans
+        stacked in one long x/y column pair</b> — a forward sweep followed by
+        a reverse sweep sharing the same x-axis, or N spectra concatenated
+        one after another instead of laid out as separate columns. There,
+        the "duplicate" x-values aren't noise at all; they're N different
+        measurements at the same x, and merging throws away exactly the
+        thing you imported the file to see.
+    </p>
+    <p>
+        Import now recognizes this shape automatically: if most of a
+        spectrum's distinct x-values repeat the <b>same number of times</b>
+        S (2 or more), that's a strong signal of S co-registered scans
+        rather than a handful of coincidental duplicates, and you're asked,
+        once per file, right when it's detected:
+    </p>
+    <ul>
+        <li><b>Split into S spectra</b> &mdash; keeps every scan as its own
+        spectrum instead of averaging them together. Any x-values that don't
+        fit the pattern cleanly (a stray turning point at the ends of a
+        sweep, for example) are left out of the split spectra — the dialog
+        tells you how many, so you can judge whether that's acceptable.</li>
+        <li><b>Merge (default)</b> &mdash; the ordinary behavior described
+        above, completely unchanged.</li>
+    </ul>
+    <p>
+        This only ever asks when the repeat pattern is strong (the large
+        majority of x-values share the same repeat count) — the ordinary
+        case of a file with no such structure, or just one or two stray
+        duplicates, is <b>never</b> affected: it's merged silently (with the
+        usual warning) exactly as it always has been. Scan identity is
+        recovered from each x-value's position in the file, not from
+        assuming the repeats sit in tidy contiguous blocks, so a genuine
+        round-trip sweep (where the reverse leg runs through the same
+        x-values in the opposite direction) still splits into the right two
+        scans.
+    </p>
 
     <h3>Row-oriented layout</h3>
     <p>
