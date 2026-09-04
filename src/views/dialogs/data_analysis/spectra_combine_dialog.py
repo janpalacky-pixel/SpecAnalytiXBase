@@ -92,6 +92,20 @@ class CombineSpectraDialog(QDialog):
         )
         spectra_layout.addWidget(preview_only_note)
 
+        # Bug fix (2026-09-04): created BEFORE setItemDelegate below, not
+        # after. addItems()/setMaximumHeight() on spectra_list can trigger
+        # an immediate paint, which calls _shorten_names_enabled() via the
+        # delegate's initStyleOption() - if that ran while this attribute
+        # didn't exist yet, it raised AttributeError from inside a Qt
+        # virtual method override, which PyQt5 reports and then aborts the
+        # whole app on (a real, confirmed crash - see label_shortening.py's
+        # own initStyleOption for the general-case guard against the same
+        # class of bug; this fixes the actual trigger for this dialog too).
+        self.checkBox_shorten_names = make_shorten_names_checkbox()
+        self.checkBox_shorten_names.stateChanged.connect(
+            lambda _: self.spectra_list.viewport().update()
+        )
+
         self.spectra_list = QListWidget()
         self.spectra_list.addItems([s['label'] for s in self.selected_spectra])
         self.spectra_list.setSelectionMode(QListWidget.ExtendedSelection)
@@ -124,10 +138,8 @@ class CombineSpectraDialog(QDialog):
         self.show_legend_cb.setChecked(False)
         self.show_legend_cb.stateChanged.connect(self._on_legend_visibility_changed)
         btn_row.addWidget(self.show_legend_cb)
-        self.checkBox_shorten_names = make_shorten_names_checkbox()
-        self.checkBox_shorten_names.stateChanged.connect(
-            lambda _: self.spectra_list.viewport().update()
-        )
+        # (created earlier, before spectra_list's delegate was installed -
+        # see the comment up there; just placed into the layout here)
         btn_row.addWidget(self.checkBox_shorten_names)
         btn_row.addStretch()
         spectra_layout.addLayout(btn_row)

@@ -208,7 +208,24 @@ def make_shortened_name_delegate(list_widget, is_enabled, parent=None):
 
         def initStyleOption(self, option, index):
             super().initStyleOption(option, index)
-            if not is_enabled():
+            # Bug fix (2026-09-04): is_enabled() itself used to be called
+            # unguarded here. Real crash: a dialog that wires up its
+            # delegate (setItemDelegate, which can trigger an immediate
+            # paint via addItems/setMaximumHeight above) before the
+            # checkbox is_enabled() reads from actually exists yet raised
+            # AttributeError from inside this Qt virtual method - which
+            # PyQt5 reports via sys.excepthook and then aborts the whole
+            # process, per the comment below on the try/except further
+            # down. is_enabled() is just as much "driven by Qt's paint
+            # machinery, not this app's own call chain" as the lookup
+            # below, so it gets the same protection for the same reason:
+            # a missing/erroring checkbox falls back to unshortened text
+            # for that paint, not a crash.
+            try:
+                enabled = is_enabled()
+            except Exception:
+                enabled = False
+            if not enabled:
                 return
             # try/except is deliberate and load-bearing here, not
             # defensive decoration: initStyleOption() is a Qt virtual
