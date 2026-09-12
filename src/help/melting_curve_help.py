@@ -299,6 +299,43 @@ def get_melting_curve_help_content():
             <p><b>Note for anyone who used earlier versions of this tool:</b> a standalone "Thermodynamic Parameters (Arrhenius)" section used to live here, with its own "Compute deltaH, deltaS" button — a whole-curve, single-transition van't Hoff calculation, independent of Sigmoid Fit. It was removed because, for the one case it was ever available (Components = 1), its result is provably identical to Sigmoid Fit's own per-component thermodynamics (see "Thermodynamic parameters (per component)" under Sigmoid Fit below) down to every decimal place — not approximately similar, but the exact same regression on the exact same data (with only one component, there is no "other component's contribution" to subtract during reconstruction, so the per-component calculation reduces algebraically to the whole-curve one; see <a href="#impl-reconstruction">Implementation Details</a>). Keeping two controls, in two different places, for one calculation added GUI clutter without adding any information — Sigmoid Fit (Components = 1) is now the one path to these numbers.</p>
         </div>
 
+        <h3>Automatic (Santoro-Bolen) Mode</h3>
+        <p>A second, opt-in <b>Method</b> option alongside the manual Zero order / First order workflow described above — <b>Manual stays the default</b>; nothing about the existing workflow changes unless you switch to it. Ported from this app's sister tool <b>MeltAnalytiX</b> (which analyzes many melting curves at once, batch-style, with no person choosing baseline windows for each one) and adapted here to a single, interactively-reviewed curve.</p>
+        <div class="key-feature">
+            <h4>What it does differently</h4>
+            <p>Manual mode is a <i>two-stage</i> process: you choose Low-T/High-T baseline windows, each gets its own independent straight-line fit, and only <i>then</i> does Sigmoid Fit fit the transition(s) to what's left. Automatic mode instead fits the native-state baseline, the denatured-state baseline, <b>and</b> the transition(s) themselves all in <b>one simultaneous nonlinear regression</b> against the raw curve — a two-state (or, for a genuinely multiphasic curve, shared-baseline multi-state) model, sometimes called a Santoro-Bolen fit. There is no baseline-window-guessing step to get wrong in the first place: the whole curve informs the baselines and the transition together, self-consistently.</p>
+            <p>The number of components (1&ndash;4) is chosen for you as well, via the same statistical test (<b>BIC</b>, Bayesian Information Criterion) model-selection problems generally use — walked up one component at a time, starting from 1, each larger fit warm-started from the smaller one's own converged answer, and only adopted when it lowers BIC <i>decisively</i> (the standard Kass &amp; Raftery statistical convention). On top of that, a candidate component count is only accepted if it <i>also</i> doesn't make the resulting van't Hoff/Arrhenius fit or the baseline's own tracking of the real data at the curve's edges meaningfully worse than the best seen so far — plain BIC alone can be fooled by a smooth extra component absorbing structured noise (drift, a slightly imperfect correction) rather than representing a genuine additional transition.</p>
+        </div>
+        <div class="key-feature">
+            <h4>Using it</h4>
+            <p>Select <b>"Automatic (Santoro-Bolen fit)"</b> from the Normalization group's <b>Method</b> dropdown. The fit runs immediately (and re-runs automatically whenever the curve, Shape, or Threshold changes). While this mode is active:</p>
+            <ul>
+                <li>The Low-T/High-T region spin boxes and sliders, and the Sigmoid Fit group's <b>Components</b> spinner and <b>Auto-detect Transitions</b> button, are all disabled — Automatic determines all of them itself. Their values still update to show what Automatic actually settled on (so switching back to Manual afterward starts from a sensible place), they just can't be hand-edited while Automatic is selected.</li>
+                <li><b>Shape</b> stays live — switching between Logistic and Error function re-runs the automatic fit with the new shape.</li>
+                <li><b>Fit</b> still works — it simply re-runs the same automatic pipeline on demand (e.g. after changing something upstream that doesn't trigger a re-run on its own).</li>
+                <li>The <b>guesses/fit-results table</b>, <b>thermodynamics table</b>, plots, <b>Fit Details</b>, <b>Save Current Fit</b>, and every Output Option all work exactly as they do in Manual mode, reading whatever Automatic produced — there is nothing separate to learn for those.</li>
+            </ul>
+        </div>
+        <div class="warning">
+            <h4>The reliability banner — read this before trusting a number</h4>
+            <p>A colored banner appears above the Low-T/High-T controls whenever Automatic mode is active, in one of three states:</p>
+            <ul>
+                <li><b style="color:#7f1d1d;">Red — no automatic fit found.</b> The joint regression didn't converge, or was rejected by one of this mode's built-in safety checks (an implausible transition midpoint far outside the measured range, or a fitted baseline that doesn't track the real data closely enough at an edge — usually a sign this curve has no genuine flat plateau for the fit to anchor on). The banner names the specific reason. <b>Nothing is fitted at all in this state</b> — switch to Manual mode and set the baseline windows yourself.</li>
+                <li><b style="color:#b45309;">Amber — a fit was found, but didn't pass every reliability check.</b> A number is shown, but treat it with real caution; the banner names exactly which check(s) failed and their actual values, so you can judge for yourself rather than trusting a bare yes/no.</li>
+                <li><b style="color:#14532d;">Green — a fit was found and passes every reliability check.</b> The same standard of trust MeltAnalytiX itself requires before treating an automatic result as good.</li>
+            </ul>
+            <p>The six checks behind the amber/green verdict (a low-confidence or missing value fails its own check, except Tm-in-fit-range, which passes by default when it can't be computed at all, since the two checks right before it already catch the case where the whole regression failed):</p>
+            <ol>
+                <li>Arrhenius R&sup2; &ge; 0.85</li>
+                <li>Tm falls inside the curve's actual measured temperature range</li>
+                <li>the Low-T/High-T baselines don't cross near the transition itself (a crossing confined to an already-saturated plateau tail, far from the points the Arrhenius regression actually used, is allowed — same distinction Manual mode's own baseline-crossing warning makes, see above)</li>
+                <li>Tm falls inside the actual window of points the Arrhenius regression used (stricter than #2 alone — a shallow, noisy fit can extrapolate its Tm well past its own fit window while still landing inside the curve's overall range)</li>
+                <li>the sigmoid shape re-fit's own R&sup2; &ge; 0.70 (a genuine, separate re-fit of the transition shape in normalized space — not the same number as the Arrhenius R&sup2; above, since they can fail for different reasons)</li>
+                <li>the fitted baseline tracks the real data within 12% of the curve's own amplitude at both the low- and high-temperature edge</li>
+            </ol>
+            <p>Automatic mode <b>never silently falls back</b> to a different heuristic on a red or amber result — a rejected or low-confidence fit is exactly the signal to switch back to Manual mode and choose baseline windows yourself, the same way you would have without this feature at all.</p>
+        </div>
+
         <h3>Sigmoid Fit</h3>
 
         <div class="screenshot">

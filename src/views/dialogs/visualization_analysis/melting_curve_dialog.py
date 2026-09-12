@@ -23,7 +23,9 @@ from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers the 'projection=3d' used
                                          # by show_fit_summary's 3D scatter option
 
-from src.modules.visualization_analysis.melting_curve_manager import MeltingCurveManager
+from src.modules.visualization_analysis.melting_curve_manager import (
+    MeltingCurveManager, ARRHENIUS_CONFIDENCE_R2_THRESHOLD,
+    SIGMOID_CONFIDENCE_R2_THRESHOLD, EDGE_TOLERANCE_ABSOLUTE_FRACTION)
 from src.help.melting_curve_help import (get_melting_curve_help_content,
                                          get_melting_curve_help_title)
 from src.help.help_window import show_help_window
@@ -139,6 +141,18 @@ class MeltingCurveDialog(QDialog):
         self.normalization_result = None  # manager.normalize_melting_curve() output
         self.x_trans = None       # manager.compute_median_crossing_temperature() output
         self.fit_result = None           # manager.fit_sigmoid_model() output
+        self._automatic_fit_result = None  # manager.fit_automatic() output, Method="Automatic"
+                                          # (Santoro-Bolen) only — None in every other mode.
+                                          # normalization_result/x_trans/fit_result above are
+                                          # ALSO populated from this in Automatic mode (its
+                                          # 'norm'/'Tm_crossing'/'sigmoid_fit' — same shapes
+                                          # normalize_melting_curve/compute_median_crossing_
+                                          # temperature/fit_sigmoid_model return) so every
+                                          # other part of this dialog (plotting, thermo table,
+                                          # Fit Details, output spectra) reads them exactly the
+                                          # same way regardless of which mode produced them.
+                                          # This field itself is kept only for the reliability
+                                          # banner and the auto-selected component count.
         self._fit_is_preview = False     # True when fit_result came from _rebuild_fit_from_current_table
                                           # (no curve_fit optimization run), not a real Fit click
         self.component_thermodynamics = None  # manager.compute_component_thermodynamics() output
@@ -750,10 +764,52 @@ class MeltingCurveDialog(QDialog):
         row0 = QHBoxLayout()
         row0.addWidget(QLabel("Method:"))
         self.norm_combo = QComboBox()
-        self.norm_combo.addItems(["None", "Zero order (constant)", "First order (linear)"])
+        self.norm_combo.addItems(["None", "Zero order (constant)", "First order (linear)",
+                                  "Automatic (Santoro-Bolen fit)"])
         self.norm_combo.setCurrentIndex(2)
+        self.norm_combo.setToolTip(
+            "None/Zero order/First order: this app's original manual workflow — you "
+            "choose the Low-T/High-T baseline regions below (by dragging the sliders, "
+            "editing the spin boxes, or the 'b' key), each fit independently as its own "
+            "straight line (or constant, for Zero order).\n\n"
+            "Automatic (Santoro-Bolen fit): a new, opt-in mode that fits both baselines "
+            "AND the transition(s) together in one joint regression against the raw "
+            "curve, choosing the transition midpoint(s) and the number of components "
+            "(1-4) itself — no baseline windows or component count to set by hand. "
+            "Click ? for details. Manual stays the default; switch back to it at any "
+            "time with no loss of your baseline region settings.")
         self.norm_combo.currentIndexChanged.connect(self._on_norm_method_changed)
         row0.addWidget(self.norm_combo)
+        row0.addWidget(self._make_help_button(
+            "Automatic (Santoro-Bolen fit) mode",
+            "Ported from this app's sister tool MeltAnalytiX, where the same joint "
+            "fit replaced an older two-stage \"search for where the baseline windows "
+            "are, then fit a straight line to each\" pipeline.\n\n"
+            "Instead of you choosing Low-T/High-T baseline windows and a component "
+            "count, Automatic mode fits the native-state baseline, the denatured-"
+            "state baseline, AND the transition(s) themselves all in ONE simultaneous "
+            "nonlinear regression against the raw curve — a two-state (or, for a "
+            "genuinely multiphasic curve, shared-baseline multi-state) model. The "
+            "number of components (1-4) is chosen automatically via BIC (a standard "
+            "statistical test for \"is one more transition actually justified by the "
+            "data\"), walked up one at a time and warm-started from the smaller fit's "
+            "own answer, and is only adopted when it doesn't make the resulting van't "
+            "Hoff/Arrhenius fit or the baseline's own tracking of the data at the "
+            "curve's edges meaningfully worse — plain BIC alone can be fooled by a "
+            "smooth extra component absorbing structured noise rather than a genuine "
+            "additional transition.\n\n"
+            "The Low-T/High-T region controls and the Components spinner are disabled "
+            "in this mode (Automatic determines both) but still show the fitted "
+            "result's own descriptive extents/count. A banner above the plot reports "
+            "whether Automatic mode found a fit at all, and — separately — whether "
+            "that fit passes the same reliability checks (Arrhenius R^2, sigmoid-fit "
+            "R^2, Tm falling inside both the measured range and the actual fit "
+            "window, baselines not crossing near the transition, and the baseline "
+            "tracking the data closely at both edges) MeltAnalytiX itself uses to "
+            "flag a run as trustworthy or not. A rejected or low-confidence result "
+            "is exactly when to switch back to Manual mode and set the baseline "
+            "windows yourself — Automatic mode never silently falls back to a "
+            "different heuristic on its own."))
         row0.addSpacing(16)
         row0.addWidget(QLabel("Threshold (span):"))
         self.span_spin = QDoubleSpinBox()
@@ -889,6 +945,15 @@ class MeltingCurveDialog(QDialog):
             "color: #b45309; background-color: #fff3cd; padding: 4px; border-radius: 3px;")
         self.baseline_cross_warning.setVisible(False)
         v.addWidget(self.baseline_cross_warning)
+
+        # Automatic (Santoro-Bolen) mode's own status banner — hidden
+        # outside that mode. Text/color set by _update_automatic_fit_banner:
+        # red (fit rejected outright), amber (fit found but didn't pass
+        # every reliability gate), or green (fit found and reliable).
+        self.automatic_fit_banner = QLabel("")
+        self.automatic_fit_banner.setWordWrap(True)
+        self.automatic_fit_banner.setVisible(False)
+        v.addWidget(self.automatic_fit_banner)
 
         v.addWidget(self._bound_label("Low-T region"))
         self.low_min_spin, self.low_min_slider = self._build_bound_row(v, "min")
@@ -1553,9 +1618,16 @@ class MeltingCurveDialog(QDialog):
         self.x_trans = cs.get('x_trans')
         self.fit_result = cs.get('fit_result')
         self.component_thermodynamics = cs.get('component_thermodynamics')
+        self._automatic_fit_result = cs.get('automatic_fit_result')
         self._initial_guesses = []
         self._fit_is_preview = False  # a cached fit_result is always a real, completed fit
         self._baseline_defaults_set = True  # cached ranges are already meaningful, don't override them
+
+        is_automatic = cs.get('normalization', {}).get('method') == 'automatic'
+        self._set_automatic_mode_enabled(is_automatic)
+        self._update_automatic_fit_banner(self._automatic_fit_result if is_automatic else None)
+        if is_automatic and self._automatic_fit_result and self._automatic_fit_result.get('success'):
+            self._update_baseline_cross_warning(self._automatic_fit_result['norm'])
 
         # The table's Y column (and, in "From file" mode, every row) is
         # normally filled in as a side effect of actually running
@@ -1636,8 +1708,9 @@ class MeltingCurveDialog(QDialog):
 
             norm = cs.get('normalization')
             if norm:
-                idx = {'none': 0, 'zero': 1, 'first': 2}.get(norm.get('method'), 2)
+                idx = {'none': 0, 'zero': 1, 'first': 2, 'automatic': 3}.get(norm.get('method'), 2)
                 self.norm_combo.setCurrentIndex(idx)
+                self._set_automatic_mode_enabled(idx == 3)
                 if norm.get('low_range'):
                     self.low_min_spin.setValue(norm['low_range'][0])
                     self.low_max_spin.setValue(norm['low_range'][1])
@@ -1678,10 +1751,14 @@ class MeltingCurveDialog(QDialog):
         # immediately-discarded) preview rebuild.
         if cs.get('curve') and not self._try_fast_restore_from_cache(cs):
             self.perform_extraction(silent=True)
-            if cs.get('normalization') and cs['normalization'].get('method') != 'none':
-                self.perform_normalization(silent=True)
-            if cs.get('fit_result'):
-                self.perform_fit(silent=True)
+            method = cs.get('normalization', {}).get('method') if cs.get('normalization') else None
+            if method == 'automatic':
+                self.perform_automatic_fit(silent=True)
+            else:
+                if cs.get('normalization') and method != 'none':
+                    self.perform_normalization(silent=True)
+                if cs.get('fit_result'):
+                    self.perform_fit(silent=True)
 
     # ------------------------------------------------------------------ #
     # Actions                                                              #
@@ -2958,7 +3035,7 @@ class MeltingCurveDialog(QDialog):
         # bug: the guess-preview curve ended up drawn on the Original
         # (raw-scale) panel because normalization genuinely hadn't run.
         if self.norm_combo.currentIndex() != 0:
-            self.perform_normalization(silent=True)
+            self._run_current_normalization(silent=True)
         else:
             self.update_plot()
 
@@ -2985,6 +3062,10 @@ class MeltingCurveDialog(QDialog):
         if not self.pick_baseline_check.isChecked():
             return
         if self.curve is None or self.ax_main is None:
+            return
+        if self.norm_combo.currentIndex() == 3:
+            # Automatic mode picks its own baseline regions — nothing
+            # for interactive picking to do here.
             return
 
         x_lo, x_hi = self.ax_main.get_xlim()
@@ -3115,22 +3196,64 @@ class MeltingCurveDialog(QDialog):
 
     def _live_baseline_update(self):
         if self.norm_combo.currentIndex() != 0:
-            self.perform_normalization(silent=True)
+            self._run_current_normalization(silent=True)
         else:
             self.update_plot()
 
     def _on_norm_method_changed(self, index):
         """Switching the normalization method (None / Zero order / First
-        order) takes effect immediately, same as dragging a slider —
-        matches this dialog's "everything above the plot is live" feel
-        rather than requiring an extra "Apply Normalization" click just
-        to see a method change."""
-        if index == 0:
+        order / Automatic) takes effect immediately, same as dragging a
+        slider — matches this dialog's "everything above the plot is
+        live" feel rather than requiring an extra "Apply" click just to
+        see a method change."""
+        is_automatic = (index == 3)
+        self._set_automatic_mode_enabled(is_automatic)
+        if is_automatic:
+            self.perform_automatic_fit(silent=False)
+        elif index == 0:
             self.normalization_result = None
             self.x_trans = None
+            self._automatic_fit_result = None
+            self.automatic_fit_banner.setVisible(False)
             self.update_plot()
         else:
+            self._automatic_fit_result = None
+            self.automatic_fit_banner.setVisible(False)
             self.perform_normalization(silent=True)
+
+    def _run_current_normalization(self, silent=True):
+        """Dispatch to whichever baseline/fit pipeline the Method combo
+        currently selects — the ordinary per-window normalize (None/Zero
+        order/First order, via perform_normalization) or the new
+        Automatic joint Santoro-Bolen fit (perform_automatic_fit). Shared
+        by every place that used to call perform_normalization()
+        unconditionally whenever a method other than None was selected
+        (a fresh extraction, and restoring a previous run's settings) so
+        Automatic mode is picked up there too without duplicating this
+        dispatch."""
+        if self.norm_combo.currentIndex() == 3:
+            self.perform_automatic_fit(silent=silent)
+        else:
+            self.perform_normalization(silent=silent)
+
+    def _set_automatic_mode_enabled(self, is_automatic):
+        """Automatic mode determines the baseline regions AND the
+        component count itself — the manual baseline sliders/spin boxes,
+        the Components spinner, Auto-detect Transitions, and the guesses/
+        fit-results table's editability all belong to the Manual
+        workflow specifically, so they're disabled (not hidden — their
+        values still update to show what Automatic actually settled on,
+        so switching back to Manual starts from a sensible place) rather
+        than removed. The Fit button and Shape combo stay enabled: Fit
+        simply re-runs the automatic pipeline on demand in this mode
+        (e.g. after changing Shape), which needs no special-casing since
+        perform_automatic_fit is idempotent for unchanged inputs."""
+        for w in (self.low_min_spin, self.low_max_spin, self.high_min_spin, self.high_max_spin,
+                 self.low_min_slider, self.low_max_slider, self.high_min_slider, self.high_max_slider,
+                 self.n_components_spin, self.auto_detect_btn):
+            w.setEnabled(not is_automatic)
+        self.fit_results_table.setEditTriggers(
+            QAbstractItemView.NoEditTriggers if is_automatic else QAbstractItemView.DoubleClicked)
 
     def _on_span_changed(self, value):
         """Live-preview which points the threshold would keep for the
@@ -3138,8 +3261,19 @@ class MeltingCurveDialog(QDialog):
         spinbox changes — cheap (no fit involved), so no debouncing
         needed, unlike the baseline sliders. Also refreshes each
         component's own Arrhenius/thermodynamics if a multi-transition
-        fit already exists, since they use this same threshold."""
-        if self.normalization_result is not None:
+        fit already exists, since they use this same threshold.
+
+        In Automatic mode, the whole joint fit + Arrhenius + reliability
+        verdict is re-run instead: unlike Manual mode (where the sigmoid
+        SHAPE fit and the Arrhenius span are fully independent — see
+        perform_fit's own docstring note), Automatic mode's reliability
+        gates (Arrhenius R^2, Tm_in_fit_range) are themselves computed
+        AT this span, so a span change can change the verdict, not just
+        which points are highlighted."""
+        if self.norm_combo.currentIndex() == 3:
+            if self._automatic_fit_result is not None:
+                self.perform_automatic_fit(silent=True)
+        elif self.normalization_result is not None:
             self._recompute_component_thermodynamics()
             self.update_plot()
 
@@ -3212,6 +3346,151 @@ class MeltingCurveDialog(QDialog):
             f"worth checking visually, not just trusting the numbers. Try "
             f"narrower or better-placed baseline regions.")
         self.baseline_cross_warning.setVisible(True)
+
+    # ------------------------------------------------------------------ #
+    # Automatic (Santoro-Bolen) mode                                       #
+    # ------------------------------------------------------------------ #
+
+    def perform_automatic_fit(self, silent=False):
+        """Automatic mode's counterpart to perform_normalization() +
+        perform_fit() combined — see MeltingCurveManager.fit_automatic's
+        own docstring for the full joint-fit/model-selection/reliability
+        pipeline this runs. Populates normalization_result/x_trans/
+        fit_result from the SAME dict shapes normalize_melting_curve/
+        compute_median_crossing_temperature/fit_sigmoid_model already
+        produce in Manual mode, so every other part of this dialog
+        (plotting, the thermodynamics table, Fit Details, Compare to
+        Known Values, and the output spectra the controller builds on
+        OK) reads an Automatic-mode result exactly the same way, with no
+        special-casing needed anywhere else."""
+        if self.curve is None:
+            if not silent:
+                QMessageBox.information(self, "No Curve", "Extract a curve first.")
+            return
+
+        x = self.curve['x_temperature']
+        y = self.curve['y_raw']
+        shape_name = self.shape_combo.currentText()
+
+        result = self.manager.fit_automatic(x, y, shape_name=shape_name,
+                                            arrhenius_span=self.span_spin.value())
+        self._automatic_fit_result = result
+        self._update_automatic_fit_banner(result)
+
+        if not result['success']:
+            self.normalization_result = None
+            self.x_trans = None
+            self.fit_result = None
+            self.component_thermodynamics = None
+            self.fit_results_table.setRowCount(0)
+            self.fit_quality_label.setText("R^2: -    RMSD: -")
+            self.baseline_cross_warning.setVisible(False)
+            if not silent:
+                QMessageBox.warning(self, "Automatic Fit Unavailable", result['reason'])
+            self.update_plot()
+            return
+
+        self.normalization_result = result['norm']
+        self.x_trans = result['Tm_crossing']
+        self.fit_result = result['sigmoid_fit']  # None only if the (rare) normalized-
+                                                  # space re-fit itself failed even
+                                                  # though the raw-curve joint fit
+                                                  # succeeded — everything else above
+                                                  # (baselines, Tm_crossing, thermo)
+                                                  # still stands on its own in that case.
+        self._fit_is_preview = False
+        self._initial_guesses = []
+        self._update_baseline_cross_warning(result['norm'])
+
+        # Reflect what Automatic actually settled on in the (disabled)
+        # Components spinner and the (disabled, view-only) baseline spin
+        # boxes — blocked from re-triggering their own valueChanged
+        # handlers (_on_n_components_changed would otherwise discard the
+        # very fit_result just set above via _reset_initial_guesses, and
+        # the baseline spins' handlers would kick off a live-baseline-
+        # update recompute using the OLD, manual code path).
+        global_fit = result['global_fit']
+        self.n_components_spin.blockSignals(True)
+        self.n_components_spin.setValue(global_fit['n_components'])
+        self.n_components_spin.blockSignals(False)
+        if result['low_range'] is not None and result['high_range'] is not None:
+            for spin, val in ((self.low_min_spin, result['low_range'][0]),
+                             (self.low_max_spin, result['low_range'][1]),
+                             (self.high_min_spin, result['high_range'][0]),
+                             (self.high_max_spin, result['high_range'][1])):
+                spin.blockSignals(True)
+                spin.setValue(val)
+                spin.blockSignals(False)
+            self._configure_baseline_sliders()
+
+        if self.fit_result is not None:
+            self._populate_fit_results_table()
+            q = self.fit_result['quality']
+            self.fit_quality_label.setText(f"R^2: {q['r_squared']:.4f}    RMSD: {q['rmsd']:.4g}")
+        else:
+            self.fit_results_table.setRowCount(0)
+            self.fit_quality_label.setText("R^2: -    RMSD: - (normalized-space re-fit failed)")
+
+        self._recompute_component_thermodynamics()
+        self.update_plot()
+
+    def _update_automatic_fit_banner(self, result):
+        """Fill in and show/hide automatic_fit_banner from fit_automatic's
+        own result — red when it was rejected outright (result['reason']
+        explains why), amber when a fit was found but failed one or more
+        of the 6 reliability gates (named individually, with their actual
+        values, so the user can judge for themselves rather than trusting
+        a bare yes/no), green when it passed all of them."""
+        if result is None:
+            self.automatic_fit_banner.setVisible(False)
+            return
+
+        if not result['success']:
+            self.automatic_fit_banner.setText(f"✗ {result['reason']}")
+            self.automatic_fit_banner.setStyleSheet(
+                "color: #7f1d1d; background-color: #fee2e2; padding: 4px; border-radius: 3px;")
+            self.automatic_fit_banner.setVisible(True)
+            return
+
+        gates = result['reliability_gates']
+        n = result['global_fit']['n_components']
+        if result['reliable']:
+            r2 = result['arrhenius_r_squared']
+            self.automatic_fit_banner.setText(
+                f"✓ Automatic fit: {n} component(s), Arrhenius R²="
+                f"{r2:.4f} — passes every reliability check below.")
+            self.automatic_fit_banner.setStyleSheet(
+                "color: #14532d; background-color: #dcfce7; padding: 4px; border-radius: 3px;")
+            self.automatic_fit_banner.setVisible(True)
+            return
+
+        gate_labels = {
+            'arrhenius_r_squared_ok':
+                f"Arrhenius R² = {result['arrhenius_r_squared']:.4f} "
+                f"(need ≥ {ARRHENIUS_CONFIDENCE_R2_THRESHOLD:.2f})"
+                if result['arrhenius_r_squared'] is not None else "Arrhenius R² unavailable",
+            'tm_in_measured_range': "Tm falls outside the measured temperature range",
+            'no_baseline_crossing_near_transition':
+                "the Low-T/High-T baselines cross near the transition itself",
+            'tm_in_fit_range': "Tm falls outside the actual van't Hoff fit window",
+            'sigmoid_r_squared_ok':
+                (f"sigmoid-fit R² = {result['sigmoid_r_squared']:.4f} "
+                 f"(need ≥ {SIGMOID_CONFIDENCE_R2_THRESHOLD:.2f})"
+                 if result['sigmoid_r_squared'] is not None else "sigmoid-fit R² unavailable"),
+            'edge_error_ok':
+                (f"the fitted baseline misses the data by "
+                 f"{result['edge_error_fraction'] * 100:.0f}% of the curve's amplitude at an edge "
+                 f"(limit {EDGE_TOLERANCE_ABSOLUTE_FRACTION * 100:.0f}%)"
+                 if result['edge_error_fraction'] is not None else "edge tracking unavailable"),
+        }
+        failed = [gate_labels[k] for k, ok in gates.items() if not ok]
+        self.automatic_fit_banner.setText(
+            f"⚠ Automatic fit found ({n} component(s)) but did not pass every "
+            f"reliability check — treat these numbers with caution, or switch to Manual "
+            f"mode: " + "; ".join(failed) + ".")
+        self.automatic_fit_banner.setStyleSheet(
+            "color: #b45309; background-color: #fff3cd; padding: 4px; border-radius: 3px;")
+        self.automatic_fit_banner.setVisible(True)
 
     def _on_plot_visibility_toggled(self, state):
         if self.curve is not None:
@@ -3354,9 +3633,18 @@ class MeltingCurveDialog(QDialog):
     def _on_n_components_changed(self, _value):
         if self._suppress_auto_update:
             return
-        if self.curve is not None:
-            self._reset_initial_guesses()
-            self.update_plot()
+        if self.curve is None:
+            return
+        if self.norm_combo.currentIndex() == 3:
+            # Automatic mode: Components is disabled/view-only (Automatic
+            # picks it), but Shape is still live and also wired to this
+            # same slot — a Shape change here means re-run the whole
+            # joint fit with the new shape, not reset to manual guesses.
+            if self._automatic_fit_result is not None:
+                self.perform_automatic_fit(silent=True)
+            return
+        self._reset_initial_guesses()
+        self.update_plot()
 
     def _populate_guesses_table(self, guesses):
         """Fill fit_results_table with pre-fit initial guesses — editable
@@ -3673,12 +3961,16 @@ class MeltingCurveDialog(QDialog):
         lines.append(f"Temperature range: {t.min():.2f} to {t.max():.2f} "
                      f"(degrees, {len(t)} points after averaging any duplicates)")
 
-        norm_method = {0: 'None', 1: 'Zero order (constant)',
-                      2: 'First order (linear)'}.get(self.norm_combo.currentIndex(), '?')
+        norm_method = {0: 'None', 1: 'Zero order (constant)', 2: 'First order (linear)',
+                      3: 'Automatic (Santoro-Bolen fit)'}.get(self.norm_combo.currentIndex(), '?')
         lines.append(f"Normalization: {norm_method}")
         if self.normalization_result is not None:
-            lines.append(f"  Low-T region:  [{self.low_min_spin.value():.3f}, {self.low_max_spin.value():.3f}]")
-            lines.append(f"  High-T region: [{self.high_min_spin.value():.3f}, {self.high_max_spin.value():.3f}]")
+            lines.append(f"  Low-T region:  [{self.low_min_spin.value():.3f}, {self.low_max_spin.value():.3f}]"
+                        + (" (descriptive)" if self.norm_combo.currentIndex() == 3 else ""))
+            lines.append(f"  High-T region: [{self.high_min_spin.value():.3f}, {self.high_max_spin.value():.3f}]"
+                        + (" (descriptive)" if self.norm_combo.currentIndex() == 3 else ""))
+            if self.norm_combo.currentIndex() == 3 and self._automatic_fit_result is not None:
+                lines.append(f"  Reliable (automatic): {self._automatic_fit_result.get('reliable')}")
 
         lines.append(f"Sigmoid shape: {self.fit_result['shape_name']}, "
                      f"Components: {self.fit_result['n_components']}")
@@ -4205,7 +4497,7 @@ class MeltingCurveDialog(QDialog):
                 pass
 
         method_idx = self.norm_combo.currentIndex()
-        method = {0: 'none', 1: 'zero', 2: 'first'}[method_idx]
+        method = {0: 'none', 1: 'zero', 2: 'first', 3: 'automatic'}[method_idx]
         normalization = {
             'method': method,
             'low_range': (self.low_min_spin.value(), self.low_max_spin.value()),
@@ -4241,6 +4533,7 @@ class MeltingCurveDialog(QDialog):
                 'shape_name': self.shape_combo.currentText(),
             },
             'fit_result': self.fit_result,
+            'automatic_fit_result': self._automatic_fit_result,
             'component_thermodynamics': self.component_thermodynamics,
             'output_options': output_options,
             'source_mode': 'file' if self.source_file_radio.isChecked() else 'spectra',

@@ -16,6 +16,44 @@ _trapz = getattr(np, 'trapezoid', None) or np.trapz
 
 R_GAS = 8.31446261815324  # J / (mol * K)
 
+# --- Automatic (Santoro-Bolen) fit: model-selection and reliability
+# constants ----------------------------------------------------------
+#
+# Ported from MeltAnalytiX's feature_extraction.py, where these same
+# values gate its own automatic joint-fit walk-up and its "is this run
+# reliable" rule. Kept as the same numbers here rather than re-derived,
+# since they aren't SpecAnalytiXBase- or MeltAnalytiX-specific — they're
+# generic thresholds for "is this fit meaningfully better" (BIC) and "is
+# this fit trustworthy enough to report a Tm from" (R^2/edge-tracking).
+
+# Kass & Raftery (1995) "decisive evidence" convention: a candidate
+# component count is only adopted over the current best if it lowers BIC
+# by more than this.
+BIC_DECISIVE_THRESHOLD = 10.0
+
+# How much the downstream Arrhenius R^2 (or edge-tracking error, as a
+# fraction of curve amplitude) is allowed to get worse, step to step,
+# before the automatic component-count walk-up refuses to adopt an
+# otherwise BIC-decisive extra component.
+SCORE_TOLERANCE = 0.03
+
+# Absolute cutoff (as a fraction of curve amplitude) on the FINAL chosen
+# fit's own edge-tracking error — "does the dashed baseline line actually
+# sit on top of the flat part of the real data" — independent of the
+# step-to-step SCORE_TOLERANCE comparison above. A fit whose baseline
+# misses the data by more than this at either edge is discarded outright
+# (automatic mode reports "not reliable" rather than showing it).
+EDGE_TOLERANCE_ABSOLUTE_FRACTION = 0.12
+
+# Reliability gates for the automatic fit's overall verdict (see
+# fit_automatic below) — same two R^2 thresholds MeltAnalytiX's own
+# _pair_is_reliable rule uses, kept as two SEPARATE gates (the van't
+# Hoff/Arrhenius regression's own R^2, vs. a genuine independent re-fit
+# of the sigmoid shape in normalized space) rather than one, since they
+# can fail for different reasons.
+ARRHENIUS_CONFIDENCE_R2_THRESHOLD = 0.85
+SIGMOID_CONFIDENCE_R2_THRESHOLD = 0.70
+
 
 # --- Sigmoid shape definitions -------------------------------------------
 #
@@ -158,6 +196,22 @@ class MeltingCurveManager:
         coeffs_low = np.polyfit(x[low_mask], y[low_mask], deg=order)
         coeffs_high = np.polyfit(x[high_mask], y[high_mask], deg=order)
 
+        return self._normalize_from_coeffs(x, y, coeffs_low, coeffs_high,
+                                           instability_frac=instability_frac)
+
+    @staticmethod
+    def _normalize_from_coeffs(x, y, coeffs_low, coeffs_high, instability_frac=0.15):
+        """The actual normalization arithmetic behind normalize_melting_curve,
+        factored out so a caller that already HAS baseline coefficients from
+        somewhere other than "polyfit a straight line to two windows" —
+        specifically fit_two_state_curve/fit_multi_state_curve below, whose
+        whole point is determining the baselines a different way — can reuse
+        this instead of duplicating the y_norm/unstable_mask/baselines_cross
+        logic. normalize_melting_curve itself keeps its original signature/
+        behavior unchanged — existing callers are unaffected."""
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+
         baseline_low = np.polyval(coeffs_low, x)
         baseline_high = np.polyval(coeffs_high, x)
 
@@ -205,8 +259,8 @@ class MeltingCurveManager:
             'y_norm': y_norm,
             'baseline_low': baseline_low,
             'baseline_high': baseline_high,
-            'coeffs_low': coeffs_low,
-            'coeffs_high': coeffs_high,
+            'coeffs_low': np.asarray(coeffs_low, dtype=float),
+            'coeffs_high': np.asarray(coeffs_high, dtype=float),
             'baselines_cross': baselines_cross,
             'unstable_mask': unstable_mask,
         }
@@ -417,6 +471,837 @@ class MeltingCurveManager:
 
         return {'deltaH': deltaH, 'deltaS': deltaS, 'coeffs': coeffs, 'Tm': Tm,
                'deltaH_err': deltaH_err, 'deltaS_err': deltaS_err, 'Tm_err': Tm_err}
+
+    # ------------------------------------------------------------------ #
+    # 3b. Joint baseline + transition (Santoro-Bolen) fitting             #
+    # ------------------------------------------------------------------ #
+    #
+    # Ported from MeltAnalytiX (2026-09), where this same joint-fit model
+    # replaced an older two-stage "search for where the baseline windows
+    # are, THEN fit a straight line to each" pipeline for its automatic
+    # (no manual override) path. SpecAnalytiXBase's own manual workflow —
+    # the low_range/high_range sliders above, feeding
+    # normalize_melting_curve — is left completely unchanged; these three
+    # methods add a new, independent Automatic mode that estimates the
+    # SAME baseline+transition shape a different way: everything fit
+    # jointly, in one regression, with no window-search step at all. See
+    # fit_automatic below for how the two model-selection safety gates
+    # (BIC and downstream fit quality) are combined into a single
+    # go/no-go decision this app's dialog can act on.
+
+    def fit_two_state_curve(self, x, y, midpoint_guess=None, width_guess=None,
+                            shape_name='Logistic', exclude_mask=None, baseline_fraction=0.15):
+        """Fit the native-state baseline, denatured-state baseline, AND the
+        transition itself all in ONE simultaneous nonlinear regression
+        against the raw curve — a two-state / Santoro-Bolen-style model —
+        instead of first guessing where the low-T/high-T plateaus are and
+        then fitting a straight line to each separately.
+
+        The win over a window-search-then-fit approach: there is no step
+        that has to correctly GUESS where the plateau boundaries are
+        before anything else can happen — a bad guess there (e.g. a run
+        whose blank-correction excludes exactly the region a heuristic
+        window search would have anchored on) corrupts everything
+        downstream (normalization, the van't Hoff/Arrhenius regression,
+        Tm/deltaH). This one regression fits against every measured point
+        at once, so it is data-efficient (uses the whole scan, not just
+        whichever points a heuristic walk decided belonged in a window)
+        and self-consistent (the baselines and the transition are fit
+        against each other directly, instead of each other's approximate
+        byproducts).
+
+        Model: y(T) = base_low(T) + [base_high(T) - base_low(T)] *
+        shape((T - mid) / width), where base_low/base_high are straight
+        lines (their own slope+intercept, both free parameters) — exactly
+        normalize_melting_curve's own baseline model, just fit jointly
+        with the transition instead of independently beforehand.
+
+        exclude_mask (optional, same length/order as x): accepted for
+        signature symmetry with the rest of this module, but — same
+        reasoning as normalize_melting_curve's own polyfit, which never
+        takes an exclude_mask either — NOT used to drop points from this
+        regression. A point flagged upstream (e.g. a blank-correction
+        artifact) is a signal to be suspicious of DOWNSTREAM (the
+        Arrhenius scoring, in fit_automatic below), not a reason to treat
+        the already-corrected sample measurement at that temperature as
+        unreal; dropping a whole exclusion window from THIS fit risks
+        starving it of exactly the points that pin down the transition's
+        true shape, on a curve where the excluded region happens to
+        overlap the transition itself.
+
+        Returns a dict with 'coeffs_low'/'coeffs_high' (same [slope,
+        intercept] shape normalize_melting_curve's own coeffs_low/
+        coeffs_high use, so callers can feed these straight into
+        _normalize_from_coeffs above), 'mid' (the fitted transition
+        midpoint — a Tm estimate; the van't Hoff Tm from the Arrhenius
+        regression downstream remains this app's primary reported Tm),
+        'width', 'y_fit', 'quality' (estimate_fit_quality's r_squared/
+        rmsd/aic/bic), and 'popt' (raw fit parameters). Returns None if
+        the fit fails or there isn't enough data — callers should treat
+        None as "automatic fit unavailable, fall back to Manual", never
+        raise."""
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+
+        # Fit against every point, including any exclude_mask-flagged
+        # ones — see the exclude_mask paragraph in the docstring above.
+        x_fit, y_fit_data = x, y
+        if x_fit.size < 6:
+            return None
+        order = np.argsort(x_fit)
+        x_fit, y_fit_data = x_fit[order], y_fit_data[order]
+        x_span = float(x_fit.max() - x_fit.min())
+        if x_span <= 0:
+            return None
+        shape_func = self.sigmoid_shapes.get(shape_name)
+        if shape_func is None:
+            return None
+
+        # Initial guesses: a quick straight-line fit to each end's own
+        # baseline_fraction slice of the data — purely a STARTING POINT
+        # for the joint fit below, not the final answer, so any
+        # imprecision here just costs curve_fit a few extra iterations.
+        n = len(x_fit)
+        k = max(2, int(round(baseline_fraction * n)))
+        try:
+            p0_low = np.polyfit(x_fit[:k], y_fit_data[:k], deg=1)
+        except Exception:
+            p0_low = [0.0, float(np.mean(y_fit_data[:k]))]
+        try:
+            p0_high = np.polyfit(x_fit[-k:], y_fit_data[-k:], deg=1)
+        except Exception:
+            p0_high = [0.0, float(np.mean(y_fit_data[-k:]))]
+        mid0 = float(midpoint_guess) if midpoint_guess is not None else float(np.median(x_fit))
+        mid0 = min(max(mid0, x_fit.min()), x_fit.max())
+        width0 = float(width_guess) if width_guess else max(x_span / 10.0, 1e-6)
+
+        # Bound (not fix) the baseline slopes: left fully unbounded,
+        # curve_fit can converge to a mathematically-valid but
+        # physically-nonsensical solution whenever the transition doesn't
+        # fully saturate within the measured range — a real, common case,
+        # not an edge case. In that situation the fit can trade off a
+        # steeper baseline slope against the transition's own
+        # width/midpoint and still match the visible data well (a real
+        # near-collinearity between "baseline slope" and "transition
+        # shape" whenever the plateau itself is under-sampled), producing
+        # a baseline that doesn't resemble the plateau it's supposed to
+        # describe at all despite an excellent overall R^2. Physically, a
+        # baseline should never be steeper than the transition it's
+        # flanking — bounding each side's |slope| to 2x the curve's own
+        # overall amplitude-over-span rules out that runaway solution
+        # while still leaving room for a real, visibly-tilted baseline
+        # (most runs' true baselines are much flatter than this bound —
+        # it exists to catch the pathological case, not to constrain
+        # ordinary ones).
+        curve_amplitude = float(np.max(y_fit_data) - np.min(y_fit_data))
+        max_slope = 2.0 * (curve_amplitude / x_span) if curve_amplitude > 0 else np.inf
+
+        p0 = [p0_low[0], p0_low[1], p0_high[0], p0_high[1], mid0, width0]
+        lower = [-max_slope, -np.inf, -max_slope, -np.inf, x_fit.min() - x_span, 1e-6]
+        upper = [max_slope, np.inf, max_slope, np.inf, x_fit.max() + x_span, x_span * 5]
+        # p0's own slope, from the quick endpoint-only fit above, can
+        # occasionally already exceed this bound on real noisy data — the
+        # bound is about the JOINT fit's behavior, not the rough initial
+        # guess — so clip it in so curve_fit always starts inside its own
+        # bounds, which scipy requires.
+        p0[0] = float(np.clip(p0[0], -max_slope, max_slope))
+        p0[2] = float(np.clip(p0[2], -max_slope, max_slope))
+
+        def model_func(xx, m_low, b_low, m_high, b_high, mid, width):
+            xx = np.asarray(xx, dtype=float)
+            base_low = m_low * xx + b_low
+            base_high = m_high * xx + b_high
+            return base_low + (base_high - base_low) * shape_func((xx - mid) / width)
+
+        try:
+            popt, _pcov = curve_fit(model_func, x_fit, y_fit_data, p0=p0,
+                                    bounds=(lower, upper), maxfev=10000)
+        except (RuntimeError, ValueError) as e:
+            logger.error(f"fit_two_state_curve: joint baseline+transition fit failed: {e}")
+            return None
+
+        m_low, b_low, m_high, b_high, mid, width = popt
+        y_fit_kept = model_func(x_fit, *popt)
+        quality = self.estimate_fit_quality(y_fit_data, y_fit_kept, popt)
+        y_fit_full = model_func(x, *popt)
+        return {
+            'coeffs_low': np.array([m_low, b_low]), 'coeffs_high': np.array([m_high, b_high]),
+            'mid': float(mid), 'width': float(width), 'y_fit': y_fit_full,
+            'quality': quality, 'popt': popt, 'shape_name': shape_name,
+        }
+
+    def fit_multi_state_curve(self, x, y, n_components, midpoint_guesses=None,
+                              width_guesses=None, factor_guesses=None,
+                              coeffs_low_guess=None, coeffs_high_guess=None,
+                              shape_name='Logistic', baseline_fraction=0.15):
+        """Generalizes fit_two_state_curve from exactly ONE shared-baseline
+        transition to N (1-4):
+
+            y(T) = base_low(T) + [base_high(T) - base_low(T)]
+                   * sum_i factor_i * shape((T - mid_i) / width_i)
+
+        factors summing to 1 — the SAME weighted-sum convention
+        sigmoid_sum_model above already uses for this app's separate,
+        POST-normalization multi-component overlay (fit_sigmoid_model),
+        just with the two baselines now inside THIS SAME regression
+        instead of fixed beforehand. n_components=1 reduces to exactly
+        fit_two_state_curve's own model.
+
+        Why this exists: a run whose real transition needs 2+ components
+        but whose baseline was determined by a fit that only had ONE
+        component available is forced to distort the baseline's
+        slope/level to compensate for a shape it has no other way to
+        represent — a visibly wrong baseline with a deceptively good R^2,
+        because the shortfall shows up as baseline error instead of
+        transition-shape error. Letting the baseline see all N components
+        AT ONCE, in the same regression, means it never has to make that
+        trade. Use fit_multi_state_curve_auto below to actually pick N
+        via BIC; this method just fits one specific, given N.
+
+        midpoint_guesses/width_guesses/factor_guesses (each length
+        n_components, or None for a generic evenly-spaced default) and
+        coeffs_low_guess/coeffs_high_guess ([slope, intercept], or None
+        for a quick fit to each end's own baseline_fraction slice) are
+        STARTING POINTS ONLY — every parameter, baselines included, stays
+        completely free to move in this fit regardless of what it's
+        seeded with. That distinction matters: fit_multi_state_curve_auto
+        warm-starts each larger fit from a smaller one's answer purely to
+        converge faster, never by freezing anything — freezing the
+        baseline while adding a component would silently recreate the
+        exact problem this method exists to avoid.
+
+        Returns a dict shaped like fit_two_state_curve's own output, but
+        with 'components' — a list of n_components {'factor', 'mid',
+        'width'} dicts, sorted by mid — instead of a single mid/width,
+        plus 'n_components'. Returns None on failure/insufficient data
+        (same best-effort contract as fit_two_state_curve)."""
+        if n_components not in (1, 2, 3, 4):
+            raise ValueError("n_components must be between 1 and 4")
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        n = n_components
+        if x.size < 6:
+            return None
+        order = np.argsort(x)
+        x_fit, y_fit_data = x[order], y[order]
+        x_span = float(x_fit.max() - x_fit.min())
+        if x_span <= 0:
+            return None
+        shape_func = self.sigmoid_shapes.get(shape_name)
+        if shape_func is None:
+            return None
+
+        # Baseline starting guess: a caller-supplied warm start (a
+        # smaller fit's own converged answer, from
+        # fit_multi_state_curve_auto), or — same as fit_two_state_curve —
+        # a quick straight-line fit to each end's own baseline_fraction
+        # slice, as the very first guess when there's nothing smaller to
+        # warm-start from.
+        k = max(2, int(round(baseline_fraction * len(x_fit))))
+        if coeffs_low_guess is not None:
+            p0_low = [float(coeffs_low_guess[0]), float(coeffs_low_guess[1])]
+        else:
+            try:
+                p0_low = list(np.polyfit(x_fit[:k], y_fit_data[:k], deg=1))
+            except Exception:
+                p0_low = [0.0, float(np.mean(y_fit_data[:k]))]
+        if coeffs_high_guess is not None:
+            p0_high = [float(coeffs_high_guess[0]), float(coeffs_high_guess[1])]
+        else:
+            try:
+                p0_high = list(np.polyfit(x_fit[-k:], y_fit_data[-k:], deg=1))
+            except Exception:
+                p0_high = [0.0, float(np.mean(y_fit_data[-k:]))]
+
+        if midpoint_guesses is None or len(midpoint_guesses) != n:
+            midpoint_guesses = list(np.linspace(x_fit.min(), x_fit.max(), n + 2)[1:-1])
+        if width_guesses is None or len(width_guesses) != n:
+            width_guesses = [max(x_span / 10.0, 1e-6)] * n
+        else:
+            width_guesses = [max(float(w), 1e-6) for w in width_guesses]
+        if factor_guesses is None or len(factor_guesses) != n:
+            factor_guesses = [1.0 / n] * n
+        else:
+            total = sum(factor_guesses)
+            factor_guesses = ([f / total for f in factor_guesses] if total > 0
+                              else [1.0 / n] * n)
+
+        # Same baseline-slope safety bound as fit_two_state_curve (see
+        # its own comment for the full reasoning) — unchanged by how many
+        # transition components this candidate has, since it's about the
+        # WHOLE curve's own scale, not the transition shape.
+        curve_amplitude = float(np.max(y_fit_data) - np.min(y_fit_data))
+        max_slope = 2.0 * (curve_amplitude / x_span) if curve_amplitude > 0 else np.inf
+
+        p0 = [p0_low[0], p0_low[1], p0_high[0], p0_high[1]]
+        lower = [-max_slope, -np.inf, -max_slope, -np.inf]
+        upper = [max_slope, np.inf, max_slope, np.inf]
+        if n > 1:
+            p0.extend(factor_guesses[:-1])
+            lower.extend([0.0] * (n - 1))
+            upper.extend([1.0] * (n - 1))
+        for mid, w in zip(midpoint_guesses, width_guesses):
+            p0.extend([float(mid), float(w)])
+            lower.extend([x_fit.min() - x_span, 1e-6])
+            upper.extend([x_fit.max() + x_span, x_span * 5])
+        # Every starting value must sit strictly inside its own bound
+        # (scipy requires this) — clip everything defensively rather than
+        # just the two known slope-guess offenders.
+        p0 = [float(np.clip(v, lo, hi)) for v, lo, hi in zip(p0, lower, upper)]
+
+        def model_func(xx, *params):
+            xx = np.asarray(xx, dtype=float)
+            m_low, b_low, m_high, b_high = params[0], params[1], params[2], params[3]
+            rest = params[4:]
+            independent_factors = np.array(rest[:n - 1]) if n > 1 else np.array([])
+            sigmoid_params = rest[n - 1:]
+            last_factor = 1 - np.sum(independent_factors)
+            factors = np.concatenate([independent_factors, [last_factor]])
+            base_low = m_low * xx + b_low
+            base_high = m_high * xx + b_high
+            shape_sum = np.zeros_like(xx)
+            for i in range(n):
+                mid_i, width_i = sigmoid_params[2 * i], sigmoid_params[2 * i + 1]
+                shape_sum = shape_sum + factors[i] * shape_func((xx - mid_i) / width_i)
+            return base_low + (base_high - base_low) * shape_sum
+
+        try:
+            popt, _pcov = curve_fit(model_func, x_fit, y_fit_data, p0=p0,
+                                    bounds=(lower, upper), maxfev=10000)
+        except (RuntimeError, ValueError) as e:
+            logger.error(f"fit_multi_state_curve: joint {n}-component baseline+transition "
+                        f"fit failed: {e}")
+            return None
+
+        m_low, b_low, m_high, b_high = (float(popt[0]), float(popt[1]),
+                                        float(popt[2]), float(popt[3]))
+        rest = popt[4:]
+        independent_factors = np.array(rest[:n - 1]) if n > 1 else np.array([])
+        sigmoid_params = rest[n - 1:]
+        last_factor = 1 - np.sum(independent_factors)
+        factors = np.concatenate([independent_factors, [last_factor]])
+        components = []
+        for i in range(n):
+            mid_i, width_i = float(sigmoid_params[2 * i]), float(sigmoid_params[2 * i + 1])
+            components.append({'factor': float(factors[i]), 'mid': mid_i, 'width': width_i})
+        components.sort(key=lambda c: c['mid'])
+
+        y_fit_kept = model_func(x_fit, *popt)
+        quality = self.estimate_fit_quality(y_fit_data, y_fit_kept, popt)
+        y_fit_full = model_func(x, *popt)
+        return {
+            'coeffs_low': np.array([m_low, b_low]), 'coeffs_high': np.array([m_high, b_high]),
+            'components': components, 'n_components': n, 'y_fit': y_fit_full,
+            'quality': quality, 'popt': popt, 'shape_name': shape_name,
+        }
+
+    def fit_multi_state_curve_auto(self, x, y, max_components=4, midpoint_guess=None,
+                                   exclude_mask=None, shape_name='Logistic',
+                                   baseline_fraction=0.15,
+                                   bic_decisive_threshold=BIC_DECISIVE_THRESHOLD,
+                                   accept_step=None):
+        """Picks the number of shared-baseline transition components (1 to
+        max_components) for fit_multi_state_curve by walking up and
+        warm-starting — the actual entry point most callers want (see
+        fit_multi_state_curve's own docstring for the model and the reason
+        this generalization exists at all).
+
+        accept_step (optional): a callable accept_step(prev_fit,
+        candidate_fit) -> bool, checked IN ADDITION to the BIC-decisive
+        test below before adopting n over the current best. Why this
+        exists: BIC alone judges a candidate purely by how much better it
+        traces the RAW measured curve — and on real, noisy data, that raw-
+        curve residual can shrink further with a 3rd or 4th component
+        whether or not the extra component corresponds to a genuine
+        additional transition (instrument drift or an imperfect blank
+        correction can leave a small, structured — not random — wiggle
+        that a smooth extra sigmoid happily "explains", decisively beating
+        the BIC threshold, while making the fitted baseline in the
+        transition region worse for the one thing that actually matters
+        downstream, the van't Hoff/Arrhenius fit). BIC here is kept as a
+        cheap first filter (skip even trying a candidate that wouldn't
+        out-fit the raw curve at all); accept_step is the authoritative
+        second opinion, checked only when BIC already says yes, using
+        whatever downstream quality measure the caller actually cares
+        about instead of curve-fit residual alone. None (the default)
+        reproduces plain BIC-only behavior.
+
+        exclude_mask: accepted for signature symmetry with
+        fit_two_state_curve (same call shape at fit_automatic's own call
+        site below) but, for the SAME reason documented on
+        fit_two_state_curve's own exclude_mask parameter, NOT used to drop
+        points from any of these regressions.
+
+        Two deliberate design choices, both mirroring the SAME choices
+        this app's already-existing POST-normalization multi-component
+        search (fit_sigmoid_model, used manually) already makes, for
+        consistency:
+
+        1. SEQUENTIAL, not "fit all 4 then take the best BIC": starting
+           from n=1, n=2 is only adopted if it beats the CURRENT BEST
+           decisively (delta BIC > bic_decisive_threshold, the standard
+           Kass & Raftery "decisive evidence" cutoff); if adopted, n=3
+           must then beat THAT, not n=1; and so on. A plain global-minimum-
+           BIC search would happily take n=4 whenever it's numerically
+           lowest even by a hair, which defeats the point of using BIC
+           (penalizing complexity) in the first place.
+
+        2. WARM-STARTED, not fit from scratch at every n: each step reuses
+           the previous (smaller) fit's own converged baseline and
+           component parameters as ITS STARTING POINT, adding one new
+           component's guess placed at the temperature of the largest
+           remaining |data - fit| residual (a standard match-the-leftover
+           heuristic). This is purely a starting point, never a frozen
+           constraint — every parameter, including the earlier components
+           and both baselines, stays fully free to move in each new fit.
+
+        Returns a dict shaped like fit_multi_state_curve's own output
+        (whichever n won), plus 'bic_trace' (list of {'from_n', 'to_n',
+        'delta_bic'} for every step actually adopted, and a 'rejected':
+        True entry for a step BIC favored but accept_step declined — the
+        audit trail for "why N components") and 'fits' ({1: ..., 2: ...,
+        ...}, every n actually attempted, None for any that failed or
+        weren't reached). Returns None only if even n=1 fails."""
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        midpoint_guesses_1 = [float(midpoint_guess)] if midpoint_guess is not None else None
+        fit1 = self.fit_multi_state_curve(x_arr, y_arr, n_components=1,
+                                          midpoint_guesses=midpoint_guesses_1,
+                                          shape_name=shape_name,
+                                          baseline_fraction=baseline_fraction)
+        if fit1 is None:
+            return None
+        out = {'fits': {1: fit1}, 'bic_trace': []}
+        best_n, best_fit = 1, fit1
+        x_span = float(x_arr.max() - x_arr.min()) if x_arr.size else 1.0
+        for n in range(2, max_components + 1):
+            residual = np.abs(y_arr - best_fit['y_fit'])
+            new_mid = float(x_arr[int(np.argmax(residual))])
+            new_factor = 1.0 / n
+            prev = best_fit['components']
+            factor_guesses = [c['factor'] * (1.0 - new_factor) for c in prev] + [new_factor]
+            midpoint_guesses = [c['mid'] for c in prev] + [new_mid]
+            width_guesses = [c['width'] for c in prev] + [max(x_span / 10.0, 1e-6)]
+            fit_n = self.fit_multi_state_curve(
+                x_arr, y_arr, n_components=n,
+                midpoint_guesses=midpoint_guesses, width_guesses=width_guesses,
+                factor_guesses=factor_guesses,
+                coeffs_low_guess=best_fit['coeffs_low'], coeffs_high_guess=best_fit['coeffs_high'],
+                shape_name=shape_name, baseline_fraction=baseline_fraction)
+            out['fits'][n] = fit_n
+            if fit_n is None:
+                continue
+            bic_prev = best_fit['quality']['bic']
+            bic_n = fit_n['quality']['bic']
+            if bic_prev is None or bic_n is None:
+                continue
+            delta = bic_prev - bic_n
+            if delta > bic_decisive_threshold:
+                if accept_step is not None and not accept_step(best_fit, fit_n):
+                    # BIC says this candidate traces the raw curve
+                    # decisively better, but the caller's own downstream
+                    # check says it isn't actually better — stop
+                    # adopting here (see accept_step's own docstring
+                    # above). Recorded in bic_trace as a rejected step so
+                    # the audit trail shows the walk-up considered and
+                    # declined n, not that it silently never tried.
+                    out['bic_trace'].append({'from_n': best_n, 'to_n': n,
+                                             'delta_bic': delta, 'rejected': True})
+                    continue
+                out['bic_trace'].append({'from_n': best_n, 'to_n': n, 'delta_bic': delta})
+                best_n, best_fit = n, fit_n
+        out.update(best_fit)
+        out['n_components'] = best_n
+        return out
+
+    def fit_automatic(self, x, y, exclude_mask=None, max_components=4,
+                      shape_name='Logistic', baseline_fraction=0.15,
+                      arrhenius_span=0.95,
+                      bic_decisive_threshold=BIC_DECISIVE_THRESHOLD):
+        """Automatic mode's single entry point: run the joint Santoro-Bolen
+        fit (fit_multi_state_curve_auto above), gate it through the same
+        safety checks MeltAnalytiX's own automatic path uses, and — if it
+        passes — carry it all the way through normalization and the van't
+        Hoff/Arrhenius regression to a final reliability verdict.
+
+        This does NOT touch the existing manual workflow at all
+        (normalize_melting_curve with user-chosen low_range/high_range
+        stays exactly as it was, and remains this app's default) — it is
+        a new, independent, opt-in path: pick the transition midpoint(s)
+        automatically via auto_detect_transitions, fit baselines +
+        transition(s) jointly instead of from user-dragged windows, and
+        report clearly whether the result can be trusted or whether the
+        user should fall back to Manual.
+
+        Three safety gates are applied, mirroring MeltAnalytiX's own
+        automatic path (see that app's feature_extraction.py for the full
+        history of why each one exists):
+
+        1. Inside the walk-up itself (accept_step below): a candidate
+           component count is only adopted if it doesn't make the
+           downstream Arrhenius R^2 meaningfully worse than the best seen
+           so far, AND doesn't make the baseline's own tracking of the
+           data at the curve's edges meaningfully worse either (both
+           ratcheted against the best-so-far, not just the immediately
+           preceding step) — BIC alone can be fooled by a smooth extra
+           component absorbing structured noise rather than a genuine
+           transition.
+        2. Component plausibility: every component's own midpoint must
+           fall within the measured range (padded by half the range on
+           each side) — an unconstrained optimizer can otherwise park a
+           near-zero-weight "phantom" component's midpoint far outside
+           the data (e.g. 190C on a 4-98C scan), or let the walk-up's
+           very first (n=1) fit itself run to that same boundary when the
+           data has no clear transition in range at all (n=1 predates
+           accept_step, so it needs this same check applied separately).
+        3. Absolute edge-tracking tolerance on the FINAL chosen fit: even
+           a fit that passed every step-to-step comparison can still end
+           up with a baseline that misses the real data at an edge by a
+           large fraction of the curve's own amplitude, on a curve with
+           no genuine flat plateau for baseline and transition shape to
+           be separately identifiable against. A fit whose edge error
+           exceeds EDGE_TOLERANCE_ABSOLUTE_FRACTION of the curve's
+           amplitude is discarded outright.
+
+        If the joint fit fails any of these, this returns
+        {'success': False, 'reason': <str>, ...} — the caller (the
+        dialog) should tell the user automatic mode couldn't find a
+        trustworthy fit and point them at the existing Manual controls,
+        never silently fall back to a different heuristic on its own.
+
+        If the joint fit succeeds, this goes on to compute the SAME
+        normalization/Arrhenius/thermodynamics pipeline the manual path
+        already uses (via _normalize_from_coeffs, transform_xy_for_
+        arrhenius, compute_thermodynamic_params), plus a genuine re-fit
+        of the sigmoid shape in normalized space (fit_sigmoid_model, at
+        the SAME component count the joint fit settled on — never a
+        second, independent component-count search, so the dashed
+        baseline lines and the solid sigmoid overlay can never disagree
+        on how many transitions there are) — and a single overall
+        'reliable' verdict from 5 gates adapted from MeltAnalytiX's own
+        "is this run reliable" rule (its 6th gate, hysteresis pairing
+        between a heating/cooling run pair, doesn't apply here — this app
+        analyzes one curve at a time, not paired runs):
+
+            1. Arrhenius R^2 >= ARRHENIUS_CONFIDENCE_R2_THRESHOLD (0.85)
+            2. Tm falls inside the measured temperature range
+            3. the two baselines don't cross near the transition itself
+               (a crossing confined to an already-saturated plateau tail,
+               nowhere near the points the Arrhenius regression actually
+               used, is allowed)
+            4. Tm falls inside the actual window of points the Arrhenius
+               regression used (stricter than #2 alone — a shallow, noisy
+               fit can extrapolate its Tm well past its own fit window
+               while still landing inside the run's overall range)
+            5. the sigmoid re-fit's own R^2 >=
+               SIGMOID_CONFIDENCE_R2_THRESHOLD (0.70) — a SEPARATE check
+               from the Arrhenius R^2 above, since they can fail for
+               different reasons
+            6. edge_error_fraction <= EDGE_TOLERANCE_ABSOLUTE_FRACTION
+               (0.12) — same absolute check as gate 3 in the paragraph
+               above, repeated here as part of the reliability verdict
+               so the UI's reliability banner and its underlying pass/
+               fail reason agree with each other.
+
+        A missing/uncomputable value fails a gate closed (counts as
+        "not reliable") EXCEPT gate 4 (Tm_in_fit_range), which — matching
+        MeltAnalytiX's own convention — degrades to "pass" when it can't
+        be computed at all (gates 1-2 already fail closed in that same
+        situation, since the whole Arrhenius fit didn't produce a Tm).
+
+        Returns a dict with (all of these; many are None when an earlier
+        step didn't run or failed):
+            'success' — False only when the joint fit itself was rejected
+                (gates 1-3 above); True whenever a global_fit was found,
+                REGARDLESS of the final 'reliable' verdict — a low-
+                confidence but present fit is still something the caller
+                can show the user with a clear warning, unlike a fit that
+                never existed at all.
+            'reason' — human-readable explanation when success is False.
+            'global_fit' — fit_multi_state_curve_auto's own result.
+            'norm', 'low_range', 'high_range' — normalize_melting_curve-
+                shaped normalization result and the descriptive baseline
+                extents (derived from the fit itself — everywhere at
+                least one component's own transition is still within 3
+                widths of its midpoint — for shading the plot; these are
+                NOT what determined the fit, unlike the manual path).
+            'Tm_crossing', 'arrhenius', 'thermo', 'arrhenius_r_squared',
+                'Tm_in_measured_range', 'Tm_in_fit_range',
+                'baselines_cross_near_transition', 'edge_error_fraction'
+                — same meaning/computation as MeltAnalytiX's own
+                compute_run_diagnostics.
+            'sigmoid_fit', 'sigmoid_r_squared' — the normalized-space
+                re-fit and its own R^2 (gate 5).
+            'reliable' — the overall verdict.
+            'reliability_gates' — dict of {gate_name: bool or None} for
+                each of the 6 checks above, so the UI can explain WHICH
+                gate(s) failed rather than just showing a single yes/no.
+        """
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+        if exclude_mask is not None:
+            exclude_mask = np.asarray(exclude_mask, dtype=bool)
+
+        out = {
+            'success': False, 'reason': None, 'global_fit': None,
+            'norm': None, 'low_range': None, 'high_range': None,
+            'Tm_crossing': None, 'arrhenius': None, 'thermo': None,
+            'arrhenius_r_squared': None, 'Tm_in_measured_range': None,
+            'Tm_in_fit_range': None, 'baselines_cross_near_transition': False,
+            'edge_error_fraction': None, 'sigmoid_fit': None, 'sigmoid_r_squared': None,
+            'reliable': False, 'reliability_gates': {},
+        }
+
+        if x_arr.size < 6:
+            out['reason'] = "Not enough data points for an automatic fit (need at least 6)."
+            return out
+
+        t_min, t_max = float(np.min(x_arr)), float(np.max(x_arr))
+
+        try:
+            mids = self.auto_detect_transitions(x_arr, y_arr, n_components=1)
+            mid_guess = float(mids[0]) if mids else None
+        except Exception:
+            mid_guess = None
+
+        # --- Gate 1: the walk-up's own step-to-step ratchet (Arrhenius
+        # R^2 and edge-tracking error, both never allowed to get
+        # meaningfully worse than the best seen so far) --------------
+        order = np.argsort(x_arr)
+        n_edge = max(3, int(round(0.05 * len(order))))
+        low_idx, high_idx = order[:n_edge], order[-n_edge:]
+        curve_amplitude = float(np.max(y_arr) - np.min(y_arr))
+        edge_tolerance_relative = SCORE_TOLERANCE * curve_amplitude if curve_amplitude > 0 else 0.0
+
+        def _edge_error(norm):
+            if norm is None:
+                return None
+            lo_err = np.mean(np.abs(norm['baseline_low'][low_idx] - y_arr[low_idx]))
+            hi_err = np.mean(np.abs(norm['baseline_high'][high_idx] - y_arr[high_idx]))
+            return float(max(lo_err, hi_err))
+
+        t_span_data = t_max - t_min if t_max > t_min else 1.0
+        plausible_lo = t_min - 0.5 * t_span_data
+        plausible_hi = t_max + 0.5 * t_span_data
+
+        def _components_plausible(fit):
+            return all(plausible_lo <= c['mid'] <= plausible_hi for c in fit['components'])
+
+        step_state = {'best_r2': None, 'best_edge_err': None}
+
+        def _accept_step(prev_fit, candidate_fit):
+            # --- Gate 2: component plausibility (see docstring above) --
+            if not _components_plausible(candidate_fit):
+                return False
+            norm_prev = self._normalize_from_coeffs(x_arr, y_arr, prev_fit['coeffs_low'],
+                                                     prev_fit['coeffs_high'])
+            norm_cand = self._normalize_from_coeffs(x_arr, y_arr, candidate_fit['coeffs_low'],
+                                                     candidate_fit['coeffs_high'])
+            r2_prev = self._arrhenius_r_squared(x_arr, norm_prev, exclude_mask, arrhenius_span)
+            r2_cand = self._arrhenius_r_squared(x_arr, norm_cand, exclude_mask, arrhenius_span)
+            if r2_prev is not None:
+                step_state['best_r2'] = (r2_prev if step_state['best_r2'] is None
+                                        else max(step_state['best_r2'], r2_prev))
+            edge_err_prev = _edge_error(norm_prev)
+            if edge_err_prev is not None:
+                step_state['best_edge_err'] = (edge_err_prev if step_state['best_edge_err'] is None
+                                              else min(step_state['best_edge_err'], edge_err_prev))
+            r2_ok = (step_state['best_r2'] is None
+                    or (r2_cand is not None and r2_cand >= step_state['best_r2'] - SCORE_TOLERANCE))
+            edge_err_cand = _edge_error(norm_cand)
+            edge_ok = (step_state['best_edge_err'] is None or edge_err_cand is None
+                      or edge_err_cand <= step_state['best_edge_err'] + edge_tolerance_relative)
+            return r2_ok and edge_ok
+
+        global_fit = self.fit_multi_state_curve_auto(
+            x_arr, y_arr, max_components=max_components, midpoint_guess=mid_guess,
+            exclude_mask=exclude_mask, shape_name=shape_name,
+            baseline_fraction=baseline_fraction, bic_decisive_threshold=bic_decisive_threshold,
+            accept_step=_accept_step)
+
+        if global_fit is None:
+            out['reason'] = ("The automatic joint baseline+transition fit did not converge on "
+                             "this curve. Use Manual mode instead.")
+            return out
+
+        # n=1 (the walk-up's unconditional starting point) never goes
+        # through accept_step, so its own plausibility has to be checked
+        # separately — a data set with no clear transition in range can
+        # otherwise let the optimizer park the single component's
+        # midpoint right at its own bound, far outside the measured data.
+        if not _components_plausible(global_fit):
+            out['reason'] = ("The automatic fit's transition midpoint fell far outside the "
+                             "measured temperature range — this curve doesn't show a clear "
+                             "transition automatic mode can identify. Use Manual mode instead.")
+            return out
+
+        norm = self._normalize_from_coeffs(x_arr, y_arr, global_fit['coeffs_low'],
+                                           global_fit['coeffs_high'])
+
+        # --- Gate 3: absolute edge-tracking tolerance on the FINAL fit -
+        edge_tolerance_absolute = (EDGE_TOLERANCE_ABSOLUTE_FRACTION * curve_amplitude
+                                   if curve_amplitude > 0 else 0.0)
+        edge_err_final = _edge_error(norm)
+        if edge_err_final is not None and edge_err_final > edge_tolerance_absolute:
+            out['reason'] = (
+                f"The automatic fit's baseline doesn't track the measured data closely enough "
+                f"at the low- or high-temperature edge (edge error "
+                f"{edge_err_final / curve_amplitude * 100:.0f}% of the curve's amplitude, "
+                f"vs. a {EDGE_TOLERANCE_ABSOLUTE_FRACTION * 100:.0f}% limit) — this usually means "
+                f"the curve has no genuine flat plateau for the fit to anchor on. Use Manual "
+                f"mode instead.")
+            return out
+
+        out['success'] = True
+        out['global_fit'] = global_fit
+        out['norm'] = norm
+        out['edge_error_fraction'] = (edge_err_final / curve_amplitude
+                                      if curve_amplitude > 0 and edge_err_final is not None else None)
+
+        # Descriptive baseline extents for the plot — everywhere at least
+        # one winning component's own transition is still within 3
+        # widths of its midpoint, spanning every component (not just
+        # one), clamped to the curve's own measured range. Purely
+        # descriptive — NOT what determined the fit (unlike the manual
+        # path's low_range/high_range).
+        components = global_fit['components']
+        first_mid, first_width = components[0]['mid'], components[0]['width']
+        last_mid, last_width = components[-1]['mid'], components[-1]['width']
+        span = t_max - t_min
+        min_gap = max(span * 0.02, 1e-6) if span > 0 else 1e-6
+        low_hi = min(first_mid - 3 * first_width, t_max - min_gap)
+        low_hi = max(low_hi, t_min + min_gap)
+        high_lo = max(last_mid + 3 * last_width, t_min + min_gap)
+        high_lo = min(high_lo, t_max - min_gap)
+        out['low_range'] = (t_min, low_hi)
+        out['high_range'] = (high_lo, t_max)
+
+        out['Tm_crossing'] = self.compute_median_crossing_temperature(
+            x_arr, y_arr, norm['baseline_low'], norm['baseline_high'])
+
+        unstable_mask = norm.get('unstable_mask')
+        combined_exclude = unstable_mask
+        if exclude_mask is not None:
+            combined_exclude = (exclude_mask if combined_exclude is None
+                                else (combined_exclude | exclude_mask))
+        arr = self.transform_xy_for_arrhenius(x_arr, norm['y_norm'], span=arrhenius_span,
+                                              exclude_mask=combined_exclude)
+        out['arrhenius'] = arr
+
+        # baselines_cross_near_transition: a crossing confined to an
+        # already-saturated plateau tail, far from the points the
+        # Arrhenius regression actually used, shouldn't by itself
+        # disqualify an otherwise-good fit — compare the crossing's own
+        # temperature against the actual fit window, not just "did the
+        # two lines cross somewhere in the whole scan."
+        if norm['baselines_cross']:
+            coeffs_low, coeffs_high = norm.get('coeffs_low'), norm.get('coeffs_high')
+            x0 = None
+            if coeffs_low is not None and coeffs_high is not None:
+                a_low, b_low = float(coeffs_low[0]), float(coeffs_low[1])
+                a_high, b_high = float(coeffs_high[0]), float(coeffs_high[1])
+                if abs(a_low - a_high) > 1e-9:
+                    x0 = (b_high - b_low) / (a_low - a_high)
+            if x0 is not None and arr is not None and arr['ind'].size:
+                used_T = x_arr[arr['ind']]
+                out['baselines_cross_near_transition'] = bool(used_T.min() <= x0 <= used_T.max())
+            else:
+                # Couldn't solve for the crossing point, or the Arrhenius
+                # fit didn't produce a usable point set to check against —
+                # can't verify safety, so fail closed.
+                out['baselines_cross_near_transition'] = True
+
+        thermo = None
+        if arr is not None:
+            thermo = self.compute_thermodynamic_params(arr['x_arr'], arr['y_arr'])
+            out['thermo'] = thermo
+            if thermo is not None:
+                if arr['x_arr'].size >= 2:
+                    slope, intercept = thermo['coeffs']
+                    y_pred = slope * arr['x_arr'] + intercept
+                    ss_res = float(np.sum((arr['y_arr'] - y_pred) ** 2))
+                    ss_tot = float(np.sum((arr['y_arr'] - np.mean(arr['y_arr'])) ** 2))
+                    out['arrhenius_r_squared'] = (1 - ss_res / ss_tot) if ss_tot > 0 else None
+                if thermo['Tm'] is not None:
+                    out['Tm_in_measured_range'] = bool(t_min <= thermo['Tm'] <= t_max)
+                    used_T = x_arr[arr['ind']]
+                    out['Tm_in_fit_range'] = bool(used_T.min() <= thermo['Tm'] <= used_T.max())
+
+        # Genuine re-fit of the sigmoid shape in NORMALIZED space, at the
+        # SAME component count the joint fit already settled on — never
+        # a second, independent component-count search (that would let
+        # the dashed baseline lines and the solid sigmoid overlay
+        # disagree on how many transitions there are). Warm-started from
+        # global_fit's own converged components/factors, converted from
+        # the raw-curve fit's units into the [0, 1]-normalized space this
+        # overlay fits in.
+        n_comp = global_fit['n_components']
+        try:
+            sigmoid_fit = self.fit_sigmoid_model(
+                x_arr, norm['y_norm'], n_components=n_comp, shape_name=shape_name,
+                midpoint_guesses=[c['mid'] for c in components],
+                width_guess=[c['width'] for c in components],
+                factor_guesses=[c['factor'] for c in components])
+        except Exception as e:
+            logger.warning(f"fit_automatic: normalized-space sigmoid re-fit failed: {e}")
+            sigmoid_fit = None
+        out['sigmoid_fit'] = sigmoid_fit
+        sigmoid_r2 = sigmoid_fit['quality']['r_squared'] if sigmoid_fit is not None else None
+        out['sigmoid_r_squared'] = sigmoid_r2
+
+        # --- Final reliability verdict (5 of MeltAnalytiX's 6 gates —
+        # hysteresis pairing doesn't apply to a single curve) ----------
+        r2 = out['arrhenius_r_squared']
+        in_range = out['Tm_in_measured_range']
+        in_fit_range = out['Tm_in_fit_range']
+        crossing = out['baselines_cross_near_transition']
+        edge_frac = out['edge_error_fraction']
+
+        gate_arrhenius_r2 = (r2 is not None and r2 >= ARRHENIUS_CONFIDENCE_R2_THRESHOLD)
+        gate_tm_in_range = bool(in_range)
+        gate_no_crossing = not bool(crossing)
+        gate_tm_in_fit_range = (in_fit_range is None) or bool(in_fit_range)
+        gate_sigmoid_r2 = (sigmoid_r2 is None) or (sigmoid_r2 >= SIGMOID_CONFIDENCE_R2_THRESHOLD)
+        gate_edge_ok = (edge_frac is None) or (edge_frac <= EDGE_TOLERANCE_ABSOLUTE_FRACTION)
+
+        out['reliability_gates'] = {
+            'arrhenius_r_squared_ok': gate_arrhenius_r2,
+            'tm_in_measured_range': gate_tm_in_range,
+            'no_baseline_crossing_near_transition': gate_no_crossing,
+            'tm_in_fit_range': gate_tm_in_fit_range,
+            'sigmoid_r_squared_ok': gate_sigmoid_r2,
+            'edge_error_ok': gate_edge_ok,
+        }
+        out['reliable'] = (gate_arrhenius_r2 and gate_tm_in_range and gate_no_crossing
+                           and gate_tm_in_fit_range and gate_sigmoid_r2 and gate_edge_ok)
+        return out
+
+    def _arrhenius_r_squared(self, x, norm, exclude_mask, arrhenius_span):
+        """Small helper for fit_automatic's own accept_step closure: runs
+        the van't Hoff/Arrhenius regression for a candidate normalization
+        and returns just its R^2 (or None if it couldn't be computed) —
+        factored out since the walk-up needs this exact computation twice
+        per step (once for the previous best, once for the candidate) and
+        nowhere else needs the intermediate arrhenius/thermo dicts."""
+        if norm is None:
+            return None
+        unstable_mask = norm.get('unstable_mask')
+        combined_exclude = unstable_mask
+        if exclude_mask is not None:
+            combined_exclude = (exclude_mask if combined_exclude is None
+                                else (combined_exclude | exclude_mask))
+        arr = self.transform_xy_for_arrhenius(x, norm['y_norm'], span=arrhenius_span,
+                                              exclude_mask=combined_exclude)
+        if arr is None or arr['x_arr'].size < 2:
+            return None
+        thermo = self.compute_thermodynamic_params(arr['x_arr'], arr['y_arr'])
+        if thermo is None:
+            return None
+        slope, intercept = thermo['coeffs']
+        y_pred = slope * arr['x_arr'] + intercept
+        ss_res = float(np.sum((arr['y_arr'] - y_pred) ** 2))
+        ss_tot = float(np.sum((arr['y_arr'] - np.mean(arr['y_arr'])) ** 2))
+        return (1 - ss_res / ss_tot) if ss_tot > 0 else None
 
     def parse_ground_truth_info_sheet(self, path):
         """Parse the "Info" sheet of one of this app's own synthetic
