@@ -155,9 +155,12 @@ class MeltingCurveController:
 
         # --- Raw extracted curve ---
         if output_options.get('add_raw_curve'):
+            raw_extra = {'x_value': curve.get('x_value')}
+            if curve.get('svd_diagnostics'):
+                raw_extra['svd_diagnostics'] = curve['svd_diagnostics']
             new_spectra_to_add.append(make_spectrum(
                 curve['y_raw'], "raw",
-                {'x_value': curve.get('x_value')},
+                raw_extra,
                 'Melting Curve Analysis (extracted curve)'))
 
         normalization = settings.get('normalization')
@@ -275,4 +278,27 @@ class MeltingCurveController:
             'x_value': x_value,
             'out_of_range_labels': out_of_range,
             'source_labels': labels,
+        }
+
+    def extract_curve_svd(self, selected_spectra, temperatures, center=True):
+        """SVD counterpart to extract_curve \u2014 see
+        MeltingCurveManager.extract_curve_svd_from_spectra's docstring
+        for the method itself. Returns the SAME dict shape extract_curve
+        does (so any caller of either can treat the result identically),
+        with 'x_value' always None (no single x position applies) and an
+        added 'svd_diagnostics' entry."""
+        y_values, diagnostics = self.manager.extract_curve_svd_from_spectra(
+            selected_spectra, center=center)
+
+        temperatures = np.asarray(temperatures, dtype=float)
+        order = np.argsort(temperatures)
+        labels = [selected_spectra[i]['label'] for i in order]
+
+        return {
+            'x_temperature': temperatures[order],
+            'y_raw': y_values[order],
+            'x_value': None,
+            'out_of_range_labels': [],
+            'source_labels': labels,
+            'svd_diagnostics': diagnostics,
         }

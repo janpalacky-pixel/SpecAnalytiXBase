@@ -165,6 +165,8 @@ class MeltingCurveDialog(QDialog):
                                           # populate_temps_table / revert_to_original_temperatures
         self._external_curve_path = None  # currently selected "From file" source path, if any
         self._external_sheet_names = []   # sheet names of the current Excel file, if any
+        self._pending_svd_diagnostics = None  # set by _gather_curve_from_spectra_svd just
+                                              # before _finalize_curve reads/clears it
         self._suppress_auto_update = False  # re-entrancy/bulk-op guard for the real-time
                                             # curve rebuild — see _auto_update_curve and
                                             # _on_table_cell_edited
@@ -720,6 +722,50 @@ class MeltingCurveDialog(QDialog):
         v.addWidget(self.sheet_row_widget)
         self.sheet_row_widget.setVisible(False)
 
+        self.extraction_method_row_widget = QWidget()
+        method_row = QHBoxLayout(self.extraction_method_row_widget)
+        method_row.setContentsMargins(0, 0, 0, 0)
+        method_row.addWidget(QLabel("Method:"))
+        self.extraction_method_combo = QComboBox()
+        self.extraction_method_combo.addItems(["Extract signal at X", "SVD (generalized curve)"])
+        self.extraction_method_combo.setToolTip(
+            "Extract signal at X: read one signal value from each spectrum at a chosen\n"
+            "x position (below) — the original approach.\n\n"
+            "SVD (generalized curve): build the melting curve from the whole measured\n"
+            "spectral range at once via SVD, the same approach MeltAnalytiX uses — no\n"
+            "single x position to pick. Click ? for details.")
+        self.extraction_method_combo.currentIndexChanged.connect(self._on_extraction_method_changed)
+        method_row.addWidget(self.extraction_method_combo)
+        method_row.addWidget(self._make_help_button(
+            "Extraction method — Extract signal at X / SVD",
+            "Two ways to turn the selected spectra into one melting curve (temperature "
+            "vs. signal), only relevant in \"From spectra\" mode:\n\n"
+            "\"Extract signal at X\" (default, this app's original approach): reads one "
+            "signal value from each spectrum at a single, chosen x position (wavelength/"
+            "wavenumber), optionally averaged over a small window around it. Simple and "
+            "transparent, but sensitive to noise or an isosbestic point sitting exactly "
+            "at that one x position, and requires picking a representative x by hand.\n\n"
+            "\"SVD (generalized curve)\": ported from this app's sister tool MeltAnalytiX "
+            "and matching the convention SpecAnalytiXBase's own SVD Analysis tool uses. "
+            "Instead of one x position, this decomposes the WHOLE (wavelength x spectrum) "
+            "matrix via SVD and uses the first singular component's own across-spectrum "
+            "trajectory as the melting curve — a summary of how the entire spectral "
+            "shape changes, not just one point on it. By default each wavelength's row is "
+            "mean-centered (its own across-spectrum average subtracted) before the SVD "
+            "runs — uncentered SVD's first component tends to just reproduce the plain "
+            "per-spectrum average instead of the real transition shape (uncheck "
+            "\"Mean-center\" only to compare against that original, uncentered behavior).\n\n"
+            "Requires every selected spectrum to share the exact same x-axis grid (same "
+            "wavelengths/wavenumbers) — if they don't, extraction fails with a message "
+            "naming the mismatched spectrum; re-sample/crop onto a common grid first, or "
+            "use \"Extract signal at X\" instead, which has no such requirement.\n\n"
+            "Everything downstream — Normalization, Sigmoid Fit, Automatic mode, Output "
+            "Options — works exactly the same regardless of which extraction method built "
+            "the curve; only how the raw (temperature, signal) curve itself is built "
+            "differs."))
+        method_row.addStretch()
+        v.addWidget(self.extraction_method_row_widget)
+
         self.xvalue_row_widget = QWidget()
         row1 = QHBoxLayout(self.xvalue_row_widget)
         row1.setContentsMargins(0, 0, 0, 0)
@@ -752,6 +798,28 @@ class MeltingCurveDialog(QDialog):
         row1.addWidget(self.window_spin)
         row1.addStretch()
         v.addWidget(self.xvalue_row_widget)
+
+        self.svd_options_row_widget = QWidget()
+        svd_row = QHBoxLayout(self.svd_options_row_widget)
+        svd_row.setContentsMargins(0, 0, 0, 0)
+        self.svd_center_check = QCheckBox("Mean-center each wavelength before SVD")
+        self.svd_center_check.setChecked(True)
+        self.svd_center_check.setToolTip(
+            "Recommended default (matches MeltAnalytiX). Subtracts each wavelength's\n"
+            "own across-spectrum mean before the SVD runs — without this, the first\n"
+            "component tends to just reproduce the plain per-spectrum average rather\n"
+            "than the real transition shape. Uncheck only to compare against the\n"
+            "original, uncentered behavior.")
+        self.svd_center_check.stateChanged.connect(self._on_extraction_params_changed)
+        svd_row.addWidget(self.svd_center_check)
+        svd_row.addStretch()
+        v.addWidget(self.svd_options_row_widget)
+        self.svd_options_row_widget.setVisible(False)
+
+        self.svd_diagnostics_label = QLabel("")
+        self.svd_diagnostics_label.setWordWrap(True)
+        self.svd_diagnostics_label.setVisible(False)
+        v.addWidget(self.svd_diagnostics_label)
 
         group.setLayout(v)
         return group
@@ -1615,6 +1683,7 @@ class MeltingCurveDialog(QDialog):
         curve_payload = dict(curve_payload)
         self.normalization_result = curve_payload.pop('normalization_result', None)
         self.curve = curve_payload
+        self._update_svd_diagnostics_label(self.curve.get('svd_diagnostics'))
         self.x_trans = cs.get('x_trans')
         self.fit_result = cs.get('fit_result')
         self.component_thermodynamics = cs.get('component_thermodynamics')
@@ -1693,6 +1762,13 @@ class MeltingCurveDialog(QDialog):
                 self.window_spin.setValue(cs['window'])
             if cs.get('curve_name'):
                 self.curve_name_edit.setText(cs['curve_name'])
+
+            if cs.get('extraction_method') == 'svd':
+                self.extraction_method_combo.setCurrentIndex(1)
+            else:
+                self.extraction_method_combo.setCurrentIndex(0)
+            if cs.get('svd_center') is not None:
+                self.svd_center_check.setChecked(cs['svd_center'])
 
             if cs.get('source_mode') == 'file' and cs.get('external_file_path'):
                 self._external_curve_path = cs['external_file_path']
@@ -1816,6 +1892,8 @@ class MeltingCurveDialog(QDialog):
         self.fit_results_table.setRowCount(0)
         self.fit_quality_label.setText("R^2: -    RMSD: -")
         self._baseline_defaults_set = False
+        self._pending_svd_diagnostics = None
+        self.svd_diagnostics_label.setVisible(False)
 
     def _on_source_mode_changed(self, spectra_checked):
         """Toggled when either radio button changes (connected to the
@@ -1827,7 +1905,12 @@ class MeltingCurveDialog(QDialog):
         then re-extracts under the new source automatically, rather than
         this dialog silently continuing to show stale results from
         before the switch, or requiring an explicit action to rebuild."""
-        self.xvalue_row_widget.setVisible(spectra_checked)
+        is_svd_method = self.extraction_method_combo.currentIndex() == 1
+        self.extraction_method_row_widget.setVisible(spectra_checked)
+        self.xvalue_row_widget.setVisible(spectra_checked and not is_svd_method)
+        self.svd_options_row_widget.setVisible(spectra_checked and is_svd_method)
+        if not spectra_checked:
+            self.svd_diagnostics_label.setVisible(False)
         self.file_row_widget.setVisible(not spectra_checked)
         is_excel = bool(self._external_curve_path) and \
             os.path.splitext(self._external_curve_path)[1].lower() in ('.xlsx', '.xls')
@@ -1856,6 +1939,20 @@ class MeltingCurveDialog(QDialog):
             # there for that.
             if self._external_curve_path:
                 self._auto_update_curve()
+
+    def _on_extraction_method_changed(self, index):
+        """Extract-at-X vs SVD chosen — toggles which row of controls is
+        visible and, since the two build a curve completely differently,
+        resets and re-extracts under the new method right away (same
+        "no stale results left showing" policy as _on_source_mode_changed)."""
+        is_svd = (index == 1)
+        spectra_checked = self.source_spectra_radio.isChecked()
+        self.xvalue_row_widget.setVisible(spectra_checked and not is_svd)
+        self.svd_options_row_widget.setVisible(spectra_checked and is_svd)
+        self.svd_diagnostics_label.setVisible(False)
+        self._reset_curve_state()
+        if spectra_checked:
+            self._auto_update_curve()
 
     def _on_extraction_params_changed(self, *_args):
         """X, the Averaging window, or Sheet changed — whatever curve/fit
@@ -1928,7 +2025,8 @@ class MeltingCurveDialog(QDialog):
 
         if self.source_spectra_radio.isChecked():
             source_labels = [s['label'] for s in self.selected_spectra]
-            x_value = self.x_value_spin.value()
+            x_value = (None if self.extraction_method_combo.currentIndex() == 1
+                      else self.x_value_spin.value())
         else:
             source_labels = self.curve['source_labels'] if self.curve else []
             x_value = None
@@ -2081,6 +2179,10 @@ class MeltingCurveDialog(QDialog):
         temps = self._read_temperatures()
         if temps is None:
             return None
+
+        if self.extraction_method_combo.currentIndex() == 1:
+            return self._gather_curve_from_spectra_svd(temps, silent=silent)
+
         x_value = self.x_value_spin.value()
         window = self.window_spin.value()
         y_values_batch, out_of_range = self.manager.extract_curve_from_spectra(
@@ -2104,6 +2206,43 @@ class MeltingCurveDialog(QDialog):
 
         return (np.array(temps, dtype=float), np.array(row_y, dtype=float),
                source_labels, out_of_range, x_value)
+
+    def _gather_curve_from_spectra_svd(self, temps, silent=False):
+        """'From spectra' + SVD extraction method: build the melting
+        curve from the first (by default mean-centered) SVD component's
+        own across-spectrum trajectory instead of one signal value at a
+        chosen X — see MeltingCurveManager.extract_curve_svd_from_spectra's
+        docstring. Mirrors _gather_curve_from_spectra's own table-filling
+        and return shape so _finalize_curve/perform_extraction don't need
+        to know or care which extraction method actually ran."""
+        center = self.svd_center_check.isChecked()
+        try:
+            y_values_batch, diagnostics = self.manager.extract_curve_svd_from_spectra(
+                self.selected_spectra, center=center)
+        except Exception as e:
+            if not silent:
+                QMessageBox.warning(self, "SVD Extraction Failed", str(e))
+            return None
+        y_by_label = {s['label']: y for s, y in zip(self.selected_spectra, y_values_batch)}
+
+        self.temps_table.setSortingEnabled(False)
+        row_y, source_labels = [], []
+        prev_suppress = self._suppress_auto_update
+        self._suppress_auto_update = True
+        try:
+            for row in range(self.temps_table.rowCount()):
+                label = self.temps_table.item(row, 0).text()
+                y_val = y_by_label.get(label, float('nan'))
+                self.temps_table.setItem(row, 2, self._numeric_item(y_val))
+                row_y.append(y_val)
+                source_labels.append(label)
+        finally:
+            self._suppress_auto_update = prev_suppress
+        self.temps_table.setSortingEnabled(True)
+
+        self._pending_svd_diagnostics = diagnostics
+        return (np.array(temps, dtype=float), np.array(row_y, dtype=float),
+               source_labels, [], None)
 
     def _gather_curve_from_file(self, silent=False):
         """'From file' source: load an already-built (temperature, signal)
@@ -2969,12 +3108,16 @@ class MeltingCurveDialog(QDialog):
         x_sorted = unique_temps
         y_sorted = np.array([y_values[inverse == i].mean() for i in range(len(unique_temps))])
 
+        svd_diagnostics = self._pending_svd_diagnostics
+        self._pending_svd_diagnostics = None
         self.curve = {
             'x_temperature': x_sorted,
             'y_raw': y_sorted,
             'x_value': x_value,
             'source_labels': source_labels,
+            'svd_diagnostics': svd_diagnostics,
         }
+        self._update_svd_diagnostics_label(svd_diagnostics)
         # Reset anything downstream — a new extraction invalidates any
         # previous normalization/fit.
         self.normalization_result = None
@@ -3038,6 +3181,27 @@ class MeltingCurveDialog(QDialog):
             self._run_current_normalization(silent=True)
         else:
             self.update_plot()
+
+    def _update_svd_diagnostics_label(self, svd_diagnostics):
+        """Show/hide svd_diagnostics_label from an SVD extraction's own
+        diagnostics dict (None for any curve not built via SVD — the
+        label is simply hidden then, same as the Automatic-mode banner
+        outside Automatic mode)."""
+        if not svd_diagnostics:
+            self.svd_diagnostics_label.setVisible(False)
+            return
+        pc1 = svd_diagnostics.get('explained_variance_pc1')
+        pc2 = svd_diagnostics.get('explained_variance_pc2')
+        wl_range = svd_diagnostics.get('wavelength_range')
+        text = "SVD extraction: "
+        if pc1 is not None and np.isfinite(pc1):
+            text += f"PC1 explains {pc1 * 100:.1f}% of variance"
+        if pc2 is not None and np.isfinite(pc2):
+            text += f", PC2 {pc2 * 100:.1f}%"
+        if wl_range:
+            text += f" (x-axis range used: {wl_range[0]:.2f} to {wl_range[1]:.2f})"
+        self.svd_diagnostics_label.setText(text)
+        self.svd_diagnostics_label.setVisible(True)
 
     def on_canvas_key_press(self, event):
         """Interactive baseline picking: zoom/pan the plot to frame a
@@ -3956,7 +4120,14 @@ class MeltingCurveDialog(QDialog):
 
         lines = ["Melting Curve Analysis - Fit Report", ""]
         lines.append(f"Curve name: {self.curve_name_edit.text()}")
-        lines.append(f"Extracted at X = {self.curve.get('x_value')}")
+        if self.curve.get('svd_diagnostics'):
+            svd = self.curve['svd_diagnostics']
+            pc1 = svd.get('explained_variance_pc1')
+            extra = (f", PC1 explained variance = {pc1 * 100:.1f}%"
+                    if pc1 is not None and np.isfinite(pc1) else "")
+            lines.append(f"Extraction method: SVD (generalized curve){extra}")
+        else:
+            lines.append(f"Extracted at X = {self.curve.get('x_value')}")
         t = self.curve['x_temperature']
         lines.append(f"Temperature range: {t.min():.2f} to {t.max():.2f} "
                      f"(degrees, {len(t)} points after averaging any duplicates)")
@@ -4523,6 +4694,8 @@ class MeltingCurveDialog(QDialog):
             'source_labels': self.curve['source_labels'] if self.curve else
                              [s['label'] for s in self.selected_spectra],
             'curve_name': self.curve_name_edit.text(),
+            'extraction_method': 'svd' if self.extraction_method_combo.currentIndex() == 1 else 'signal_at_x',
+            'svd_center': self.svd_center_check.isChecked(),
             'window': self.window_spin.value(),
             'curve': curve_payload,
             'normalization': normalization,

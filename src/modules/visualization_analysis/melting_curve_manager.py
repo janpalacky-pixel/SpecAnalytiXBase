@@ -153,6 +153,101 @@ class MeltingCurveManager:
 
         return np.array(y_values), out_of_range
 
+    def extract_curve_svd_from_spectra(self, spectra, center=True):
+        """Extract a generalized melting curve from a series of spectra
+        via SVD, as an alternative to extract_curve_from_spectra's
+        single-x-value reading.
+
+        Ported from MeltAnalytiX's feature_extraction._generalized_
+        melting_curve (see that module's docstring for the full
+        rationale): rather than picking one representative x position
+        (arbitrary, and sensitive to noise or an isosbestic point sitting
+        exactly there), this decomposes the whole (wavelength x spectrum)
+        matrix via SVD and uses the first singular component's own
+        across-spectrum trajectory as the melting curve \u2014 a summary of
+        how the ENTIRE measured spectral shape changes, not just one
+        point on it. Matches SpecAnalytiXBase's own SVD Analysis tool's
+        SVD convention (src/modules/visualization_analysis/
+        svd_analysis_manager.py): data matrix = wavelengths x spectra,
+        optionally mean-centered per wavelength before np.linalg.svd.
+
+        Args:
+            spectra: list of {'x_scale', 'y_scale', 'label', ...} dicts,
+                one per spectrum (e.g. one per temperature) \u2014 same shape
+                extract_curve_from_spectra takes. Every spectrum MUST
+                share an identical x_scale (same grid, same length) \u2014
+                SVD needs one common matrix, not a per-spectrum
+                interpolation the way the single-X method allows.
+            center: mean-center each wavelength's row (subtract its own
+                across-spectrum mean) before decomposing. Recommended
+                default, matching MeltAnalytiX: an uncentered SVD's first
+                component tends to just reproduce the plain per-spectrum
+                average (dominated by whatever's common to every
+                spectrum) rather than how the spectrum actually CHANGES
+                \u2014 the real transition signal. center=False is kept only
+                for direct before/after comparison.
+
+        Returns:
+            (y_values, diagnostics) \u2014 y_values is the extracted curve, a
+            numpy array in the SAME order as `spectra`. diagnostics is a
+            dict with 'explained_variance_pc1'/'explained_variance_pc2'
+            (fraction of total variance the first two components
+            explain \u2014 PC2 well above ~0 is a real hint that more than
+            one spectroscopic process changes with temperature) and
+            'wavelength_range' (min, max of the shared x-axis actually
+            used).
+
+        Raises:
+            ValueError if fewer than 2 spectra are given, or if their
+            x_scale arrays don't all match exactly.
+        """
+        if len(spectra) < 2:
+            raise ValueError("SVD extraction needs at least 2 spectra.")
+
+        x_scales = [np.asarray(s['x_scale'], dtype=float) for s in spectra]
+        first_x = x_scales[0]
+        for i, x in enumerate(x_scales):
+            if x.shape != first_x.shape or not np.allclose(x, first_x, equal_nan=True):
+                bad_label = spectra[i].get('label', f'spectrum #{i + 1}')
+                raise ValueError(
+                    "SVD extraction requires every selected spectrum to share the exact "
+                    f"same x-axis (wavelength/wavenumber) grid, but '{bad_label}' does not "
+                    "match the others. Re-sample or crop the spectra onto a common grid "
+                    "first, or use \"Extract signal at X\" instead, which doesn't require "
+                    "this.")
+
+        y_scales = [np.asarray(s['y_scale'], dtype=float) for s in spectra]
+        data_matrix = np.column_stack(y_scales)  # wavelengths x spectra
+
+        if center:
+            baseline = data_matrix.mean(axis=1, keepdims=True)
+            working = data_matrix - baseline
+        else:
+            working = data_matrix
+
+        U, S, Vt = np.linalg.svd(working, full_matrices=False)
+        curve = S[0] * Vt[0, :]
+
+        # Sign is arbitrary in SVD \u2014 orient it to correlate positively
+        # with the plain per-wavelength-averaged trajectory, so it's
+        # comparable/consistent across runs without an arbitrary flip
+        # (same convention MeltAnalytiX uses).
+        mean_traj = data_matrix.mean(axis=0)
+        if np.corrcoef(curve, mean_traj)[0, 1] < 0:
+            curve = -curve
+
+        total_var = float(np.sum(S ** 2))
+        explained_pc1 = float(S[0] ** 2 / total_var) if total_var > 0 else float('nan')
+        explained_pc2 = (float(S[1] ** 2 / total_var)
+                         if total_var > 0 and S.size > 1 else float('nan'))
+
+        diagnostics = {
+            'explained_variance_pc1': explained_pc1,
+            'explained_variance_pc2': explained_pc2,
+            'wavelength_range': (float(np.nanmin(first_x)), float(np.nanmax(first_x))),
+        }
+        return curve, diagnostics
+
     # ------------------------------------------------------------------ #
     # 2. Linear-baseline normalization                                    #
     # ------------------------------------------------------------------ #
