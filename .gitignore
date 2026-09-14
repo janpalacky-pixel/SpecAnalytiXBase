@@ -20,3 +20,7 @@ Thumbs.db
 test1.bcw
 test2.vcw
 test2.vcw
+
+
+# Personal, local-only notes (not part of the project) — never tracked
+dev_notes/
