@@ -211,6 +211,17 @@ def get_import_help_content():
                 how to pick which ones to import.
             </li>
             <li>
+                <b>MAT files</b> — <code>.mat</code>, a hyperspectral Raman/IR
+                map exported by WITec's <b>Project FIVE</b> software (the
+                Eigenvector "dataset object" struct layout). Every pixel of
+                the map's row &times; col grid becomes one spectrum, all
+                sharing the map's own calibrated x-axis — see the dedicated
+                section below. No settings apply to this format at all; row,
+                column, and (when the file records them) physical &micro;m
+                coordinates are attached to every imported spectrum's
+                metadata.
+            </li>
+            <li>
                 <b>SpecOrd row-per-measurement CSV</b> — a <code>.csv</code>
                 export straight off a SpecOrd spectrometer's own software,
                 with tick <b>SpecOrd row-per-measurement CSV</b> checked.
@@ -234,7 +245,7 @@ def get_import_help_content():
         happened to choose) that are otherwise ordinary x/y columns —
         picking <b>All Files</b> in the file-picker's format dropdown (or
         dragging the file onto the window) reaches them the same way any
-        <code>.txt</code> file would be. Binary formats (SPE/SPC/JWS) and
+        <code>.txt</code> file would be. Binary formats (SPE/SPC/JWS/MAT) and
         Excel aren't affected by this — those always need their real
         extension, since sniffing binary bytes as text would be meaningless.
     </div>
@@ -427,6 +438,93 @@ def get_import_help_content():
     <p>
         No other settings apply to JWS files — no delimiter, decimal,
         header, or Layout concept, same as SPE/SPC.
+    </p>
+
+    <h2>MAT Files (WITec/Project FIVE Hyperspectral Maps)</h2>
+    <p>
+        MAT files of this kind are hyperspectral <b>maps</b>, not single
+        spectra: an instrument scans a rectangular grid of points across a
+        sample, recording one full spectrum at every point. WITec's
+        <b>Project FIVE</b> software (and other packages built on the same
+        Eigenvector "dataset object" convention) exports this as a single
+        <code>.mat</code> file holding the map's row &times; col size, every
+        pixel's spectrum, the shared spectral x-axis and its unit (e.g.
+        <code>rel. 1/cm</code> for Raman shift), and — when recorded — the
+        physical spacing between pixels in &micro;m.
+    </p>
+    <p>
+        Importing one of these files creates <b>one spectrum per pixel</b>,
+        labelled <code>&lt;file&gt; [rNN_cNN]</code> (row/column numbers
+        zero-padded to the map's own grid size), all sharing that one
+        spectral x-axis. Nothing needs to be configured — the row/col grid
+        size, spectral axis, and pixel coordinates all come from the file
+        itself.
+    </p>
+    <p>
+        Every imported spectrum's <code>import_parameters</code> metadata
+        carries <code>map_n_rows</code> / <code>map_n_cols</code> (the
+        map's full grid size), <code>pixel_row</code> / <code>pixel_col</code>
+        (that spectrum's own position in it), and — when the file recorded
+        physical spacing — <code>spatial_x</code> / <code>spatial_y</code> in
+        <code>spatial_unit</code>. This is what lets the map's spatial
+        structure be reconstructed afterwards — for instance, entering the
+        same <code>map_n_rows</code> &times; <code>map_n_cols</code> into the
+        <b>2-D Map</b> dialog reshapes the imported spectra back into the
+        original spatial grid for visualization.
+    </p>
+    <div class="warning">
+        Support for this format was built and verified against real
+        Project FIVE 5.1 exports rather than a published specification —
+        variants from other Eigenvector-dataset-object-exporting software,
+        or older/newer Project FIVE versions, may use a slightly different
+        internal layout. A file that doesn't match what this reader expects
+        is always rejected with a specific reason (e.g. a missing field, or
+        a declared grid size that doesn't match the actual pixel count) —
+        never silently misread.
+    </div>
+    <p>
+        <b>Preview table columns.</b> Rather than the first few pixels in
+        file order &mdash; which for a map stored row by row would put
+        every sampled column in the same handful of map rows and say
+        nothing about the map's actual extent &mdash; the preview's
+        columns are nine pixels chosen by position: each of the first,
+        middle, and last row, crossed with each of the first, middle, and
+        last column (fewer than nine on a very small map, where some of
+        those coincide). They're listed in that grid's own natural
+        reading order &mdash; every column from the first sampled row,
+        then every column from the middle row, then every column from the
+        last row &mdash; which is why the header order (e.g.
+        <code>r0_c0, r0_c71, r0_c143, r57_c0, &hellip;</code>) can look
+        non-sequential: it's a spatial sample, not a walk through the
+        file's own flat pixel order. Hovering over the table repeats this
+        same explanation. The <b>Rows to show</b> spin box above the
+        table controls how many spectral points are listed (default 20);
+        changing it just redraws the already-loaded preview, it never
+        re-reads the file. Next to it, a small orange <b>?</b> button
+        opens a reminder of the actual post-import workflow &mdash;
+        selecting the imported spectra and opening the <b>2-D Map</b>
+        dialog &mdash; since nothing else on this page explains it.
+    </p>
+    <p>
+        <b>Spatial preview.</b> Below the usual points/values table, a
+        MAT file's preview also shows a raw, unprocessed spatial heatmap
+        — every pixel's own intensity at one spectral point, placed at
+        its actual row/col position. A slider picks which spectral point
+        is shown (defaulting to the middle of the range); dragging it is
+        the fastest way to confirm the file's row/col geometry decoded
+        correctly before importing — a real map looks like a coherent
+        shape, a wrong reshape looks like noise. This heatmap always
+        reflects the file's own data, unprocessed — it's a sanity check,
+        not an analysis view (that's what the app's 2-D Map dialog is
+        for, after import). <b>Preserve aspect ratio</b> (checked by
+        default) keeps each map pixel square in the preview, matching
+        its real physical shape on the sample; uncheck it for a map so
+        elongated in one direction that an equal-aspect view leaves it a
+        thin sliver.
+    </p>
+    <p>
+        No other settings apply to MAT files — no delimiter, decimal,
+        header, Layout, or Zero Padding concept, same as SPE/SPC/JWS.
     </p>
 
     <h2>SpecOrd Row-per-Measurement CSV</h2>
