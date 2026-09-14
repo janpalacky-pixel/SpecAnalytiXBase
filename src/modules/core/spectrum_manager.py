@@ -10,6 +10,7 @@ from src.modules.data_io.spe_data_converter import read_spe_data
 from src.modules.data_io.spc_data_converter import read_spc_data
 from src.modules.data_io.jasco_jws_reader import read_jws_data
 from src.modules.data_io.specord_csv_converter import read_specord_csv_data
+from src.modules.data_io.mat_map_converter import read_mat_map_data
 
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
@@ -413,9 +414,9 @@ class SpectrumManager:
     """
 
     # File extensions handled by read_table_data, plus the binary
-    # formats (.spe, .spc) which bypass it entirely — see the file_ext
-    # branch in load_spectrum_from_file().
-    SUPPORTED_EXTENSIONS = ('.txt', '.csv', '.dat', '.xlsx', '.xls', '.xlsm', '.spe', '.spc', '.jws')
+    # formats (.spe, .spc, .jws, .mat) which bypass it entirely — see
+    # the file_ext branch in load_spectrum_from_file().
+    SUPPORTED_EXTENSIONS = ('.txt', '.csv', '.dat', '.xlsx', '.xls', '.xlsm', '.spe', '.spc', '.jws', '.mat')
 
     def __init__(self):
         self.spectra: Dict[str, Spectrum] = {}
@@ -475,6 +476,16 @@ class SpectrumManager:
                      own value-range-based channel-type guess where the
                      import dialog's preview didn't match reality — see
                      jasco_jws_reader.py's module docstring.)
+        MAT        : .mat  (WITec/Project FIVE hyperspectral map export —
+                     the Eigenvector "dataset object" struct layout. One
+                     spectrum per pixel of the map's row x col grid, all
+                     sharing the map's spectral x-axis. Row/col position,
+                     the map's own row/col size, and (when the file
+                     records them) each pixel's physical µm coordinates
+                     are attached to every spectrum's
+                     metadata['import_parameters'] — see
+                     mat_map_converter.py's module docstring for the file
+                     layout this was verified against.)
         duplicate_block_resolver : optional callable(spectrum_dict, block_info)
                      -> 'split' | 'merge'. Called at most once per call to
                      this method (not once per spectrum), the first time
@@ -516,12 +527,13 @@ class SpectrumManager:
         sheet_name selects which worksheet to read (Excel only); None
         auto-selects "spectra" or the first sheet.
 
-        For SPE, SPC, JWS, and SpecOrd-CSV files, every parameter above
+        For SPE, SPC, JWS, MAT, and SpecOrd-CSV files, every parameter above
         except zero_padding (and each format's own one or two
         format-specific options) is ignored — none of these has a
         delimiter/decimal/header/Layout/column-picker concept at all
         (SpecOrd CSV's own delimiter/decimal are fixed by the format,
-        not configurable).
+        not configurable; MAT has no configurable options at all — its
+        row/col geometry and axes come straight from the file).
         """
         # logger.debug("load_spectrum_from_file called")
         # logger.debug("delimiter=%r, decimal_separator=%r, interlaced=%s", delimiter, decimal_separator, interlaced_format)
@@ -594,6 +606,13 @@ class SpectrumManager:
                     selected_channels=jws_selected_channels,
                     channel_type_overrides=jws_channel_type_overrides,
                 )
+            elif file_ext == '.mat':
+                # WITec/Project FIVE hyperspectral map export — see
+                # mat_map_converter.py's module docstring. Self-
+                # describing (row/col geometry and both axes come from
+                # the file itself), so — like SPE/SPC/JWS above — none
+                # of the text/Excel import settings apply here either.
+                spectra_data = read_mat_map_data(filepath, zero_padding=zero_padding)
             elif file_ext == '.csv' and specord_csv_format:
                 # Opt-in only — see specord_csv_converter.py. A plain
                 # .csv with this flag left at its default (False) never

@@ -16,16 +16,26 @@ import os
 import re
 from typing import Optional, List
 
+import numpy as np
+
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QLabel, QComboBox, QSpinBox,
     QCheckBox, QPushButton, QTableWidget, QTableWidgetItem,
     QFileDialog, QSizePolicy, QHeaderView,
     QRadioButton, QButtonGroup, QListWidget, QListWidgetItem,
-    QMessageBox, QInputDialog, QWidget,
+    QMessageBox, QInputDialog, QWidget, QSlider,
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
+
+# Lazy-loadable, but imported at module level like every other heavy
+# dependency in this app's dialogs (matplotlib is already a hard
+# requirement — see requirements.txt) — only used for the MAT map
+# import's spatial sanity-check preview (see _MatMapPreviewCanvas /
+# _load_mat_preview).
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from src.help.help_window import open_help_topic
 from src.modules.misc.import_profile_manager import ImportProfileManager
@@ -190,6 +200,51 @@ _DISPLAY_TO_DELIM = {v: k for k, v in _DELIM_TO_DISPLAY.items()}
 _DISPLAY_TO_DELIM['Auto'] = None
 
 
+class _MatMapPreviewCanvas(FigureCanvas):
+    """
+    A small, self-contained imshow canvas for the MAT-map import
+    preview's spatial sanity-check view (see _load_mat_preview /
+    _on_mat_xpos_changed).
+
+    Deliberately minimal — no toolbar, no zoom/pan — this exists to let
+    the user visually confirm the file's row/col geometry decoded
+    sensibly (a real map looks like a coherent shape; a wrong reshape
+    looks like noise) before committing to the import, not to serve as
+    an analysis tool. Real spatial analysis happens after import, in
+    the app's own 2-D Map dialog.
+
+    The image axes and colorbar axes are both created ONCE, at fixed
+    figure-fraction positions, rather than recomputed on every redraw
+    via matplotlib's usual make_axes_locatable()/fig.colorbar(ax=...)
+    pattern. That pattern carves the colorbar's slice out of whatever
+    bbox the image axes CURRENTLY occupies, not out of a saved original
+    bbox — so calling it again on a later redraw (moving the slider)
+    carves a second slice out of an already-shrunk axes, and the image
+    visibly shrinks a little more on every single slider step. Fixed
+    rects, set up once and never recomputed, can't drift like that.
+    """
+
+    def __init__(self, parent=None):
+        self.fig = Figure(figsize=(4, 2.0))
+        self.ax = self.fig.add_axes([0.06, 0.10, 0.76, 0.82])
+        self.cax = self.fig.add_axes([0.86, 0.10, 0.05, 0.82])
+        super().__init__(self.fig)
+        self.setParent(parent)
+
+    def update_map(self, data, title: str = '', preserve_aspect: bool = True):
+        self.ax.cla()
+        self.cax.cla()
+        im = self.ax.imshow(
+            data, cmap='viridis', interpolation='nearest',
+            origin='upper', aspect=('equal' if preserve_aspect else 'auto'),
+        )
+        self.ax.set_title(title, fontsize=8)
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        self.fig.colorbar(im, cax=self.cax)
+        self.draw_idle()
+
+
 # ---------------------------------------------------------------------------
 # Dialog
 # ---------------------------------------------------------------------------
@@ -276,12 +331,13 @@ class ImportDialog(QDialog):
                 parent,
                 "Select Spectra Files",
                 "",
-                "All supported files (*.txt *.csv *.dat *.xlsx *.xls *.xlsm *.spe *.spc *.jws);;"
+                "All supported files (*.txt *.csv *.dat *.xlsx *.xls *.xlsm *.spe *.spc *.jws *.mat);;"
                 "Text Files (*.txt *.csv *.dat);;"
                 "Excel Files (*.xlsx *.xls *.xlsm);;"
                 "SPE Files (*.spe);;"
                 "SPC Files (*.spc);;"
                 "JWS Files (*.jws);;"
+                "MAT Map Files (*.mat);;"
                 "All Files (*.*)",
             )
         if not file_paths:
@@ -769,7 +825,108 @@ class ImportDialog(QDialog):
         self._preview_table.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
+        # --- MAT map preview row-count control -----------------------
+        # Hidden entirely except for MAT map files (see _load_mat_preview)
+        # — every other format hardcodes its own row cap (8) and hasn't
+        # asked for this, so there's nothing to show/hide there. Default
+        # of 20 matches the value the preview always used before this
+        # control existed; the table already scrolls, so raising it costs
+        # nothing but a taller scrollbar. Range is (re)set per file in
+        # _load_mat_preview, since it's capped by that file's own number
+        # of spectral points.
+        self._mat_rows_row_widget = QWidget()
+        mat_rows_row = QHBoxLayout(self._mat_rows_row_widget)
+        mat_rows_row.setContentsMargins(0, 0, 0, 4)
+        mat_rows_row.addWidget(QLabel("Rows to show:"))
+        self._mat_rows_spin = QSpinBox()
+        self._mat_rows_spin.setMinimum(1)
+        self._mat_rows_spin.setMaximum(1)
+        self._mat_rows_spin.setValue(1)
+        self._mat_rows_spin.valueChanged.connect(self._on_mat_rows_changed)
+        mat_rows_row.addWidget(self._mat_rows_spin)
+        mat_rows_row.addStretch(1)
+
+        # Small orange "?" button — same style as the Interactive Update
+        # / Legend help button on the main window's plot controls — for
+        # a quick pointer to the actual post-import workflow (Select All
+        # + 2D Map), which nothing else in this dialog hints at.
+        self._mat_workflow_help_button = QPushButton("?")
+        self._mat_workflow_help_button.setFixedWidth(24)
+        self._mat_workflow_help_button.setToolTip(
+            "How to visualize this map after importing it."
+        )
+        self._mat_workflow_help_button.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #F57C00;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  font-weight: bold;"
+            "  padding: 2px;"
+            "}"
+            "QPushButton:hover { background-color: #E65100; }"
+            "QPushButton:pressed { background-color: #BF360C; }"
+        )
+        self._mat_workflow_help_button.clicked.connect(self._show_mat_workflow_help)
+        mat_rows_row.addWidget(self._mat_workflow_help_button)
+
+        self._mat_rows_row_widget.setVisible(False)
+        preview_layout.addWidget(self._mat_rows_row_widget)
+
         preview_layout.addWidget(self._preview_table)
+
+        # --- MAT map spatial sanity-check preview --------------------
+        # Hidden entirely except for MAT map files (see _load_mat_preview,
+        # the only place that populates and shows it) — same "hide, don't
+        # grey out, when a control has no possible effect" convention as
+        # the JWS channel table and SPE calibration checkbox above. A
+        # slider picks which spectral point's intensity is shown as a
+        # raw, unprocessed spatial heatmap — moving it is the fastest way
+        # to visually confirm the file's row/col geometry decoded
+        # sensibly (a coherent shape, not noise) before committing to the
+        # import.
+        self._mat_spatial_group = QWidget()
+        mat_spatial_layout = QVBoxLayout(self._mat_spatial_group)
+        mat_spatial_layout.setContentsMargins(0, 8, 0, 0)
+
+        mat_slider_row = QHBoxLayout()
+        mat_slider_row.addWidget(QLabel("Spatial map at:"))
+        self._mat_xpos_slider = QSlider(Qt.Horizontal)
+        self._mat_xpos_slider.setMinimum(0)
+        self._mat_xpos_slider.setMaximum(0)
+        self._mat_xpos_slider.valueChanged.connect(self._on_mat_xpos_changed)
+        mat_slider_row.addWidget(self._mat_xpos_slider, stretch=1)
+        self._mat_xpos_label = QLabel("")
+        self._mat_xpos_label.setMinimumWidth(120)
+        self._mat_xpos_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        mat_slider_row.addWidget(self._mat_xpos_label)
+        mat_spatial_layout.addLayout(mat_slider_row)
+
+        # Checked by default: an actual spatial map's pixels are square
+        # (or at least a fixed known pitch) on the sample, so a distorted
+        # (stretched-to-fill) view is the wrong default for a "does this
+        # geometry look right" sanity check. Left available to uncheck
+        # for a map so elongated in one direction that an equal-aspect
+        # view leaves it a thin sliver — see _on_mat_aspect_toggled.
+        self._mat_aspect_cb = QCheckBox("Preserve aspect ratio")
+        self._mat_aspect_cb.setChecked(True)
+        self._mat_aspect_cb.toggled.connect(self._on_mat_aspect_toggled)
+        mat_spatial_layout.addWidget(self._mat_aspect_cb)
+
+        self._mat_map_canvas = _MatMapPreviewCanvas(self._mat_spatial_group)
+        self._mat_map_canvas.setMinimumHeight(170)
+        mat_spatial_layout.addWidget(self._mat_map_canvas)
+
+        self._mat_spatial_group.setVisible(False)
+        preview_layout.addWidget(self._mat_spatial_group)
+
+        # Cache for the MAT preview: {'spectra', 'n_rows', 'n_cols',
+        # 'x_scale', 'unit'} for whichever MAT file is currently shown,
+        # so moving the slider redraws instantly instead of re-reading
+        # and re-parsing the file on every step. Cleared/replaced wholesale
+        # each time _load_mat_preview runs for a (possibly different) file.
+        self._mat_preview_cache = None
+
         preview_group.setLayout(preview_layout)
         root.addWidget(preview_group, stretch=1)
 
@@ -859,8 +1016,9 @@ class ImportDialog(QDialog):
         is_spe = file_ext == '.spe'
         is_spc = file_ext == '.spc'
         is_jws = file_ext == '.jws'
+        is_mat = file_ext == '.mat'
         is_csv = file_ext == '.csv'
-        is_binary = is_spe or is_spc or is_jws
+        is_binary = is_spe or is_spc or is_jws or is_mat
 
         # SpecOrd CSV detection: auto-detected fresh from the file's own
         # header row the first time this file is shown; a saved per-file
@@ -904,7 +1062,10 @@ class ImportDialog(QDialog):
         # Zero padding applies to every format except JWS, whose per-file
         # spectra are channel-named (CD/HT/Absorbance) rather than
         # auto-numbered.
-        self._padding_row.setVisible(not is_jws)
+        # MAT map labels are always padded to the map's own grid size
+        # (see mat_map_converter.py) — a global padding choice would be
+        # meaningless for them, same reasoning as JWS's channel names.
+        self._padding_row.setVisible(not is_jws and not is_mat)
         # Reset both binary-format-specific controls up front — each is
         # only ever turned back on by its own _load_*_preview when it's
         # actually relevant for the file now on screen, so navigating away
@@ -912,10 +1073,13 @@ class ImportDialog(QDialog):
         # table stuck on screen.
         self._spe_calib_cb.setVisible(False)
         self._jws_channels_group.setVisible(False)
+        self._mat_spatial_group.setVisible(False)
+        self._mat_rows_row_widget.setVisible(False)
+        self._preview_table.setToolTip("")
         if treat_as_special:
             self._sheet_label.setVisible(False)
             self._sheet_combo.setVisible(False)
-            if is_spe or is_spc:
+            if is_spe or is_spc or is_mat:
                 # Restore this file's own previously-saved zero-padding
                 # width before generating its preview, the same way
                 # _load_spe_preview restores spe_use_calibration below —
@@ -932,6 +1096,8 @@ class ImportDialog(QDialog):
                 self._load_spc_preview(filepath)
             elif is_jws:
                 self._load_jws_preview(filepath)
+            elif is_mat:
+                self._load_mat_preview(filepath)
             else:
                 self._load_specord_preview(filepath)
             if index not in self._file_settings:
@@ -1224,6 +1390,217 @@ class ImportDialog(QDialog):
                 val_item = QTableWidgetItem(f"{sp['y_scale'][r]:.4g}")
                 val_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self._preview_table.setItem(r, c + 1, val_item)
+
+    def _load_mat_preview(self, filepath: str):
+        """
+        Show a preview for a WITec/Project FIVE hyperspectral map .mat
+        file: no configurable settings (same treatment as SPE/SPC/JWS
+        above), just a summary, a look at a handful of pixel spectra,
+        and — unlike SPE/SPC/JWS, because every "spectrum" here is one
+        pixel of an actual 2-D map — a raw spatial heatmap the user can
+        scan across the spectral axis with a slider, as a quick visual
+        check that the file's row/col geometry decoded sensibly (a real
+        map looks like a coherent shape; a wrong reshape looks like
+        noise) before committing to the import.
+        """
+        self._mat_preview_cache = None
+        self._mat_spatial_group.setVisible(False)
+        self._mat_rows_row_widget.setVisible(False)
+
+        try:
+            from src.modules.data_io.mat_map_converter import read_mat_map_data
+            spectra = read_mat_map_data(filepath)
+        except Exception as e:
+            self._summary_label.setText(f"Could not read MAT map file: {e}")
+            self._summary_label.setStyleSheet(
+                "color:#8a0000; background:#fff0f0; padding:2px 4px;"
+                "border-radius:3px; font-weight:bold;"
+            )
+            self._preview_table.setRowCount(0)
+            self._preview_table.setColumnCount(0)
+            return
+
+        n_points = len(spectra[0]['x_scale']) if spectra else 0
+        params = spectra[0]['metadata']['import_parameters'] if spectra else {}
+        n_rows = params.get('map_n_rows', 0)
+        n_cols = params.get('map_n_cols', 0)
+        unit = params.get('spectral_unit') or 'x'
+        dataset_name = params.get('dataset_name')
+        name_part = f" ({dataset_name})" if dataset_name else ""
+        self._summary_label.setText(
+            f"MAT map{name_part} — {n_rows} x {n_cols} pixels "
+            f"({len(spectra)} spectra), {n_points} points each. "
+            f"X axis unit: {unit}."
+        )
+        self._summary_label.setStyleSheet(
+            "color:#7a5c00; background:#fff8dc; padding:2px 4px; border-radius:3px;"
+        )
+
+        # Columns are pixels spread across the map's actual spatial
+        # layout — the four corners, the midpoints of each edge, and the
+        # centre (however many of those are distinct on a small map) —
+        # rather than a spread across the flat pixel list, which for a
+        # map stored row-by-row puts every sampled pixel in the same
+        # handful of map rows and says nothing about the map's spatial
+        # extent. This is a deliberate choice of *which 9 example pixels*
+        # to show, not a consequence of how the file itself stores
+        # pixels — the header order below (row 0's three sample columns,
+        # then row (n_rows-1)//2's, then row n_rows-1's) simply lists
+        # that 3x3 sample grid in its own natural reading order.
+        row_positions = sorted({0, (n_rows - 1) // 2, n_rows - 1}) if n_rows else [0]
+        col_positions = sorted({0, (n_cols - 1) // 2, n_cols - 1}) if n_cols else [0]
+        wanted_positions = [(r, c) for r in row_positions for c in col_positions]
+        by_position = {
+            (p['metadata']['import_parameters']['pixel_row'],
+             p['metadata']['import_parameters']['pixel_col']): p
+            for p in spectra
+        }
+        preview_pixels = [by_position[pos] for pos in wanted_positions if pos in by_position]
+
+        # Cache the sampled columns and the spectral point count so the
+        # rows-to-show spin box can re-render the table instantly on its
+        # own (_populate_mat_preview_table), without re-reading the file.
+        self._mat_preview_cache = {
+            'spectra': spectra,
+            'n_rows': n_rows,
+            'n_cols': n_cols,
+            'x_scale': spectra[0]['x_scale'] if spectra else [],
+            'unit': unit,
+            'preview_pixels': preview_pixels,
+            'n_points': n_points,
+        }
+
+        if n_points:
+            self._mat_rows_spin.blockSignals(True)
+            self._mat_rows_spin.setMaximum(n_points)
+            self._mat_rows_spin.setValue(min(20, n_points))  # default: 20
+            self._mat_rows_spin.blockSignals(False)
+            self._mat_rows_row_widget.setVisible(True)
+            self._populate_mat_preview_table(min(20, n_points))
+        else:
+            self._preview_table.setRowCount(0)
+            self._preview_table.setColumnCount(0)
+
+        # --- spatial heatmap: raw, unprocessed intensity at one x-point ---
+        if n_rows and n_cols and n_points:
+            self._mat_xpos_slider.blockSignals(True)
+            self._mat_xpos_slider.setMaximum(n_points - 1)
+            self._mat_xpos_slider.setValue(n_points // 2)   # default: middle of range
+            self._mat_xpos_slider.blockSignals(False)
+            self._mat_spatial_group.setVisible(True)
+            self._draw_mat_spatial_map(n_points // 2)
+
+    def _populate_mat_preview_table(self, n_preview_rows: int):
+        """
+        (Re)fill the MAT preview table with up to *n_preview_rows*
+        spectral points, using the pixel columns _load_mat_preview
+        already spatially sampled and cached — no file re-read, so
+        changing the row count via _mat_rows_spin is instant.
+        """
+        cache = self._mat_preview_cache
+        preview_pixels = cache['preview_pixels'] if cache else []
+        if not preview_pixels:
+            self._preview_table.setRowCount(0)
+            self._preview_table.setColumnCount(0)
+            return
+
+        unit = cache['unit']
+        n_preview_rows = max(0, min(n_preview_rows, cache['n_points']))
+
+        self._preview_table.setRowCount(n_preview_rows)
+        self._preview_table.setColumnCount(1 + len(preview_pixels))
+        self._preview_table.setHorizontalHeaderLabels(
+            [unit] + [
+                f"r{p['metadata']['import_parameters']['pixel_row']}"
+                f"_c{p['metadata']['import_parameters']['pixel_col']}"
+                for p in preview_pixels
+            ]
+        )
+        # This table shows only 9 demonstrative pixels, not the whole
+        # map — every pixel is still imported when you click Import.
+        self._preview_table.setToolTip(
+            "This is a demonstration preview, not the full map: it shows\n"
+            "only 9 sample spectra from a 3×3 grid — the map's first,\n"
+            "middle, and last row, each crossed with its first, middle,\n"
+            "and last column. Every pixel in the map is still imported\n"
+            "when you click Import; this table just isn't wide enough to\n"
+            "preview all of them at once."
+        )
+        for r in range(n_preview_rows):
+            idx_item = QTableWidgetItem(f"{preview_pixels[0]['x_scale'][r]:.4g}")
+            idx_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            idx_item.setBackground(Qt.GlobalColor.cyan)
+            idx_item.setForeground(Qt.GlobalColor.darkBlue)
+            self._preview_table.setItem(r, 0, idx_item)
+            for c, sp in enumerate(preview_pixels):
+                val_item = QTableWidgetItem(f"{sp['y_scale'][r]:.4g}")
+                val_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._preview_table.setItem(r, c + 1, val_item)
+
+    def _on_mat_rows_changed(self, value: int):
+        self._populate_mat_preview_table(value)
+
+    def _show_mat_workflow_help(self):
+        """Quick popup pointing at the actual post-import workflow for a
+        MAT map — nothing else in this dialog explains it, since it's the
+        one format here where the natural next step isn't just "look at
+        the imported spectra" but "look at them spatially"."""
+        QMessageBox.information(
+            self,
+            "Analyzing an imported map",
+            "<b>To visualize this map spatially:</b> after importing, "
+            "select every spectrum this file produced in the main "
+            "spectra list (<b>Select All</b>), then open <b>2D Map</b> "
+            "from the Visualization menu. Its <b>Suggest…</b> button "
+            "lists every valid rows &times; cols pair for that many "
+            "spectra and pre-selects the most square-ish one — it "
+            "doesn't read this file's own row/col metadata, so for a "
+            "non-square map double-check the pair it picked (or read "
+            "off <code>map_n_rows</code> &times; <code>map_n_cols</code> "
+            "from a spectrum's metadata) before entering it, rather than "
+            "assuming the pre-selected pair is always the real one.<br><br>"
+            "A hyperspectral map can easily produce many thousands of "
+            "spectra. Before clicking <b>Select All</b>, consider "
+            "unchecking <b>Interactive Update</b> in the main plot "
+            "controls — with it on, the plot redraws after every "
+            "spectrum added to the selection, which gets slow for a "
+            "selection this large."
+        )
+
+    def _draw_mat_spatial_map(self, x_index: int):
+        """
+        Redraw the MAT preview's spatial heatmap for spectral point
+        *x_index*, using the currently-cached preview data (see
+        _load_mat_preview) — no file re-read, so moving the slider is
+        instant. Every pixel's raw, unprocessed y-value at x_index is
+        placed at its own (row, col); a pixel this file's geometry check
+        already rejected can't occur (read_mat_map_data would have
+        raised), so every grid cell is always filled.
+        """
+        cache = self._mat_preview_cache
+        if cache is None:
+            return
+
+        n_rows, n_cols = cache['n_rows'], cache['n_cols']
+        grid = np.empty((n_rows, n_cols), dtype=float)
+        for sp in cache['spectra']:
+            p = sp['metadata']['import_parameters']
+            grid[p['pixel_row'], p['pixel_col']] = sp['y_scale'][x_index]
+
+        x_value = cache['x_scale'][x_index]
+        unit = cache['unit']
+        self._mat_xpos_label.setText(f"{x_value:.4g} {unit}".strip())
+        self._mat_map_canvas.update_map(
+            grid, title=f"raw intensity at {x_value:.4g} {unit}".strip(),
+            preserve_aspect=self._mat_aspect_cb.isChecked(),
+        )
+
+    def _on_mat_xpos_changed(self, value: int):
+        self._draw_mat_spatial_map(value)
+
+    def _on_mat_aspect_toggled(self, _checked: bool):
+        if self._mat_preview_cache is not None:
+            self._draw_mat_spatial_map(self._mat_xpos_slider.value())
 
     def _load_specord_preview(self, filepath: str):
         """
@@ -2701,6 +3078,9 @@ class ImportDialog(QDialog):
                 return
             if ext == '.spc':
                 self._load_spc_preview(filepath)
+                return
+            if ext == '.mat':
+                self._load_mat_preview(filepath)
                 return
 
         delim_text = self._delim_combo.currentText()
