@@ -19,6 +19,16 @@ class Map2DManager:
     * Compute per-spectrum SVD coefficients (Vt row k) from the same
       range-filtered spectra and return U[:, k] (subspectrum profile)
       alongside the coefficient map.
+    * Same idea for NMF and MCR-ALS: range-filter, hand the result to
+      NMFManager / MCRALSManager (the same classes the standalone NMF
+      Analysis / MCR-ALS tools use, so this is never a second
+      implementation to keep in sync by hand), and reshape one
+      component's per-pixel score into a map. get_n_components(),
+      get_component_subspectrum(), get_component_coefficients() and
+      get_component_explained_variance() accept a `kind` of 'svd',
+      'nmf' or 'mcr' and dispatch accordingly, so dialog code that
+      wants to work with "whichever decomposition is active" doesn't
+      need three separate near-identical call sites.
     * Reshape flat per-spectrum arrays into (n_rows, n_cols) grids ready
       for imshow / contourf.
     """
@@ -44,6 +54,19 @@ class Map2DManager:
         self._svd_x_axis = None
         self._explained_variance = None
 
+        # NMF / MCR-ALS internals (populated by compute_nmf_map /
+        # compute_mcr_map). Each holds the actual NMFManager /
+        # MCRALSManager instance from the fit — not just the arrays —
+        # so get_component_* below can read straight from it, the same
+        # way the standalone NMF Analysis / MCR-ALS dialogs do.
+        self._nmf_manager = None
+        self._mcr_manager = None
+        # (n_runs, n_in_near_best_pool, consensus) from the last
+        # compute_nmf_map()/compute_mcr_map() call, or None if that
+        # call was a plain single fit (n_runs=1) — see _pick_best_of_n.
+        self._nmf_run_info = None
+        self._mcr_run_info = None
+
     # ------------------------------------------------------------------ #
     # Dimension validation                                                 #
     # ------------------------------------------------------------------ #
@@ -52,6 +75,66 @@ class Map2DManager:
     def validate_dimensions(n_spectra: int, n_rows: int, n_cols: int) -> bool:
         """Return True if n_rows * n_cols == n_spectra (and both > 0)."""
         return n_rows > 0 and n_cols > 0 and n_rows * n_cols == n_spectra
+
+    @staticmethod
+    def _match_similarity(A, B):
+        """Average best-matched absolute correlation between two sets of
+        component rows (e.g. two H or ST matrices from two separate
+        fits) — used to judge whether two candidate solutions agree with
+        each other structurally. Same one-to-one best-matching logic as
+        nmf_dialog.py / mcr_als_dialog.py's own "Run N times, keep best".
+        """
+        n = A.shape[0]
+        used = set()
+        total = 0.0
+        for k in range(n):
+            best_j, best_c = None, -2
+            for j in range(n):
+                if j in used:
+                    continue
+                length = min(A.shape[1], B.shape[1])
+                c = np.corrcoef(A[k, :length], B[j, :length])[0, 1]
+                if np.isnan(c):
+                    c = 0.0
+                if abs(c) > best_c:
+                    best_c, best_j = abs(c), j
+            used.add(best_j)
+            total += best_c
+        return total / n
+
+    @classmethod
+    def _pick_best_of_n(cls, trials, shape_matrices):
+        """Given a list of (lof, mgr) trials, return (best_mgr, consensus, pool).
+
+        Doesn't just keep the single lowest-LOF run: with a genuinely
+        noisy fit, the absolute best LOF can belong to a solution that
+        fits this particular noise realization marginally better than
+        several other, essentially-as-good solutions, while representing
+        a different (wrong) rotation of the components. Instead, take the
+        pool of near-best runs (within 2% of the best LOF) and keep
+        whichever is most representative of that pool (highest average
+        structural agreement with the others in it) — same policy as the
+        standalone NMF Analysis / MCR-ALS "Run N times, keep best".
+
+        shape_matrices : callable(mgr) -> 2-D array of component rows
+            (mgr.H for NMF, mgr.ST for MCR-ALS) used for the agreement check.
+
+        consensus is None when the pool has only one member (nothing to
+        compare against).
+        """
+        best_lof = min(lof for lof, _ in trials)
+        near_best_tol = 0.02   # within 2% of the best LOF
+        pool = [(lof, mgr) for lof, mgr in trials
+                if lof <= best_lof * (1 + near_best_tol)]
+        if len(pool) == 1:
+            return pool[0][1], None, pool
+        agreement = []
+        for i, (_, mgr_i) in enumerate(pool):
+            scores = [cls._match_similarity(shape_matrices(mgr_i), shape_matrices(mgr_j))
+                      for j, (_, mgr_j) in enumerate(pool) if j != i]
+            agreement.append(np.mean(scores))
+        best_idx = int(np.argmax(agreement))
+        return pool[best_idx][1], agreement[best_idx], pool
 
     @staticmethod
     def factor_pairs(n: int):
@@ -476,6 +559,277 @@ class Map2DManager:
         return self.map_data
 
     # ------------------------------------------------------------------ #
+    # NMF / MCR-ALS maps                                                   #
+    # ------------------------------------------------------------------ #
+
+    def _filter_spectra_for_decomposition(self, spectra, x_min, x_max,
+                                           include_ranges, exclude_ranges):
+        """
+        Range-filter every spectrum in *spectra*, using the exact same
+        per-spectrum filtering (_apply_range_filter) and cross-spectrum
+        axis-consistency check compute_svd_map uses — but return a new
+        list of spectrum dicts rather than a bare matrix, since that's
+        the shape NMFManager.compute() / MCRALSManager.compute() expect
+        (both are reused unmodified from the standalone NMF Analysis /
+        MCR-ALS tools, not reimplemented here).
+
+        Deliberately separate from compute_svd_map's own inline filtering
+        loop rather than a shared refactor of it: compute_svd_map is
+        working, tested code, and duplicating a dozen lines here is a
+        smaller risk than touching it.
+
+        Returns None (after logging the reason) if the spectra don't
+        share a common x-axis after filtering, or nothing remains.
+        """
+        filtered = []
+        filtered_x = None
+        reference_sp = None
+        for sp in spectra:
+            x = np.asarray(sp['x_scale'], dtype=float)
+            y = np.asarray(sp['y_scale'], dtype=float)
+            xf, yf = self._apply_range_filter(
+                x, y, x_min, x_max, include_ranges, exclude_ranges)
+            if filtered_x is None:
+                filtered_x = xf
+                reference_sp = sp
+            elif len(xf) == len(filtered_x) and not axes_match(xf, filtered_x):
+                logger.error(
+                    "Map2DManager: cannot compute map — spectra don't "
+                    "share a common x-axis.\n%s",
+                    describe_axis_mismatch(reference_sp, sp, 'component map')
+                )
+                return None
+            filtered.append({
+                'label': sp.get('label', ''),
+                'x_scale': xf,
+                'y_scale': yf,
+                'metadata': sp.get('metadata', {}),
+            })
+
+        if filtered_x is None or len(filtered_x) == 0:
+            logger.error("Map2DManager: no data points remain after filtering")
+            return None
+
+        lengths = {len(s['y_scale']) for s in filtered}
+        if len(lengths) > 1:
+            logger.error("Map2DManager: spectra have different lengths after "
+                         "filtering (%s) – linearization required", lengths)
+            return None
+
+        return filtered
+
+    def compute_nmf_map(self, spectra, n_rows, n_cols, n_components,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None,
+                        init='nndsvda', max_iter=500, random_state=42,
+                        n_runs=1, references=None, fix_references=False):
+        """
+        Compute a 2-D map from the NMF score W[:, component_index] — the
+        same role Vt[component_index, :] plays in compute_svd_map —
+        reshaped to the map's own (n_rows, n_cols) grid.
+
+        The spectra are first filtered to the selected spectral range
+        (see _filter_spectra_for_decomposition), then the actual fit is
+        delegated to NMFManager — the same class the standalone NMF
+        Analysis tool uses — so this mode's math is identical to (and
+        stays in sync with) that tool's, rather than a second
+        implementation to keep consistent by hand.
+
+        Parameters
+        ----------
+        spectra         : list of spectrum dicts
+        n_rows, n_cols  : map dimensions
+        n_components    : number of NMF components to fit
+        component_index : 0-based component whose score becomes the map
+        x_min, x_max    : global clip limits
+        include_ranges  : include-mode ranges
+        exclude_ranges  : exclude-mode ranges
+        init, max_iter, random_state : passed straight through to
+            NMFManager.compute() (ignored when n_runs > 1 — see below)
+        n_runs : if > 1, run the fit this many times with init='random'
+            and a different seed each time, then keep whichever run is
+            most representative of the near-best group — same "Run N
+            times, keep best" policy as the standalone NMF Analysis tool.
+            get_last_run_info('nmf') reports (n_runs, pool_size, consensus)
+            afterward.
+        references, fix_references : passed straight through to
+            NMFManager.compute() on every trial.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_rows, n_cols), or None on error/failure
+        (NMFManager.last_error carries the reason for a fit failure).
+        """
+        if not self.validate_dimensions(len(spectra), n_rows, n_cols):
+            logger.error("Map2DManager: dimension mismatch %d × %d ≠ %d",
+                         n_rows, n_cols, len(spectra))
+            return None
+
+        filtered = self._filter_spectra_for_decomposition(
+            spectra, x_min, x_max, include_ranges or [], exclude_ranges or [])
+        if filtered is None:
+            return None
+
+        from src.modules.visualization_analysis.nmf_manager import NMFManager
+
+        self._nmf_run_info = None
+        if n_runs <= 1:
+            mgr = NMFManager()
+            ok = mgr.compute(filtered, n_components, init=init,
+                             max_iter=max_iter, random_state=random_state,
+                             references=references or {},
+                             fix_references=fix_references)
+            if not ok:
+                logger.error("Map2DManager: NMF failed: %s", mgr.last_error)
+                return None
+        else:
+            trials = []
+            last_error = None
+            for i in range(n_runs):
+                trial_mgr = NMFManager()
+                trial_ok = trial_mgr.compute(
+                    filtered, n_components, init='random',
+                    max_iter=max_iter, random_state=i,
+                    references=references or {},
+                    fix_references=fix_references)
+                if trial_ok:
+                    trials.append((trial_mgr.lof, trial_mgr))
+                else:
+                    last_error = trial_mgr.last_error
+            if not trials:
+                logger.error("Map2DManager: all %d NMF trials failed: %s",
+                             n_runs, last_error)
+                self._nmf_manager = None
+                return None
+            mgr, consensus, pool = self._pick_best_of_n(
+                trials, shape_matrices=lambda m: m.H)
+            self._nmf_run_info = (n_runs, len(pool), consensus)
+
+        self._nmf_manager = mgr
+        n_actual = mgr.W.shape[1]
+        component_index = max(0, min(component_index, n_actual - 1))
+
+        self.map_data = mgr.W[:, component_index].reshape(n_rows, n_cols)
+        self.n_rows = n_rows
+        self.n_cols = n_cols
+        self.map_mode = "nmf"
+
+        logger.debug(
+            "Map2DManager: NMF map computed (%d×%d, component=%d, EV=%.2f%%)",
+            n_rows, n_cols, component_index + 1,
+            mgr.explained_variance[component_index])
+        return self.map_data
+
+    def compute_mcr_map(self, spectra, n_rows, n_cols, n_components,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None,
+                        init='svd', max_iterations=100, tol=0.01,
+                        c_nonneg=True, st_nonneg=True,
+                        normalize_spectra=True, closure=False,
+                        random_state=42,
+                        n_runs=1, references=None, fix_references=False):
+        """
+        Compute a 2-D map from the MCR-ALS concentration profile
+        C[:, component_index] — the same role Vt[component_index, :]
+        plays in compute_svd_map — reshaped to the map's own
+        (n_rows, n_cols) grid.
+
+        Same pattern as compute_nmf_map: filter to the selected range,
+        then delegate the actual fit to MCRALSManager (the class the
+        standalone MCR-ALS tool uses) rather than reimplementing it.
+
+        Parameters
+        ----------
+        spectra         : list of spectrum dicts
+        n_rows, n_cols  : map dimensions
+        n_components    : number of components to resolve
+        component_index : 0-based component whose concentration profile
+            becomes the map
+        x_min, x_max    : global clip limits
+        include_ranges  : include-mode ranges
+        exclude_ranges  : exclude-mode ranges
+        init, max_iterations, tol, c_nonneg, st_nonneg,
+        normalize_spectra, closure, random_state : passed straight
+            through to MCRALSManager.compute() (init ignored when
+            n_runs > 1 — see below)
+        n_runs : if > 1, run the fit this many times with init='random'
+            and a different seed each time, then keep whichever run is
+            most representative of the near-best group — same "Run N
+            times, keep best" policy as the standalone MCR-ALS tool.
+            get_last_run_info('mcr') reports (n_runs, pool_size, consensus)
+            afterward.
+        references, fix_references : passed straight through to
+            MCRALSManager.compute() on every trial.
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_rows, n_cols), or None on error/failure.
+        """
+        if not self.validate_dimensions(len(spectra), n_rows, n_cols):
+            logger.error("Map2DManager: dimension mismatch %d × %d ≠ %d",
+                         n_rows, n_cols, len(spectra))
+            return None
+
+        filtered = self._filter_spectra_for_decomposition(
+            spectra, x_min, x_max, include_ranges or [], exclude_ranges or [])
+        if filtered is None:
+            return None
+
+        from src.modules.visualization_analysis.mcr_als_manager import MCRALSManager
+
+        self._mcr_run_info = None
+        if n_runs <= 1:
+            mgr = MCRALSManager()
+            ok = mgr.compute(filtered, n_components, init=init,
+                             max_iterations=max_iterations, tol=tol,
+                             c_nonneg=c_nonneg, st_nonneg=st_nonneg,
+                             normalize_spectra=normalize_spectra,
+                             closure=closure, random_state=random_state,
+                             references=references or {},
+                             fix_references=fix_references)
+            if not ok:
+                logger.error("Map2DManager: MCR-ALS failed")
+                return None
+        else:
+            trials = []
+            for i in range(n_runs):
+                trial_mgr = MCRALSManager()
+                trial_ok = trial_mgr.compute(
+                    filtered, n_components, init='random',
+                    max_iterations=max_iterations, tol=tol,
+                    c_nonneg=c_nonneg, st_nonneg=st_nonneg,
+                    normalize_spectra=normalize_spectra,
+                    closure=closure, random_state=i,
+                    references=references or {},
+                    fix_references=fix_references)
+                if trial_ok:
+                    trials.append((trial_mgr.lof, trial_mgr))
+            if not trials:
+                logger.error("Map2DManager: all %d MCR-ALS trials failed", n_runs)
+                self._mcr_manager = None
+                return None
+            mgr, consensus, pool = self._pick_best_of_n(
+                trials, shape_matrices=lambda m: m.ST)
+            self._mcr_run_info = (n_runs, len(pool), consensus)
+
+        self._mcr_manager = mgr
+        n_actual = mgr.C.shape[1]
+        component_index = max(0, min(component_index, n_actual - 1))
+
+        self.map_data = mgr.C[:, component_index].reshape(n_rows, n_cols)
+        self.n_rows = n_rows
+        self.n_cols = n_cols
+        self.map_mode = "mcr"
+
+        logger.debug(
+            "Map2DManager: MCR-ALS map computed (%d×%d, component=%d, EV=%.2f%%)",
+            n_rows, n_cols, component_index + 1,
+            mgr.explained_variance[component_index])
+        return self.map_data
+
+    # ------------------------------------------------------------------ #
     # Accessors                                                            #
     # ------------------------------------------------------------------ #
 
@@ -505,3 +859,124 @@ class Map2DManager:
             return None
         ci = max(0, min(component_index, self._Vt.shape[0] - 1))
         return self._Vt[ci, :]
+
+    # ------------------------------------------------------------------ #
+    # Unified accessors — work with 'svd' | 'nmf' | 'mcr'                 #
+    # ------------------------------------------------------------------ #
+    #
+    # Added alongside (not replacing) the SVD-only accessors above, so
+    # every existing SVD call site keeps working completely unchanged.
+    # New dialog code that wants to handle "whichever decomposition is
+    # currently active" uses these instead of three separate,
+    # near-identical branches.
+
+    _KNOWN_KINDS = ('svd', 'nmf', 'mcr')
+
+    def get_n_components(self, kind):
+        """Number of available components for *kind* (0 if not computed)."""
+        if kind == 'svd':
+            return self.get_n_svd_components()
+        if kind == 'nmf':
+            mgr = self._nmf_manager
+            return 0 if mgr is None or mgr.W is None else mgr.W.shape[1]
+        if kind == 'mcr':
+            mgr = self._mcr_manager
+            return 0 if mgr is None or mgr.C is None else mgr.C.shape[1]
+        raise ValueError(f"Unknown decomposition kind: {kind!r}")
+
+    def get_component_subspectrum(self, kind, component_index):
+        """
+        Return (x_axis, values) for one component's own spectral shape
+        — U[:, k] for SVD, H[k, :] for NMF, ST[k, :] for MCR-ALS.
+        Returns (None, None) if *kind* hasn't been computed yet.
+        """
+        if kind == 'svd':
+            return self.get_subspectrum(component_index)
+        if kind == 'nmf':
+            mgr = self._nmf_manager
+            if mgr is None or mgr.H is None:
+                return None, None
+            ci = max(0, min(component_index, mgr.H.shape[0] - 1))
+            return mgr.x_axis, mgr.H[ci, :]
+        if kind == 'mcr':
+            mgr = self._mcr_manager
+            if mgr is None or mgr.ST is None:
+                return None, None
+            ci = max(0, min(component_index, mgr.ST.shape[0] - 1))
+            return mgr.x_axis, mgr.ST[ci, :]
+        raise ValueError(f"Unknown decomposition kind: {kind!r}")
+
+    def get_component_coefficients(self, kind, component_index):
+        """
+        Return the per-pixel score/coefficient row for one component —
+        Vt[k, :] for SVD, W[:, k] for NMF, C[:, k] for MCR-ALS — i.e.
+        exactly the flat array compute_*_map() reshapes into the map.
+        Returns None if *kind* hasn't been computed yet.
+        """
+        if kind == 'svd':
+            return self.get_coefficients(component_index)
+        if kind == 'nmf':
+            mgr = self._nmf_manager
+            if mgr is None or mgr.W is None:
+                return None
+            ci = max(0, min(component_index, mgr.W.shape[1] - 1))
+            return mgr.W[:, ci]
+        if kind == 'mcr':
+            mgr = self._mcr_manager
+            if mgr is None or mgr.C is None:
+                return None
+            ci = max(0, min(component_index, mgr.C.shape[1] - 1))
+            return mgr.C[:, ci]
+        raise ValueError(f"Unknown decomposition kind: {kind!r}")
+
+    def get_component_explained_variance(self, kind):
+        """Full explained-variance array for *kind*, or None."""
+        if kind == 'svd':
+            return self.get_explained_variance()
+        if kind == 'nmf':
+            return None if self._nmf_manager is None else self._nmf_manager.explained_variance
+        if kind == 'mcr':
+            return None if self._mcr_manager is None else self._mcr_manager.explained_variance
+        raise ValueError(f"Unknown decomposition kind: {kind!r}")
+
+    def get_last_decomp_error(self, kind):
+        """
+        Specific reason the last compute_nmf_map()/compute_mcr_map() call
+        failed, or None. SVD has no equivalent — np.linalg.svd either
+        succeeds or raises, there's no separate "why did the fit itself
+        refuse" message the way NMF/MCR-ALS have (e.g. mismatched x-axes,
+        non-overlapping ranges).
+        """
+        if kind == 'nmf':
+            return None if self._nmf_manager is None else self._nmf_manager.last_error
+        if kind == 'mcr':
+            return None if self._mcr_manager is None else self._mcr_manager.last_error
+        return None
+
+    def get_component_lof(self, kind):
+        """Lack-of-fit (%) for the last fit of *kind*, or None. SVD has no
+        equivalent (see get_last_decomp_error)."""
+        if kind == 'nmf':
+            return None if self._nmf_manager is None else self._nmf_manager.lof
+        if kind == 'mcr':
+            return None if self._mcr_manager is None else self._mcr_manager.lof
+        return None
+
+    def get_component_iterations(self, kind):
+        """(iterations_used, converged) for the last fit of *kind*, or
+        (None, None)."""
+        mgr = self._nmf_manager if kind == 'nmf' else (
+            self._mcr_manager if kind == 'mcr' else None)
+        if mgr is None:
+            return None, None
+        return getattr(mgr, 'iterations_used', None), getattr(mgr, 'converged', None)
+
+    def get_last_run_info(self, kind):
+        """(n_runs, pool_size, consensus) from the last compute_*_map() call
+        if it used n_runs > 1 ("Run N times, keep best"), else None — the
+        last such call was a single, plain fit."""
+        if kind == 'nmf':
+            return self._nmf_run_info
+        if kind == 'mcr':
+            return self._mcr_run_info
+        return None

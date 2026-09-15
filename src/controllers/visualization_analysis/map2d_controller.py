@@ -76,6 +76,77 @@ class Map2DController:
     def get_coefficients(self, component_index):
         return self.manager.get_coefficients(component_index)
 
+    def compute_nmf_map(self, spectra, n_rows, n_cols, n_components,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None,
+                        init='nndsvda', max_iter=500, random_state=42,
+                        n_runs=1, references=None, fix_references=False):
+        """Delegate NMF spatial map computation to manager; return map array or None."""
+        return self.manager.compute_nmf_map(
+            spectra, n_rows, n_cols, n_components,
+            component_index=component_index,
+            x_min=x_min, x_max=x_max,
+            include_ranges=include_ranges,
+            exclude_ranges=exclude_ranges,
+            init=init, max_iter=max_iter, random_state=random_state,
+            n_runs=n_runs, references=references,
+            fix_references=fix_references,
+        )
+
+    def compute_mcr_map(self, spectra, n_rows, n_cols, n_components,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None,
+                        init='svd', max_iterations=100, tol=0.01,
+                        c_nonneg=True, st_nonneg=True,
+                        normalize_spectra=True, closure=False,
+                        random_state=42,
+                        n_runs=1, references=None, fix_references=False):
+        """Delegate MCR-ALS spatial map computation to manager; return map array or None."""
+        return self.manager.compute_mcr_map(
+            spectra, n_rows, n_cols, n_components,
+            component_index=component_index,
+            x_min=x_min, x_max=x_max,
+            include_ranges=include_ranges,
+            exclude_ranges=exclude_ranges,
+            init=init, max_iterations=max_iterations, tol=tol,
+            c_nonneg=c_nonneg, st_nonneg=st_nonneg,
+            normalize_spectra=normalize_spectra, closure=closure,
+            random_state=random_state,
+            n_runs=n_runs, references=references,
+            fix_references=fix_references,
+        )
+
+    def get_component_lof(self, kind):
+        return self.manager.get_component_lof(kind)
+
+    def get_component_iterations(self, kind):
+        return self.manager.get_component_iterations(kind)
+
+    def get_last_run_info(self, kind):
+        return self.manager.get_last_run_info(kind)
+
+    # -- Unified decomposition accessors (svd / nmf / mcr) --------------- #
+    # These let the dialog handle "whichever decomposition is active" via
+    # one code path; the SVD-only methods above are kept untouched for
+    # backward compatibility / existing call sites.
+
+    def get_n_components(self, kind):
+        return self.manager.get_n_components(kind)
+
+    def get_component_subspectrum(self, kind, component_index):
+        return self.manager.get_component_subspectrum(kind, component_index)
+
+    def get_component_coefficients(self, kind, component_index):
+        return self.manager.get_component_coefficients(kind, component_index)
+
+    def get_component_explained_variance(self, kind):
+        return self.manager.get_component_explained_variance(kind)
+
+    def get_last_decomp_error(self, kind):
+        return self.manager.get_last_decomp_error(kind)
+
     # ------------------------------------------------------------------ #
     # Dialog launcher (called by VisualizationAnalysisController)         #
     # ------------------------------------------------------------------ #
