@@ -24,11 +24,44 @@ from src.modules.utils.resource_path import resource_path
 # Measured (experimental) datasets shipped in resources/test_data/real/.
 # (menu label, filename). Empty by default — the app ships no measured data.
 REAL_TEST_DATASETS = [
-    
-    ('Raman data for 2D map (85x55)', 'Raman_2D_map_85x55.txt'),
+
     ('CD spectra of TBA oligo', 'CD_spectra_TBA.txt'),
     ('Raman DNA conc. dep.', 'Raman_DNA_conc_dep.txt'),
-    
+
+]
+
+# 2D spectral maps specifically — grouped in their own "2D maps" submenu
+# (under Real (measured)) rather than mixed flat in with the two series
+# above, and kept in resources/test_data/real/2D map/ so they don't
+# collide with any other real dataset sharing a similar name. Paths are
+# forward-slash here for readability; open_real_dataset() below splits
+# on '/' so this is OS-path-safe on Windows too.
+REAL_TEST_DATASETS_2D_MAPS = [
+    ('Raman data for 2D map (85x55)', '2D map/Raman_2D_map_85x55.txt'),
+    ('Chlorella (WITec 2D map, 25×25)', '2D map/Chlorella.mat'),
+]
+
+# Real-data 2D maps too large to keep in the git repository (several are
+# 100+ MB — over or right at GitHub's 100 MB per-file limit). Shipped
+# instead as assets on a GitHub Release; Help -> Test datasets ->
+# Real (measured) -> "Download large test datasets..." fetches whichever
+# of these the user picks into resources/test_data/real/. See
+# resources/test_data/real/README.md for how this is set up and how to
+# add more.
+LARGE_TEST_DATASETS_OWNER_REPO   = 'janpalacky-pixel/SpecAnalytiXBase'
+LARGE_TEST_DATASETS_RELEASE_TAG  = 'test-data-v1'
+LARGE_TEST_DATASETS = [
+    ('Bigelowiella (WITec 2D map)',    'Bigelowiella.mat'),
+    ('Cryptomonas (WITec 2D map)',     'Cryptomonas.mat'),
+    ('Eimeria (WITec 2D map)',         'Eimeria.mat'),
+    ('Gefionella (WITec 2D map)',      'Gefionella.mat'),
+    ('Glenodinium (WITec 2D map)',     'Glenodinium.mat'),
+    ('Klebsormidium (WITec 2D map)',   'Klebsormidium.mat'),
+    ('Microchloropsis (WITec 2D map)', 'Microchloropsis.mat'),
+    ('Naegleria (WITec 2D map)',       'Naegleria.mat'),
+    ('Penium (WITec 2D map)',          'Penium.mat'),
+    ('Schizochytrium (WITec 2D map)',  'Schizochytrium.mat'),
+    ('Tetraselmis (WITec 2D map)',     'Tetraselmis.mat'),
 ]
 
 SYNTHETIC_TEST_DATASETS = [
@@ -1590,11 +1623,36 @@ class MainWindow(QMainWindow):
             _none.setEnabled(False)
             self.menuHelpTestDatasetsReal.addAction(_none)
 
+        # "2D maps" — its own submenu of Real (measured), since a spatial
+        # map needs to be opened as a whole (2D Map dialog reads its
+        # row/col geometry from every spectrum, see Map2DDialog), unlike
+        # the two single-series datasets above.
+        self.menuHelpTestDatasets2DMaps = QMenu(self.menuHelpTestDatasetsReal)
+        self.menuHelpTestDatasets2DMaps.setObjectName("menuHelpTestDatasets2DMaps")
+        self.menuHelpTestDatasets2DMaps.setTitle("2D maps")
+        for _label, _fname in REAL_TEST_DATASETS_2D_MAPS:
+            _act = QAction(self)
+            _act.setObjectName(f"actionRealDataset_{_fname.replace('/', '_').replace('.', '_')}")
+            _act.setText(_label)
+            _act.setToolTip(f"Open {_fname} in the application")
+            self.menuHelpTestDatasets2DMaps.addAction(_act)
+            self.real_dataset_actions[_fname] = _act
+        self.menuHelpTestDatasetsReal.addMenu(self.menuHelpTestDatasets2DMaps)
+
         self.actionOpenRealFolder = QAction(self)
         self.actionOpenRealFolder.setObjectName("actionOpenRealFolder")
         self.actionOpenRealFolder.setText("Open datasets folder…")
         self.menuHelpTestDatasetsReal.addSeparator()
         self.menuHelpTestDatasetsReal.addAction(self.actionOpenRealFolder)
+
+        self.actionDownloadLargeDatasets = QAction(self)
+        self.actionDownloadLargeDatasets.setObjectName("actionDownloadLargeDatasets")
+        self.actionDownloadLargeDatasets.setText("Download large test datasets…")
+        self.actionDownloadLargeDatasets.setToolTip(
+            "Fetch additional real-data 2D maps too large to ship in the "
+            "git repository (available when running from source)."
+        )
+        self.menuHelpTestDatasetsReal.addAction(self.actionDownloadLargeDatasets)
 
         self.menuHelpTestDatasets.addAction(self.menuHelpTestDatasetsSynthetic.menuAction())
         self.menuHelpTestDatasets.addAction(self.menuHelpTestDatasetsReal.menuAction())

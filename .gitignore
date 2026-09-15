@@ -24,3 +24,22 @@ test2.vcw
 
 # Personal, local-only notes (not part of the project) — never tracked
 dev_notes/
+
+# Large real-data 2D map test datasets — too big for git (several are
+# 100+ MB, over or right at GitHub's 100 MB per-file limit). Hosted as
+# assets on a GitHub Release instead; downloaded on demand via
+# Help -> Test datasets -> Real (measured) -> Download large test
+# datasets... (see LARGE_TEST_DATASETS in src/views/main_window.py and
+# resources/test_data/real/README.md). Bundled directly for installer
+# builds, so this only affects running from source.
+resources/test_data/real/Bigelowiella.mat
+resources/test_data/real/Cryptomonas.mat
+resources/test_data/real/Eimeria.mat
+resources/test_data/real/Gefionella.mat
+resources/test_data/real/Glenodinium.mat
+resources/test_data/real/Klebsormidium.mat
+resources/test_data/real/Microchloropsis.mat
+resources/test_data/real/Naegleria.mat
+resources/test_data/real/Penium.mat
+resources/test_data/real/Schizochytrium.mat
+resources/test_data/real/Tetraselmis.mat

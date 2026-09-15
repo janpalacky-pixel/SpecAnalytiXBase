@@ -42,7 +42,7 @@ from PyQt5.QtWidgets import (
     QSplitter, QWidget, QMessageBox, QCheckBox,
     QComboBox, QRadioButton, QButtonGroup, QFrame,
     QScrollArea, QListWidget, QListWidgetItem, QDialogButtonBox,
-    QFileDialog,
+    QFileDialog, QAbstractSpinBox, QSlider,
 )
 from PyQt5.QtCore import Qt, QTimer
 import matplotlib
@@ -59,6 +59,17 @@ from src.views.dialogs.visualization_analysis.roi_spectra_dialogs import (
 )
 
 logger = get_logger(__name__)
+
+
+def _disable_wheel_scrolling(root):
+    """Make every spinbox/combobox/slider under root ignore mouse-wheel
+    events, so scrolling over the control panel always scrolls the
+    panel rather than silently changing whatever value the cursor
+    happens to be sitting on (Qt's default is to respond to the wheel
+    even without focus or a click) — same fix as
+    melting_curve_dialog.py's _disable_wheel_scrolling."""
+    for widget in root.findChildren((QAbstractSpinBox, QComboBox, QSlider)):
+        widget.wheelEvent = lambda event: event.ignore()
 
 
 def _evenly_spaced_spectra(spectra, n=6):
@@ -95,6 +106,24 @@ class _MapCanvas(FigureCanvas):
         # Hover tooltip annotation (hidden until mouse enters a valid pixel)
         self._tooltip   = None
         self._hover_cid = None   # connection id for motion_notify_event
+        # Reference-spectra pixel markers (NMF/MCR-ALS) — {component_index:
+        # (row, col)}, numbered circles kept separate from the plain
+        # crosshair (see mark_pixel) since several can be shown at once.
+        # update_map() clears the axes on every full redraw, so it
+        # re-applies these from this stored dict rather than relying on
+        # callers to remember to redraw them.
+        self._ref_pixel_by_component = {}
+        self._ref_marker_artists = []
+        self._ref_markers_visible = True
+        # Miniature spectrum preview shown while picking a reference
+        # (see set_ref_picking_active) — a small floating Qt widget with
+        # its own tiny matplotlib canvas, positioned next to the cursor
+        # by _on_hover. Built lazily on first use.
+        self._ref_picking_active = False
+        self._mini_preview_widget = None
+        self._mini_preview_ax = None
+        self._mini_preview_canvas = None
+        self._mini_preview_last_sp_idx = None
         self._draw_empty()
 
     # ------------------------------------------------------------------
@@ -157,6 +186,7 @@ class _MapCanvas(FigureCanvas):
             if self._tooltip and self._tooltip.get_visible():
                 self._tooltip.set_visible(False)
                 self.draw_idle()
+            self._hide_mini_spectrum_preview()
             return
         if self._im is None:
             return
@@ -168,6 +198,7 @@ class _MapCanvas(FigureCanvas):
             if self._tooltip and self._tooltip.get_visible():
                 self._tooltip.set_visible(False)
                 self.draw_idle()
+            self._hide_mini_spectrum_preview()
             return
 
         sp_idx = row * n_cols + col
@@ -177,6 +208,11 @@ class _MapCanvas(FigureCanvas):
         label   = self._hover_spectra[sp_idx].get('label', f'#{sp_idx}')
         val     = self._hover_map_data[row, col]
         text    = f"Row {row}, Col {col}\n{label}\nValue: {val:.4g}"
+
+        if self._ref_picking_active:
+            self._show_mini_spectrum_preview(sp_idx, event)
+        else:
+            self._hide_mini_spectrum_preview()
 
         if self._tooltip is None:
             self._tooltip = self._make_tooltip()
@@ -226,6 +262,58 @@ class _MapCanvas(FigureCanvas):
         self._tooltip.xyann = (ox, oy)
         self._tooltip.set_visible(True)
         self.draw_idle()
+
+    # ------------------------------------------------------------------
+    # Reference-picking hover preview (see set_ref_picking_active,
+    # called by the dialog whenever a "Pick on map…" button is
+    # armed/disarmed).
+    def set_ref_picking_active(self, active):
+        self._ref_picking_active = active
+        if not active:
+            self._hide_mini_spectrum_preview()
+
+    def _hide_mini_spectrum_preview(self):
+        if self._mini_preview_widget is not None:
+            self._mini_preview_widget.hide()
+        self._mini_preview_last_sp_idx = None
+
+    def _show_mini_spectrum_preview(self, sp_idx, event):
+        if self._mini_preview_widget is None:
+            self._mini_preview_widget = QWidget(self)
+            self._mini_preview_widget.setFixedSize(150, 100)
+            self._mini_preview_widget.setStyleSheet(
+                "background-color: white; border: 1px solid #888;")
+            self._mini_preview_widget.setAttribute(Qt.WA_TransparentForMouseEvents)
+            v = QVBoxLayout(self._mini_preview_widget)
+            v.setContentsMargins(2, 2, 2, 2)
+            mini_fig = Figure(figsize=(1.5, 1.0), dpi=100)
+            self._mini_preview_canvas = FigureCanvas(mini_fig)
+            self._mini_preview_ax = mini_fig.add_subplot(111)
+            v.addWidget(self._mini_preview_canvas)
+
+        if sp_idx != self._mini_preview_last_sp_idx:
+            self._mini_preview_last_sp_idx = sp_idx
+            sp = self._hover_spectra[sp_idx]
+            x  = np.asarray(sp.get('x_scale', []), dtype=float)
+            y  = np.asarray(sp.get('y_scale', []), dtype=float)
+            self._mini_preview_ax.clear()
+            self._mini_preview_ax.plot(x, y, color='#1565C0', linewidth=1)
+            self._mini_preview_ax.set_xticks([])
+            self._mini_preview_ax.set_yticks([])
+            self._mini_preview_ax.set_title(
+                sp.get('label', f'#{sp_idx}'), fontsize=6)
+            self._mini_preview_canvas.draw_idle()
+
+        # event.x/event.y are matplotlib canvas pixel coords, y measured
+        # from the BOTTOM of the canvas — flip to Qt widget coords (y
+        # from the top) and nudge away from the cursor.
+        qt_x = int(event.x) + 16
+        qt_y = int(self.height() - event.y) + 16
+        qt_x = max(0, min(qt_x, self.width() - self._mini_preview_widget.width() - 2))
+        qt_y = max(0, min(qt_y, self.height() - self._mini_preview_widget.height() - 2))
+        self._mini_preview_widget.move(qt_x, qt_y)
+        self._mini_preview_widget.show()
+        self._mini_preview_widget.raise_()
 
     # ------------------------------------------------------------------
     def _draw_empty(self):
@@ -283,6 +371,49 @@ class _MapCanvas(FigureCanvas):
         self.ax.set_title(title, fontsize=9)
         self.ax.set_xlabel(xlabel, fontsize=8)
         self.ax.set_ylabel(ylabel, fontsize=8)
+        self._draw_ref_markers()
+        self.draw_idle()
+
+    # ------------------------------------------------------------------
+    # Reference-spectra pixel markers (set_ref_pixel/clear_ref_pixels are
+    # the public API the dialog uses; _draw_ref_markers does the actual
+    # matplotlib work and is also called by update_map() since a full
+    # redraw (ax.cla()) would otherwise silently drop these).
+    def set_ref_pixel(self, component_index, row_col):
+        """row_col: (row, col) tuple, or None to clear that component's marker."""
+        if row_col is None:
+            self._ref_pixel_by_component.pop(component_index, None)
+        else:
+            self._ref_pixel_by_component[component_index] = row_col
+        self._draw_ref_markers()
+
+    def clear_ref_pixels(self):
+        self._ref_pixel_by_component = {}
+        self._draw_ref_markers()
+
+    def set_ref_markers_visible(self, visible):
+        self._ref_markers_visible = visible
+        self._draw_ref_markers()
+
+    def _draw_ref_markers(self):
+        for art in self._ref_marker_artists:
+            try:
+                art.remove()
+            except Exception:
+                pass
+        self._ref_marker_artists = []
+        if self._ref_markers_visible:
+            for component_index, (row, col) in self._ref_pixel_by_component.items():
+                marker, = self.ax.plot(
+                    col, row, 'o', markersize=13, markerfacecolor='none',
+                    markeredgecolor='#FFEB3B', markeredgewidth=2.2,
+                    zorder=9, clip_on=True)
+                txt = self.ax.text(
+                    col, row, str(component_index + 1),
+                    color='#FFEB3B', fontsize=7.5, fontweight='bold',
+                    ha='center', va='center', zorder=10, clip_on=True)
+                self._ref_marker_artists.append(marker)
+                self._ref_marker_artists.append(txt)
         self.draw_idle()
 
     # ------------------------------------------------------------------
@@ -469,6 +600,10 @@ class Map2DDialog(QDialog):
         self._arith_a_is_exclude = False
         self._svd_ranges         = []   # SVD mode
         self._svd_is_exclude     = False
+        self._nmf_ranges         = []   # NMF mode — independent from SVD's own range
+        self._nmf_is_exclude     = False
+        self._mcr_ranges         = []   # MCR-ALS mode — independent from the other two
+        self._mcr_is_exclude     = False
         self._cluster_ranges     = []   # Cluster mode
         self._cluster_is_exclude = False
         # Arithmetic Band B
@@ -510,8 +645,34 @@ class Map2DDialog(QDialog):
         self._last_ellipse_patch  = None
         self._last_clicked_pixel = None   # (row, col) for redraw after invert
 
+        # Reference-spectra anchoring (NMF/MCR-ALS): {component_index:
+        # (row, col)} picked by clicking the map, plus which component
+        # (if any) is currently "armed" waiting for that click.
+        self._ref_pixel_by_component = {}
+        self._ref_picking_component  = None
+
         self._build_ui()
         self._connect_signals()
+        _disable_wheel_scrolling(self)
+
+        # Convenience: MAT/WITec map imports (and similar) record each
+        # pixel's map_n_rows/map_n_cols in metadata['import_parameters']
+        # — every spectrum in such a map carries the same values, so
+        # checking the first spectrum is enough. When present and
+        # consistent with the number of spectra actually loaded here,
+        # skip having to look up/enter the dimensions by hand: pre-fill
+        # them and let the existing dims-changed path draw the map right
+        # away (only in "fast" modes — Intensity/Arithmetic/Cluster — the
+        # same as if the user had typed correct dims in manually). A
+        # text-format map import (e.g. Raman_2D_map_85x55.txt) has no
+        # such metadata, so this correctly falls through to the existing
+        # manual Suggest… flow for those.
+        detected_dims = self._detect_map_dimensions_from_metadata()
+        if detected_dims is not None:
+            n_rows, n_cols = detected_dims
+            self._rows_spin.setValue(n_rows)
+            self._cols_spin.setValue(n_cols)
+
         self._update_dimension_hint()
         self._update_ranges_summary()
         self._update_x_val_visibility()
@@ -547,6 +708,45 @@ class Map2DDialog(QDialog):
                 spin.blockSignals(False)
         except Exception:
             pass
+
+    def _make_info_button(self, title, text):
+        """Small orange '?' button — same style used throughout the rest
+        of the app (e.g. the standalone NMF Analysis / MCR-ALS dialogs'
+        section-header info buttons). Sized/styled to match the reference
+        row's "X" clear button (24x24, no explicit font-size) rather than
+        the smaller 20x20 tried earlier — that size swallowed the glyph
+        entirely under the native Windows button style."""
+        btn = QPushButton('?')
+        btn.setFixedSize(24, 24)
+        btn.setStyleSheet(
+            'QPushButton { background-color:#F57C00; color:white; '
+            'font-weight:bold; border:none; border-radius:4px; }'
+            'QPushButton:hover { background-color:#EF6C00; }')
+        btn.setToolTip('About this section')
+        btn.clicked.connect(lambda: QMessageBox.information(self, title, text))
+        return btn
+
+    @staticmethod
+    def _style_pick_button(btn, active):
+        """Recolor/relabel a reference row's "Pick on map…" button so
+        the armed (picking) state is visually obvious rather than relying
+        only on its checked/sunken look, which is easy to miss."""
+        if active:
+            btn.setText("Click the map…")
+            btn.setToolTip(
+                "Picking mode is on — click a pixel on the map to use its "
+                "spectrum as this component's reference, or press this "
+                "button again to cancel.")
+            btn.setStyleSheet(
+                "QPushButton { background-color:#2E7D32; color:white; "
+                "font-weight:bold; }"
+                "QPushButton:hover { background-color:#1B5E20; }")
+        else:
+            btn.setText("Pick on map…")
+            btn.setToolTip(
+                "Click, then click a pixel on the map to use its spectrum "
+                "as this component's reference.")
+            btn.setStyleSheet("")
 
     # ------------------------------------------------------------------ #
     # Top-level UI construction                                            #
@@ -646,6 +846,12 @@ class Map2DDialog(QDialog):
             "border-radius:4px;padding:5px 14px; border:none;}"
             "QPushButton:hover{background:#1B5E20;}"
         )
+        self._btn_compute.setToolTip(
+            "(Re)compute the map with the current settings.\n"
+            "For NMF/MCR-ALS, this is a single, fast, deterministic\n"
+            "fit — see \"Run N times, keep best…\" above for a slower,\n"
+            "more robust alternative that tries several random\n"
+            "starting points instead of just one.")
         btn_bar_layout.addWidget(self._btn_compute)
 
         # ── ROI dropdown ──────────────────────────────────────────────
@@ -724,19 +930,6 @@ class Map2DDialog(QDialog):
         exp_btn.setMenu(exp_menu)
         btn_bar_layout.addWidget(exp_btn)
 
-        # ── Session dropdown ──────────────────────────────────────────
-        ses_btn = QToolButton()
-        ses_btn.setText("Session ▾")
-        ses_btn.setPopupMode(QToolButton.InstantPopup)
-        ses_menu = QMenu(ses_btn)
-
-        self._act_save_session = ses_menu.addAction("Save session…")
-        self._act_save_session.setEnabled(False)
-        self._act_load_session = ses_menu.addAction("Load session…")
-
-        ses_btn.setMenu(ses_menu)
-        btn_bar_layout.addWidget(ses_btn)
-
         btn_bar_layout.addStretch()
         btn_help = QPushButton("Help")
         btn_help.clicked.connect(self._show_help)
@@ -810,6 +1003,17 @@ class Map2DDialog(QDialog):
         )
         row.addWidget(self._btn_autofill)
         row.addStretch()
+        row.addWidget(self._make_info_button(
+            "About Map Dimensions",
+            "Rows × Cols must equal the total number of selected spectra — "
+            "spectra are placed row-by-row (C order).\n\n"
+            "If every selected spectrum carries the map's own row/col size "
+            "(true for MAT/WITec map imports), this is filled in "
+            "automatically as soon as the dialog opens. A plain "
+            "text/column-format map import doesn't carry this information, "
+            "so it falls back to manual entry — type the values directly, "
+            "or use Suggest… to pick from the valid (rows, cols) factor "
+            "pairs of the spectrum count."))
         lay.addLayout(row)
 
         self._dim_hint_label = QLabel("")
@@ -833,6 +1037,8 @@ class Map2DDialog(QDialog):
         radio_row = QHBoxLayout()
         self._radio_intensity = QRadioButton("Intensity metric")
         self._radio_svd       = QRadioButton("SVD coefficients")
+        self._radio_nmf       = QRadioButton("NMF map")
+        self._radio_mcr       = QRadioButton("MCR-ALS map")
         self._radio_arith     = QRadioButton("Map arithmetic")
         self._radio_cluster   = QRadioButton("Cluster overlay")
         self._radio_intensity.setChecked(True)
@@ -841,11 +1047,28 @@ class Map2DDialog(QDialog):
         self._radio_group.addButton(self._radio_svd,       1)
         self._radio_group.addButton(self._radio_arith,     2)
         self._radio_group.addButton(self._radio_cluster,   3)
+        self._radio_group.addButton(self._radio_nmf,       4)
+        self._radio_group.addButton(self._radio_mcr,       5)
         radio_row.addWidget(self._radio_intensity)
         radio_row.addWidget(self._radio_svd)
+        radio_row.addWidget(self._radio_nmf)
+        radio_row.addWidget(self._radio_mcr)
         radio_row.addWidget(self._radio_arith)
         radio_row.addWidget(self._radio_cluster)
         radio_row.addStretch()
+        radio_row.addWidget(self._make_info_button(
+            "About Map Type",
+            "Intensity metric: colours each pixel by a band metric (integral, "
+            "mean, peak, etc.) computed on that pixel's own spectrum.\n\n"
+            "SVD / NMF / MCR-ALS: three spatial decomposition modes. SVD "
+            "gets every component from one fast, exact fit; NMF and MCR-ALS "
+            "need the number of components chosen first, then Update Map "
+            "fits and shows component 1. All three colour each pixel by one "
+            "component's per-pixel score.\n\n"
+            "Map arithmetic: combines two independently configured bands "
+            "(A and B) pixel-wise — ratio, difference, sum or product.\n\n"
+            "Cluster overlay: runs k-means directly on the map spectra and "
+            "colours each pixel by its cluster assignment."))
         lay.addLayout(radio_row)
 
         sep = QFrame()
@@ -932,13 +1155,111 @@ class Map2DDialog(QDialog):
         self._intensity_panel = QWidget()
         lay.addWidget(self._intensity_panel)
 
-        # ── SVD sub-panel ────────────────────────────────────────────
+        # ── Decomposition sub-panel (SVD / NMF / MCR-ALS) ────────────
+        # One shared panel for all three — SVD gets every component "for
+        # free" from a single fast np.linalg.svd call and just needs a
+        # component index afterward, but NMF and MCR-ALS are iterative
+        # fits that require choosing how many components to resolve
+        # BEFORE fitting, hence the extra "Components" spinner sharing
+        # the Component/Label row below (hidden for SVD, which has no
+        # equivalent setting).
         self._svd_panel = QWidget()
         svlay = QVBoxLayout(self._svd_panel)
         svlay.setContentsMargins(0, 0, 0, 0)
         svlay.setSpacing(4)
+
+
+        # ── NMF-only fit settings: initialisation + max iterations ──
+        self._nmf_settings_row_widget = QWidget()
+        nmf_row = QHBoxLayout(self._nmf_settings_row_widget)
+        nmf_row.setContentsMargins(0, 0, 0, 0)
+        nmf_row.setSpacing(4)
+        lbl_nmf_init = QLabel("Init.:")
+        lbl_nmf_init.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        nmf_row.addWidget(lbl_nmf_init)
+        self._nmf_init_combo = QComboBox()
+        self._nmf_init_combo.addItems(['nndsvda', 'nndsvd'])
+        self._nmf_init_combo.setToolTip(
+            "nndsvda : NNDSVD with average fill (recommended)\n"
+            "nndsvd  : NNDSVD, zeros left as zeros\n"
+            "Same options as the standalone NMF Analysis tool. Ignored "
+            "when 'Run N times, keep best…' is used — that always runs "
+            "with random initialisation instead.")
+        nmf_row.addWidget(self._nmf_init_combo)
+        lbl_nmf_iter = QLabel("Max iter.:")
+        lbl_nmf_iter.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        nmf_row.addWidget(lbl_nmf_iter)
+        self._nmf_maxiter_spin = QSpinBox()
+        self._nmf_maxiter_spin.setKeyboardTracking(False)
+        self._nmf_maxiter_spin.setRange(50, 5000)
+        self._nmf_maxiter_spin.setSingleStep(50)
+        self._nmf_maxiter_spin.setValue(500)
+        self._nmf_maxiter_spin.setFixedWidth(70)
+        nmf_row.addWidget(self._nmf_maxiter_spin)
+        nmf_row.addStretch()
+        self._nmf_settings_row_widget.setVisible(False)
+        svlay.addWidget(self._nmf_settings_row_widget)
+
+        # ── MCR-ALS-only fit settings: max iterations + constraints ──
+        self._mcr_settings_widget = QWidget()
+        mcr_v = QVBoxLayout(self._mcr_settings_widget)
+        mcr_v.setContentsMargins(0, 0, 0, 0)
+        mcr_v.setSpacing(2)
+        mcr_iter_row = QHBoxLayout()
+        mcr_iter_row.setSpacing(4)
+        lbl_mcr_iter = QLabel("Max iter.:")
+        lbl_mcr_iter.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        mcr_iter_row.addWidget(lbl_mcr_iter)
+        self._mcr_maxiter_spin = QSpinBox()
+        self._mcr_maxiter_spin.setKeyboardTracking(False)
+        self._mcr_maxiter_spin.setRange(10, 2000)
+        self._mcr_maxiter_spin.setSingleStep(10)
+        self._mcr_maxiter_spin.setValue(100)
+        self._mcr_maxiter_spin.setFixedWidth(70)
+        mcr_iter_row.addWidget(self._mcr_maxiter_spin)
+        mcr_iter_row.addStretch()
+        mcr_v.addLayout(mcr_iter_row)
+        mcr_constraints_row = QHBoxLayout()
+        mcr_constraints_row.setSpacing(6)
+        self._mcr_c_nonneg_cb = QCheckBox("Non-neg. C")
+        self._mcr_c_nonneg_cb.setChecked(True)
+        self._mcr_c_nonneg_cb.setToolTip("Non-negative concentrations (C).")
+        mcr_constraints_row.addWidget(self._mcr_c_nonneg_cb)
+        self._mcr_st_nonneg_cb = QCheckBox("Non-neg. ST")
+        self._mcr_st_nonneg_cb.setChecked(True)
+        self._mcr_st_nonneg_cb.setToolTip("Non-negative pure spectra (ST).")
+        mcr_constraints_row.addWidget(self._mcr_st_nonneg_cb)
+        self._mcr_closure_cb = QCheckBox("Closure")
+        self._mcr_closure_cb.setChecked(False)
+        self._mcr_closure_cb.setToolTip(
+            "Concentrations sum to 100% per spectrum. Only turn this on if "
+            "your system genuinely has closure (total concentration "
+            "constant across the map) — same caveat as the standalone "
+            "MCR-ALS tool.")
+        mcr_constraints_row.addWidget(self._mcr_closure_cb)
+        mcr_constraints_row.addStretch()
+        mcr_v.addLayout(mcr_constraints_row)
+        self._mcr_settings_widget.setVisible(False)
+        svlay.addWidget(self._mcr_settings_widget)
+
         comp_label_row = QHBoxLayout()
         comp_label_row.setSpacing(4)
+        self._decomp_n_label = QLabel("Components:")
+        self._decomp_n_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        comp_label_row.addWidget(self._decomp_n_label)
+        self._decomp_n_spin = QSpinBox()
+        self._decomp_n_spin.setKeyboardTracking(False)
+        self._decomp_n_spin.setRange(2, max(2, min(20, self.n_spectra)))
+        self._decomp_n_spin.setValue(min(2, self._decomp_n_spin.maximum()))
+        self._decomp_n_spin.setFixedWidth(60)
+        self._decomp_n_spin.setToolTip(
+            "How many components to resolve — chosen before fitting, "
+            "unlike SVD (which yields every component from one fit and "
+            "only needs a component index afterward). Same range/default "
+            "convention as the standalone NMF Analysis / MCR-ALS tools.")
+        comp_label_row.addWidget(self._decomp_n_spin)
+        self._decomp_n_label.setVisible(False)
+        self._decomp_n_spin.setVisible(False)
         lbl_comp = QLabel("Component:")
         lbl_comp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         comp_label_row.addWidget(lbl_comp)
@@ -947,11 +1268,13 @@ class Map2DDialog(QDialog):
         self._component_combo.setMinimumWidth(80)
         self._component_combo.setMaximumWidth(200)
         self._component_combo.setToolTip(
-            "Choose SVD component whose V-coefficients are displayed as map values.")
+            "Choose the component whose per-pixel score is displayed as "
+            "map values (V-coefficients for SVD, abundances for NMF/"
+            "MCR-ALS).")
         comp_label_row.addWidget(self._component_combo)
-        lbl_label = QLabel("Label:")
-        lbl_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        comp_label_row.addWidget(lbl_label)
+        self._comp_label_label = QLabel("Label:")
+        self._comp_label_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        comp_label_row.addWidget(self._comp_label_label)
         self._comp_label_combo = QComboBox()
         self._comp_label_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self._comp_label_combo.addItems(["Explained var.(%)", "Singular value σ", "Residual error"])
@@ -971,6 +1294,103 @@ class Map2DDialog(QDialog):
         btn_row2.addWidget(self._btn_diagnostics)
         btn_row2.addStretch()
         svlay.addLayout(btn_row2)
+
+        # ── NMF/MCR-ALS only: robustness re-run + fit status ──────────
+        self._btn_decomp_run_n = QPushButton("Run N times, keep best…")
+        self._btn_decomp_run_n.setToolTip(
+            "Like Update Map below, this (re)computes the map — but\n"
+            "instead of one deterministic fit, it runs the fit several\n"
+            "times with different random starting points and keeps\n"
+            "whichever run best represents the near-best group — same\n"
+            "robustness check as the standalone NMF Analysis / MCR-ALS\n"
+            "tools.\n"
+            "Only useful for a fit that isn't already fully\n"
+            "deterministic; may take a while on a large map since every\n"
+            "run refits every pixel.")
+        self._btn_decomp_run_n.setVisible(False)
+        svlay.addWidget(self._btn_decomp_run_n)
+        self._decomp_run_n_caption = QLabel(
+            "Slower, more thorough alternative to Update Map below — "
+            "tries several random starts and keeps the most consistent "
+            "result.")
+        self._decomp_run_n_caption.setWordWrap(True)
+        self._decomp_run_n_caption.setStyleSheet("font-size:8pt; color:#555;")
+        self._decomp_run_n_caption.setVisible(False)
+        svlay.addWidget(self._decomp_run_n_caption)
+
+        self._decomp_status_label = QLabel("")
+        self._decomp_status_label.setStyleSheet("font-size:8pt; color:#2E7D32;")
+        self._decomp_status_label.setWordWrap(True)
+        self._decomp_status_label.setVisible(False)
+        svlay.addWidget(self._decomp_status_label)
+
+        # ── NMF/MCR-ALS only: optional reference-spectra anchoring ────
+        self._ref_grp = QGroupBox("Reference spectra (optional)")
+        self._ref_grp.setCheckable(True)
+        self._ref_grp.setChecked(False)
+        self._ref_grp.setToolTip(
+            "Anchor a component slot to a KNOWN component spectrum — pick it "
+            "by clicking its pixel on the map, the same way as inspecting a "
+            "spectrum. The most effective way to remove NMF/MCR-ALS's "
+            "rotational ambiguity. Unlike the standalone NMF Analysis / "
+            "MCR-ALS tools, a chosen reference stays part of the fitted "
+            "data here — removing it would leave fewer spectra than "
+            "Rows × Cols pixels, breaking the map's fixed grid.")
+        self._ref_grp.toggled.connect(self._on_ref_grp_toggled)
+        ref_v = QVBoxLayout(self._ref_grp)
+        self._ref_rows_container = QWidget()
+        self._ref_rows_layout = QVBoxLayout(self._ref_rows_container)
+        self._ref_rows_layout.setContentsMargins(0, 0, 0, 0)
+        ref_v.addWidget(self._ref_rows_container)
+        self._ref_pick_rows = []   # [{'pick_btn':, 'status_label':, 'clear_btn':}]
+        self._ref_fix_cb = QCheckBox("Hold references fixed (else use only as starting guess)")
+        self._ref_fix_cb.setChecked(True)
+        self._ref_fix_cb.setToolTip(
+            "Fixed: the referenced component is held exactly equal to the "
+            "known spectrum throughout the fit (strongest anchoring).\n"
+            "Unfixed: the reference is only the starting guess and is then "
+            "free to adapt.")
+        ref_fix_row = QHBoxLayout()
+        ref_fix_row.addWidget(self._ref_fix_cb)
+        ref_fix_row.addStretch()
+        ref_fix_row.addWidget(self._make_info_button(
+            "About Reference Spectra",
+            "Anchor a component slot to a KNOWN component spectrum — the "
+            "most effective way to remove NMF/MCR-ALS's rotational "
+            "ambiguity.\n\n"
+            "Press “Pick on map…” for a component, then click that "
+            "pixel on the map — the same click-a-pixel gesture used "
+            "everywhere else in this dialog. The picked pixel is marked "
+            "with a numbered circle; View shows its spectrum, and the red "
+            "X clears it.\n\n"
+            "Hold references fixed: checked pins the component to the "
+            "reference exactly throughout the fit; unchecked uses it only "
+            "as a starting guess, free to adapt.\n\n"
+            "Unlike the standalone NMF Analysis / MCR-ALS tools, a chosen "
+            "reference always stays part of the fitted data here — "
+            "removing it would leave fewer spectra than Rows × Cols "
+            "pixels, breaking the map's fixed grid."))
+        ref_v.addLayout(ref_fix_row)
+        self._ref_autorecompute_cb = QCheckBox(
+            "Auto-recompute when references change")
+        self._ref_autorecompute_cb.setChecked(False)
+        self._ref_autorecompute_cb.setToolTip(
+            "Off (default): picking, clearing, or fixing a reference\n"
+            "just flags the map as stale until you next press Update\n"
+            "Map — nothing recomputes on every click.\n"
+            "On: the same changes recompute the map immediately. Can\n"
+            "be slow to leave on for a large map, since every change\n"
+            "refits every pixel.")
+        ref_v.addWidget(self._ref_autorecompute_cb)
+        self._ref_stale_warning_label = QLabel("")
+        self._ref_stale_warning_label.setWordWrap(True)
+        self._ref_stale_warning_label.setStyleSheet(
+            "font-size:8pt; color:#E65100; font-weight:bold;")
+        self._ref_stale_warning_label.setVisible(False)
+        ref_v.addWidget(self._ref_stale_warning_label)
+        self._ref_grp.setVisible(False)
+        svlay.addWidget(self._ref_grp)
+
         lay.addWidget(self._svd_panel)
         self._svd_panel.setVisible(False)
 
@@ -1090,6 +1510,17 @@ class Map2DDialog(QDialog):
         self._cmap_combo.addItems(self.COLORMAPS)
         self._cmap_combo.setCurrentText("viridis")
         grid.addWidget(self._cmap_combo, 0, 1)
+        grid.addWidget(self._make_info_button(
+            "About Display Options",
+            "Colormap / Interpolation: purely cosmetic — how the same "
+            "underlying map values are rendered, no effect on the "
+            "computed data.\n\n"
+            "Equal aspect ratio: shows each pixel square (rows : cols "
+            "physical proportions) rather than stretched to fill the "
+            "panel.\n\n"
+            "Colorbar range (below): clip the displayed colour range by "
+            "percentile, independent of the actual data range."),
+            0, 2, alignment=Qt.AlignRight)
 
         grid.addWidget(QLabel("Interpolation:"), 1, 0)
         self._interp_combo = QComboBox()
@@ -1185,8 +1616,9 @@ class Map2DDialog(QDialog):
         self._show_svd_cb = QCheckBox("Show SVD component")
         self._show_svd_cb.setChecked(True)
         self._show_svd_cb.setToolTip(
-            "Overlay the SVD subspectrum (orange dashed) on the clicked-pixel spectrum.\n"
-            "Only active in SVD coefficients mode.")
+            "Overlay the component's own spectral shape (orange dashed) on the\n"
+            "clicked-pixel spectrum. Active in SVD, NMF, and MCR-ALS modes\n"
+            "(label and tooltip update to name whichever is active).")
         hdr.addWidget(self._show_svd_cb)
 
         self._svd_full_range_cb = QCheckBox("Full spectrum")
@@ -1230,6 +1662,10 @@ class Map2DDialog(QDialog):
         self._btn_invert.clicked.connect(self._invert_component)
         self._btn_multi_map.clicked.connect(self._show_multi_map)
         self._btn_diagnostics.clicked.connect(self._show_diagnostics)
+        self._btn_decomp_run_n.clicked.connect(self._run_decomp_best_of_n)
+        self._decomp_n_spin.valueChanged.connect(self._rebuild_reference_rows)
+        self._ref_fix_cb.toggled.connect(self._on_reference_settings_changed)
+        self._ref_autorecompute_cb.toggled.connect(self._on_ref_autorecompute_toggled)
         self._cmap_combo.currentTextChanged.connect(
             self._on_cmap_interp_changed)
         self._interp_combo.currentTextChanged.connect(
@@ -1252,11 +1688,6 @@ class Map2DDialog(QDialog):
         self._act_roi_stats.triggered.connect(self._show_roi_statistics)
         self._act_roi_mode.triggered.connect(self._toggle_roi_mode)
         self._act_remove_roi.triggered.connect(self._activate_remove_roi)
-        self._act_save_session.triggered.connect(self._save_session)
-        self._act_load_session.triggered.connect(self._load_session)
-        # Feature 5: save/load session
-        self._act_save_session.triggered.connect(self._save_session)
-        self._act_load_session.triggered.connect(self._load_session)
         self._btn_arith_range_a.clicked.connect(
             lambda: self._configure_arith_band('a'))
         self._btn_arith_range_b.clicked.connect(
@@ -1288,10 +1719,37 @@ class Map2DDialog(QDialog):
                     return True   # consume the event
         return super().eventFilter(obj, event)
 
+    def _decomp_kind(self):
+        """
+        'svd' / 'nmf' / 'mcr' if one of the three decomposition radios is
+        checked, else None. The single place that knows which radio maps
+        to which kind string — everything else (Map2DManager's unified
+        get_component_*(kind, ...) accessors included) works off this
+        string instead of re-checking radios itself.
+        """
+        if self._radio_svd.isChecked():
+            return 'svd'
+        if self._radio_nmf.isChecked():
+            return 'nmf'
+        if self._radio_mcr.isChecked():
+            return 'mcr'
+        return None
+
+    def _is_decomp_mode(self):
+        """True for any of SVD / NMF / MCR-ALS — the three modes that
+        share the decomposition panel, fit-then-browse-by-index workflow,
+        and (for NMF/MCR-ALS) an explicit component count chosen before
+        fitting."""
+        return self._decomp_kind() is not None
+
     def _active_range_state(self):
         """Return (ranges, is_exclude) for the currently active mode."""
         if self._radio_svd.isChecked():
             return self._svd_ranges, self._svd_is_exclude
+        elif self._radio_nmf.isChecked():
+            return self._nmf_ranges, self._nmf_is_exclude
+        elif self._radio_mcr.isChecked():
+            return self._mcr_ranges, self._mcr_is_exclude
         elif self._radio_cluster.isChecked():
             return self._cluster_ranges, self._cluster_is_exclude
         elif self._radio_arith.isChecked():
@@ -1304,6 +1762,12 @@ class Map2DDialog(QDialog):
         if self._radio_svd.isChecked():
             self._svd_ranges     = ranges
             self._svd_is_exclude = is_exclude
+        elif self._radio_nmf.isChecked():
+            self._nmf_ranges     = ranges
+            self._nmf_is_exclude = is_exclude
+        elif self._radio_mcr.isChecked():
+            self._mcr_ranges     = ranges
+            self._mcr_is_exclude = is_exclude
         elif self._radio_cluster.isChecked():
             self._cluster_ranges     = ranges
             self._cluster_is_exclude = is_exclude
@@ -1316,24 +1780,70 @@ class Map2DDialog(QDialog):
 
     def _on_mode_changed(self, _btn):
         is_svd     = self._radio_svd.isChecked()
+        is_nmf     = self._radio_nmf.isChecked()
+        is_mcr     = self._radio_mcr.isChecked()
+        is_decomp  = is_svd or is_nmf or is_mcr
         is_arith   = self._radio_arith.isChecked()
         is_int     = self._radio_intensity.isChecked()
         is_cluster = self._radio_cluster.isChecked()
 
-        # Clear SVD twin axis when leaving SVD mode
-        if not is_svd:
+        # A reference pick armed in NMF/MCR-ALS mode doesn't carry meaning
+        # in any other mode — disarm it so a leftover "click a pixel to
+        # set Component N's reference" hint can't linger after switching.
+        if self._ref_picking_component is not None:
+            self._ref_picking_component = None
+            for rw in self._ref_pick_rows:
+                rw['pick_btn'].setChecked(False)
+                self._style_pick_button(rw['pick_btn'], False)
+            self._click_info_label.setText("Click a pixel to inspect its spectrum.")
+            self._map_canvas.set_ref_picking_active(False)
+
+        # Clear SVD twin axis when leaving SVD mode (NMF/MCR-ALS use the
+        # same overlay machinery — see _draw_twin_subspectrum — so this
+        # only needs to fire when leaving the decomposition modes entirely)
+        if not is_decomp:
             self._clear_twin_axis()
 
         # Metric panel and band config visible for intensity and arithmetic only
         self._metric_panel.setVisible(is_int or is_arith)
         self._update_x_val_visibility()
-        # Band A panel: visible for all modes except cluster/SVD hides metric
-        self._band_a_panel.setVisible(is_int or is_arith or is_svd or is_cluster)
+        # Band A panel: visible for all modes except cluster/decomposition hides metric
+        self._band_a_panel.setVisible(is_int or is_arith or is_decomp or is_cluster)
         # In arithmetic mode, _arith_panel has its own Band A button — hide the one in _band_a_panel
         self._btn_configure_ranges.setVisible(not is_arith)
         self._ranges_summary_label.setVisible(not is_arith)
         self._intensity_panel.setVisible(False)
-        self._svd_panel.setVisible(is_svd)
+        self._svd_panel.setVisible(is_decomp)
+        # Components-to-fit row only applies to NMF/MCR-ALS — SVD gets
+        # every component from one fit and has no such setting.
+        self._decomp_n_label.setVisible(is_nmf or is_mcr)
+        self._decomp_n_spin.setVisible(is_nmf or is_mcr)
+        # Fit-control rows: each algorithm's own settings, SVD has none
+        # (it's a single deterministic np.linalg.svd call).
+        self._nmf_settings_row_widget.setVisible(is_nmf)
+        self._mcr_settings_widget.setVisible(is_mcr)
+        # Robustness re-run, fit-quality status, and reference-spectra
+        # anchoring: meaningful for NMF/MCR-ALS's iterative fits, not for
+        # SVD's single deterministic decomposition.
+        self._btn_decomp_run_n.setVisible(is_nmf or is_mcr)
+        self._decomp_run_n_caption.setVisible(is_nmf or is_mcr)
+        self._decomp_status_label.setVisible(is_nmf or is_mcr)
+        self._ref_grp.setVisible(is_nmf or is_mcr)
+        if is_nmf or is_mcr:
+            self._rebuild_reference_rows()
+        # "Label:" dropdown (σ / residual error) only means anything for
+        # SVD — NMF/MCR-ALS just always show explained variance.
+        self._comp_label_label.setVisible(is_svd)
+        self._comp_label_combo.setVisible(is_svd)
+        # Sign inversion isn't offered for NMF/MCR-ALS: both are
+        # constrained non-negative, so a component can't come out
+        # "upside down" the way an SVD component sometimes does — and
+        # the multi-component grid / diagnostics views aren't wired up
+        # for them yet either (hide, don't grey out, same convention as
+        # the JWS/SPE-only controls in the Import dialog).
+        self._btn_invert.setVisible(is_svd)
+        self._btn_multi_map.setVisible(is_svd)
+        self._btn_diagnostics.setVisible(is_svd)
         self._arith_panel.setVisible(is_arith)
         self._cluster_panel.setVisible(is_cluster)
         self._update_ranges_summary()  # show the active mode's range
@@ -1347,19 +1857,25 @@ class Map2DDialog(QDialog):
         for lbl in self._clim_pct_labels:
             lbl.setVisible(clim_visible)
 
-        # Spectrum panel checkboxes: show only when relevant
+        # Spectrum panel checkboxes. "Full spectrum" (clipped-vs-full main
+        # plot view) and "Show <kind> component" (the twin-axis overlay) both
+        # apply to all three decomposition modes — the checkbox is relabelled
+        # to name whichever kind is active so it never reads "Show SVD
+        # component" while looking at an NMF or MCR-ALS map.
         self._show_bands_cb.setVisible(is_int or is_arith or is_cluster)
-        self._show_svd_cb.setVisible(is_svd)
-        self._svd_full_range_cb.setVisible(is_svd)
+        if is_decomp:
+            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            self._show_svd_cb.setText(f"Show {kind_label} component")
+        self._show_svd_cb.setVisible(is_decomp)
+        self._svd_full_range_cb.setVisible(is_decomp)
 
 
-        # Remember whether a previous map existed before invalidating
-        had_map = self._last_map_data is not None
         self._invalidate_map()
 
-        if is_svd:
-            # SVD: clear the spectrum panel — only show after Update Map
-            self._spectrum_title_label.setText("Press 'Update Map' to compute SVD")
+        if is_decomp:
+            # Decomposition modes: clear the spectrum panel — only show after Update Map
+            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            self._spectrum_title_label.setText(f"Press 'Update Map' to compute {kind_label}")
             self._spectrum_canvas.ax.cla()
             self._spectrum_canvas.draw_idle()
         elif is_int or is_arith or is_cluster:
@@ -1378,17 +1894,17 @@ class Map2DDialog(QDialog):
         """Show/hide x-value spinboxes and configure buttons based on metric and mode."""
         is_x_metric = self._metric_combo.currentText() == "Intensity at x"
         is_arith    = self._radio_arith.isChecked()
-        is_svd      = self._radio_svd.isChecked()
+        is_decomp   = self._is_decomp_mode()
         is_cluster  = self._radio_cluster.isChecked()
 
-        # x-value row only for "Intensity at x" in non-SVD/cluster modes
-        self._x_val_row.setVisible(is_x_metric and not is_svd and not is_cluster)
+        # x-value row only for "Intensity at x" in non-decomposition/cluster modes
+        self._x_val_row.setVisible(is_x_metric and not is_decomp and not is_cluster)
         self._x_val_label.setText("x₁ (Band A):" if is_arith else "x:")
         self._x_val2_label.setVisible(is_arith and is_x_metric)
         self._x_val2_spin.setVisible(is_arith and is_x_metric)
 
-        # Configure band button: always shown in SVD/cluster mode
-        show_configure = is_svd or is_cluster or not is_x_metric
+        # Configure band button: always shown in decomposition/cluster mode
+        show_configure = is_decomp or is_cluster or not is_x_metric
         self._btn_configure_ranges.setVisible(show_configure)
         self._ranges_summary_label.setVisible(show_configure)
 
@@ -1401,9 +1917,10 @@ class Map2DDialog(QDialog):
             self._arith_range_b_label.setVisible(show_b)
 
         # Labels per mode
-        if is_svd:
-            self._btn_configure_ranges.setText("Configure SVD range…")
-            self._band_a_header.setText("SVD computation range")
+        if is_decomp:
+            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            self._btn_configure_ranges.setText(f"Configure {kind_label} range…")
+            self._band_a_header.setText(f"{kind_label} computation range")
         elif is_cluster:
             self._btn_configure_ranges.setText("Configure clustering range…")
             self._band_a_header.setText("Clustering range")
@@ -1459,6 +1976,7 @@ class Map2DDialog(QDialog):
         self._map_canvas.disable_hover()
         self._clear_all_rois()
         self._map_canvas._draw_stale()
+        self._ref_stale_warning_label.setVisible(False)
 
     # ── Dimensions ──────────────────────────────────────────────────────
 
@@ -1478,6 +1996,23 @@ class Map2DDialog(QDialog):
                 f"(need {self.n_spectra}, off by {sign}{diff})")
             self._dim_hint_label.setStyleSheet(
                 "font-size:8pt; color:#C62828;")
+
+    def _detect_map_dimensions_from_metadata(self):
+        """Return (n_rows, n_cols) read from the first spectrum's
+        metadata['import_parameters'], if present and consistent with the
+        number of spectra actually loaded here (a mixed selection drawn
+        from more than one map, or a stale/edited value, would make the
+        product not match) — else None."""
+        if not self.spectra:
+            return None
+        params = self.spectra[0].get('metadata', {}).get('import_parameters', {}) or {}
+        n_rows = params.get('map_n_rows')
+        n_cols = params.get('map_n_cols')
+        if not n_rows or not n_cols:
+            return None
+        if n_rows * n_cols != self.n_spectra:
+            return None
+        return n_rows, n_cols
 
     def _show_factor_pairs(self):
         pairs = self.controller.get_factor_pairs(self.n_spectra)
@@ -1718,7 +2253,6 @@ class Map2DDialog(QDialog):
             "labelled 'Cluster_0_avg', 'Cluster_1_avg', etc.")
 
         def _do_export():
-            import copy as _copy
             new_spectra = []
             for ci in range(k):
                 if ci not in avgs:
@@ -1763,8 +2297,8 @@ class Map2DDialog(QDialog):
             band_label = self._btn_configure_ranges.text().replace("…", "").strip()
             cur_ranges, cur_is_exclude = self._active_range_state()
             # Colour matches the range band shown in the spectrum panel
-            if self._radio_svd.isChecked():
-                band_color = '#E65100'     # orange — matches SVD twin axis
+            if self._is_decomp_mode():
+                band_color = '#E65100'     # orange — matches the decomposition twin axis
             elif self._radio_cluster.isChecked():
                 band_color = '#6A1B9A'     # purple
             else:
@@ -1784,13 +2318,19 @@ class Map2DDialog(QDialog):
                     self._x_min = None
                     self._x_max = None
                     self._update_ranges_summary()
-                    if not self._radio_svd.isChecked():
+                    if not self._is_decomp_mode():
                         self._compute_map()
                     else:
+                        # SVD/NMF/MCR-ALS are all fit-then-browse — same
+                        # reason SVD alone used to be singled out here:
+                        # changing the range invalidates a fit that's
+                        # potentially expensive to redo, so it's not
+                        # done automatically the way the fast metric
+                        # modes' ranges are.
                         self._invalidate_map()
-                        # Clear spectrum panel — must press Update Map
+                        kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
                         self._spectrum_title_label.setText(
-                            "SVD range changed — press 'Update Map' to recompute")
+                            f"{kind_label} range changed — press 'Update Map' to recompute")
                         self._spectrum_canvas.ax.cla()
                         self._spectrum_canvas.draw_idle()
         except Exception as exc:
@@ -1969,35 +2509,82 @@ class Map2DDialog(QDialog):
         elif self._radio_cluster.isChecked():
             self._compute_cluster_map(n_rows, n_cols)
 
-        else:  # SVD mode
+        else:  # SVD / NMF / MCR-ALS mode
+            kind = self._decomp_kind()
             comp_idx = max(0, self._component_combo.currentIndex())
-            svd_inc = [] if self._svd_is_exclude else self._svd_ranges
-            svd_exc = self._svd_ranges if self._svd_is_exclude else []
-            map_data = self.controller.compute_svd_map(
-                self.spectra, n_rows, n_cols,
-                component_index=comp_idx,
-                x_min=None, x_max=None,
-                include_ranges=svd_inc, exclude_ranges=svd_exc,
-            )
-            if map_data is None:
-                QMessageBox.critical(
-                    self, "Error",
+            dec_inc, dec_is_excl = self._active_range_state()
+            dec_inc_ranges = [] if dec_is_excl else dec_inc
+            dec_exc_ranges = dec_inc if dec_is_excl else []
+
+            if kind == 'svd':
+                map_data = self.controller.compute_svd_map(
+                    self.spectra, n_rows, n_cols,
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                )
+                fail_msg = (
                     "Failed to compute SVD map.\n"
                     "Ensure all spectra have the same number of data points "
                     "in the selected range (use Linearization in Data Range "
                     "if needed).")
+            elif kind == 'nmf':
+                refs, fix_refs = self._reference_settings()
+                map_data = self.controller.compute_nmf_map(
+                    self.spectra, n_rows, n_cols,
+                    n_components=self._decomp_n_spin.value(),
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                    init=self._nmf_init_combo.currentText(),
+                    max_iter=self._nmf_maxiter_spin.value(),
+                    references=refs, fix_references=fix_refs,
+                )
+                specific = self.controller.manager.get_last_decomp_error('nmf')
+                fail_msg = "Failed to compute NMF map." + (
+                    f"\n\n{specific}" if specific else
+                    "\nEnsure all spectra have the same number of data "
+                    "points in the selected range.")
+            else:  # 'mcr'
+                refs, fix_refs = self._reference_settings()
+                map_data = self.controller.compute_mcr_map(
+                    self.spectra, n_rows, n_cols,
+                    n_components=self._decomp_n_spin.value(),
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                    max_iterations=self._mcr_maxiter_spin.value(),
+                    c_nonneg=self._mcr_c_nonneg_cb.isChecked(),
+                    st_nonneg=self._mcr_st_nonneg_cb.isChecked(),
+                    closure=self._mcr_closure_cb.isChecked(),
+                    references=refs, fix_references=fix_refs,
+                )
+                specific = self.controller.manager.get_last_decomp_error('mcr')
+                fail_msg = "Failed to compute MCR-ALS map." + (
+                    f"\n\n{specific}" if specific else
+                    "\nEnsure all spectra have the same number of data "
+                    "points in the selected range.")
+
+            if map_data is None:
+                QMessageBox.critical(self, "Error", fail_msg)
                 return
             self._last_map_data = map_data
-            self._svd_inverted.clear()
+            self._ref_stale_warning_label.setVisible(False)
+            if kind == 'svd':
+                self._svd_inverted.clear()
             self._refresh_component_combo(keep_index=comp_idx)
-            self._btn_invert.setEnabled(True)
-            self._btn_multi_map.setEnabled(True)
-            self._btn_diagnostics.setEnabled(True)
-            ev_arr = self.controller.get_explained_variance()
+            # Invert / Multi-map / Diagnostics stay SVD-only for now (see
+            # _on_mode_changed, which already hides them for NMF/MCR-ALS) —
+            # only actually enable them once SVD has something to show.
+            self._btn_invert.setEnabled(kind == 'svd')
+            self._btn_multi_map.setEnabled(kind == 'svd')
+            self._btn_diagnostics.setEnabled(kind == 'svd')
+            ev_arr = self.controller.get_component_explained_variance(kind)
             ev     = (ev_arr[comp_idx]
                       if ev_arr is not None and comp_idx < len(ev_arr)
                       else 0.0)
-            title  = (f"SVD coeff. map – component {comp_idx + 1}  "
+            kind_title = {'svd': 'SVD coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+            title  = (f"{kind_title} map – component {comp_idx + 1}  "
                       f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
             self._map_canvas.update_map(
                 map_data,
@@ -2007,18 +2594,358 @@ class Map2DDialog(QDialog):
                 equal_aspect=self._equal_aspect_cb.isChecked(),
             )
             self._update_subspectrum_in_panel(comp_idx)
+            self._update_decomp_status_label(kind)
             self._on_map_computed()
 
+        self._map_canvas.setFocus()
+
+    # ── NMF/MCR-ALS: reference-spectra anchoring ────────────────────────
+
+    def _rebuild_reference_rows(self, *_):
+        """One reference row per component slot, synced to the current
+        Components count. Each row picks its reference by clicking a
+        pixel on the map (see _on_pick_ref_clicked / _on_map_click) rather
+        than from a dropdown — with a map's own spectra numbering in the
+        thousands, a "select from this list" combo doesn't scale the way
+        it does for the standalone NMF Analysis / MCR-ALS tools' much
+        shorter spectrum lists."""
+        n = self._decomp_n_spin.value()
+        # Drop any picked pixels beyond the new component count, and
+        # disarm picking if it was armed for a slot that no longer exists.
+        for k in list(self._ref_pixel_by_component):
+            if k >= n:
+                del self._ref_pixel_by_component[k]
+        if self._ref_picking_component is not None and self._ref_picking_component >= n:
+            self._ref_picking_component = None
+        while self._ref_rows_layout.count():
+            item = self._ref_rows_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+        self._ref_pick_rows = []
+        n_cols = self._cols_spin.value()
+        for k in range(n):
+            row = QWidget()
+            hl = QHBoxLayout(row)
+            hl.setContentsMargins(0, 0, 0, 0)
+            hl.setSpacing(4)
+            hl.addWidget(QLabel(f"Component {k + 1}:"))
+            pick_btn = QPushButton("Pick on map…")
+            pick_btn.setCheckable(True)
+            pick_btn.setToolTip(
+                "Click, then click a pixel on the map to use its spectrum "
+                "as this component's reference.")
+            pick_btn.clicked.connect(lambda _checked, ci=k: self._on_pick_ref_clicked(ci))
+            self._style_pick_button(pick_btn, False)
+            hl.addWidget(pick_btn)
+            status_label = QLabel()
+            status_label.setStyleSheet("font-size:8pt; color:#444;")
+            status_label.setWordWrap(True)
+            hl.addWidget(status_label, 1)
+            view_btn = QPushButton("View")
+            view_btn.setEnabled(False)
+            view_btn.setToolTip("Show this reference's spectrum.")
+            view_btn.clicked.connect(lambda _checked, ci=k: self._on_view_ref_clicked(ci))
+            hl.addWidget(view_btn)
+            clear_btn = QPushButton("X")
+            clear_btn.setFixedSize(24, 24)
+            clear_btn.setStyleSheet(
+                "QPushButton { background-color:#C62828; color:white; "
+                "font-weight:bold; border:none; border-radius:4px; }"
+                "QPushButton:hover { background-color:#B71C1C; }")
+            clear_btn.setToolTip("Clear this component's reference.")
+            clear_btn.clicked.connect(lambda _checked, ci=k: self._on_clear_ref_clicked(ci))
+            hl.addWidget(clear_btn)
+            self._ref_rows_layout.addWidget(row)
+            self._ref_pick_rows.append(dict(pick_btn=pick_btn,
+                                             status_label=status_label,
+                                             view_btn=view_btn,
+                                             clear_btn=clear_btn))
+            self._update_ref_row_status(k, n_cols)
+        self._sync_ref_markers()
+
+    def _update_ref_row_status(self, component_index, n_cols=None):
+        """Refresh one reference row's status label (and the View
+        button's enabled state) from self._ref_pixel_by_component —
+        called after a pick, a clear, or a rebuild."""
+        if component_index >= len(self._ref_pick_rows):
+            return
+        row_widgets = self._ref_pick_rows[component_index]
+        pixel = self._ref_pixel_by_component.get(component_index)
+        if pixel is None:
+            row_widgets['status_label'].setText("(none)")
+            row_widgets['view_btn'].setEnabled(False)
+            return
+        row, col = pixel
+        if n_cols is None:
+            n_cols = self._cols_spin.value()
+        sp_idx = row * n_cols + col
+        label = (self.spectra[sp_idx].get('label', f'r{row}_c{col}')
+                 if 0 <= sp_idx < self.n_spectra else f'r{row}_c{col}')
+        row_widgets['status_label'].setText(f"row {row}, col {col}  —  {label}")
+        row_widgets['view_btn'].setEnabled(0 <= sp_idx < self.n_spectra)
+
+    def _sync_ref_markers(self):
+        """Push self._ref_pixel_by_component onto the map canvas as the
+        numbered markers, and drop any marker whose component slot no
+        longer has a row (after Components count shrinks)."""
+        self._map_canvas.clear_ref_pixels()
+        for k, pixel in self._ref_pixel_by_component.items():
+            self._map_canvas.set_ref_pixel(k, pixel)
+        self._map_canvas.set_ref_markers_visible(self._ref_grp.isChecked())
+
+    def _on_pick_ref_clicked(self, component_index):
+        """Toggle picking mode for one component's reference row —
+        clicking the map afterward (see _on_map_click) assigns that
+        pixel's spectrum as the reference. While armed, hovering the map
+        also shows a miniature preview of the spectrum under the cursor
+        (see _MapCanvas.set_ref_picking_active)."""
+        row_widgets = self._ref_pick_rows[component_index] if component_index < len(self._ref_pick_rows) else None
+        if self._ref_picking_component == component_index:
+            # Clicked its own already-armed button again — cancel.
+            self._ref_picking_component = None
+            if row_widgets is not None:
+                row_widgets['pick_btn'].setChecked(False)
+                self._style_pick_button(row_widgets['pick_btn'], False)
+            self._click_info_label.setText("Click a pixel to inspect its spectrum.")
+            self._map_canvas.set_ref_picking_active(False)
+            return
+        # Arm this one, disarm/uncheck any other row's button.
+        self._ref_picking_component = component_index
+        for i, rw in enumerate(self._ref_pick_rows):
+            armed = (i == component_index)
+            rw['pick_btn'].setChecked(armed)
+            self._style_pick_button(rw['pick_btn'], armed)
+        self._click_info_label.setText(
+            f"Click a pixel on the map to set it as Component "
+            f"{component_index + 1}'s reference spectrum.")
+        self._map_canvas.set_ref_picking_active(True)
+
+    def _on_clear_ref_clicked(self, component_index):
+        self._ref_pixel_by_component.pop(component_index, None)
+        self._update_ref_row_status(component_index)
+        self._map_canvas.set_ref_pixel(component_index, None)
+        self._on_reference_settings_changed()
+
+    def _on_view_ref_clicked(self, component_index):
+        """Pop up a small plot of the spectrum currently anchoring this
+        component slot."""
+        pixel = self._ref_pixel_by_component.get(component_index)
+        if pixel is None:
+            return
+        row, col = pixel
+        n_cols = self._cols_spin.value()
+        sp_idx = row * n_cols + col
+        if not (0 <= sp_idx < self.n_spectra):
+            return
+        sp = self.spectra[sp_idx]
+        label = sp.get('label', f'r{row}_c{col}')
+
+        popup = QDialog(self)
+        popup.setWindowTitle(f"Component {component_index + 1} reference — {label}")
+        v = QVBoxLayout(popup)
+        fig = Figure(figsize=(5, 3.2), tight_layout=True)
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        ax.plot(np.asarray(sp['x_scale'], dtype=float),
+                np.asarray(sp['y_scale'], dtype=float),
+                color='#1565C0', linewidth=1.2)
+        ax.set_title(label, fontsize=9)
+        ax.set_xlabel(sp.get('x_unit', 'x'), fontsize=8)
+        ax.set_ylabel("Intensity", fontsize=8)
+        v.addWidget(canvas)
+        btn_box = QDialogButtonBox(QDialogButtonBox.Close)
+        btn_box.rejected.connect(popup.reject)
+        btn_box.accepted.connect(popup.accept)
+        v.addWidget(btn_box)
+        popup.resize(480, 380)
+        popup.exec_()
+
+    def _on_ref_autorecompute_toggled(self, checked):
+        """Checking "Auto-recompute when references change" while
+        the stale-reference warning is showing recomputes right away
+        instead of leaving both visible at once — they're mutually
+        exclusive: once every future change recomputes immediately,
+        there's nothing left to warn about."""
+        if checked and self._ref_stale_warning_label.isVisible():
+            self._compute_map()
+
+    def _on_reference_settings_changed(self):
+        """Called after a reference pick/clear, the "Hold references
+        fixed" checkbox, or the Reference spectra group's own on/off
+        switch changes something _reference_settings() would now return
+        differently. Off by default, this just flags the currently
+        displayed map as stale (without hiding it — recomputing every
+        pixel on every click would be disruptive); with "Auto-recompute
+        when references change" on, it recomputes right away instead."""
+        if self._decomp_kind() not in ('nmf', 'mcr'):
+            return
+        if self._last_map_data is None:
+            return
+        if self._ref_autorecompute_cb.isChecked():
+            self._compute_map()
+            return
+        self._ref_stale_warning_label.setText(
+            "References changed — press ‘Update Map’ to apply.")
+        self._ref_stale_warning_label.setVisible(True)
+
+    def _on_ref_grp_toggled(self, checked):
+        self._map_canvas.set_ref_markers_visible(checked)
+        self._on_reference_settings_changed()
+
+    def _reference_settings(self):
+        """{component_index: (x, y)} from the picked pixels, or empty if
+        the Reference spectra group is off."""
+        if not self._ref_grp.isChecked():
+            return {}, False
+        refs = {}
+        n_cols = self._cols_spin.value()
+        n = self._decomp_n_spin.value()
+        for k, (row, col) in self._ref_pixel_by_component.items():
+            if k >= n:
+                continue
+            sp_idx = row * n_cols + col
+            if 0 <= sp_idx < self.n_spectra:
+                s = self.spectra[sp_idx]
+                refs[k] = (np.asarray(s['x_scale'], dtype=float),
+                           np.asarray(s['y_scale'], dtype=float))
+        return refs, self._ref_fix_cb.isChecked()
+
+    # ── NMF/MCR-ALS: fit-quality status + robustness re-run ─────────────
+
+    def _update_decomp_status_label(self, kind):
+        """Show lack-of-fit / iterations (and, after a best-of-n run,
+        the consensus info) for NMF/MCR-ALS — SVD has no equivalent
+        concept (it's an exact, non-iterative decomposition)."""
+        if kind not in ('nmf', 'mcr'):
+            self._decomp_status_label.setText("")
+            return
+        lof = self.controller.get_component_lof(kind)
+        iterations, converged = self.controller.get_component_iterations(kind)
+        parts = []
+        if lof is not None:
+            parts.append(f"Lack of fit: {lof:.3f}%")
+        if iterations is not None:
+            conv_str = "" if converged else " (not converged)"
+            parts.append(f"{iterations} iterations{conv_str}")
+        run_info = self.controller.get_last_run_info(kind)
+        if run_info is not None:
+            n_runs, pool_size, consensus = run_info
+            if consensus is not None:
+                parts.append(f"best of {n_runs} runs ({consensus * 100:.0f}% "
+                             f"consensus among {pool_size} near-best)")
+            else:
+                parts.append(f"best of {n_runs} runs")
+        self._decomp_status_label.setText("  |  ".join(parts))
+
+    def _run_decomp_best_of_n(self):
+        """Run the active NMF/MCR-ALS fit several times with different
+        random seeds and keep whichever run best represents the near-best
+        group — same policy as the standalone tools' own button of the
+        same name (see Map2DManager._pick_best_of_n). Every trial refits
+        every pixel in the map, so this can take a while on a large map;
+        there's no live progress/cancel here (unlike the standalone
+        dialogs) — just a wait cursor — to keep this addition simple."""
+        kind = self._decomp_kind()
+        if kind not in ('nmf', 'mcr'):
+            return
+        n_rows = self._rows_spin.value()
+        n_cols = self._cols_spin.value()
+        if not self.controller.validate_dimensions(self.n_spectra, n_rows, n_cols):
+            QMessageBox.warning(
+                self, "Invalid Dimensions",
+                f"Rows × Cols must equal the number of spectra.\n"
+                f"{n_rows} × {n_cols} = {n_rows * n_cols}  ≠  {self.n_spectra}")
+            return
+
+        from PyQt5.QtWidgets import QInputDialog
+        n_runs, ok = QInputDialog.getInt(
+            self, "Run N times, keep best",
+            "Number of runs (different random seeds):",
+            value=getattr(self, '_last_map_n_runs', 10), min=2, max=50)
+        if not ok:
+            return
+        self._last_map_n_runs = n_runs
+
+        comp_idx = max(0, self._component_combo.currentIndex())
+        dec_inc, dec_is_excl = self._active_range_state()
+        dec_inc_ranges = [] if dec_is_excl else dec_inc
+        dec_exc_ranges = dec_inc if dec_is_excl else []
+        refs, fix_refs = self._reference_settings()
+
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            if kind == 'nmf':
+                map_data = self.controller.compute_nmf_map(
+                    self.spectra, n_rows, n_cols,
+                    n_components=self._decomp_n_spin.value(),
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                    max_iter=self._nmf_maxiter_spin.value(),
+                    n_runs=n_runs, references=refs, fix_references=fix_refs,
+                )
+                fail_msg = ("All NMF runs failed.\n\n"
+                            + (self.controller.manager.get_last_decomp_error('nmf') or ""))
+            else:
+                map_data = self.controller.compute_mcr_map(
+                    self.spectra, n_rows, n_cols,
+                    n_components=self._decomp_n_spin.value(),
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                    max_iterations=self._mcr_maxiter_spin.value(),
+                    c_nonneg=self._mcr_c_nonneg_cb.isChecked(),
+                    st_nonneg=self._mcr_st_nonneg_cb.isChecked(),
+                    closure=self._mcr_closure_cb.isChecked(),
+                    n_runs=n_runs, references=refs, fix_references=fix_refs,
+                )
+                fail_msg = "All MCR-ALS runs failed."
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if map_data is None:
+            QMessageBox.critical(self, "Error", fail_msg)
+            return
+
+        self._last_map_data = map_data
+        self._ref_stale_warning_label.setVisible(False)
+        self._refresh_component_combo(keep_index=comp_idx)
+        ev_arr = self.controller.get_component_explained_variance(kind)
+        ev     = (ev_arr[comp_idx]
+                  if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
+        kind_title = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        title  = (f"{kind_title} map – component {comp_idx + 1}  "
+                  f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
+        self._map_canvas.update_map(
+            map_data,
+            cmap=self._cmap_combo.currentText(),
+            interpolation=self._interp_combo.currentText(),
+            title=title,
+            equal_aspect=self._equal_aspect_cb.isChecked(),
+        )
+        self._update_subspectrum_in_panel(comp_idx)
+        self._update_decomp_status_label(kind)
+        self._on_map_computed()
         self._map_canvas.setFocus()
 
     # ── SVD component combo ─────────────────────────────────────────────
 
     def _refresh_component_combo(self, keep_index=0):
-        """Repopulate the component dropdown after computing SVD."""
-        n      = self.controller.get_n_svd_components()
-        ev_arr = self.controller.get_explained_variance()
+        """Repopulate the component dropdown after computing the active decomposition."""
+        kind = self._decomp_kind()
+        if kind is None:
+            return
+        n      = self.controller.get_n_components(kind)
+        ev_arr = self.controller.get_component_explained_variance(kind)
         mgr    = self.controller.manager
-        mode   = self._comp_label_combo.currentText()
+        # The σ / residual-error label choices only mean anything for
+        # SVD (NMF/MCR-ALS have no singular values, and no residual-error
+        # adapter) — for the other two kinds, always show explained
+        # variance regardless of what the (hidden, for them) combo says.
+        mode   = self._comp_label_combo.currentText() if kind == 'svd' else "Explained var.(%)"
 
         # Pre-compute residual errors if needed (only once per refresh)
         re_arr = None
@@ -2047,16 +2974,18 @@ class Map2DDialog(QDialog):
 
     def _refresh_component_combo_labels(self):
         """Called when the user switches EV% ↔ σ label selector."""
-        if self.controller.get_n_svd_components() == 0:
+        kind = self._decomp_kind()
+        if kind is None or self.controller.get_n_components(kind) == 0:
             return
         current = self._component_combo.currentIndex()
         self._refresh_component_combo(keep_index=max(0, current))
 
     def _on_component_changed(self, index):
-        """Switch displayed component without recomputing SVD."""
-        if index < 0 or self.controller.get_n_svd_components() == 0:
+        """Switch displayed component without recomputing the fit."""
+        kind = self._decomp_kind()
+        if kind is None or index < 0 or self.controller.get_n_components(kind) == 0:
             return
-        coeffs = self.controller.get_coefficients(index)
+        coeffs = self.controller.get_component_coefficients(kind, index)
         if coeffs is None:
             return
         n_rows = self._rows_spin.value()
@@ -2070,10 +2999,11 @@ class Map2DDialog(QDialog):
             return
 
         self._last_map_data = map_data
-        ev_arr = self.controller.get_explained_variance()
+        ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[index]
                   if ev_arr is not None and index < len(ev_arr) else 0.0)
-        title  = (f"SVD coeff. map – component {index + 1}  "
+        kind_title = {'svd': 'SVD coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        title  = (f"{kind_title} map – component {index + 1}  "
                   f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
         self._map_canvas.update_map(
             map_data,
@@ -2114,7 +3044,6 @@ class Map2DDialog(QDialog):
         # Refresh spectrum panel for clicked pixel (or reference if none clicked)
         if self._last_clicked_pixel is not None and self._radio_svd.isChecked():
             row, col = self._last_clicked_pixel
-            n_rows = self._rows_spin.value()
             n_cols = self._cols_spin.value()
             sp_idx = row * n_cols + col
             if 0 <= sp_idx < self.n_spectra:
@@ -2250,7 +3179,6 @@ class Map2DDialog(QDialog):
         self._act_clear_roi.setEnabled(True)
         self._act_remove_roi.setEnabled(True)
         self._act_roi_mode.setEnabled(True)
-        self._act_save_session.setEnabled(True)
         if self._last_map_data is not None:
             valid = self._last_map_data[np.isfinite(self._last_map_data)]
             if valid.size == 0:
@@ -2354,10 +3282,33 @@ class Map2DDialog(QDialog):
         return pixels
 
     def _on_map_click(self, event):
-        """Dispatch map clicks to line-profile mode or spectrum inspection."""
+        """Dispatch map clicks to reference picking, line-profile mode, or
+        spectrum inspection."""
         if event.inaxes is not self._map_canvas.ax:
             return
         if event.xdata is None or event.ydata is None:
+            return
+
+        # ── Reference-spectrum picking (NMF/MCR-ALS) ────────────────────
+        if self._ref_picking_component is not None:
+            n_rows = self._rows_spin.value()
+            n_cols = self._cols_spin.value()
+            col = int(round(event.xdata))
+            row = int(round(event.ydata))
+            if not (0 <= row < n_rows and 0 <= col < n_cols):
+                return
+            component_index = self._ref_picking_component
+            self._ref_pixel_by_component[component_index] = (row, col)
+            self._update_ref_row_status(component_index, n_cols)
+            self._map_canvas.set_ref_pixel(component_index, (row, col))
+            self._on_reference_settings_changed()
+            if component_index < len(self._ref_pick_rows):
+                pick_btn = self._ref_pick_rows[component_index]['pick_btn']
+                pick_btn.setChecked(False)
+                self._style_pick_button(pick_btn, False)
+            self._ref_picking_component = None
+            self._click_info_label.setText("Click a pixel to inspect its spectrum.")
+            self._map_canvas.set_ref_picking_active(False)
             return
 
         # ── Line profile mode ──────────────────────────────────────────
@@ -2454,7 +3405,7 @@ class Map2DDialog(QDialog):
         x = np.asarray(sp.get('original_x_scale', sp['x_scale']), dtype=float)
         y = np.asarray(sp.get('original_y_scale', sp['y_scale']), dtype=float)
 
-        if self._radio_svd.isChecked():
+        if self._is_decomp_mode():
             comp_idx = max(0, self._component_combo.currentIndex())
             self._update_subspectrum_in_panel(comp_idx, clicked_sp=sp)
         elif self._radio_cluster.isChecked():
@@ -2499,20 +3450,29 @@ class Map2DDialog(QDialog):
             self._spectrum_canvas.draw_idle()
 
     def _on_show_svd_changed(self):
-        """Toggle SVD subspectrum overlay instantly."""
+        """Toggle component subspectrum overlay instantly (SVD/NMF/MCR-ALS)."""
         if self._show_svd_cb.isChecked():
-            if self._radio_svd.isChecked() and self._last_clicked_pixel is not None:
+            if self._is_decomp_mode() and self._last_clicked_pixel is not None:
                 self._draw_twin_subspectrum()
         else:
             self._clear_twin_axis()
 
     def _draw_twin_subspectrum(self):
-        """Add/refresh the twin-axis subspectrum overlay — only if checkbox is on."""
+        """Add/refresh the twin-axis subspectrum overlay — only if checkbox is on.
+
+        Works for any decomposition kind (SVD, NMF, MCR-ALS): each has its
+        own get_component_subspectrum(kind, idx) via the unified accessor,
+        so there's nothing SVD-specific left here.
+        """
+        kind = self._decomp_kind()
+        if kind is None:
+            self._clear_twin_axis()
+            return
         if not self._show_svd_cb.isChecked():
             self._clear_twin_axis()
             return
         comp_idx = self._component_combo.currentIndex()
-        sx, sy = self.controller.get_subspectrum(comp_idx)
+        sx, sy = self.controller.get_component_subspectrum(kind, comp_idx)
         if sx is None or sy is None:
             return
         ax = self._spectrum_canvas.ax
@@ -2527,7 +3487,7 @@ class Map2DDialog(QDialog):
         twin = ax.twinx()
         twin.plot(sx, sy, color='#E65100', linewidth=0.9,
                   linestyle='--', alpha=0.8)
-        twin.set_ylabel("U amplitude", fontsize=7, color='#E65100')
+        twin.set_ylabel("Component amplitude", fontsize=7, color='#E65100')
         twin.tick_params(axis='y', labelcolor='#E65100', labelsize=6)
         self._spectrum_canvas._twin_ax = twin
         self._spectrum_canvas.fig.tight_layout()
@@ -2551,9 +3511,10 @@ class Map2DDialog(QDialog):
             k = self._cluster_k_spin.value()
             method = self._cluster_method_combo.currentText()
             title_plot = f"Cluster preview: {label}  [k={k}, {method}]"
-            panel_title = f"Click a pixel to see its spectrum and cluster assignment"
-        elif self._radio_svd.isChecked():
-            title_plot  = f"SVD range preview: {label}"
+            panel_title = "Click a pixel to see its spectrum and cluster assignment"
+        elif self._is_decomp_mode():
+            kind_label  = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            title_plot  = f"{kind_label} range preview: {label}"
             panel_title = f"Click a pixel — showing: {label}"
         else:
             metric      = self._metric_combo.currentText()
@@ -2579,11 +3540,12 @@ class Map2DDialog(QDialog):
             if getattr(patch, '_range_band', False):
                 patch.remove()
 
-        # Skip if unchecked. In SVD mode, only draw when "Full spectrum" is checked.
+        # Skip if unchecked. In decomposition mode, only draw when "Full
+        # spectrum" is checked.
         if not self._show_bands_cb.isChecked():
             self._spectrum_canvas.draw_idle()
             return
-        if self._radio_svd.isChecked():
+        if self._is_decomp_mode():
             if not self._svd_full_range_cb.isChecked():
                 self._spectrum_canvas.draw_idle()
                 return
@@ -2667,10 +3629,11 @@ class Map2DDialog(QDialog):
                        _merge_ranges(self._cluster_ranges),
                        self._cluster_is_exclude,
                        color='#6A1B9A', alpha=0.15)
-        elif self._radio_svd.isChecked():
+        elif self._is_decomp_mode():
+            dec_ranges, dec_is_excl = self._active_range_state()
             _draw_band(None, None,
-                       _merge_ranges(self._svd_ranges),
-                       self._svd_is_exclude,
+                       _merge_ranges(dec_ranges),
+                       dec_is_excl,
                        color='#E65100', alpha=0.15)
 
         self._spectrum_canvas.draw_idle()
@@ -2685,17 +3648,21 @@ class Map2DDialog(QDialog):
         self._draw_range_bands(x)
 
     def _on_svd_display_changed(self):
-        """Toggle between full-spectrum and SVD-range-only display."""
-        if self._radio_svd.isChecked():
+        """Toggle between full-spectrum and component-range-only display."""
+        if self._is_decomp_mode():
             comp_idx = max(0, self._component_combo.currentIndex())
             self._update_subspectrum_in_panel(comp_idx)
 
     def _update_subspectrum_in_panel(self, comp_idx, clicked_sp=None):
-        """Show spectrum in lower-right panel for SVD mode.
+        """Show spectrum in lower-right panel for SVD/NMF/MCR-ALS mode.
 
         clicked_sp : spectrum dict to display (defaults to self.spectra[0])
         """
         if self._right_splitter.sizes()[1] == 0 or not self.spectra:
+            return
+
+        kind = self._decomp_kind()
+        if kind is None:
             return
 
         sp     = clicked_sp if clicked_sp is not None else self.spectra[0]
@@ -2704,17 +3671,18 @@ class Map2DDialog(QDialog):
         y_full = np.asarray(sp.get('original_y_scale', sp['y_scale']),
                              dtype=float)
 
-        ev_arr = self.controller.get_explained_variance()
+        ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[comp_idx]
                   if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
-        title  = f"SVD component {comp_idx + 1}  (EV = {ev:.3f}%)"
+        kind_title = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        title  = f"{kind_title} component {comp_idx + 1}  (EV = {ev:.3f}%)"
         self._spectrum_title_label.setText(
             f"{title}  — click a pixel to see its spectrum")
 
         show_full = self._svd_full_range_cb.isChecked()
 
         if show_full:
-            # Full spectrum + shaded SVD band region + twin-axis component
+            # Full spectrum + shaded band region + twin-axis component
             self._spectrum_canvas.update_spectrum(
                 x_full, y_full,
                 title=title,
@@ -2722,19 +3690,19 @@ class Map2DDialog(QDialog):
                 ylabel="Intensity",
                 color='#1565C0',
             )
-            # Shade the SVD band region using _draw_range_bands which
-            # correctly reads self._svd_ranges / self._svd_is_exclude
+            # Shade the band region using _draw_range_bands, which reads
+            # the active mode's ranges via _active_range_state()
             self._draw_range_bands(x_full)
         else:
-            # Clipped spectrum — x-axis matches SVD component exactly
-            mgr = self.controller.manager
-            if mgr._svd_x_axis is not None:
-                x_svd = mgr._svd_x_axis
-                # Interpolate the full spectrum onto the SVD x-axis
+            # Clipped spectrum — x-axis matches the fitted component exactly
+            x_comp, _y_comp = self.controller.get_component_subspectrum(kind, comp_idx)
+            if x_comp is not None:
+                # Interpolate the full spectrum onto the component's x-axis
                 if x_full[0] > x_full[-1]:
-                    y_clipped = np.interp(x_svd, x_full[::-1], y_full[::-1])
+                    y_clipped = np.interp(x_comp, x_full[::-1], y_full[::-1])
                 else:
-                    y_clipped = np.interp(x_svd, x_full, y_full)
+                    y_clipped = np.interp(x_comp, x_full, y_full)
+                x_svd = x_comp
             else:
                 x_svd, y_clipped = x_full, y_full
             self._spectrum_canvas.update_spectrum(
@@ -2745,7 +3713,7 @@ class Map2DDialog(QDialog):
                 color='#1565C0',
             )
 
-        # Overlay SVD component if checkbox is checked
+        # Overlay component subspectrum if checkbox is checked
         if self._show_svd_cb.isChecked():
             self._draw_twin_subspectrum()
 
@@ -2788,10 +3756,8 @@ class Map2DDialog(QDialog):
         n_drawn = len(self._all_roi_labels())
         if self._roi_exclude_mode:
             n_view = self.n_spectra - n_drawn
-            mode_str = f"excl. {n_drawn}"
         else:
             n_view = n_drawn
-            mode_str = f"sel. {n_drawn}"
 
         if n_drawn > 0:
             if self._roi_exclude_mode:
@@ -2925,7 +3891,6 @@ class Map2DDialog(QDialog):
         """Called both for a brand-new ellipse AND for resizing/moving an
         already-drawn one via its handles after release — same reasoning
         as _on_roi_selected's is_adjustment check above."""
-        import numpy as np
         is_adjustment = (
             self._last_ellipse_region is not None
             and getattr(self._ellipse_selector, '_active_handle', None) is not None
@@ -3481,114 +4446,6 @@ class Map2DDialog(QDialog):
         )
         dlg.exec_()
 
-    # ── Feature 5: Save / load session ─────────────────────────────────
-
-    def _save_session(self):
-        import json
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Save Session", "", "JSON session (*.json)")
-        if not path:
-            return
-        if not path.endswith('.json'):
-            path += '.json'
-        mgr = self.controller.manager
-        session = {
-            'n_rows':        self._rows_spin.value(),
-            'n_cols':        self._cols_spin.value(),
-            'map_mode':      'svd' if self._radio_svd.isChecked() else 'intensity',
-            'metric':        self._metric_combo.currentText(),
-            'cmap':          self._cmap_combo.currentText(),
-            'interpolation': self._interp_combo.currentText(),
-            'equal_aspect':  self._equal_aspect_cb.isChecked(),
-            'clim_auto':     self._clim_auto_cb.isChecked(),
-            'clim_min':      self._clim_min_spin.value(),
-            'clim_max':      self._clim_max_spin.value(),
-            'label_mode':    (self._comp_label_combo.currentText()
-                              if hasattr(self, '_comp_label_combo') else ''),
-            'svd_component': self._component_combo.currentIndex(),
-            'ranges':        self._ranges,
-            'is_exclude':    self._is_exclude,
-            'x_min':         self._x_min,
-            'x_max':         self._x_max,
-            'svd_U':  mgr._U.tolist()  if mgr._U  is not None else None,
-            'svd_s':  mgr._s.tolist()  if mgr._s  is not None else None,
-            'svd_Vt': mgr._Vt.tolist() if mgr._Vt is not None else None,
-            'svd_x':  (mgr._svd_x_axis.tolist()
-                       if mgr._svd_x_axis is not None else None),
-        }
-        try:
-            with open(path, 'w') as f:
-                json.dump(session, f)
-            QMessageBox.information(self, "Session saved",
-                                    f"Session saved to:\n{path}")
-        except Exception as exc:
-            QMessageBox.critical(self, "Save Error", str(exc))
-
-    def _load_session(self):
-        import json
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Load Session", "", "JSON session (*.json)")
-        if not path:
-            return
-        try:
-            with open(path) as f:
-                s = json.load(f)
-            # Dimensions
-            self._rows_spin.blockSignals(True)
-            self._cols_spin.blockSignals(True)
-            self._rows_spin.setValue(s.get('n_rows', 1))
-            self._cols_spin.setValue(s.get('n_cols', 1))
-            self._rows_spin.blockSignals(False)
-            self._cols_spin.blockSignals(False)
-            self._update_dimension_hint()
-            # Ranges
-            self._ranges     = s.get('ranges', [])
-            self._is_exclude = s.get('is_exclude', False)
-            self._x_min      = s.get('x_min')
-            self._x_max      = s.get('x_max')
-            self._update_ranges_summary()
-            # Display
-            if s.get('cmap') in self.COLORMAPS:
-                self._cmap_combo.setCurrentText(s['cmap'])
-            if s.get('interpolation') in self.INTERPOLATIONS:
-                self._interp_combo.setCurrentText(s['interpolation'])
-            self._equal_aspect_cb.setChecked(s.get('equal_aspect', False))
-            self._clim_auto_cb.setChecked(s.get('clim_auto', True))
-            if not s.get('clim_auto', True):
-                self._clim_min_spin.setValue(s.get('clim_min', 0))
-                self._clim_max_spin.setValue(s.get('clim_max', 1))
-            # Map mode
-            if s.get('map_mode') == 'svd':
-                self._radio_svd.setChecked(True)
-            else:
-                self._radio_intensity.setChecked(True)
-            self._on_mode_changed(None)
-            idx = self._metric_combo.findText(s.get('metric', 'Integral'))
-            if idx >= 0:
-                self._metric_combo.setCurrentIndex(idx)
-            # Restore SVD arrays
-            mgr = self.controller.manager
-            if s.get('svd_U') is not None:
-                mgr._U   = np.array(s['svd_U'])
-                mgr._s   = np.array(s['svd_s'])
-                mgr._Vt  = np.array(s['svd_Vt'])
-                mgr._svd_x_axis = (np.array(s['svd_x'])
-                                   if s.get('svd_x') else None)
-                mgr._explained_variance = (
-                    mgr._s ** 2 / np.sum(mgr._s ** 2) * 100)
-                if s.get('map_mode') == 'svd':
-                    self._refresh_component_combo(
-                        keep_index=s.get('svd_component', 0))
-                    self._btn_invert.setEnabled(True)
-                    self._btn_multi_map.setEnabled(True)
-                    self._btn_diagnostics.setEnabled(True)
-            self._invalidate_map()
-            QMessageBox.information(
-                self, "Session loaded",
-                "Settings restored. Click Update Map to recompute.")
-        except Exception as exc:
-            QMessageBox.critical(self, "Load Error", str(exc))
-
     # ------------------------------------------------------------------ #
     # QDialog cleanup                                                      #
     # ------------------------------------------------------------------ #
@@ -3653,6 +4510,7 @@ class _MultiMapDialog(QDialog):
         self._resize_timer.timeout.connect(self._plot_all)
 
         self._build_ui()
+        _disable_wheel_scrolling(self)
         # Tick first 4 components (no draw yet — showEvent handles that)
         for i in range(min(4, self.n_total)):
             self._show_checks[i].blockSignals(True)

@@ -1411,6 +1411,9 @@ class MainController(QMainWindow):
         if hasattr(self.view, 'actionOpenRealFolder'):
             self.view.actionOpenRealFolder.triggered.connect(
                 self.open_real_datasets_folder)
+        if hasattr(self.view, 'actionDownloadLargeDatasets'):
+            self.view.actionDownloadLargeDatasets.triggered.connect(
+                self.open_large_dataset_downloader)
 
     # ------------------------------------------------------------------
     # Synthetic test datasets  (Help → Spectra Analysis & Visualization →
@@ -1428,10 +1431,16 @@ class MainController(QMainWindow):
 
     def open_real_dataset(self, filename):
         """Open one shipped MEASURED dataset. Unlike the synthetic ones, real
-        data has no known ground truth to check the analysis against."""
+        data has no known ground truth to check the analysis against.
+
+        filename may be a forward-slash relative path (e.g. entries under
+        REAL_TEST_DATASETS_2D_MAPS look like '2D map/Chlorella.mat') — split
+        on '/' rather than os.path.join()-ing the whole string directly, so
+        this resolves correctly on Windows too.
+        """
         import os
         from PyQt5.QtWidgets import QMessageBox
-        path = os.path.join(self._test_datasets_dir('real'), filename)
+        path = os.path.join(self._test_datasets_dir('real'), *filename.split('/'))
         if not os.path.exists(path):
             QMessageBox.warning(self.view, 'Test dataset not found',
                                 f'Could not find:\n{path}')
@@ -1444,6 +1453,24 @@ class MainController(QMainWindow):
 
     def open_real_datasets_folder(self):
         self._reveal_folder(self._test_datasets_dir('real'))
+
+    def open_large_dataset_downloader(self):
+        """Open the dialog for fetching real-data 2D maps too large to
+        ship in the git repository, hosted as GitHub Release assets
+        instead (see LARGE_TEST_DATASETS in main_window.py)."""
+        from src.views.main_window import (
+            LARGE_TEST_DATASETS, LARGE_TEST_DATASETS_OWNER_REPO,
+            LARGE_TEST_DATASETS_RELEASE_TAG,
+        )
+        from src.views.dialogs.misc.dataset_download_dialog import DatasetDownloadDialog
+
+        base_url = (
+            f"https://github.com/{LARGE_TEST_DATASETS_OWNER_REPO}"
+            f"/releases/download/{LARGE_TEST_DATASETS_RELEASE_TAG}"
+        )
+        dlg = DatasetDownloadDialog(
+            self.view, LARGE_TEST_DATASETS, self._test_datasets_dir('real'), base_url)
+        dlg.exec_()
 
     def _reveal_folder(self, folder):
         import os

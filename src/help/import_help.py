@@ -467,10 +467,11 @@ def get_import_help_content():
         (that spectrum's own position in it), and — when the file recorded
         physical spacing — <code>spatial_x</code> / <code>spatial_y</code> in
         <code>spatial_unit</code>. This is what lets the map's spatial
-        structure be reconstructed afterwards — for instance, entering the
-        same <code>map_n_rows</code> &times; <code>map_n_cols</code> into the
-        <b>2-D Map</b> dialog reshapes the imported spectra back into the
-        original spatial grid for visualization.
+        structure be reconstructed afterwards — the <b>2-D Map</b> dialog
+        reads <code>map_n_rows</code> &times; <code>map_n_cols</code> straight
+        from the imported spectra and fills them in automatically, reshaping
+        back into the original spatial grid for visualization with no manual
+        dimension entry needed.
     </p>
     <div class="warning">
         Support for this format was built and verified against real

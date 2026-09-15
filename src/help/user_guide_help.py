@@ -1630,8 +1630,10 @@ def get_user_guide_help_content():
         <h3 id="2d-map">2D Spectral Map <a href="help://map2d" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
         
         <p>Visualises spatially-resolved spectra as a false-colour 2D map. Colour
-        can represent any band metric, SVD coefficient, or cluster label. Requires
-        spectra with spatial coordinates.</p>
+        can represent any band metric, an SVD/NMF/MCR-ALS component, or a cluster
+        label. Requires selecting exactly Rows &times; Cols spectra (laid out
+        row-by-row) &mdash; a MAT/WITec map import already carries its own
+        dimensions and fills these in automatically.</p>
 
         <h3 id="2d-correlation">2D Correlation (2D-COS) <a href="help://two_d_correlation" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
 
