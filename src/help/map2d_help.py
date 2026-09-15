@@ -25,6 +25,10 @@ _SCREENSHOT_FILES = {
     "TYPE_SVD":            "map_type_svd.png",
     "SVD_SPECTRUM_PANEL":  "svd_spectrum_panel.png",
     "SVD_FULL_RANGE":      "svd_full_spectrum_range.png",
+    "TYPE_NMF":            "map_type_nmf.png",
+    "TYPE_MCR":            "map_type_mcr.png",
+    "NMF_MCR_SPECTRUM_PANEL": "nmf_mcr_spectrum_panel.png",
+    "REF_SPECTRA_PANEL":   "ref_spectra_panel.png",
     "TYPE_CLUSTER":        "map_type_cluster.png",
     "CLUSTER_MAP_RESULT":  "cluster_map_result.png",
     "CONFIGURE_RANGE":     "configure_range_dialog.png",
@@ -35,7 +39,6 @@ _SCREENSHOT_FILES = {
     "ROI_RECTANGLE":       "roi_drawn_rectangle.png",
     "ROI_COMPARISON":      "roi_comparison_stats.png",
     "ROI_VIEWER":          "roi_spectra_viewer.png",
-    "SESSION_MENU":        "session_menu.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -137,7 +140,19 @@ the 2D Map — the map uses whatever spectra you pass in as-is.
 A green tick appears when the product is valid; a red message shows
 the discrepancy otherwise. Spectra are placed row-by-row (C order).</p>
 <p>The map redraws automatically as soon as valid dimensions are entered
-(for all modes except SVD).</p>
+(for Intensity, Map arithmetic and Cluster overlay — SVD, NMF and
+MCR-ALS still need <b>Update Map</b> pressed explicitly).</p>
+
+<div class="note">
+If every selected spectrum carries the map's own row/col size (true for
+MAT/WITec map imports — see the 2D Map help section of the Import dialog),
+the dialog reads it automatically: Rows × Cols are filled in and the map
+is drawn as soon as the dialog opens, with no need to enter dimensions or
+use Suggest… at all. This only happens once, at startup — changing
+settings afterward (e.g. switching to NMF) still needs Update Map pressed
+as usual. A plain text/column-format map import doesn't carry this
+information, so it falls back to the manual entry described below.
+</div>
 
 <div class="screenshot">
     <img src="$MAP_DIMENSIONS" width="$MAP_DIMENSIONS_W" height="$MAP_DIMENSIONS_H" alt="Map Dimensions group: Rows x Cols spinboxes and validity message" />
@@ -271,6 +286,142 @@ available here.</p>
 <div class="screenshot">
     <img src="$SVD_FULL_RANGE" width="$SVD_FULL_RANGE_W" height="$SVD_FULL_RANGE_H" alt="Full spectrum view with the SVD computation range shaded and excluded sub-range hatched" />
     <p class="caption">"Full spectrum" checked: the full input spectrum is shown, with the SVD computation range shaded (solid) and an excluded sub-range hatched.</p>
+</div>
+</div>
+
+<h3>◉ NMF map / MCR-ALS map</h3>
+<div class="cat">
+<p>Two further spatial decomposition modes, alongside SVD: <b>NMF map</b> runs
+Non-negative Matrix Factorization and <b>MCR-ALS map</b> runs Multivariate
+Curve Resolution — Alternating Least Squares, on the range-filtered spectra.
+Both reuse this app's existing NMF Analysis / MCR-ALS tools internally, so
+results match what those standalone tools would produce for the same
+spectra and settings.</p>
+
+<div class="screenshot">
+    <img src="$TYPE_NMF" width="$TYPE_NMF_W" height="$TYPE_NMF_H" alt="Map Type panel with NMF map selected" />
+    <p class="caption">Map Type panel in NMF map mode: Components spinner, Component selector, and Configure NMF range&hellip; button.</p>
+</div>
+
+<div class="screenshot">
+    <img src="$TYPE_MCR" width="$TYPE_MCR_W" height="$TYPE_MCR_H" alt="Map Type panel with MCR-ALS map selected" />
+    <p class="caption">Map Type panel in MCR-ALS map mode: Components spinner, Component selector, and Configure MCR-ALS range&hellip; button.</p>
+</div>
+
+<p>Unlike SVD (which yields every component from a single fit), NMF and
+MCR-ALS need the number of components chosen <i>before</i> fitting. A
+<b>Components</b> spinner (2–20, capped by the number of spectra in the map)
+shares a row with the component selector in these two modes — set it, then press
+<b>Update Map</b> to fit and show component 1. Changing it requires pressing
+<b>Update Map</b> again; browsing already-fitted components with the
+<b>Component</b> dropdown does not.</p>
+
+<p>Configure the spectral range used for the fit with <b>Configure NMF
+range…</b> / <b>Configure MCR-ALS range…</b> — the same restrict-to-region
+mechanism as SVD's <b>Configure SVD range…</b>. The <b>Component</b> dropdown's
+label is always <b>Explained var.(%)</b> in these two modes (σ and Residual
+error, meaningful only for SVD, aren't offered).</p>
+
+<p>Below the Components spinner, each mode shows its own fit-control
+settings — previously fixed at the standalone tools' defaults, now
+adjustable here too:</p>
+<ul>
+  <li><b>NMF map</b> — <b>Init.</b> (nndsvda / nndsvd) and <b>Max iter.</b>,
+      same meaning as the standalone NMF Analysis tool's Initialisation and
+      Max iterations fields.</li>
+  <li><b>MCR-ALS map</b> — <b>Max iter.</b>, plus the three constraint
+      checkboxes from the standalone MCR-ALS tool: <b>Non-neg. C</b>
+      (non-negative concentrations), <b>Non-neg. ST</b> (non-negative pure
+      spectra), and <b>Closure</b> (concentrations sum to 100% per pixel —
+      same caveat as the standalone tool: only turn this on if the system
+      genuinely has closure).</li>
+</ul>
+
+<p><b>Run N times, keep best…</b> does the same job as <b>Update
+Map</b> — both (re)compute the map from the current settings — but
+instead of one deterministic fit, it re-fits several times with
+different random starting points and keeps whichever run best
+represents the near-best group, the same robustness check as the
+standalone tools' button of the same name. Every run refits every
+pixel in the map, so this can take noticeably longer than a single
+<b>Update Map</b> press on a large map; there's a wait cursor but no
+live progress or cancel button while it runs.</p>
+
+<div class="note">
+<b>Reference spectra (optional)</b> anchors a component slot to a known
+component spectrum — the most effective way to remove NMF/MCR-ALS's
+rotational ambiguity. Unlike the standalone tools' dropdown list (fine
+for a handful of spectra, unusable for a map's hundreds or thousands of
+pixels), a reference here is picked by clicking its pixel directly on
+the map: press <b>Pick on map…</b> next to a component row — it turns
+green and relabels itself <b>Click the map…</b> while armed, so it's
+obvious which mode you're in — then click the pixel whose spectrum
+should anchor that component (the same click-a-pixel gesture used
+everywhere else in this dialog; pressing the button again cancels
+without picking). While a row is armed this way, hovering the map also
+shows a small preview of the spectrum under the cursor, to help judge
+where to click before committing. Each picked pixel is marked on the
+map with a numbered yellow circle matching its component number;
+<b>View</b> re-opens that spectrum in its own plot at any time, and the
+red <b>X</b> button clears the row. This also works a little
+differently than in the standalone tools in one respect: there, a
+picked reference can be excluded from the fitted data ("References are
+external"); here it always stays part of the fit, because removing a
+pixel would leave fewer spectra than Rows &times; Cols, breaking the
+map's fixed grid. <b>Hold references fixed</b> still works the same
+way — checked pins the component to the reference exactly; unchecked
+uses it only as a starting guess.
+</div>
+
+<div class="note">
+Picking, clearing, or fixing a reference after a map is already
+displayed does <i>not</i> recompute it automatically — refitting
+every pixel on every click would be disruptive on a large map. Instead
+a small orange note appears (<i>"References changed — press 'Update
+Map' to apply."</i>) while the map itself stays exactly as it was, so
+nothing is hidden while you decide when to recompute. Check
+<b>Auto-recompute when references change</b> to switch to the
+opposite behaviour instead — every such change recomputes right away,
+no reminder needed, at the cost of a full refit on every pick, clear,
+or fixed-reference toggle.
+</div>
+
+<div class="screenshot">
+    <img src="$REF_SPECTRA_PANEL" width="$REF_SPECTRA_PANEL_W" height="$REF_SPECTRA_PANEL_H" alt="Reference spectra groupbox showing an armed pick button, numbered markers, and the View/X buttons" />
+    <p class="caption">Reference spectra groupbox: one row armed for picking (green <b>Click the map…</b>), one already picked with its <b>View</b> and red <b>X</b> buttons enabled, and the corresponding numbered markers on the map.</p>
+</div>
+
+<p>After a fit, a status line below these controls reports <b>Lack of
+fit</b> and the iteration count (and, after "Run N times, keep best…",
+the consensus among the near-best runs) — the same fit-quality figures
+the standalone tools show next to their Run button.</p>
+
+<div class="note">
+NMF and MCR-ALS components are constrained non-negative (MCR-ALS enforces
+this by default on both the concentration profiles and the pure spectra;
+NMF is non-negative by construction), so a sign flip would produce a result
+the algorithm itself forbids. For this reason <b>Invert</b>, <b>Multi-map…</b>
+and <b>Diagnostics…</b> — all SVD-specific — are hidden in these two modes.
+</div>
+
+<div class="note">
+As with SVD, all spectra must share the same x-axis — the fit combines
+every spectrum into one problem, which only means anything if they're all
+on the same wavenumber grid. A mismatch refuses with a message naming the
+mismatched spectrum. Use the Data Range operation (with linearisation) to
+put them on a common axis first.
+</div>
+
+<p>The spectrum panel works exactly as in SVD mode: click a pixel to compare
+its spectrum against the fitted component, and <b>Full spectrum</b> toggles
+between the clipped fit-range view and the full input spectrum with the fit
+range shaded. The overlay checkbox relabels itself to name whichever kind is
+active — <b>Show NMF component</b> or <b>Show MCR-ALS component</b> — but
+otherwise behaves identically to <b>Show SVD component</b> above.</p>
+
+<div class="screenshot">
+    <img src="$NMF_MCR_SPECTRUM_PANEL" width="$NMF_MCR_SPECTRUM_PANEL_W" height="$NMF_MCR_SPECTRUM_PANEL_H" alt="Spectrum panel in NMF/MCR-ALS mode comparing the clicked spectrum against the component" />
+    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the NMF or MCR-ALS component (orange dashed, right axis), same as SVD mode.</p>
 </div>
 </div>
 
@@ -516,21 +667,6 @@ they work regardless of whether spectra share an axis.
 </div>
 
 <hr>
-<h2>7 — Session Save / Load</h2>
-
-<div class="cat">
-<p>Use the <b>Session ▾</b> menu to save and restore the complete state of
-the 2D Map dialog, including map dimensions, SVD arrays, ROI regions,
-display settings, and all range configurations. Sessions are stored as
-JSON files.</p>
-
-<div class="screenshot">
-    <img src="$SESSION_MENU" width="$SESSION_MENU_W" height="$SESSION_MENU_H" alt="Session dropdown menu expanded" />
-    <p class="caption">The Session ▾ menu, expanded.</p>
-</div>
-</div>
-
-<hr>
 <h2>Typical workflows</h2>
 
 <div class="cat">
@@ -565,6 +701,21 @@ JSON files.</p>
   <li>Use <b>Invert</b> if the map appears upside-down.</li>
   <li>Use <b>Diagnostics…</b> to inspect singular values and find the noise floor.</li>
   <li>Use <b>Multi-map…</b> to compare several components side-by-side.</li>
+</ol>
+</div>
+
+<div class="cat">
+<h3>NMF / MCR-ALS component map</h3>
+<ol>
+  <li>Apply baseline correction and normalisation beforehand if desired.</li>
+  <li>Switch to <b>NMF map</b> or <b>MCR-ALS map</b>.</li>
+  <li>Set <b>Components</b> to how many you expect (start with 2–4).</li>
+  <li>Optionally configure the fit range via <b>Configure NMF/MCR-ALS range…</b>.</li>
+  <li>Press <b>Update Map</b> to fit and show component 1.</li>
+  <li>Browse components in the dropdown to find chemically meaningful ones.</li>
+  <li>If a component looks noisy or redundant, refit with a different
+      <b>Components</b> count rather than looking for an Invert-style fix —
+      NMF/MCR-ALS components are non-negative by construction.</li>
 </ol>
 </div>
 
