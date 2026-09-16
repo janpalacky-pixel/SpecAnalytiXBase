@@ -59,8 +59,17 @@ Release, and downloaded on demand from inside the app via
 **Help → Test datasets → Real (measured) → Download large test datasets…**,
 which saves them into this folder (`resources/test_data/real/`, or
 `2D map/` for a map — the download filename must match wherever the app
-expects to find it). Installer builds bundle these files directly, so this
-only matters when running from source.
+expects to find it).
+
+**Installer builds don't bundle these files either.** `SpecAnalytiXBase.spec`
+copies the whole `resources/` folder as-is (`datas=[('resources', 'resources')]`),
+so any large `.mat` file sitting in this folder at build time gets bundled
+into the exe regardless of git status — that's exactly what happened before
+this note was updated. Before running `BuildInstaller.bat`, make sure none of
+the `LARGE_TEST_DATASETS` files are present locally (delete them from this
+folder if they are — they're gitignored, so this never touches git history).
+Everyone, installer users included, fetches these the same way: via the
+in-app downloader, on demand.
 
 To add one:
 
