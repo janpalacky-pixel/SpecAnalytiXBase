@@ -161,6 +161,23 @@ def get_nmf_help_content():
 
     <hr>
     <h2>Read this first: what this tool can and can't tell you</h2>
+    <div class="warn" style="border-left-color:#c0392b; background:#FDEDEC;">
+        <strong style="color:#c0392b;">Baseline-correct first &mdash; this
+        isn't optional.</strong> If your spectra haven't been baseline
+        corrected (even roughly &mdash; the background needs to be
+        <em>reduced</em>, not perfectly removed), NMF won't just give a
+        slightly worse answer: with real Raman/IR data, an uncorrected
+        fluorescence background routinely accounts for &gt;99.9% of the
+        data's total variance, leaving essentially nothing for the
+        components to tell real chemistry apart with. Different runs then
+        disagree wildly with each other &mdash; a "Consensus among N
+        near-best runs" in the single digits (or noisy, spiky-looking
+        components) is the signature of this, not a subtle ambiguity to
+        interpret. <strong>Run Baseline correction (even an imperfect one)
+        before NMF.</strong> Recommended pipeline: Data range
+        &rarr; Baseline correction &rarr; Normalisation &rarr; NMF.
+    </div>
+
     <div class="warn">
         <strong>A good-looking fit does not mean you found the real pure
         spectra.</strong> This isn't a caveat to skim past — it's the single

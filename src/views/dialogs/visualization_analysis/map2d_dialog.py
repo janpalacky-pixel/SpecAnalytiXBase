@@ -600,6 +600,8 @@ class Map2DDialog(QDialog):
         self._arith_a_is_exclude = False
         self._svd_ranges         = []   # SVD mode
         self._svd_is_exclude     = False
+        self._pca_ranges         = []   # PCA mode — independent from SVD's own range
+        self._pca_is_exclude     = False
         self._nmf_ranges         = []   # NMF mode — independent from SVD's own range
         self._nmf_is_exclude     = False
         self._mcr_ranges         = []   # MCR-ALS mode — independent from the other two
@@ -609,11 +611,18 @@ class Map2DDialog(QDialog):
         # Arithmetic Band B
         self._arith_b = dict(ranges=[], is_exclude=False, x_min=None, x_max=None)
 
-        # SVD inversion tracking
+        # SVD / PCA inversion tracking — separate sets, since they're
+        # separate decompositions with independent sign ambiguity.
         self._svd_inverted = set()
+        self._pca_inverted = set()
 
         # Last computed map data (for re-render without recompute)
         self._last_map_data           = None
+        # Which decomposition kind ('svd'/'pca') produced it, if any —
+        # lets _export_map add the unit-normalized-coefficient note only
+        # when it's actually relevant (not for intensity/arithmetic/cluster
+        # maps, which have no such ambiguity).
+        self._last_map_kind           = None
         self._last_cluster_labels     = None
         self._last_cluster_X          = None
         self._last_cluster_spectra_y  = None
@@ -1036,9 +1045,10 @@ class Map2DDialog(QDialog):
         # ── Radio buttons ────────────────────────────────────────────
         radio_row = QHBoxLayout()
         self._radio_intensity = QRadioButton("Intensity metric")
-        self._radio_svd       = QRadioButton("SVD coefficients")
-        self._radio_nmf       = QRadioButton("NMF map")
-        self._radio_mcr       = QRadioButton("MCR-ALS map")
+        self._radio_svd       = QRadioButton("SVD")
+        self._radio_pca       = QRadioButton("PCA")
+        self._radio_nmf       = QRadioButton("NMF")
+        self._radio_mcr       = QRadioButton("MCR-ALS")
         self._radio_arith     = QRadioButton("Map arithmetic")
         self._radio_cluster   = QRadioButton("Cluster overlay")
         self._radio_intensity.setChecked(True)
@@ -1049,8 +1059,10 @@ class Map2DDialog(QDialog):
         self._radio_group.addButton(self._radio_cluster,   3)
         self._radio_group.addButton(self._radio_nmf,       4)
         self._radio_group.addButton(self._radio_mcr,       5)
+        self._radio_group.addButton(self._radio_pca,       6)
         radio_row.addWidget(self._radio_intensity)
         radio_row.addWidget(self._radio_svd)
+        radio_row.addWidget(self._radio_pca)
         radio_row.addWidget(self._radio_nmf)
         radio_row.addWidget(self._radio_mcr)
         radio_row.addWidget(self._radio_arith)
@@ -1060,11 +1072,12 @@ class Map2DDialog(QDialog):
             "About Map Type",
             "Intensity metric: colours each pixel by a band metric (integral, "
             "mean, peak, etc.) computed on that pixel's own spectrum.\n\n"
-            "SVD / NMF / MCR-ALS: three spatial decomposition modes. SVD "
-            "gets every component from one fast, exact fit; NMF and MCR-ALS "
-            "need the number of components chosen first, then Update Map "
-            "fits and shows component 1. All three colour each pixel by one "
-            "component's per-pixel score.\n\n"
+            "SVD / PCA / NMF / MCR-ALS: four spatial decomposition modes. SVD "
+            "and PCA each get every component from one fast, exact fit (PCA "
+            "additionally mean-centers the data first, the standard PCA "
+            "convention); NMF and MCR-ALS need the number of components "
+            "chosen first, then Update Map fits and shows component 1. All "
+            "four colour each pixel by one component's per-pixel score.\n\n"
             "Map arithmetic: combines two independently configured bands "
             "(A and B) pixel-wise — ratio, difference, sum or product.\n\n"
             "Cluster overlay: runs k-means directly on the map spectra and "
@@ -1721,14 +1734,16 @@ class Map2DDialog(QDialog):
 
     def _decomp_kind(self):
         """
-        'svd' / 'nmf' / 'mcr' if one of the three decomposition radios is
-        checked, else None. The single place that knows which radio maps
-        to which kind string — everything else (Map2DManager's unified
-        get_component_*(kind, ...) accessors included) works off this
-        string instead of re-checking radios itself.
+        'svd' / 'pca' / 'nmf' / 'mcr' if one of the four decomposition
+        radios is checked, else None. The single place that knows which
+        radio maps to which kind string — everything else (Map2DManager's
+        unified get_component_*(kind, ...) accessors included) works off
+        this string instead of re-checking radios itself.
         """
         if self._radio_svd.isChecked():
             return 'svd'
+        if self._radio_pca.isChecked():
+            return 'pca'
         if self._radio_nmf.isChecked():
             return 'nmf'
         if self._radio_mcr.isChecked():
@@ -1746,6 +1761,8 @@ class Map2DDialog(QDialog):
         """Return (ranges, is_exclude) for the currently active mode."""
         if self._radio_svd.isChecked():
             return self._svd_ranges, self._svd_is_exclude
+        elif self._radio_pca.isChecked():
+            return self._pca_ranges, self._pca_is_exclude
         elif self._radio_nmf.isChecked():
             return self._nmf_ranges, self._nmf_is_exclude
         elif self._radio_mcr.isChecked():
@@ -1762,6 +1779,9 @@ class Map2DDialog(QDialog):
         if self._radio_svd.isChecked():
             self._svd_ranges     = ranges
             self._svd_is_exclude = is_exclude
+        elif self._radio_pca.isChecked():
+            self._pca_ranges     = ranges
+            self._pca_is_exclude = is_exclude
         elif self._radio_nmf.isChecked():
             self._nmf_ranges     = ranges
             self._nmf_is_exclude = is_exclude
@@ -1780,9 +1800,10 @@ class Map2DDialog(QDialog):
 
     def _on_mode_changed(self, _btn):
         is_svd     = self._radio_svd.isChecked()
+        is_pca     = self._radio_pca.isChecked()
         is_nmf     = self._radio_nmf.isChecked()
         is_mcr     = self._radio_mcr.isChecked()
-        is_decomp  = is_svd or is_nmf or is_mcr
+        is_decomp  = is_svd or is_pca or is_nmf or is_mcr
         is_arith   = self._radio_arith.isChecked()
         is_int     = self._radio_intensity.isChecked()
         is_cluster = self._radio_cluster.isChecked()
@@ -1841,8 +1862,8 @@ class Map2DDialog(QDialog):
         # the multi-component grid / diagnostics views aren't wired up
         # for them yet either (hide, don't grey out, same convention as
         # the JWS/SPE-only controls in the Import dialog).
-        self._btn_invert.setVisible(is_svd)
-        self._btn_multi_map.setVisible(is_svd)
+        self._btn_invert.setVisible(is_svd or is_pca)
+        self._btn_multi_map.setVisible(is_svd or is_pca)
         self._btn_diagnostics.setVisible(is_svd)
         self._arith_panel.setVisible(is_arith)
         self._cluster_panel.setVisible(is_cluster)
@@ -1864,7 +1885,7 @@ class Map2DDialog(QDialog):
         # component" while looking at an NMF or MCR-ALS map.
         self._show_bands_cb.setVisible(is_int or is_arith or is_cluster)
         if is_decomp:
-            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             self._show_svd_cb.setText(f"Show {kind_label} component")
         self._show_svd_cb.setVisible(is_decomp)
         self._svd_full_range_cb.setVisible(is_decomp)
@@ -1874,7 +1895,7 @@ class Map2DDialog(QDialog):
 
         if is_decomp:
             # Decomposition modes: clear the spectrum panel — only show after Update Map
-            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             self._spectrum_title_label.setText(f"Press 'Update Map' to compute {kind_label}")
             self._spectrum_canvas.ax.cla()
             self._spectrum_canvas.draw_idle()
@@ -1918,7 +1939,7 @@ class Map2DDialog(QDialog):
 
         # Labels per mode
         if is_decomp:
-            kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             self._btn_configure_ranges.setText(f"Configure {kind_label} range…")
             self._band_a_header.setText(f"{kind_label} computation range")
         elif is_cluster:
@@ -1973,6 +1994,7 @@ class Map2DDialog(QDialog):
     def _invalidate_map(self):
         """Clear the displayed map and show a 'recompute needed' message."""
         self._last_map_data = None
+        self._last_map_kind = None
         self._map_canvas.disable_hover()
         self._clear_all_rois()
         self._map_canvas._draw_stale()
@@ -2138,6 +2160,7 @@ class Map2DDialog(QDialog):
         self._last_cluster_spectra_y = np.vstack(filtered_y)  # raw (unstandardised)
         map_data = label_array.reshape(n_rows, n_cols)
         self._last_map_data = map_data.astype(float)
+        self._last_map_kind = None
 
         self._cluster_status_label.setText(
             f"✓  {k} clusters  ({method})  |  "
@@ -2328,7 +2351,7 @@ class Map2DDialog(QDialog):
                         # done automatically the way the fast metric
                         # modes' ranges are.
                         self._invalidate_map()
-                        kind_label = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+                        kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
                         self._spectrum_title_label.setText(
                             f"{kind_label} range changed — press 'Update Map' to recompute")
                         self._spectrum_canvas.ax.cla()
@@ -2455,6 +2478,7 @@ class Map2DDialog(QDialog):
                                      "Failed to compute intensity map.")
                 return
             self._last_map_data = map_data
+            self._last_map_kind = None
             title = f"{metric} map  ({n_rows} × {n_cols})"
             self._map_canvas.update_map(
                 map_data,
@@ -2495,6 +2519,7 @@ class Map2DDialog(QDialog):
                                      "Check that both bands have valid ranges.")
                 return
             self._last_map_data = map_data
+            self._last_map_kind = None
             title = f"Arithmetic {op}  ({n_rows} × {n_cols})"
             self._map_canvas.update_map(
                 map_data,
@@ -2525,6 +2550,18 @@ class Map2DDialog(QDialog):
                 )
                 fail_msg = (
                     "Failed to compute SVD map.\n"
+                    "Ensure all spectra have the same number of data points "
+                    "in the selected range (use Linearization in Data Range "
+                    "if needed).")
+            elif kind == 'pca':
+                map_data = self.controller.compute_pca_map(
+                    self.spectra, n_rows, n_cols,
+                    component_index=comp_idx,
+                    x_min=None, x_max=None,
+                    include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                )
+                fail_msg = (
+                    "Failed to compute PCA map.\n"
                     "Ensure all spectra have the same number of data points "
                     "in the selected range (use Linearization in Data Range "
                     "if needed).")
@@ -2569,21 +2606,28 @@ class Map2DDialog(QDialog):
                 QMessageBox.critical(self, "Error", fail_msg)
                 return
             self._last_map_data = map_data
+            self._last_map_kind = kind if kind in ('svd', 'pca') else None
             self._ref_stale_warning_label.setVisible(False)
             if kind == 'svd':
                 self._svd_inverted.clear()
+            elif kind == 'pca':
+                self._pca_inverted.clear()
             self._refresh_component_combo(keep_index=comp_idx)
-            # Invert / Multi-map / Diagnostics stay SVD-only for now (see
-            # _on_mode_changed, which already hides them for NMF/MCR-ALS) —
-            # only actually enable them once SVD has something to show.
-            self._btn_invert.setEnabled(kind == 'svd')
-            self._btn_multi_map.setEnabled(kind == 'svd')
+            # Invert / Multi-map now also apply to PCA (same sign
+            # ambiguity as SVD, unlike NMF/MCR-ALS's non-negativity
+            # constraint — see _on_mode_changed, which already hides
+            # them for NMF/MCR-ALS). Diagnostics stays SVD-only: its
+            # residual-error/Malinowski-IND adapter (_SVDDiagAdapter)
+            # isn't generalized to read PCA's arrays. Either way these
+            # only actually enable once the fit has something to show.
+            self._btn_invert.setEnabled(kind in ('svd', 'pca'))
+            self._btn_multi_map.setEnabled(kind in ('svd', 'pca'))
             self._btn_diagnostics.setEnabled(kind == 'svd')
             ev_arr = self.controller.get_component_explained_variance(kind)
             ev     = (ev_arr[comp_idx]
                       if ev_arr is not None and comp_idx < len(ev_arr)
                       else 0.0)
-            kind_title = {'svd': 'SVD coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+            kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
             title  = (f"{kind_title} map – component {comp_idx + 1}  "
                       f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
             self._map_canvas.update_map(
@@ -2999,10 +3043,11 @@ class Map2DDialog(QDialog):
             return
 
         self._last_map_data = map_data
+        self._last_map_kind = kind if kind in ('svd', 'pca') else None
         ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[index]
                   if ev_arr is not None and index < len(ev_arr) else 0.0)
-        kind_title = {'svd': 'SVD coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
         title  = (f"{kind_title} map – component {index + 1}  "
                   f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
         self._map_canvas.update_map(
@@ -3024,25 +3069,32 @@ class Map2DDialog(QDialog):
         self._update_subspectrum_in_panel(index)
 
     def _invert_component(self):
-        """Flip sign of U[:,k] and Vt[k,:] then redraw."""
+        """Flip sign of the active decomposition's subspectrum/
+        coefficients for the current component, then redraw. Works for
+        SVD and PCA (both have a genuine sign ambiguity); a no-op for
+        NMF/MCR-ALS, which the button is hidden for anyway (see
+        _on_mode_changed) since their non-negativity constraint rules
+        this out.
+        """
         index = self._component_combo.currentIndex()
         if index < 0:
             return
-        mgr = self.controller.manager
-        if mgr._U is None or index >= mgr._U.shape[1]:
+        kind = self._decomp_kind()
+        if not self.controller.invert_component(kind, index):
             return
-        mgr._U[:, index]  *= -1
-        mgr._Vt[index, :] *= -1
-        if index in self._svd_inverted:
-            self._svd_inverted.discard(index)
-        else:
-            self._svd_inverted.add(index)
+        inverted_set = {'svd': self._svd_inverted,
+                        'pca': self._pca_inverted}.get(kind)
+        if inverted_set is not None:
+            if index in inverted_set:
+                inverted_set.discard(index)
+            else:
+                inverted_set.add(index)
 
         # Redraw map
         self._on_component_changed(index)
 
         # Refresh spectrum panel for clicked pixel (or reference if none clicked)
-        if self._last_clicked_pixel is not None and self._radio_svd.isChecked():
+        if self._last_clicked_pixel is not None and kind in ('svd', 'pca'):
             row, col = self._last_clicked_pixel
             n_cols = self._cols_spin.value()
             sp_idx = row * n_cols + col
@@ -3071,10 +3123,16 @@ class Map2DDialog(QDialog):
                                 f"Could not open diagnostics:\n{exc}")
 
     def _show_multi_map(self):
-        """Open the multi-component map grid window."""
-        if self.controller.get_n_svd_components() == 0:
-            QMessageBox.information(self, "No SVD",
-                                    "Compute an SVD map first.")
+        """Open the multi-component map grid window — works for SVD or
+        PCA (whichever is active); the button is hidden for NMF/MCR-ALS
+        (see _on_mode_changed)."""
+        kind = self._decomp_kind()
+        if kind not in ('svd', 'pca'):
+            return
+        if self.controller.get_n_components(kind) == 0:
+            kind_label = {'svd': 'SVD', 'pca': 'PCA'}[kind]
+            QMessageBox.information(self, f"No {kind_label}",
+                                    f"Compute a {kind_label} map first.")
             return
         n_rows = self._rows_spin.value()
         n_cols = self._cols_spin.value()
@@ -3083,13 +3141,20 @@ class Map2DDialog(QDialog):
             QMessageBox.warning(self, "Invalid Dimensions",
                                 "Set valid map dimensions first.")
             return
+        # The σ/residual-error label modes are SVD-diagnostics-specific
+        # (_SVDDiagAdapter isn't generalized to PCA) — same guard already
+        # used elsewhere (_refresh_component_combo) so a label mode picked
+        # while in SVD mode doesn't leak into a PCA multi-map window.
+        label_mode = (self._comp_label_combo.currentText()
+                      if kind == 'svd' else "Explained var.(%)")
         dlg = _MultiMapDialog(
             parent=self,
             controller=self.controller,
+            kind=kind,
             n_rows=n_rows,
             n_cols=n_cols,
             cmap=self._cmap_combo.currentText(),
-            label_mode=self._comp_label_combo.currentText(),
+            label_mode=label_mode,
         )
         dlg.exec_()
 
@@ -3197,6 +3262,7 @@ class Map2DDialog(QDialog):
                         f"All pixels returned NaN for metric '{metric}'.\n"
                         f"Check the spectral range configuration.")
                 self._last_map_data = None
+                self._last_map_kind = None
                 return
             # Enable hover tooltip
             self._map_canvas.enable_hover(
@@ -3513,7 +3579,7 @@ class Map2DDialog(QDialog):
             title_plot = f"Cluster preview: {label}  [k={k}, {method}]"
             panel_title = "Click a pixel to see its spectrum and cluster assignment"
         elif self._is_decomp_mode():
-            kind_label  = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label  = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             title_plot  = f"{kind_label} range preview: {label}"
             panel_title = f"Click a pixel — showing: {label}"
         else:
@@ -3674,7 +3740,7 @@ class Map2DDialog(QDialog):
         ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[comp_idx]
                   if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
-        kind_title = {'svd': 'SVD', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
         title  = f"{kind_title} component {comp_idx + 1}  (EV = {ev:.3f}%)"
         self._spectrum_title_label.setText(
             f"{title}  — click a pixel to see its spectrum")
@@ -3732,19 +3798,53 @@ class Map2DDialog(QDialog):
         )
         if not path:
             return
+        # For SVD/PCA coefficient maps, flag the normalization convention —
+        # these values are unit-normalized (not multiplied by the singular
+        # value), same as the standalone PCA Scores & Loadings tool's own
+        # "Scores". Unlike that tool, this map has no separate Variance
+        # sheet/section carrying its singular values, so instead of just
+        # pointing elsewhere (the standalone tool runs its own independent
+        # SVD/PCA over whatever spectra it currently has loaded, which
+        # generally won't match this map's own range-filtered subset), we
+        # look up and print this exact component's own sigma directly, so
+        # the conversion factor is self-contained and always correct.
+        note = None
+        if self._last_map_kind in ('svd', 'pca'):
+            kind_label = 'SVD' if self._last_map_kind == 'svd' else 'PCA'
+            comp_idx = max(0, self._component_combo.currentIndex())
+            mgr = self.controller.manager
+            sigma_arr = mgr._s if self._last_map_kind == 'svd' else mgr._pca_s
+            sigma = (sigma_arr[comp_idx]
+                      if sigma_arr is not None and comp_idx < len(sigma_arr)
+                      else None)
+            if sigma is not None:
+                note = (f"Note: these {kind_label} coefficient values (component "
+                        f"{comp_idx + 1}) are unit-normalized, not multiplied by "
+                        f"the singular value. This component's sigma = {sigma:.6g} "
+                        "— multiply every value in this map by that number to get "
+                        "a scikit-learn/Jolliffe-convention (sigma-scaled) score.")
+            else:
+                note = (f"Note: these {kind_label} coefficient values are "
+                        "unit-normalized, not multiplied by the singular value.")
         try:
             if path.endswith('.xlsx'):
                 import openpyxl
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = "Map"
-                for row in self._last_map_data.tolist():
-                    ws.append(row)
+                start_row = 1
+                if note:
+                    ws.cell(row=1, column=1).value = note
+                    start_row = 2
+                for r, row in enumerate(self._last_map_data.tolist(), start=start_row):
+                    for c, value in enumerate(row, start=1):
+                        ws.cell(row=r, column=c).value = value
                 wb.save(path)
             else:
                 if not path.endswith('.csv'):
                     path += '.csv'
-                np.savetxt(path, self._last_map_data, delimiter=',')
+                header = note if note else ''
+                np.savetxt(path, self._last_map_data, delimiter=',', header=header)
             QMessageBox.information(self, "Export", f"Map saved to:\n{path}")
         except Exception as exc:
             QMessageBox.critical(self, "Export Error", str(exc))
@@ -4487,17 +4587,19 @@ class _MultiMapDialog(QDialog):
     • Plot button + Close button
     """
 
-    def __init__(self, parent, controller, n_rows, n_cols,
+    def __init__(self, parent, controller, n_rows, n_cols, kind='svd',
                  cmap='viridis', label_mode='Explained var.(%)'):
         super().__init__(parent)
         self.controller = controller
+        self.kind       = kind
         self.n_rows     = n_rows
         self.n_cols     = n_cols
         self.cmap       = cmap
         self.label_mode = label_mode
-        self.n_total    = controller.get_n_svd_components()
+        self.n_total    = controller.get_n_components(kind)
 
-        self.setWindowTitle("SVD Multi-Component Map")
+        kind_title = {'svd': 'SVD', 'pca': 'PCA'}.get(kind, kind.upper())
+        self.setWindowTitle(f"{kind_title} Multi-Component Map")
         self.setModal(True)
         self.setWindowFlags(
             Qt.Dialog | Qt.WindowCloseButtonHint | Qt.WindowMaximizeButtonHint
@@ -4511,8 +4613,8 @@ class _MultiMapDialog(QDialog):
 
         self._build_ui()
         _disable_wheel_scrolling(self)
-        # Tick first 4 components (no draw yet — showEvent handles that)
-        for i in range(min(4, self.n_total)):
+        # Tick first 3 components (no draw yet — showEvent handles that)
+        for i in range(min(3, self.n_total)):
             self._show_checks[i].blockSignals(True)
             self._show_checks[i].setChecked(True)
             self._show_checks[i].blockSignals(False)
@@ -4568,7 +4670,7 @@ class _MultiMapDialog(QDialog):
         list_layout.setSpacing(2)
         list_layout.setContentsMargins(2, 2, 2, 2)
 
-        ev_arr = self.controller.get_explained_variance()
+        ev_arr = self.controller.get_component_explained_variance(self.kind)
         # Pre-compute residual errors once if needed (avoids repeated computation)
         _re_arr = None
         if self.label_mode == "Residual error":
@@ -4661,7 +4763,7 @@ class _MultiMapDialog(QDialog):
     def _comp_label(self, idx):
         """Return the metric string for component idx using the chosen label_mode."""
         mgr    = self.controller.manager
-        ev_arr = self.controller.get_explained_variance()
+        ev_arr = self.controller.get_component_explained_variance(self.kind)
         mode   = self.label_mode
 
         if mode == "Singular value σ":
@@ -4689,15 +4791,12 @@ class _MultiMapDialog(QDialog):
         self._highlighted = idx
 
     def _invert_highlighted(self):
-        """Invert the highlighted component — same action as SVD analysis Invert."""
+        """Invert the highlighted component — same action as the main
+        dialog's own Invert button (works for SVD or PCA, whichever kind
+        this window was opened for; see Map2DManager.invert_component)."""
         idx = self._highlighted
-        mgr = self.controller.manager
-        if mgr._U is None or mgr._Vt is None:
+        if not self.controller.invert_component(self.kind, idx):
             return
-        if idx >= mgr._U.shape[1]:
-            return
-        mgr._U[:, idx]  *= -1
-        mgr._Vt[idx, :] *= -1
         self._plot_all()
 
     def _unselect_all(self):
@@ -4718,7 +4817,7 @@ class _MultiMapDialog(QDialog):
         indices = self._get_selected_indices()
         cmap    = self._cmap_combo.currentText()
         mgr     = self.controller.manager
-        ev_arr  = self.controller.get_explained_variance()
+        ev_arr  = self.controller.get_component_explained_variance(self.kind)
 
         self._fig.clear()
 
@@ -4731,9 +4830,10 @@ class _MultiMapDialog(QDialog):
             self._canvas.draw_idle()
             return
 
-        if mgr._U is None or mgr._Vt is None:
+        if self.controller.get_n_components(self.kind) == 0:
+            kind_label = {'svd': 'SVD', 'pca': 'PCA'}.get(self.kind, self.kind.upper())
             ax = self._fig.add_subplot(111)
-            ax.text(0.5, 0.5, "No SVD data available",
+            ax.text(0.5, 0.5, f"No {kind_label} data available",
                     ha='center', va='center', transform=ax.transAxes)
             self._canvas.draw_idle()
             return
@@ -4751,8 +4851,15 @@ class _MultiMapDialog(QDialog):
             ax_map  = axes[row_k][0]
             ax_spec = axes[row_k][1]
 
-            u_col = mgr._U[:, comp_idx].copy()
-            v_row = mgr._Vt[comp_idx, :].copy()
+            _sx, u_col_raw = self.controller.get_component_subspectrum(self.kind, comp_idx)
+            v_row_raw      = self.controller.get_component_coefficients(self.kind, comp_idx)
+            if u_col_raw is None or v_row_raw is None:
+                ax_map.text(0.5, 0.5, "no data", ha='center', va='center',
+                            transform=ax_map.transAxes)
+                ax_spec.set_axis_off()
+                continue
+            u_col = np.asarray(u_col_raw).copy()
+            v_row = np.asarray(v_row_raw).copy()
 
             # Build metric label for titles
             if self.label_mode == "Singular value σ":
@@ -4788,7 +4895,7 @@ class _MultiMapDialog(QDialog):
             ax_map.tick_params(labelsize=6)
 
             # ── Right: corresponding subspectrum U[:,k] ───────────────
-            x_ax = mgr._svd_x_axis
+            x_ax = _sx
             if x_ax is not None and len(x_ax) == len(u_col):
                 ax_spec.plot(x_ax, u_col, linewidth=0.8, color='#E65100')
                 ax_spec.set_xlabel("Wavenumber / x", fontsize=7)

@@ -25,6 +25,9 @@ _SCREENSHOT_FILES = {
     "TYPE_SVD":            "map_type_svd.png",
     "SVD_SPECTRUM_PANEL":  "svd_spectrum_panel.png",
     "SVD_FULL_RANGE":      "svd_full_spectrum_range.png",
+    "TYPE_PCA":            "map_type_pca.png",
+    "PCA_SPECTRUM_PANEL":  "pca_spectrum_panel.png",
+    "MULTI_MAP_RESULT":    "svd_multi_map_result.png",
     "TYPE_NMF":            "map_type_nmf.png",
     "TYPE_MCR":            "map_type_mcr.png",
     "NMF_MCR_SPECTRUM_PANEL": "nmf_mcr_spectrum_panel.png",
@@ -175,7 +178,7 @@ Double-clicking or pressing OK applies the chosen pair immediately.</p>
 
 <p>Select a map type using the radio buttons. Switching between
 <b>Intensity metric</b>, <b>Map arithmetic</b>, and <b>Cluster overlay</b>
-redraws the map instantly. <b>SVD coefficients</b> requires pressing
+redraws the map instantly. <b>SVD</b> requires pressing
 <b>Update Map</b> because SVD computation can be slow for large datasets.</p>
 
 <h3>◉ Intensity metric</h3>
@@ -232,14 +235,14 @@ No range configuration buttons are shown — point interpolation needs no range.
 </div>
 </div>
 
-<h3>◉ SVD coefficients</h3>
+<h3>◉ SVD</h3>
 <div class="cat">
 <p>Performs Singular Value Decomposition on the range-filtered spectra and
 maps the coefficient vector V<sub>k</sub> as pixel values.</p>
 
 <div class="screenshot">
-    <img src="$TYPE_SVD" width="$TYPE_SVD_W" height="$TYPE_SVD_H" alt="Map Type panel with SVD coefficients selected" />
-    <p class="caption">Map Type panel in SVD coefficients mode: Component selector, Invert, Multi-map…, Diagnostics… buttons.</p>
+    <img src="$TYPE_SVD" width="$TYPE_SVD_W" height="$TYPE_SVD_H" alt="Map Type panel with SVD selected" />
+    <p class="caption">Map Type panel in SVD mode: Component selector, Invert, Multi-map…, Diagnostics… buttons.</p>
 </div>
 
 <p>Configure the <b>SVD computation range</b> using the <b>Configure SVD range…</b>
@@ -252,6 +255,35 @@ error) controls the text shown next to each component.</p>
 SVD sign is arbitrary; use Invert when the map or subspectrum appears upside-down.</p>
 <p><b>Multi-map… / Diagnostics…</b> open the multi-component grid view and the
 SVD diagnostics window respectively.</p>
+
+<h4>Multi-map… window</h4>
+<p>Opens a separate window comparing several components side-by-side: each
+selected component gets its own row with its 2-D map on the left and its
+subspectrum U[:,k] on the right. Check/uncheck components in the scrollable
+list on the left to add or remove rows; click a row to highlight it (blue),
+then press <b>Invert</b> to flip that component's sign without leaving the
+window. <b>Clear selection</b> unchecks everything at once. The first three
+components are ticked by default when the window opens.</p>
+
+<div class="screenshot">
+    <img src="$MULTI_MAP_RESULT" width="$MULTI_MAP_RESULT_W" height="$MULTI_MAP_RESULT_H" alt="SVD Multi-Component Map window comparing three components side-by-side" />
+    <p class="caption">SVD Multi-Component Map window: the first three components selected by default, each row showing its 2-D map (left) and subspectrum (right).</p>
+</div>
+
+<div class="note">
+<b>Coefficient values are unit-normalized.</b> The V<sup>T</sup>[k,:] values
+plotted here (and in this dialog's Export Map… CSV/Excel output) have unit
+length — they are <i>not</i> multiplied by the singular value σ<sub>k</sub>.
+This matches the standalone <b>PCA Scores &amp; Loadings</b> tool's own
+"Scores" convention. If you need scikit-learn/Jolliffe-convention
+(σ-scaled) PCA scores instead: this map has its own independent SVD/PCA,
+computed over whatever spectra and range are active here, so its σ values
+generally won't match the standalone tool's (which decomposes whatever it
+currently has loaded) unless you go out of your way to match spectra and
+range exactly. Export Map… avoids that trap — its note names this exact
+component's own σ directly, so multiplying every exported value by that
+number always gives the correct conversion for <i>this</i> map.
+</div>
 
 <div class="note">
 All spectra must share the same x-axis for SVD — it combines every spectrum
@@ -289,23 +321,79 @@ available here.</p>
 </div>
 </div>
 
-<h3>◉ NMF map / MCR-ALS map</h3>
+<h3>◉ PCA</h3>
 <div class="cat">
-<p>Two further spatial decomposition modes, alongside SVD: <b>NMF map</b> runs
-Non-negative Matrix Factorization and <b>MCR-ALS map</b> runs Multivariate
+<p>Computes Principal Component Analysis on the range-filtered spectra and
+maps the resulting score vector as pixel values — the same underlying
+computation as <b>SVD</b> above, with one difference: before
+the decomposition, the per-wavelength average across every selected pixel
+is subtracted first (mean-centering), the standard PCA convention. This
+matches the standalone <b>PCA Scores &amp; Loadings</b> tool's own default,
+and the standalone <b>Mean-Center Spectra (Dataset)</b> operation's
+rationale — removing whatever level or shape every pixel's spectrum shares
+in common so the decomposition finds only how they differ.</p>
+
+<div class="screenshot">
+    <img src="$TYPE_PCA" width="$TYPE_PCA_W" height="$TYPE_PCA_H" alt="Map Type panel with PCA selected" />
+    <p class="caption">Map Type panel in PCA mode: Component selector, Invert, Multi-map… buttons (Diagnostics… stays SVD-only).</p>
+</div>
+
+<p>The Map Type panel, Component selector, <b>Configure PCA range…</b>
+button, and spectrum panel all work exactly like <b>SVD</b>
+above — including <b>Invert</b> and <b>Multi-map…</b>, which apply to PCA
+too (it has the same sign ambiguity SVD does). <b>Diagnostics…</b> stays
+SVD-only for now.</p>
+
+<div class="screenshot">
+    <img src="$PCA_SPECTRUM_PANEL" width="$PCA_SPECTRUM_PANEL_W" height="$PCA_SPECTRUM_PANEL_H" alt="Spectrum panel in PCA mode comparing the clicked spectrum against the PCA component" />
+    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the PCA component (orange dashed, right axis) — same layout as SVD mode's spectrum panel.</p>
+</div>
+
+<div class="note">
+Since PCA and SVD decompose the <i>same</i> spectra differently
+(mean-centered vs. not), their components will generally differ —
+sometimes substantially, if every pixel shares a strong common
+background. Try both and compare if you're not sure which better
+isolates the structure you're looking for.
+</div>
+
+<div class="note">
+All spectra must share the same x-axis for PCA, for the same reason as
+SVD (see above) — mean-centering and decomposing only mean anything if
+every pixel's spectrum is on the same wavenumber grid.
+</div>
+</div>
+
+<h3>◉ NMF / MCR-ALS</h3>
+<div class="cat">
+<p>Two further spatial decomposition modes, alongside SVD: <b>NMF</b> runs
+Non-negative Matrix Factorization and <b>MCR-ALS</b> runs Multivariate
 Curve Resolution — Alternating Least Squares, on the range-filtered spectra.
 Both reuse this app's existing NMF Analysis / MCR-ALS tools internally, so
 results match what those standalone tools would produce for the same
 spectra and settings.</p>
 
-<div class="screenshot">
-    <img src="$TYPE_NMF" width="$TYPE_NMF_W" height="$TYPE_NMF_H" alt="Map Type panel with NMF map selected" />
-    <p class="caption">Map Type panel in NMF map mode: Components spinner, Component selector, and Configure NMF range&hellip; button.</p>
+<div class="warn" style="border-left-color:#c0392b; background:#FDEDEC;">
+<strong style="color:#c0392b;">Baseline-correct the map's spectra first
+&mdash; this isn't optional.</strong> Unlike SVD/PCA map (below), NMF and
+MCR-ALS are very sensitive to an uncorrected shared background: with real
+Raman/IR maps, it can account for &gt;99.9% of the data's total variance,
+leaving almost nothing for the components to tell pixels apart with. The
+symptom is noisy, spiky-looking component spectra and a map that barely
+resembles real structure, even though the reported fit quality looks fine.
+<strong>Apply Baseline correction (even an imperfect one) to your spectra
+before switching to NMF or MCR-ALS map mode</strong> &mdash; see the
+standalone NMF / MCR-ALS help pages' "Read this first" sections for why.
 </div>
 
 <div class="screenshot">
-    <img src="$TYPE_MCR" width="$TYPE_MCR_W" height="$TYPE_MCR_H" alt="Map Type panel with MCR-ALS map selected" />
-    <p class="caption">Map Type panel in MCR-ALS map mode: Components spinner, Component selector, and Configure MCR-ALS range&hellip; button.</p>
+    <img src="$TYPE_NMF" width="$TYPE_NMF_W" height="$TYPE_NMF_H" alt="Map Type panel with NMF selected" />
+    <p class="caption">Map Type panel in NMF mode: Components spinner, Component selector, and Configure NMF range&hellip; button.</p>
+</div>
+
+<div class="screenshot">
+    <img src="$TYPE_MCR" width="$TYPE_MCR_W" height="$TYPE_MCR_H" alt="Map Type panel with MCR-ALS selected" />
+    <p class="caption">Map Type panel in MCR-ALS mode: Components spinner, Component selector, and Configure MCR-ALS range&hellip; button.</p>
 </div>
 
 <p>Unlike SVD (which yields every component from a single fit), NMF and
@@ -326,10 +414,10 @@ error, meaningful only for SVD, aren't offered).</p>
 settings — previously fixed at the standalone tools' defaults, now
 adjustable here too:</p>
 <ul>
-  <li><b>NMF map</b> — <b>Init.</b> (nndsvda / nndsvd) and <b>Max iter.</b>,
+  <li><b>NMF</b> — <b>Init.</b> (nndsvda / nndsvd) and <b>Max iter.</b>,
       same meaning as the standalone NMF Analysis tool's Initialisation and
       Max iterations fields.</li>
-  <li><b>MCR-ALS map</b> — <b>Max iter.</b>, plus the three constraint
+  <li><b>MCR-ALS</b> — <b>Max iter.</b>, plus the three constraint
       checkboxes from the standalone MCR-ALS tool: <b>Non-neg. C</b>
       (non-negative concentrations), <b>Non-neg. ST</b> (non-negative pure
       spectra), and <b>Closure</b> (concentrations sum to 100% per pixel —
@@ -400,8 +488,9 @@ the standalone tools show next to their Run button.</p>
 NMF and MCR-ALS components are constrained non-negative (MCR-ALS enforces
 this by default on both the concentration profiles and the pure spectra;
 NMF is non-negative by construction), so a sign flip would produce a result
-the algorithm itself forbids. For this reason <b>Invert</b>, <b>Multi-map…</b>
-and <b>Diagnostics…</b> — all SVD-specific — are hidden in these two modes.
+the algorithm itself forbids. For this reason <b>Invert</b> and <b>Multi-map…</b> — available for SVD
+and PCA, both of which do have this ambiguity — plus <b>Diagnostics…</b>
+(SVD-only) are hidden in these two modes.
 </div>
 
 <div class="note">
@@ -695,7 +784,7 @@ they work regardless of whether spectra share an axis.
 <h3>SVD component map</h3>
 <ol>
   <li>Apply baseline correction and normalisation beforehand if desired.</li>
-  <li>Switch to <b>SVD coefficients</b> and optionally configure a SVD range.</li>
+  <li>Switch to <b>SVD</b> and optionally configure a SVD range.</li>
   <li>Press <b>Update Map</b>.</li>
   <li>Browse components in the dropdown to find chemically meaningful ones.</li>
   <li>Use <b>Invert</b> if the map appears upside-down.</li>
@@ -708,7 +797,7 @@ they work regardless of whether spectra share an axis.
 <h3>NMF / MCR-ALS component map</h3>
 <ol>
   <li>Apply baseline correction and normalisation beforehand if desired.</li>
-  <li>Switch to <b>NMF map</b> or <b>MCR-ALS map</b>.</li>
+  <li>Switch to <b>NMF</b> or <b>MCR-ALS</b>.</li>
   <li>Set <b>Components</b> to how many you expect (start with 2–4).</li>
   <li>Optionally configure the fit range via <b>Configure NMF/MCR-ALS range…</b>.</li>
   <li>Press <b>Update Map</b> to fit and show component 1.</li>

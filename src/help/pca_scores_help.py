@@ -489,6 +489,19 @@ def get_pca_scores_help_content():
     toolbar, which exports the <em>image</em> of the current plot (PNG, PDF,
     SVG) rather than the underlying numbers.</p>
 
+    <div class="note">
+    <strong>Scores are unit-normalized.</strong> The exported Scores
+    (PC1, PC2, &hellip;) have unit length &mdash; they are <em>not</em>
+    multiplied by the singular value. This is a legitimate, common SVD
+    convention, but it differs from scikit-learn's <code>PCA.transform()</code>
+    or the classical (Jolliffe) statistics definition of a PCA score, which
+    <em>is</em> scaled by the singular value (equivalently, by
+    &radic;eigenvalue). If you need that convention &mdash; for example, to
+    compare directly against another tool's output &mdash; multiply each
+    exported PCk column by its matching value in the Variance sheet's
+    Singular_values column.
+    </div>
+
     <hr>
     <h2>Practical tips</h2>
     <ul>

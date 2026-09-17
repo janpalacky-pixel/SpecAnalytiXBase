@@ -291,7 +291,11 @@ class PcaScoresManager:
 
         with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
             if scores_df is not None:
-                scores_df.to_excel(writer, sheet_name='Scores', index=False)
+                scores_df.to_excel(writer, sheet_name='Scores', index=False,
+                                    startrow=1)
+                writer.sheets['Scores'].cell(row=1, column=1).value = (
+                    "Note: scores are unit-normalized (each PCk column has unit length); they are NOT multiplied by the singular value. Multiply column PCk by the matching value in the Variance sheet Singular_values column to obtain scikit-learn/Jolliffe-convention (sigma-scaled) PCA scores."
+                )
                 self._autofit_excel_columns(writer, 'Scores', scores_df)
             if loadings_df is not None:
                 loadings_df.to_excel(writer, sheet_name='Loadings', index=False)
@@ -323,7 +327,9 @@ class PcaScoresManager:
         if save_config.get('save_separate'):
             base = os.path.splitext(file_path)[0]
             if scores_df is not None:
-                scores_df.to_csv(f'{base}_scores.txt', sep=delimiter, index=False, float_format=float_format)
+                with open(f'{base}_scores.txt', 'w', newline='') as sf:
+                    sf.write('# Note: scores are unit-normalized (each PCk column has unit length); they are NOT multiplied by the singular value. Multiply column PCk by the matching value in the Variance sheet Singular_values column to obtain scikit-learn/Jolliffe-convention (sigma-scaled) PCA scores.\n')
+                    scores_df.to_csv(sf, sep=delimiter, index=False, float_format=float_format)
             if loadings_df is not None:
                 loadings_df.to_csv(f'{base}_loadings.txt', sep=delimiter, index=False, float_format=float_format)
             if variance_df is not None:
@@ -332,6 +338,7 @@ class PcaScoresManager:
             with open(file_path, 'w', newline='') as f:
                 if scores_df is not None:
                     f.write('# Scores\n')
+                    f.write('# Note: scores are unit-normalized (each PCk column has unit length); they are NOT multiplied by the singular value. Multiply column PCk by the matching value in the Variance sheet Singular_values column to obtain scikit-learn/Jolliffe-convention (sigma-scaled) PCA scores.\n')
                     scores_df.to_csv(f, sep=delimiter, index=False, float_format=float_format)
                     f.write('\n')
                 if loadings_df is not None:

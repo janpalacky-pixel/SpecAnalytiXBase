@@ -64,6 +64,20 @@ class Map2DController:
             exclude_ranges=exclude_ranges,
         )
 
+    def compute_pca_map(self, spectra, n_rows, n_cols,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None):
+        """Delegate to manager; return map array or None. PCA here is
+        mean-centered SVD — see Map2DManager.compute_pca_map's docstring."""
+        return self.manager.compute_pca_map(
+            spectra, n_rows, n_cols,
+            component_index=component_index,
+            x_min=x_min, x_max=x_max,
+            include_ranges=include_ranges,
+            exclude_ranges=exclude_ranges,
+        )
+
     def get_explained_variance(self):
         return self.manager.get_explained_variance()
 
@@ -146,6 +160,9 @@ class Map2DController:
 
     def get_last_decomp_error(self, kind):
         return self.manager.get_last_decomp_error(kind)
+
+    def invert_component(self, kind, component_index):
+        return self.manager.invert_component(kind, component_index)
 
     # ------------------------------------------------------------------ #
     # Dialog launcher (called by VisualizationAnalysisController)         #

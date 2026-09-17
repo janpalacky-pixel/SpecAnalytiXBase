@@ -54,6 +54,18 @@ class Map2DManager:
         self._svd_x_axis = None
         self._explained_variance = None
 
+        # PCA internals (populated by compute_pca_map). PCA here is SVD
+        # with mean-centering applied first (see PcaScoresManager /
+        # SVDBackgroundManager's mean_center option) — kept as its own
+        # separate set of arrays rather than reusing the SVD ones above,
+        # for the same reason NMF/MCR-ALS get their own storage below.
+        self._pca_U = None
+        self._pca_s = None
+        self._pca_Vt = None
+        self._pca_x_axis = None
+        self._pca_explained_variance = None
+        self._pca_mean_spectrum = None
+
         # NMF / MCR-ALS internals (populated by compute_nmf_map /
         # compute_mcr_map). Each holds the actual NMFManager /
         # MCRALSManager instance from the fit — not just the arrays —
@@ -558,9 +570,129 @@ class Map2DManager:
                      n_rows, n_cols, component_index + 1, ev)
         return self.map_data
 
+    def compute_pca_map(self, spectra, n_rows, n_cols,
+                        component_index=0,
+                        x_min=None, x_max=None,
+                        include_ranges=None, exclude_ranges=None):
+        """
+        Compute a 2-D map from PCA coefficient V[component_index, :].
+
+        Identical to compute_svd_map() except the data matrix is
+        mean-centered (per-wavelength average across the selected
+        spectra subtracted) before the SVD — the standard PCA
+        convention, matching PcaScoresManager.compute_svd()
+        (mean_center=True by default there) and
+        SVDBackgroundManager.compute_svd_from_spectra's mean_center
+        option. PCA needs no iterative fit settings and has no
+        rotational ambiguity (unlike NMF/MCR-ALS), so — like SVD —
+        this is a plain, one-shot linear-algebra call with component
+        browsing, not a fit-then-browse workflow.
+
+        Kept as its own method (duplicating compute_svd_map's filtering
+        logic) rather than adding a mean_center flag to that method —
+        compute_svd_map is working, tested code, and every existing SVD
+        map call site should keep behaving exactly as before.
+
+        Parameters
+        ----------
+        spectra         : list of spectrum dicts
+        n_rows, n_cols  : map dimensions
+        component_index : 0-based PCA component index
+        x_min, x_max    : global clip limits
+        include_ranges  : include-mode ranges
+        exclude_ranges  : exclude-mode ranges
+
+        Returns
+        -------
+        numpy.ndarray of shape (n_rows, n_cols), or None on error.
+        """
+        if not self.validate_dimensions(len(spectra), n_rows, n_cols):
+            logger.error("Map2DManager: dimension mismatch %d × %d ≠ %d",
+                         n_rows, n_cols, len(spectra))
+            return None
+
+        include_ranges = include_ranges or []
+        exclude_ranges = exclude_ranges or []
+
+        # --- filter spectra to selected ranges -------------------------
+        filtered_y = []
+        filtered_x = None
+        reference_sp = None
+        for sp in spectra:
+            x = np.asarray(sp['x_scale'], dtype=float)
+            y = np.asarray(sp['y_scale'], dtype=float)
+            xf, yf = self._apply_range_filter(
+                x, y, x_min, x_max, include_ranges, exclude_ranges)
+            if filtered_x is None:
+                filtered_x = xf
+                reference_sp = sp
+            elif len(xf) == len(filtered_x) and not axes_match(xf, filtered_x):
+                # Same rationale as compute_svd_map's identical check —
+                # see its comment for the full explanation.
+                logger.error(
+                    "Map2DManager: cannot compute PCA map — spectra don't "
+                    "share a common x-axis.\n%s",
+                    describe_axis_mismatch(reference_sp, sp, 'PCA map')
+                )
+                return None
+            filtered_y.append(yf)
+
+        if filtered_x is None or len(filtered_x) == 0:
+            logger.error("Map2DManager: no data points remain after filtering")
+            return None
+
+        lengths = [len(y) for y in filtered_y]
+        if len(set(lengths)) > 1:
+            logger.error("Map2DManager: spectra have different lengths after "
+                         "filtering (%s) – linearization required", set(lengths))
+            return None
+
+        try:
+            data_matrix = np.column_stack(filtered_y)
+        except ValueError as exc:
+            logger.error("Map2DManager: cannot stack filtered spectra: %s", exc)
+            return None
+
+        # --- mean-center (the PCA convention), then SVD -----------------
+        mean_spectrum = data_matrix.mean(axis=1)
+        data_matrix = data_matrix - mean_spectrum[:, np.newaxis]
+
+        try:
+            U, s, Vt = np.linalg.svd(data_matrix, full_matrices=False)
+        except np.linalg.LinAlgError as exc:
+            logger.error("Map2DManager: PCA (mean-centered SVD) failed: %s", exc)
+            return None
+
+        self._pca_U = U
+        self._pca_s = s
+        self._pca_Vt = Vt
+        self._pca_x_axis = filtered_x
+        self._pca_mean_spectrum = mean_spectrum
+        self._pca_explained_variance = (s ** 2) / np.sum(s ** 2) * 100
+
+        n_components = U.shape[1]
+        component_index = max(0, min(component_index, n_components - 1))
+
+        coefficients = Vt[component_index, :]
+
+        # Store subspectrum for display
+        self.subspectrum_x = filtered_x
+        self.subspectrum_y = U[:, component_index]
+
+        self.map_data = coefficients.reshape(n_rows, n_cols)
+        self.n_rows = n_rows
+        self.n_cols = n_cols
+        self.map_mode = "pca"
+
+        ev = self._pca_explained_variance[component_index]
+        logger.debug("Map2DManager: PCA map computed (%d×%d, component=%d, EV=%.2f%%)",
+                     n_rows, n_cols, component_index + 1, ev)
+        return self.map_data
+
     # ------------------------------------------------------------------ #
     # NMF / MCR-ALS maps                                                   #
     # ------------------------------------------------------------------ #
+
 
     def _filter_spectra_for_decomposition(self, spectra, x_min, x_max,
                                            include_ranges, exclude_ranges):
@@ -837,6 +969,28 @@ class Map2DManager:
         """Return full explained variance array or None."""
         return self._explained_variance
 
+    def invert_component(self, kind, component_index):
+        """Flip the sign of one component's subspectrum and per-pixel
+        coefficients in place. Meaningful only for SVD/PCA, whose
+        components have a genuine sign ambiguity (NMF/MCR-ALS's
+        non-negativity constraint rules it out for them). Returns True if
+        the flip was applied, False if *kind* doesn't support it or
+        *component_index* is out of range / not yet computed.
+        """
+        if kind == 'svd':
+            if self._U is None or component_index >= self._U.shape[1]:
+                return False
+            self._U[:, component_index]  *= -1
+            self._Vt[component_index, :] *= -1
+            return True
+        if kind == 'pca':
+            if self._pca_U is None or component_index >= self._pca_U.shape[1]:
+                return False
+            self._pca_U[:, component_index]  *= -1
+            self._pca_Vt[component_index, :] *= -1
+            return True
+        return False
+
     def get_n_svd_components(self):
         """Return number of SVD components available (0 if not computed)."""
         if self._U is None:
@@ -870,7 +1024,7 @@ class Map2DManager:
     # currently active" uses these instead of three separate,
     # near-identical branches.
 
-    _KNOWN_KINDS = ('svd', 'nmf', 'mcr')
+    _KNOWN_KINDS = ('svd', 'nmf', 'mcr', 'pca')
 
     def get_n_components(self, kind):
         """Number of available components for *kind* (0 if not computed)."""
@@ -882,6 +1036,8 @@ class Map2DManager:
         if kind == 'mcr':
             mgr = self._mcr_manager
             return 0 if mgr is None or mgr.C is None else mgr.C.shape[1]
+        if kind == 'pca':
+            return 0 if self._pca_U is None else self._pca_U.shape[1]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_subspectrum(self, kind, component_index):
@@ -904,6 +1060,11 @@ class Map2DManager:
                 return None, None
             ci = max(0, min(component_index, mgr.ST.shape[0] - 1))
             return mgr.x_axis, mgr.ST[ci, :]
+        if kind == 'pca':
+            if self._pca_U is None:
+                return None, None
+            ci = max(0, min(component_index, self._pca_U.shape[1] - 1))
+            return self._pca_x_axis, self._pca_U[:, ci]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_coefficients(self, kind, component_index):
@@ -927,6 +1088,11 @@ class Map2DManager:
                 return None
             ci = max(0, min(component_index, mgr.C.shape[1] - 1))
             return mgr.C[:, ci]
+        if kind == 'pca':
+            if self._pca_Vt is None:
+                return None
+            ci = max(0, min(component_index, self._pca_Vt.shape[0] - 1))
+            return self._pca_Vt[ci, :]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_explained_variance(self, kind):
@@ -937,6 +1103,8 @@ class Map2DManager:
             return None if self._nmf_manager is None else self._nmf_manager.explained_variance
         if kind == 'mcr':
             return None if self._mcr_manager is None else self._mcr_manager.explained_variance
+        if kind == 'pca':
+            return self._pca_explained_variance
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_last_decomp_error(self, kind):

@@ -1630,8 +1630,10 @@ def get_user_guide_help_content():
         <h3 id="2d-map">2D Spectral Map <a href="help://map2d" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
         
         <p>Visualises spatially-resolved spectra as a false-colour 2D map. Colour
-        can represent any band metric, an SVD/NMF/MCR-ALS component, or a cluster
-        label. Requires selecting exactly Rows &times; Cols spectra (laid out
+        can represent any band metric, an SVD/PCA/NMF/MCR-ALS component, or a
+        cluster label &mdash; PCA here is mean-centered SVD, computed independently
+        of the standalone <a href="#pca-scores">PCA Scores &amp; Loadings</a> tool.
+        Requires selecting exactly Rows &times; Cols spectra (laid out
         row-by-row) &mdash; a MAT/WITec map import already carries its own
         dimensions and fills these in automatically.</p>
 
