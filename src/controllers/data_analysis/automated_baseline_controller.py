@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class AutomatedBaselineController:
     """
     Controller for the Automated Baseline correction operation (ALS,
-    airPLS, or arPLS — see AutomatedBaselineManager).
+    airPLS, arPLS, or I-ModPoly — see AutomatedBaselineManager).
 
     Same thin-controller pattern as every other extracted controller in
     this codebase (SVDBackgroundController, BaselineCorrectionController,
@@ -84,8 +84,9 @@ class AutomatedBaselineController:
 
             if add_as_new:
                 # Suffix reflects which algorithm actually ran — 'als',
-                # 'airpls', or 'arpls' (settings['algorithm'], defaulting to
-                # 'als' for any settings dict saved before airPLS existed).
+                # 'airpls', 'arpls', or 'imodpoly' (settings['algorithm'],
+                # defaulting to 'als' for any settings dict saved before
+                # airPLS existed).
                 algo_suffix = settings.get('algorithm', 'als')
                 all_labels = {s['label'] for s in current_state}
                 renamed = []

@@ -178,6 +178,12 @@ class AutomatedBaselineDialog(QDialog):
             10 * np.log10(arpls_lam_val), self.arpls_lam_slider.minimum(), self.arpls_lam_slider.maximum()))
         self.arpls_lam_slider.setValue(slider_arpls_lam_val)
 
+        # Load polynomial order -- I-ModPoly, no log-scale slider needed
+        # since it's a plain small integer, not a smoothness magnitude.
+        poly_order_val = self.current_settings.get('poly_order', 5) if algorithm == 'imodpoly' else 5
+        self.imodpoly_order_slider.setValue(int(np.clip(
+            poly_order_val, self.imodpoly_order_slider.minimum(), self.imodpoly_order_slider.maximum())))
+
         # Load fitting ranges and update the table. current_settings
         # stores plain (start, end) pairs (see get_settings) with no
         # record of which came from a preset checkbox versus a manual
@@ -232,6 +238,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("ALS (Asymmetric Least Squares)", "als")
         self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
+        self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -311,12 +318,41 @@ class AutomatedBaselineDialog(QDialog):
         arpls_note.setStyleSheet("color: gray; font-style: italic;")
         arpls_layout.addWidget(arpls_note)
 
+        # I-ModPoly Parameters -- a single polynomial order, not a
+        # lambda: I-ModPoly fits one global low-order polynomial rather
+        # than a locally-penalized smooth curve, so it isn't part of the
+        # Whittaker family above and has no smoothness/asymmetry slider
+        # at all (see calculate_imodpoly_baseline). Iteration count and
+        # the 5% convergence threshold are fixed internally, same as
+        # airPLS/arPLS's iteration counts above.
+        imodpoly_params_page = QWidget()
+        imodpoly_layout = QVBoxLayout(imodpoly_params_page)
+        imodpoly_layout.setContentsMargins(0, 0, 0, 0)
+        imodpoly_order_label = QLabel("Polynomial Order: 5")
+        self.imodpoly_order_slider = QSlider(Qt.Horizontal)
+        self.imodpoly_order_slider.setRange(1, 12)
+        self.imodpoly_order_slider.setValue(5)
+        self.imodpoly_order_slider.valueChanged.connect(
+            lambda v: imodpoly_order_label.setText(f"Polynomial Order: {v}"))
+        self.imodpoly_order_slider.valueChanged.connect(self.update_preview)
+        imodpoly_layout.addWidget(imodpoly_order_label); imodpoly_layout.addWidget(self.imodpoly_order_slider)
+        imodpoly_note = QLabel(
+            "A single low-order polynomial fit to the whole spectrum,\n"
+            "with peaks iteratively rejected from the fit -- good for\n"
+            "smooth, broadly-curved fluorescence backgrounds. Higher\n"
+            "orders follow more background curvature but risk fitting\n"
+            "into broad peaks; use the preview to check."
+        )
+        imodpoly_note.setStyleSheet("color: gray; font-style: italic;")
+        imodpoly_layout.addWidget(imodpoly_note)
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
-        self.params_stack.addWidget(als_params_page)     # index 0 == 'als'
-        self.params_stack.addWidget(airpls_params_page)  # index 1 == 'airpls'
-        self.params_stack.addWidget(arpls_params_page)   # index 2 == 'arpls'
+        self.params_stack.addWidget(als_params_page)       # index 0 == 'als'
+        self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
+        self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
+        self.params_stack.addWidget(imodpoly_params_page)  # index 3 == 'imodpoly'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -590,6 +626,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'arpls':
             baseline = self.manager.calculate_arpls_baseline(
                 y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'imodpoly':
+            baseline = self.manager.calculate_imodpoly_baseline(
+                x, y, poly_order=settings['poly_order'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -665,6 +704,14 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'arpls',
                 'lambda': 10**(self.arpls_lam_slider.value() / 10.0),
                 'n_iter': 50,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'imodpoly':
+            return {
+                'algorithm': 'imodpoly',
+                'poly_order': self.imodpoly_order_slider.value(),
+                'n_iter': 100,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }

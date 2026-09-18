@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Three algorithms,
+    Business logic for automated baseline correction. Four algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -24,7 +24,14 @@ class AutomatedBaselineManager:
         each iteration via a logistic function of the residuals instead
         of ALS's fixed p split or airPLS's exponential growth, which the
         reference reports is somewhat more robust on noisy baselines.
-    All three support region exclusion via params['fitting_ranges'] +
+      - 'imodpoly': Improved Modified Polynomial fit (Zhao, Lui, McLean
+        & Zeng, 2007) — fits a single low-order polynomial rather than a
+        Whittaker-smoothed curve, with its own iterative peak-rejection
+        and a residual-standard-deviation-based stopping rule (see
+        calculate_imodpoly_baseline). Its own 'poly_order' parameter
+        replaces 'lambda'/'p'; not a member of the Whittaker family
+        above.
+    All four support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -258,10 +265,126 @@ class AutomatedBaselineManager:
 
         return z
 
+    def calculate_imodpoly_baseline(self, x, y, poly_order=5, itermax=100, tol=0.05, exclude_indices=None):
+        """
+        Calculates a baseline using I-ModPoly (Improved Modified
+        Multi-polynomial Fit), ignoring specified regions the same way
+        the Whittaker-family methods above do -- but structurally this
+        is not one of them: it fits a single global polynomial rather
+        than a locally-penalized smooth curve, so it has no lambda and
+        instead takes a polynomial order.
+
+        Each iteration: fit a degree-`poly_order` polynomial by least
+        squares, then rebuild the working signal for the next fit --
+        points sitting within one residual standard deviation of the
+        current fit keep their own value, points further above it are
+        pulled down to the fit itself, so real Raman peaks stop dragging
+        the polynomial upward the way they would with a plain unweighted
+        fit. On top of that, the very first iteration also permanently
+        drops any point more than one residual standard deviation above
+        that initial fit -- Zhao et al.'s "peak-removal procedure during
+        the first iteration" -- before the per-iteration reconstruction
+        rule above starts running on what's left. Iteration stops once
+        the residual standard deviation changes by less than `tol`
+        (relative, default 5%) between iterations -- the paper's own
+        automated cutoff -- or after itermax iterations, whichever comes
+        first.
+
+        Re-implemented from the algorithm's own description (Zhao et
+        al. 2007, building on the base polynomial method of Lieber &
+        Mahadevan-Jansen 2003), cross-checked step-for-step against an
+        independent open-source implementation of the same published
+        algorithm (michaelstchen/modPolyFit on GitHub, MIT-licensed,
+        unrelated to any lab software) rather than derived from it --
+        that implementation is itself a direct port of Zhao et al.'s
+        paper, used here only to verify the iteration order and exact
+        thresholding comparisons. x is used directly (not just point
+        index) so the polynomial is a real function of wavenumber, like
+        every other polynomial fit elsewhere in this codebase; it's
+        rescaled internally to zero mean/unit variance purely for
+        numerical conditioning at typical cm-1-scale wavenumber ranges
+        and higher polynomial orders -- an implementation detail with no
+        effect on the returned baseline, not part of the published
+        algorithm.
+
+        Reference: J. Zhao, H. Lui, D. I. McLean, and H. Zeng,
+        "Automated autofluorescence background subtraction algorithm
+        for biomedical Raman spectroscopy." Applied Spectroscopy 61(11),
+        1225-1232 (2007). Builds on: C. A. Lieber and A.
+        Mahadevan-Jansen, "Automated method for subtraction of
+        fluorescence from biological Raman spectra." Applied
+        Spectroscopy 57(11), 1363-1367 (2003).
+        """
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        if np.count_nonzero(include_mask) < poly_order + 1:
+            logger.warning(
+                "Warning: Not enough included points to fit a "
+                f"degree-{poly_order} polynomial.")
+            return np.full_like(y, np.nan)
+
+        # Numerical-conditioning rescale only -- see docstring. Applied
+        # to the full x range once, up front, so the same linear map is
+        # used for every fit/evaluation below, excluded points included.
+        x_offset = x.mean()
+        x_spread = x.std()
+        x_norm_full = (x - x_offset) / x_spread if x_spread > 0 else (x - x_offset)
+
+        x_fit = x_norm_full[include_mask]
+        y_work = y[include_mask].copy()
+
+        dev_prev = 0.0
+        first_iter = True
+        coeffs = None
+
+        try:
+            for _ in range(itermax):
+                coeffs = np.polyfit(x_fit, y_work, poly_order)
+                fitted = np.polyval(coeffs, x_fit)
+
+                residual = y_work - fitted
+                dev_curr = np.std(residual)
+                if dev_curr == 0:
+                    break
+
+                if first_iter:
+                    # One-time peak-removal pass (see docstring).
+                    keep = y_work <= fitted + dev_curr
+                    if np.count_nonzero(keep) < poly_order + 1:
+                        logger.warning(
+                            "Warning: Not enough included points left "
+                            "after peak removal to fit a "
+                            f"degree-{poly_order} polynomial.")
+                        return np.full_like(y, np.nan)
+                    x_fit = x_fit[keep]
+                    y_work = y_work[keep]
+                    fitted = fitted[keep]
+                    first_iter = False
+
+                # Reconstruct the working signal for the next fit.
+                y_work = np.where(y_work < fitted + dev_curr, y_work, fitted)
+
+                converged = abs((dev_curr - dev_prev) / dev_curr) <= tol
+                dev_prev = dev_curr
+                if converged:
+                    break
+        except Exception as e:
+            logger.error(f"Warning: Linear algebra error during I-ModPoly fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        # The fitted polynomial is one smooth function defined over the
+        # whole rescaled x range, so -- unlike the Whittaker-family
+        # methods above -- no post-hoc interpolation through excluded
+        # points is needed: just evaluate it at every original x.
+        return np.polyval(coeffs, x_norm_full)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
-        Applies automated baseline correction (ALS or airPLS — see
-        params['algorithm'] below) to a list of spectra.
+        Applies automated baseline correction (see params['algorithm']
+        below) to a list of spectra.
 
         Each returned spectrum's metadata['correction_history'] gets a new
         'Automated Baseline' entry that includes a 'success' flag.
@@ -285,20 +408,24 @@ class AutomatedBaselineManager:
 
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
-        'airpls', or 'arpls'.
+        'airpls', 'arpls', or 'imodpoly'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
         is_arpls = (algorithm == 'arpls')
+        is_imodpoly = (algorithm == 'imodpoly')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
             default_lam, default_n_iter = 1e5, 50
+        elif is_imodpoly:
+            default_lam, default_n_iter = 1e6, 100  # lambda unused by I-ModPoly; n_iter is its itermax safety cap
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
         p = params.get('p', 0.01)
         n_iter = params.get('n_iter', default_n_iter)
+        poly_order = params.get('poly_order', 5)
         fitting_ranges = params.get('fitting_ranges', [])
         invert_regions = params.get('invert_regions', False)
 
@@ -331,6 +458,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_arpls_baseline(
                     y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'arPLS'
+            elif is_imodpoly:
+                baseline = self.calculate_imodpoly_baseline(
+                    x_scale, y_scale, poly_order=poly_order, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'I-ModPoly'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'
@@ -354,16 +485,22 @@ class AutomatedBaselineManager:
             
             entry_fields = {
                 'success': success,
-                'algorithm': algo_label, 'lambda': lam,
+                'algorithm': algo_label,
                 'iterations': n_iter, 'fitting_ranges': fitting_ranges,
                 'inverted_regions': invert_regions,
             }
-            # p (asymmetry) only means anything for ALS — omitted for
-            # airPLS/arPLS entries rather than written as a meaningless
-            # value; the per-spectrum detail table already shows a blank
-            # cell for any key missing from a given entry.
-            if not is_airpls and not is_arpls:
-                entry_fields['p'] = p
+            # lambda only means anything for the Whittaker-family
+            # methods (ALS/airPLS/arPLS); I-ModPoly has poly_order
+            # instead. p (asymmetry) only means anything for ALS. Both
+            # omitted where they don't apply rather than written as a
+            # meaningless value — the per-spectrum detail table already
+            # shows a blank cell for any key missing from a given entry.
+            if is_imodpoly:
+                entry_fields['poly_order'] = poly_order
+            else:
+                entry_fields['lambda'] = lam
+                if not is_airpls and not is_arpls:
+                    entry_fields['p'] = p
             # Shared, chronologically-ordered history across every
             # operation type that records one (see correction_history.py).
             # This used to ALSO be written as a separate flat

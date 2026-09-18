@@ -2,8 +2,8 @@
 #
 # Tests for the Automated Baseline dialog's business logic
 # (src/modules/data_analysis/automated_baseline_manager.py) — the ALS,
-# airPLS, and arPLS baseline-fitting algorithms and their shared
-# region-exclusion handling (user fitting ranges + invert mode).
+# airPLS, arPLS, and I-ModPoly baseline-fitting algorithms and their
+# shared region-exclusion handling (user fitting ranges + invert mode).
 #
 # Before this file, NONE of AutomatedBaselineManager had any automated
 # coverage at all (verified: `grep -rl "AutomatedBaselineManager" tests/`
@@ -223,6 +223,67 @@ class TestArPLSBaseline:
         assert not np.isnan(baseline).any()
 
 
+class TestIModPolyBaseline:
+    def test_recovers_smooth_baseline_under_peaks(self):
+        spectrum, true_baseline = _make_spectrum(seed=1)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_imodpoly_baseline(
+            spectrum['x_scale'], spectrum['y_scale'], poly_order=3, itermax=100)
+        assert not np.isnan(baseline).any()
+        rms = np.sqrt(np.mean((baseline - true_baseline) ** 2))
+        assert rms < 2.0, f"I-ModPoly baseline strayed too far from the true baseline (RMS={rms:.3f})"
+        assert np.max(baseline - true_baseline) < 5.0
+
+    def test_exclude_indices_changes_the_fit(self):
+        spectrum, _ = _make_spectrum(seed=5)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = (x >= 850) & (x <= 950)
+
+        baseline_plain = mgr.calculate_imodpoly_baseline(x, y, poly_order=3, exclude_indices=None)
+        baseline_excluded = mgr.calculate_imodpoly_baseline(x, y, poly_order=3, exclude_indices=exclude)
+        assert not np.isnan(baseline_plain).any()
+        assert not np.isnan(baseline_excluded).any()
+        assert not np.allclose(baseline_plain, baseline_excluded)
+
+    def test_full_exclusion_fails_gracefully(self):
+        """Mirrors the Whittaker-family methods' own contract: too few
+        included points -> NaN array, not an exception."""
+        spectrum, _ = _make_spectrum(seed=6)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_imodpoly_baseline(
+            x, y, poly_order=3, exclude_indices=np.ones_like(x, dtype=bool))
+        assert np.isnan(baseline).all()
+
+    def test_too_few_points_for_order_fails_gracefully(self):
+        """A degree-n polynomial needs at least n+1 points -- leaving
+        fewer than that included should fail gracefully (NaN), same
+        contract as full exclusion, rather than raising out of
+        np.polyfit."""
+        spectrum, _ = _make_spectrum(seed=7)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = np.ones_like(x, dtype=bool)
+        exclude[:3] = False  # only 3 points left -- order 5 needs 6
+        baseline = mgr.calculate_imodpoly_baseline(x, y, poly_order=5, exclude_indices=exclude)
+        assert np.isnan(baseline).all()
+
+    def test_converges_without_warnings(self):
+        """Regression check for np.polyfit's RankWarning on raw,
+        unrescaled cm-1-scale wavenumbers at higher polynomial orders --
+        see the zero-mean/unit-variance x rescale in
+        calculate_imodpoly_baseline."""
+        import warnings
+        spectrum, _ = _make_spectrum(seed=13, noise=0.1)
+        mgr = AutomatedBaselineManager()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            baseline = mgr.calculate_imodpoly_baseline(
+                spectrum['x_scale'], spectrum['y_scale'], poly_order=6, itermax=100)
+        assert not np.isnan(baseline).any()
+
+
 # ---------------------------------------------------------------------------
 # apply_correction — algorithm dispatch, water band, metadata contract
 # ---------------------------------------------------------------------------
@@ -260,6 +321,19 @@ class TestApplyCorrectionDispatch:
         assert 'p' not in entry
         assert mgr.failed_labels == []
 
+    def test_imodpoly_dispatch_and_metadata(self):
+        spectrum, _ = _make_spectrum(seed=14)
+        mgr = AutomatedBaselineManager()
+        out = mgr.apply_correction([spectrum], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
+        entry = out[0]['metadata']['correction_history'][-1]
+        assert entry['algorithm'] == 'I-ModPoly'
+        assert entry['success'] is True
+        assert entry['poly_order'] == 3
+        # Neither 'lambda' nor 'p' means anything for I-ModPoly.
+        assert 'lambda' not in entry
+        assert 'p' not in entry
+        assert mgr.failed_labels == []
+
     def test_als_and_airpls_produce_different_results(self):
         """Sanity check that algorithm selection actually reaches the
         computation, not just the metadata label."""
@@ -268,9 +342,13 @@ class TestApplyCorrectionDispatch:
         out_als = mgr.apply_correction([dict(spectrum)], {'algorithm': 'als', 'lambda': 1e6, 'p': 0.01, 'n_iter': 10})
         out_airpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'airpls', 'lambda': 200.0, 'n_iter': 20})
         out_arpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'arpls', 'lambda': 1e5, 'n_iter': 50})
+        out_imodpoly = mgr.apply_correction([dict(spectrum)], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
         assert not np.allclose(out_als[0]['y_scale'], out_airpls[0]['y_scale'])
         assert not np.allclose(out_als[0]['y_scale'], out_arpls[0]['y_scale'])
         assert not np.allclose(out_airpls[0]['y_scale'], out_arpls[0]['y_scale'])
+        assert not np.allclose(out_als[0]['y_scale'], out_imodpoly[0]['y_scale'])
+        assert not np.allclose(out_airpls[0]['y_scale'], out_imodpoly[0]['y_scale'])
+        assert not np.allclose(out_arpls[0]['y_scale'], out_imodpoly[0]['y_scale'])
 
     def test_failed_fit_leaves_spectrum_unchanged_and_records_label(self):
         spectrum, _ = _make_spectrum(seed=12)

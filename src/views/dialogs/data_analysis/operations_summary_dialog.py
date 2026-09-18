@@ -1839,22 +1839,23 @@ class OperationParametersDialog(QDialog):
         self.table.setItem(detail_row, 1, value_item)
 
     def setup_automated_baseline_parameters(self):
-        """Parameters table for Automated Baseline (ALS or airPLS — see
-        the 'algorithm' entry; 'p' only applies to ALS and shows blank
-        for any airPLS row, same as any other key missing from a given
+        """Parameters table for Automated Baseline (ALS, airPLS, arPLS,
+        or I-ModPoly — see the 'algorithm' entry; 'p' only applies to
+        ALS and 'poly_order' only to I-ModPoly, each blank on any row
+        it doesn't apply to, same as any other key missing from a given
         entry)."""
         self._setup_standard_parameters_with_detail_row(
             "Per-Spectrum Detail", "Click to view the baseline result used per spectrum",
             operation_tag='Automated Baseline',
-            entry_keys=['success', 'algorithm', 'lambda', 'p', 'iterations',
-                        'fitting_ranges', 'inverted_regions'])
+            entry_keys=['success', 'algorithm', 'lambda', 'p', 'poly_order',
+                        'iterations', 'fitting_ranges', 'inverted_regions'])
 
     def show_automated_baseline_details_dialog(self):
         self.show_per_spectrum_details_dialog(
             'Automated Baseline', 'Baseline result by spectrum',
-            ['Spectrum', 'Success', 'Algorithm', 'Lambda', 'P', 'Iterations',
-             'Fitting Ranges', 'Inverted Regions'],
-            ['success', 'algorithm', 'lambda', 'p', 'iterations',
+            ['Spectrum', 'Success', 'Algorithm', 'Lambda', 'P', 'Poly Order',
+             'Iterations', 'Fitting Ranges', 'Inverted Regions'],
+            ['success', 'algorithm', 'lambda', 'p', 'poly_order', 'iterations',
              'fitting_ranges', 'inverted_regions'],
         )
 
