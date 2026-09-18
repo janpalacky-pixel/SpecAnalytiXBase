@@ -239,6 +239,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
+        self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -346,6 +347,27 @@ class AutomatedBaselineDialog(QDialog):
         imodpoly_note.setStyleSheet("color: gray; font-style: italic;")
         imodpoly_layout.addWidget(imodpoly_note)
 
+        # Morphological Opening Parameters -- deliberately no controls at
+        # all. Unlike every other method here, it has no smoothness,
+        # asymmetry, or order parameter to expose: the structuring
+        # element it would otherwise need is grown automatically until
+        # the result stops changing (see calculate_morphological_baseline).
+        # This page exists only so the stack has something to show and
+        # the explanatory note has somewhere to live.
+        morph_params_page = QWidget()
+        morph_layout = QVBoxLayout(morph_params_page)
+        morph_layout.setContentsMargins(0, 0, 0, 0)
+        morph_note = QLabel(
+            "Fully automatic -- no parameters to tune. Repeatedly opens\n"
+            "the spectrum with a growing structuring element until the\n"
+            "result stops changing, then refines it to correct for\n"
+            "band-shape distortion. Good for smooth backgrounds that\n"
+            "don't fit a fixed polynomial order or global penalty."
+        )
+        morph_note.setStyleSheet("color: gray; font-style: italic;")
+        morph_layout.addWidget(morph_note)
+        morph_layout.addStretch()
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
@@ -353,6 +375,7 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
         self.params_stack.addWidget(imodpoly_params_page)  # index 3 == 'imodpoly'
+        self.params_stack.addWidget(morph_params_page)     # index 4 == 'morphological'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -629,6 +652,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'imodpoly':
             baseline = self.manager.calculate_imodpoly_baseline(
                 x, y, poly_order=settings['poly_order'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'morphological':
+            baseline = self.manager.calculate_morphological_baseline(
+                y, itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -712,6 +738,13 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'imodpoly',
                 'poly_order': self.imodpoly_order_slider.value(),
                 'n_iter': 100,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'morphological':
+            return {
+                'algorithm': 'morphological',
+                'n_iter': 300,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }

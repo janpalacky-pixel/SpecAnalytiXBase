@@ -1840,10 +1840,11 @@ class OperationParametersDialog(QDialog):
 
     def setup_automated_baseline_parameters(self):
         """Parameters table for Automated Baseline (ALS, airPLS, arPLS,
-        or I-ModPoly — see the 'algorithm' entry; 'p' only applies to
-        ALS and 'poly_order' only to I-ModPoly, each blank on any row
-        it doesn't apply to, same as any other key missing from a given
-        entry)."""
+        I-ModPoly, or Morphological Opening — see the 'algorithm' entry;
+        'p' only applies to ALS, 'poly_order' only to I-ModPoly, and
+        Morphological Opening has neither (it's fully parameter-free) —
+        each blank on any row it doesn't apply to, same as any other key
+        missing from a given entry)."""
         self._setup_standard_parameters_with_detail_row(
             "Per-Spectrum Detail", "Click to view the baseline result used per spectrum",
             operation_tag='Automated Baseline',

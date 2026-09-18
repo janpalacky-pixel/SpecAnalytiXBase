@@ -3,6 +3,7 @@
 import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
+from scipy.ndimage import grey_erosion, grey_dilation
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import notify_progress
 from src.modules.utils.correction_history import append_correction_history
@@ -11,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Four algorithms,
+    Business logic for automated baseline correction. Five algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -31,7 +32,14 @@ class AutomatedBaselineManager:
         calculate_imodpoly_baseline). Its own 'poly_order' parameter
         replaces 'lambda'/'p'; not a member of the Whittaker family
         above.
-    All four support region exclusion via params['fitting_ranges'] +
+      - 'morphological': adaptive morphological opening (Perez-Pueyo,
+        Soneira & Ruiz-Moreno, 2010) — order-statistics (min/max) based,
+        not a regularized fit at all, so it has no tunable smoothness,
+        asymmetry, or polynomial-order parameter whatsoever; the
+        structuring-element size that the other three methods would ask
+        the user to choose is instead grown automatically until the
+        result stops changing (see calculate_morphological_baseline).
+    All five support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -381,6 +389,132 @@ class AutomatedBaselineManager:
         # points is needed: just evaluate it at every original x.
         return np.polyval(coeffs, x_norm_full)
 
+    def calculate_morphological_baseline(self, y, itermax=300, exclude_indices=None):
+        """
+        Calculates a baseline using adaptive morphological opening,
+        ignoring specified regions the same way the other
+        calculate_*_baseline methods do -- but this one shares none of
+        their machinery: it's an order-statistics (min/max) method, not
+        a regularized least-squares fit, and unlike every other
+        algorithm in this class it has no tunable smoothness/asymmetry/
+        order parameter at all. The structuring-element size a user
+        would otherwise have to pick is instead grown automatically
+        until the result stops changing, per the reference below.
+
+        Erosion e_Y(f)(x) and dilation d_Y(f)(x) are the min/max of f
+        over a flat window of width Y centered at x; opening is erosion
+        followed by dilation with the same window, c_Y(f) = d_Y[e_Y(f)].
+        Starting from a 3-point window, the window is grown by 2 points
+        (odd sizes: 3, 5, 7, ...) and the opening recomputed each time;
+        once three consecutive openings come out exactly equal, growth
+        stops and the smallest of those three window sizes is the
+        "optimal" one (the reference reports this is how the algorithm
+        converges automatically, with no window size to choose by
+        hand). That optimal opening is then refined to correct for the
+        band-shape distortion a plain opening can introduce: c'(f) =
+        (d[c(f)] + e[c(f)]) / 2, dilating and eroding the *opening*
+        itself with the same optimal window, and the final baseline is
+        the elementwise minimum of that average against the plain
+        opening, c_opt(f) = min(c'(f), c(f)) -- taking whichever sits
+        lower, since the correction step exists specifically to pull
+        the curve back down where the plain opening drifted upward into
+        a band.
+
+        Three implementation details the reference paper doesn't
+        specify, decided here rather than left ambiguous: (1) boundary
+        handling for the sliding min/max windows uses edge-value
+        replication (mode='nearest'), standard practice for 1-D
+        morphological filters, avoiding the artificial dip/rise a
+        wrap-around or zero-padded boundary would otherwise introduce
+        at the spectrum's two ends; (2) the correction step's
+        erosion/dilation reuse the same optimal window found by the
+        growth loop, the most direct reading of "erosion and dilation
+        of the opening"; (3) `itermax` caps the number of growth steps
+        (window sizes tried) as a safety net -- exact equality between
+        three consecutive openings is actually well-founded for real
+        spectra (grey erosion/dilation only ever *select* an existing
+        sample value, never compute a new one, so once growth reaches a
+        window already wide enough to have captured the eventual
+        limiting value at every point, further growth reproduces it
+        bit-for-bit) but isn't mathematically guaranteed for arbitrary
+        data, so growth stops at itermax and uses the widest opening
+        reached so far rather than looping indefinitely.
+
+        exclude_indices handling differs from the Whittaker-family
+        methods' weight-zeroing: since morphological opening has no
+        weighted fit to zero a point out of, excluded points are
+        dropped from the working array entirely before the growth loop
+        runs (so they can't set a window's min/max anywhere), and the
+        converged baseline is then linearly interpolated back through
+        them afterward -- same end contract (excluded points don't
+        influence the fit; the returned baseline still covers every
+        point) as calculate_als_baseline and the rest, just reached by
+        removal instead of reweighting, since that's the only lever
+        this algorithm has.
+
+        Reference: R. Perez-Pueyo, M. J. Soneira, and S. Ruiz-Moreno,
+        "Morphology-based automated baseline removal for Raman spectra
+        of artistic pigments." Applied Spectroscopy 64(6), 595-600
+        (2010).
+        """
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        included_indices = np.where(include_mask)[0]
+        n = len(included_indices)
+        if n < 3:
+            logger.warning("Warning: Not enough included points for morphological opening.")
+            return np.full_like(y, np.nan)
+
+        y_work = y[included_indices]
+
+        try:
+            window = 3
+            window_history = []
+            opening_history = []
+            optimal_window = None
+            optimal_opening = None
+            for _ in range(itermax):
+                if window > n:
+                    # Nothing left for a wider window to reveal.
+                    break
+                eroded = grey_erosion(y_work, size=window, mode='nearest')
+                opening = grey_dilation(eroded, size=window, mode='nearest')
+                window_history.append(window)
+                opening_history.append(opening)
+                if len(opening_history) >= 3:
+                    a, b, c = opening_history[-3:]
+                    if np.array_equal(a, b) and np.array_equal(b, c):
+                        optimal_window = window_history[-3]
+                        optimal_opening = a
+                        break
+                window += 2
+
+            if optimal_opening is None:
+                # Safety fallback (see docstring) -- use the widest
+                # opening reached rather than the paper's exact-equality
+                # convergence, which wasn't hit within the cap.
+                optimal_window = window_history[-1]
+                optimal_opening = opening_history[-1]
+
+            # Refinement step: corrects for band-shape distortion in the
+            # plain opening (see docstring).
+            d_c = grey_dilation(optimal_opening, size=optimal_window, mode='nearest')
+            e_c = grey_erosion(optimal_opening, size=optimal_window, mode='nearest')
+            c_prime = (d_c + e_c) / 2.0
+            c_opt = np.minimum(c_prime, optimal_opening)
+        except Exception as e:
+            logger.error(f"Warning: Error during morphological baseline fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        if n == L:
+            return c_opt
+
+        # Same post-hoc interpolation through excluded points as
+        # calculate_als_baseline -- see that method for why.
+        return np.interp(np.arange(L), included_indices, c_opt)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
@@ -408,18 +542,21 @@ class AutomatedBaselineManager:
 
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
-        'airpls', 'arpls', or 'imodpoly'.
+        'airpls', 'arpls', 'imodpoly', or 'morphological'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
         is_arpls = (algorithm == 'arpls')
         is_imodpoly = (algorithm == 'imodpoly')
+        is_morph = (algorithm == 'morphological')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
             default_lam, default_n_iter = 1e5, 50
         elif is_imodpoly:
             default_lam, default_n_iter = 1e6, 100  # lambda unused by I-ModPoly; n_iter is its itermax safety cap
+        elif is_morph:
+            default_lam, default_n_iter = 1e6, 300  # lambda unused; n_iter is the structuring-element growth-step cap
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
@@ -462,6 +599,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_imodpoly_baseline(
                     x_scale, y_scale, poly_order=poly_order, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'I-ModPoly'
+            elif is_morph:
+                baseline = self.calculate_morphological_baseline(
+                    y_scale, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'Morphological Opening'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'
@@ -497,6 +638,8 @@ class AutomatedBaselineManager:
             # shows a blank cell for any key missing from a given entry.
             if is_imodpoly:
                 entry_fields['poly_order'] = poly_order
+            elif is_morph:
+                pass  # fully parameter-free -- no lambda, p, or poly_order applies
             else:
                 entry_fields['lambda'] = lam
                 if not is_airpls and not is_arpls:
