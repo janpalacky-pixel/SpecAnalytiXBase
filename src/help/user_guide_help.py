@@ -1197,9 +1197,12 @@ def get_user_guide_help_content():
         iterative peak rejection), Morphological Opening (parameter-free,
         adaptive structuring element), mpls (morphological opening to
         locate anchor points, then a single non-iterative ALS-style solve
-        through them), or Morphology + Mollification (parameter-free,
+        through them), Morphology + Mollification (parameter-free,
         repeated min/max operations smoothed by a fixed convolution
-        kernel, no system of equations to solve at all)
+        kernel, no system of equations to solve at all), or mpspline
+        (morphology to locate anchor points as mpls does, but a single
+        non-iterative cubic-spline solve through them instead of mpls's
+        direct Whittaker smoother)
         — selectable in the dialog, with one-click "Region Shortcut" presets
         (e.g. water band, for aqueous/biological samples) that add straight into
         the fitting-regions table. Useful for batch processing where manual

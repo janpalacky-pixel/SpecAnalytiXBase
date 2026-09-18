@@ -4,6 +4,7 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.ndimage import grey_erosion, grey_dilation
+from scipy.interpolate import BSpline
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import notify_progress
 from src.modules.utils.correction_history import append_correction_history
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Eleven algorithms,
+    Business logic for automated baseline correction. Twelve algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -105,7 +106,19 @@ class AutomatedBaselineManager:
         smoothness or asymmetry parameter to tune -- its structuring-
         element window is grown automatically the same way (see
         calculate_mollification_baseline).
-    All eleven support region exclusion via params['fitting_ranges'] +
+      - 'mpspline': morphology-based penalized spline (Gonzalez-Vidal,
+        Perez-Pueyo & Soneira, 2017) -- shaped exactly like 'mpls':
+        morphology finds a handful of anchor points, then a single
+        non-iterative weighted least-squares solve is fit through
+        them, no reweighting loop. The fit itself is a cubic penalized
+        spline (a fixed ~100-basis-function B-spline regularized by a
+        difference penalty on its own coefficients) rather than mpls's
+        direct Whittaker smoother (one coefficient per data point), so
+        it needs far fewer effective degrees of freedom for a given
+        spectrum length -- the appeal for large spectra, at the cost
+        of a genuinely different fitting mechanism (see
+        calculate_mpspline_baseline and _pspline_fit).
+    All twelve support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -1229,6 +1242,227 @@ class AutomatedBaselineManager:
 
         return np.interp(np.arange(L), included_indices, z_included)
 
+    def _pspline_fit(self, x, y, w, lam, num_knots=100, spline_degree=3, diff_order=2):
+        """
+        Weighted penalized B-spline (P-spline) fit -- Eilers & Marx,
+        1996's "smoothing with B-splines and penalties": a fixed cubic
+        B-spline basis over evenly-spaced knots spanning x's own range,
+        fit by weighted least squares with a difference penalty of
+        order diff_order on the spline's own coefficients (not on the
+        data grid itself, unlike _whittaker_smooth's penalty above --
+        num_knots basis functions regardless of how many data points
+        there are is the whole point of a P-spline, with lam alone
+        controlling smoothness rather than knot count). Used by
+        calculate_mpspline_baseline for both of its two spline fits.
+
+        x, y, w : 1-D arrays, same length. w is the per-point weight
+        (0 excludes a point from the fit without removing it from the
+        basis's domain).
+        """
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+
+        x_min, x_max = x[0], x[-1]
+        dx = (x_max - x_min) / (num_knots - 1)
+        inner_knots = np.linspace(x_min, x_max, num_knots)
+        knots = np.concatenate((
+            np.linspace(x_min - spline_degree * dx, x_min - dx, spline_degree),
+            inner_knots,
+            np.linspace(x_max + dx, x_max + spline_degree * dx, spline_degree),
+        ))
+
+        basis = BSpline.design_matrix(x, knots, spline_degree, extrapolate=True)
+        basis = basis.toarray() if hasattr(basis, 'toarray') else np.asarray(basis)
+        n_bases = basis.shape[1]
+
+        # Difference penalty on the spline coefficients themselves
+        # (Eilers & Marx's P-spline penalty), not on y.
+        D = np.eye(n_bases)
+        for _ in range(diff_order):
+            D = np.diff(D, axis=0)
+        penalty = lam * (D.T @ D)
+
+        BtWB = basis.T @ (basis * w[:, None])
+        BtWy = basis.T @ (w * y)
+        coef = np.linalg.solve(BtWB + penalty, BtWy)
+        return basis @ coef
+
+    def calculate_mpspline_baseline(self, y, lam=1e4, p=0.0, num_knots=None,
+                                     spline_degree=3, diff_order=2,
+                                     itermax=300, exclude_indices=None):
+        """
+        Calculates a baseline using mpspline (morphology-based penalized
+        spline), ignoring specified regions the same way
+        calculate_morphological_baseline and calculate_mpls_baseline do.
+
+        mpspline's overall shape mirrors mpls exactly: morphology finds
+        a handful of trustworthy anchor points, then a single
+        non-iterative weighted least-squares solve is fit through them
+        -- no reweighting loop at all. The fit itself is a cubic
+        penalized spline (a fixed B-spline basis regularized by a
+        difference penalty on its own coefficients, see _pspline_fit)
+        rather than mpls's direct Whittaker smoother (a penalty on the
+        data grid itself, one coefficient per data point).
+
+        num_knots defaults to None, which resolves to min(n // 2, 2000)
+        (n = the number of included points) rather than a single fixed
+        constant. pybaselines' own default -- a flat 100 knots no
+        matter how large n is -- was tried first here and measured
+        against synthetic spectra with tall, narrow peaks (a few
+        samples wide, the common case for real Raman peaks sampled at
+        typical resolutions): with knots that sparse, stage 1's
+        near-unpenalized spline (see lam_smooth below) rings badly
+        around a peak it's forced through, overestimating the
+        baseline by double digits across a window many times wider
+        than the peak itself -- exactly the failure mode pybaselines'
+        own source code flags in a comment on that line ("this
+        overestimates the data when there is a lot of noise, leading
+        to an overestimated baseline"). Doubling the knot count roughly
+        halves that error, and by n // 2 it becomes negligible (see the
+        test suite), so that's the default; it's capped at 2000 so a
+        very large spectrum still solves a bounded dense linear system
+        rather than one that grows without limit. A caller who wants
+        the literal pybaselines default, or any other fixed count, can
+        still pass num_knots explicitly.
+
+        Two stages, both sharing the same P-spline machinery and only
+        differing in weights/lambda -- this follows the reference's own
+        two-stage structure and the cross-checked open-source
+        implementation's weighting scheme for each stage:
+
+        1. Denoise: fit the spline to y, trusting only points a narrow
+           (fixed 3-point) morphological closing leaves untouched
+           (weight 1; everywhere else weight 0), at a small fixed
+           smoothing parameter lam_smooth (see below). This produces a
+           denoised curve g -- the reference's own shot-noise-reduction
+           stage.
+        2. Baseline: reuse calculate_morphological_baseline's own
+           window-growth loop, but grown from g rather than y (g is
+           already denoised), to find the optimal structuring-element
+           window; build the same "opening corrected toward the
+           average of its own erosion and dilation" curve that
+           calculate_morphological_baseline's refinement step and
+           calculate_mpls_baseline's reference both use, and mark every
+           point where g exactly matches that curve as an anchor
+           (weight 1-p; everywhere else weight p, default p=0.0, same
+           convention as mpls). Fit the spline again, through g with
+           those weights, at the user-facing lam -- this second fit is
+           the returned baseline. Exact equality is safe here (not an
+           isclose tolerance) because every value being compared came
+           from a pure erosion/dilation selection of g's own samples,
+           never from arithmetic that could round differently -- the
+           same reasoning calculate_mpls_baseline's boundary detection
+           relies on.
+
+        lam_smooth (stage 1's smoothing parameter) is fixed internally
+        at 1e-2 rather than exposed as a third slider: the reference
+        paper uses a single fixed lambda throughout and explicitly
+        designs the method to need no user-tunable parameters at all
+        beyond the anchor weight p that mpls's UI convention already
+        covers here, so mpspline's dialog page stays to the same two
+        sliders as mpls (Smoothness (lambda) and Non-Anchor Weight
+        (p)) rather than adding a rarely-meaningful third one. 1e-2
+        matches the default used by the open-source implementation
+        this was checked against.
+
+        A perfectly flat or monotonic g (no point where the opening
+        curve exactly matches g) hits the same degeneracy
+        calculate_mpls_baseline's docstring describes for its own
+        anchor detection -- fixed the same way, by treating every
+        point as an anchor when none are found.
+
+        References: (1) J. J. Gonzalez-Vidal, R. Perez-Pueyo, and M. J.
+        Soneira, "Automatic morphology-based cubic p-spline fitting
+        methodology for smoothing and baseline-removal of Raman
+        spectra." Journal of Raman Spectroscopy 48(6), 878-883 (2017)
+        -- the two-stage morphology + cubic p-spline idea itself. (2)
+        R. Perez-Pueyo, M. J. Soneira, and S. Ruiz-Moreno,
+        "Morphology-based automated baseline removal for Raman spectra
+        of artistic pigments." Applied Spectroscopy 64(6), 595-600
+        (2010) -- the opening-corrected-toward-its-own-average
+        refinement used in stage 2, the same reference
+        calculate_morphological_baseline and calculate_mpls_baseline
+        already cite for the same refinement.
+        """
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        included_indices = np.where(include_mask)[0]
+        n = len(included_indices)
+        if n < max(4, spline_degree + 1):
+            logger.warning("Warning: Not enough included points for mpspline.")
+            return np.full_like(y, np.nan)
+
+        if num_knots is None:
+            # See the docstring above -- a flat 100 rings badly on tall,
+            # narrow peaks; scale with n instead, capped for performance.
+            num_knots = min(max(n // 2, spline_degree + 1), 2000)
+
+        y_work = y[included_indices]
+        x_work = np.arange(n, dtype=float)
+        lam_smooth = 1e-2
+
+        try:
+            # Stage 1: denoise via a spline trusted only where a narrow
+            # closing leaves y untouched.
+            closed = grey_erosion(grey_dilation(y_work, size=3, mode='nearest'), size=3, mode='nearest')
+            stage1_weights = np.where(y_work == closed, 1.0, 0.0)
+            if stage1_weights.sum() < spline_degree + 1:
+                # Degenerate case fallback (see docstring) -- trust every point.
+                stage1_weights = np.ones(n)
+            g = self._pspline_fit(x_work, y_work, stage1_weights, lam_smooth,
+                                   num_knots=num_knots, spline_degree=spline_degree,
+                                   diff_order=diff_order)
+
+            # Stage 2: grow the optimal structuring-element window from
+            # g (see calculate_morphological_baseline for the loop
+            # itself).
+            window = 3
+            window_history = []
+            opening_history = []
+            optimal_window = None
+            optimal_opening = None
+            for _ in range(itermax):
+                if window > n:
+                    break
+                eroded = grey_erosion(g, size=window, mode='nearest')
+                opening = grey_dilation(eroded, size=window, mode='nearest')
+                window_history.append(window)
+                opening_history.append(opening)
+                if len(opening_history) >= 3:
+                    a, b, c = opening_history[-3:]
+                    if np.array_equal(a, b) and np.array_equal(b, c):
+                        optimal_window = window_history[-3]
+                        optimal_opening = a
+                        break
+                window += 2
+            if optimal_opening is None:
+                optimal_window = window_history[-1]
+                optimal_opening = opening_history[-1]
+
+            d_o = grey_dilation(optimal_opening, size=optimal_window, mode='nearest')
+            e_o = grey_erosion(optimal_opening, size=optimal_window, mode='nearest')
+            avg_opening = 0.5 * (d_o + e_o)
+            optimal_curve = np.minimum(optimal_opening, avg_opening)
+
+            anchor_mask = (g == optimal_curve)
+            if anchor_mask.sum() < spline_degree + 1:
+                stage2_weights = np.full(n, 1.0 - p)
+            else:
+                stage2_weights = np.where(anchor_mask, 1.0 - p, p)
+
+            baseline_fit = self._pspline_fit(x_work, g, stage2_weights, lam,
+                                              num_knots=num_knots, spline_degree=spline_degree,
+                                              diff_order=diff_order)
+        except Exception as e:
+            logger.error(f"Warning: Error during mpspline fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        if n == L:
+            return baseline_fit
+        return np.interp(np.arange(L), included_indices, baseline_fit)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
@@ -1257,7 +1491,8 @@ class AutomatedBaselineManager:
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
         'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
-        'imodpoly', 'morphological', 'mpls', or 'mollification'.
+        'imodpoly', 'morphological', 'mpls', 'mollification', or
+        'mpspline'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -1270,6 +1505,7 @@ class AutomatedBaselineManager:
         is_morph = (algorithm == 'morphological')
         is_mpls = (algorithm == 'mpls')
         is_mollification = (algorithm == 'mollification')
+        is_mpspline = (algorithm == 'mpspline')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
@@ -1290,6 +1526,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e6, 300  # same lambda scale as ALS (single weighted solve, not iterative); n_iter is the shared structuring-element growth-step cap
         elif is_mollification:
             default_lam, default_n_iter = 1e6, 200  # lambda unused -- no system of equations to solve at all; n_iter is the convolution-loop's own itermax (distinct from the structuring-element growth cap, fixed internally at 300)
+        elif is_mpspline:
+            default_lam, default_n_iter = 1e4, 300  # a different lambda scale than every other method here -- this one penalizes ~100 spline coefficients directly, not the data grid, so it isn't comparable to ALS/mpls's 1e6; matches the open-source implementation's own default. n_iter is the shared structuring-element growth-step cap
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
@@ -1302,7 +1540,9 @@ class AutomatedBaselineManager:
         # always get 1-p), so 0.0 -- trusting the morphology-identified
         # anchors completely and ignoring everything else -- is both the
         # paper's own default and the open-source implementation's.
-        default_p = 0.0 if is_mpls else (0.5 if is_psalsa else 0.01)
+        # mpspline's p is the exact same convention (mpspline's anchor
+        # points feed the same 1-p/p weighting into its own spline fit).
+        default_p = 0.0 if (is_mpls or is_mpspline) else (0.5 if is_psalsa else 0.01)
         p = params.get('p', default_p)
         # drPLS's own second tunable parameter -- how much the
         # second-order penalty relaxes under high-weight (peak)
@@ -1375,6 +1615,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_mollification_baseline(
                     y_scale, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'Morphology + Mollification'
+            elif is_mpspline:
+                baseline = self.calculate_mpspline_baseline(
+                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'mpspline'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'

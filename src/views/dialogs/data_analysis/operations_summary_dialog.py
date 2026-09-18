@@ -1841,9 +1841,11 @@ class OperationParametersDialog(QDialog):
     def setup_automated_baseline_parameters(self):
         """Parameters table for Automated Baseline (ALS, airPLS, arPLS,
         iarPLS, asPLS, drPLS, psalsa, I-ModPoly, Morphological Opening,
-        mpls, or Morphology + Mollification — see the 'algorithm' entry;
-        'p' applies to ALS, psalsa and mpls (a different quantity in each
-        case — see calculate_mpls_baseline for mpls's own meaning), 'eta'
+        mpls, Morphology + Mollification, or mpspline — see the
+        'algorithm' entry; 'p' applies to ALS, psalsa, mpls and mpspline
+        (a different quantity in each of the last two — see
+        calculate_mpls_baseline/calculate_mpspline_baseline for their
+        own meaning), 'eta'
         only to drPLS, 'poly_order' only to I-ModPoly, and Morphological
         Opening / Morphology + Mollification have neither (both fully
         parameter-free) — each blank on any row it doesn't apply to,

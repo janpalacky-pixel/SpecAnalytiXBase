@@ -518,6 +518,19 @@ class AutomatedBaselineDialog(QDialog):
             mpls_p_val * 100, self.mpls_p_slider.minimum(), self.mpls_p_slider.maximum()))
         self.mpls_p_slider.setValue(slider_mpls_p_val)
 
+        # Load mpspline's own lambda/p -- same p convention as mpls
+        # (see this page's own note below), but a different lambda
+        # default/scale since mpspline penalizes spline coefficients,
+        # not the data grid (see calculate_mpspline_baseline).
+        mpspline_lam_val = self.current_settings.get('lambda', 1e4) if algorithm == 'mpspline' else 1e4
+        slider_mpspline_lam_val = int(np.clip(
+            10 * np.log10(mpspline_lam_val), self.mpspline_lam_slider.minimum(), self.mpspline_lam_slider.maximum()))
+        self.mpspline_lam_slider.setValue(slider_mpspline_lam_val)
+        mpspline_p_val = self.current_settings.get('p', 0.0) if algorithm == 'mpspline' else 0.0
+        slider_mpspline_p_val = int(np.clip(
+            mpspline_p_val * 100, self.mpspline_p_slider.minimum(), self.mpspline_p_slider.maximum()))
+        self.mpspline_p_slider.setValue(slider_mpspline_p_val)
+
         # Load fitting ranges and update the table. current_settings
         # stores plain (start, end) pairs (see get_settings) with no
         # record of which came from a preset checkbox versus a manual
@@ -583,6 +596,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological", _MORPH_FAMILY)
         self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls", _MORPH_FAMILY)
         self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification", _MORPH_FAMILY)
+        self.method_combo.addItem("mpspline (morphology-based penalized spline)", "mpspline", _MORPH_FAMILY)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -893,6 +907,45 @@ class AutomatedBaselineDialog(QDialog):
         mollification_layout.addWidget(mollification_note)
         mollification_layout.addStretch()
 
+        # mpspline Parameters -- same two-slider shape as mpls's own page
+        # (Smoothness (lambda) + Non-Anchor Weight (p)), since mpspline is
+        # mpls with the Whittaker solve swapped for a penalized spline fit
+        # (see calculate_mpspline_baseline). num_knots/spline_degree/
+        # diff_order stay at their calculate_mpspline_baseline defaults --
+        # not exposed here, same reasoning as lam_smooth (see that
+        # method's docstring).
+        mpspline_params_page = QWidget()
+        mpspline_layout = QVBoxLayout(mpspline_params_page)
+        mpspline_layout.setContentsMargins(0, 0, 0, 0)
+        mpspline_lam_label = QLabel("Smoothness (λ): 1e4.0")
+        self.mpspline_lam_slider = QSlider(Qt.Horizontal)
+        self.mpspline_lam_slider.setRange(20, 90)
+        self.mpspline_lam_slider.setValue(40)  # 10*log10(1e4)
+        self.mpspline_lam_slider.valueChanged.connect(
+            lambda v: mpspline_lam_label.setText(f"Smoothness (λ): 1e{v/10:.1f}"))
+        self.mpspline_lam_slider.valueChanged.connect(self.update_preview)
+        mpspline_layout.addWidget(mpspline_lam_label); mpspline_layout.addWidget(self.mpspline_lam_slider)
+
+        mpspline_p_label = QLabel("Non-Anchor Weight (p): 0.00")
+        self.mpspline_p_slider = QSlider(Qt.Horizontal)
+        self.mpspline_p_slider.setRange(0, 99)
+        self.mpspline_p_slider.setValue(0)
+        self.mpspline_p_slider.valueChanged.connect(
+            lambda v: mpspline_p_label.setText(f"Non-Anchor Weight (p): {v/100:.2f}"))
+        self.mpspline_p_slider.valueChanged.connect(self.update_preview)
+        mpspline_layout.addWidget(mpspline_p_label); mpspline_layout.addWidget(self.mpspline_p_slider)
+        mpspline_note = QLabel(
+            "Like mpls, morphology picks a handful of trustworthy\n"
+            '"anchor" points and fits once -- no iterative\n'
+            "reweighting. Here the fit is a cubic penalized spline\n"
+            "(fewer effective degrees of freedom than mpls's own\n"
+            "point-by-point solve) rather than a direct Whittaker\n"
+            "smoother. Anchor points always get weight 1-p; this\n"
+            "slider sets everyone else's weight, 0 by default."
+        )
+        mpspline_note.setStyleSheet("color: gray; font-style: italic;")
+        mpspline_layout.addWidget(mpspline_note)
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
@@ -907,6 +960,7 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(morph_params_page)     # index 8 == 'morphological'
         self.params_stack.addWidget(mpls_params_page)      # index 9 == 'mpls'
         self.params_stack.addWidget(mollification_params_page)  # index 10 == 'mollification'
+        self.params_stack.addWidget(mpspline_params_page)      # index 11 == 'mpspline'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -1206,6 +1260,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'mollification':
             baseline = self.manager.calculate_mollification_baseline(
                 y, itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'mpspline':
+            baseline = self.manager.calculate_mpspline_baseline(
+                y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -1346,6 +1403,15 @@ class AutomatedBaselineDialog(QDialog):
             return {
                 'algorithm': 'mollification',
                 'n_iter': 200,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'mpspline':
+            return {
+                'algorithm': 'mpspline',
+                'lambda': 10**(self.mpspline_lam_slider.value() / 10.0),
+                'p': self.mpspline_p_slider.value() / 100.0,
+                'n_iter': 300,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }
