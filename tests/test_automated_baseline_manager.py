@@ -2,9 +2,9 @@
 #
 # Tests for the Automated Baseline dialog's business logic
 # (src/modules/data_analysis/automated_baseline_manager.py) — the ALS,
-# airPLS, arPLS, iarPLS, psalsa, I-ModPoly, and Morphological Opening
-# baseline-fitting algorithms and their shared region-exclusion handling
-# (user fitting ranges + invert mode).
+# airPLS, arPLS, iarPLS, asPLS, psalsa, I-ModPoly, and Morphological
+# Opening baseline-fitting algorithms and their shared region-exclusion
+# handling (user fitting ranges + invert mode).
 #
 # Before this file, NONE of AutomatedBaselineManager had any automated
 # coverage at all (verified: `grep -rl "AutomatedBaselineManager" tests/`
@@ -292,6 +292,79 @@ class TestIarPLSBaseline:
         assert not np.isnan(baseline).any()
 
 
+class TestAsPLSBaseline:
+    def test_recovers_smooth_baseline_under_peaks(self):
+        spectrum, true_baseline = _make_spectrum(seed=30)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_aspls_baseline(spectrum['y_scale'], lam=1e6, itermax=100, ratio=0.001)
+        assert not np.isnan(baseline).any()
+        rms = np.sqrt(np.mean((baseline - true_baseline) ** 2))
+        assert rms < 2.0, f"asPLS baseline strayed too far from the true baseline (RMS={rms:.3f})"
+        assert np.max(baseline - true_baseline) < 5.0
+
+    def test_no_asymmetry_parameter_needed(self):
+        # calculate_aspls_baseline's signature has no 'p', same as
+        # calculate_arpls_baseline/calculate_iarpls_baseline --
+        # documentation-by-test.
+        spectrum, _ = _make_spectrum(seed=31)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_aspls_baseline(spectrum['y_scale'], lam=1e6)
+        assert not np.isnan(baseline).any()
+
+    def test_exclude_indices_changes_the_fit(self):
+        spectrum, _ = _make_spectrum(seed=32)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = (x >= 850) & (x <= 950)
+
+        baseline_plain = mgr.calculate_aspls_baseline(y, lam=1e6, exclude_indices=None)
+        baseline_excluded = mgr.calculate_aspls_baseline(y, lam=1e6, exclude_indices=exclude)
+        assert not np.isnan(baseline_plain).any()
+        assert not np.isnan(baseline_excluded).any()
+        assert not np.allclose(baseline_plain[exclude], baseline_excluded[exclude])
+
+    def test_full_exclusion_fails_gracefully(self):
+        spectrum, _ = _make_spectrum(seed=33)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_aspls_baseline(y, lam=1e6,
+                                                 exclude_indices=np.ones_like(x, dtype=bool))
+        assert np.isnan(baseline).all()
+
+    def test_single_included_point_fails_gracefully(self):
+        spectrum, _ = _make_spectrum(seed=34)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = np.ones_like(x, dtype=bool)
+        exclude[0] = False  # exactly one point left -- still "not enough"
+        baseline = mgr.calculate_aspls_baseline(y, lam=1e6, exclude_indices=exclude)
+        assert np.isnan(baseline).all()
+
+    def test_converges_without_warnings(self):
+        """Regression check for the same class of exp() overflow arPLS
+        needed clipping for -- calculate_aspls_baseline's weighting also
+        exponentiates an unbounded residual, so it needs the same
+        exponent clipping under a tall peak's large residual."""
+        import warnings
+        spectrum, _ = _make_spectrum(seed=35, noise=0.1)
+        mgr = AutomatedBaselineManager()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            baseline = mgr.calculate_aspls_baseline(spectrum['y_scale'], lam=1e6)
+        assert not np.isnan(baseline).any()
+
+    def test_flat_input_does_not_fail(self):
+        """Exercises the max(|residual|) == 0 guard in
+        calculate_aspls_baseline's alpha update -- a perfectly flat
+        spectrum fits (almost) exactly on the first pass, leaving
+        nothing for alpha to adapt to."""
+        mgr = AutomatedBaselineManager()
+        flat = np.full(100, 5.0)
+        baseline = mgr.calculate_aspls_baseline(flat, lam=1e6)
+        assert not np.isnan(baseline).any()
+        assert np.allclose(baseline, 5.0, atol=0.5)
+
+
 class TestPsalsaBaseline:
     def test_recovers_smooth_baseline_under_peaks(self):
         spectrum, true_baseline = _make_spectrum(seed=23)
@@ -552,6 +625,17 @@ class TestApplyCorrectionDispatch:
         assert 'p' not in entry
         assert mgr.failed_labels == []
 
+    def test_aspls_dispatch_and_metadata(self):
+        spectrum, _ = _make_spectrum(seed=36)
+        mgr = AutomatedBaselineManager()
+        out = mgr.apply_correction([spectrum], {'algorithm': 'aspls', 'lambda': 1e6, 'n_iter': 100})
+        entry = out[0]['metadata']['correction_history'][-1]
+        assert entry['algorithm'] == 'asPLS'
+        assert entry['success'] is True
+        # 'p' (asymmetry) is ALS/psalsa-only -- asPLS has no such entry.
+        assert 'p' not in entry
+        assert mgr.failed_labels == []
+
     def test_psalsa_dispatch_and_metadata(self):
         spectrum, _ = _make_spectrum(seed=29)
         mgr = AutomatedBaselineManager()
@@ -598,12 +682,14 @@ class TestApplyCorrectionDispatch:
         out_airpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'airpls', 'lambda': 200.0, 'n_iter': 20})
         out_arpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'arpls', 'lambda': 1e5, 'n_iter': 50})
         out_iarpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'iarpls', 'lambda': 1e5, 'n_iter': 100})
+        out_aspls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'aspls', 'lambda': 1e6, 'n_iter': 100})
         out_psalsa = mgr.apply_correction([dict(spectrum)], {'algorithm': 'psalsa', 'lambda': 1e6, 'p': 0.5, 'n_iter': 50})
         out_imodpoly = mgr.apply_correction([dict(spectrum)], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
         out_morph = mgr.apply_correction([dict(spectrum)], {'algorithm': 'morphological', 'n_iter': 300})
         results = {
             'als': out_als[0]['y_scale'], 'airpls': out_airpls[0]['y_scale'],
             'arpls': out_arpls[0]['y_scale'], 'iarpls': out_iarpls[0]['y_scale'],
+            'aspls': out_aspls[0]['y_scale'],
             'psalsa': out_psalsa[0]['y_scale'],
             'imodpoly': out_imodpoly[0]['y_scale'],
             'morphological': out_morph[0]['y_scale'],

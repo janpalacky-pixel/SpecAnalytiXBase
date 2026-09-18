@@ -185,6 +185,14 @@ class AutomatedBaselineDialog(QDialog):
             10 * np.log10(iarpls_lam_val), self.iarpls_lam_slider.minimum(), self.iarpls_lam_slider.maximum()))
         self.iarpls_lam_slider.setValue(slider_iarpls_lam_val)
 
+        # Load lambda (smoothness) -- asPLS, its own slider on ALS's
+        # scale (see create_control_panel). No separate control for the
+        # adaptive alpha weighting -- it isn't user-tunable.
+        aspls_lam_val = self.current_settings.get('lambda', 1e6) if algorithm == 'aspls' else 1e6
+        slider_aspls_lam_val = int(np.clip(
+            10 * np.log10(aspls_lam_val), self.aspls_lam_slider.minimum(), self.aspls_lam_slider.maximum()))
+        self.aspls_lam_slider.setValue(slider_aspls_lam_val)
+
         # Load lambda (smoothness) and p (asymmetry) -- psalsa, its own
         # sliders again: lambda on ALS's scale (see create_control_panel),
         # p on its own 0.01-0.99 range since psalsa's natural p (0.5)
@@ -259,6 +267,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
         self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls")
+        self.method_combo.addItem("asPLS (adaptive smoothness PLS)", "aspls")
         self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
@@ -367,6 +376,32 @@ class AutomatedBaselineDialog(QDialog):
         iarpls_note.setStyleSheet("color: gray; font-style: italic;")
         iarpls_layout.addWidget(iarpls_note)
 
+        # asPLS Parameters -- its own λ slider, same scale as arPLS's
+        # (same second-order-penalty family): the adaptive part (the
+        # per-point alpha weighting) has no slider of its own -- it's
+        # recomputed automatically from the residuals each iteration,
+        # not something the user tunes directly (see
+        # calculate_aspls_baseline).
+        aspls_params_page = QWidget()
+        aspls_layout = QVBoxLayout(aspls_params_page)
+        aspls_layout.setContentsMargins(0, 0, 0, 0)
+        aspls_lam_label = QLabel("Smoothness (\u03bb): 1e6.0")
+        self.aspls_lam_slider = QSlider(Qt.Horizontal)
+        self.aspls_lam_slider.setRange(20, 90)
+        self.aspls_lam_slider.setValue(60)  # 10*log10(1e6)
+        self.aspls_lam_slider.valueChanged.connect(
+            lambda v: aspls_lam_label.setText(f"Smoothness (\u03bb): 1e{v/10:.1f}"))
+        self.aspls_lam_slider.valueChanged.connect(self.update_preview)
+        aspls_layout.addWidget(aspls_lam_label); aspls_layout.addWidget(self.aspls_lam_slider)
+        aspls_note = QLabel(
+            "Another arPLS-style method, but the smoothness penalty\n"
+            "itself adapts point-by-point to the residuals instead of\n"
+            "being applied uniformly -- stiffer where the fit is\n"
+            "confident, looser near features it's still unsure about."
+        )
+        aspls_note.setStyleSheet("color: gray; font-style: italic;")
+        aspls_layout.addWidget(aspls_note)
+
         # psalsa Parameters -- its own λ slider on ALS's scale (same
         # second-order-penalty solver, same range/default as the ALS
         # slider above), plus its own Asymmetry (p) slider -- unlike
@@ -460,9 +495,10 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
         self.params_stack.addWidget(iarpls_params_page)    # index 3 == 'iarpls'
-        self.params_stack.addWidget(psalsa_params_page)    # index 4 == 'psalsa'
-        self.params_stack.addWidget(imodpoly_params_page)  # index 5 == 'imodpoly'
-        self.params_stack.addWidget(morph_params_page)     # index 6 == 'morphological'
+        self.params_stack.addWidget(aspls_params_page)     # index 4 == 'aspls'
+        self.params_stack.addWidget(psalsa_params_page)    # index 5 == 'psalsa'
+        self.params_stack.addWidget(imodpoly_params_page)  # index 6 == 'imodpoly'
+        self.params_stack.addWidget(morph_params_page)     # index 7 == 'morphological'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -739,6 +775,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'iarpls':
             baseline = self.manager.calculate_iarpls_baseline(
                 y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'aspls':
+            baseline = self.manager.calculate_aspls_baseline(
+                y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         elif settings['algorithm'] == 'psalsa':
             baseline = self.manager.calculate_psalsa_baseline(
                 y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
@@ -830,6 +869,14 @@ class AutomatedBaselineDialog(QDialog):
             return {
                 'algorithm': 'iarpls',
                 'lambda': 10**(self.iarpls_lam_slider.value() / 10.0),
+                'n_iter': 100,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'aspls':
+            return {
+                'algorithm': 'aspls',
+                'lambda': 10**(self.aspls_lam_slider.value() / 10.0),
                 'n_iter': 100,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),

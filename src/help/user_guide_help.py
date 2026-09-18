@@ -1188,10 +1188,12 @@ def get_user_guide_help_content():
         <p>Fits a baseline automatically without manual point placement, using
         ALS (Asymmetric Least Squares), airPLS (adaptive iteratively reweighted
         PLS), arPLS (asymmetrically reweighted PLS), iarPLS (an improved arPLS
-        that fixes its small-peak overestimation), psalsa (a peak-decay
-        variant of ALS that tolerates a higher asymmetry setting), I-ModPoly
-        (a global polynomial fit with iterative peak rejection), or
-        Morphological Opening (parameter-free, adaptive structuring element)
+        that fixes its small-peak overestimation), asPLS (an arPLS variant
+        whose smoothness penalty adapts point-by-point to the residuals),
+        psalsa (a peak-decay variant of ALS that tolerates a higher
+        asymmetry setting), I-ModPoly (a global polynomial fit with
+        iterative peak rejection), or Morphological Opening (parameter-free,
+        adaptive structuring element)
         — selectable in the dialog, with one-click "Region Shortcut" presets
         (e.g. water band, for aqueous/biological samples) that add straight into
         the fitting-regions table. Useful for batch processing where manual

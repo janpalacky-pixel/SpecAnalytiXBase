@@ -221,9 +221,9 @@ def get_quick_start_help_content():
             <tr><td>Manual Baseline</td><td>Click points on the plot to define a
                 baseline, interpolated between them</td>
                 <td><a href="help://manual_baseline">Open help</a></td></tr>
-            <tr><td>Automated Baseline (ALS / airPLS / arPLS / iarPLS / psalsa / I-ModPoly / Morphological)</td><td>Seven automatic baseline
+            <tr><td>Automated Baseline (ALS / airPLS / arPLS / iarPLS / asPLS / psalsa / I-ModPoly / Morphological)</td><td>Eight automatic baseline
                 algorithms (Asymmetric Least Squares, adaptive iteratively
-                reweighted PLS, asymmetrically reweighted PLS, an improved arPLS fixing its small-peak overestimation, a peak-decay variant of ALS, a global polynomial fit with iterative peak rejection, or parameter-free adaptive morphological opening), with one-click region-shortcut presets (e.g. water band)</td>
+                reweighted PLS, asymmetrically reweighted PLS, an improved arPLS fixing its small-peak overestimation, an arPLS variant with a point-by-point adaptive smoothness penalty, a peak-decay variant of ALS, a global polynomial fit with iterative peak rejection, or parameter-free adaptive morphological opening), with one-click region-shortcut presets (e.g. water band)</td>
                 <td><a href="help://automated_baseline">Open help</a></td></tr>
             <tr><td>SNIP Baseline</td><td>Statistics-sensitive Non-linear Iterative
                 Peak-clipping — another automatic baseline estimator</td>
