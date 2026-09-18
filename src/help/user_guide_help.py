@@ -1194,8 +1194,10 @@ def get_user_guide_help_content():
         the smoothness penalty specifically under peak regions),
         psalsa (a peak-decay variant of ALS that tolerates a higher
         asymmetry setting), I-ModPoly (a global polynomial fit with
-        iterative peak rejection), or Morphological Opening (parameter-free,
-        adaptive structuring element)
+        iterative peak rejection), Morphological Opening (parameter-free,
+        adaptive structuring element), or mpls (morphological opening to
+        locate anchor points, then a single non-iterative ALS-style solve
+        through them)
         — selectable in the dialog, with one-click "Region Shortcut" presets
         (e.g. water band, for aqueous/biological samples) that add straight into
         the fitting-regions table. Useful for batch processing where manual

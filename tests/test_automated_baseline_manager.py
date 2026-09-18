@@ -2,9 +2,9 @@
 #
 # Tests for the Automated Baseline dialog's business logic
 # (src/modules/data_analysis/automated_baseline_manager.py) — the ALS,
-# airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly, and
-# Morphological Opening baseline-fitting algorithms and their shared
-# region-exclusion handling (user fitting ranges + invert mode).
+# airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly,
+# Morphological Opening, and mpls baseline-fitting algorithms and their
+# shared region-exclusion handling (user fitting ranges + invert mode).
 #
 # Before this file, NONE of AutomatedBaselineManager had any automated
 # coverage at all (verified: `grep -rl "AutomatedBaselineManager" tests/`
@@ -658,6 +658,86 @@ class TestMorphologicalBaseline:
         assert not np.isnan(baseline).any()
 
 
+class TestMplsBaseline:
+    def test_recovers_smooth_baseline_under_peaks(self):
+        spectrum, true_baseline = _make_spectrum(seed=30)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e6, p=0.0)
+        assert not np.isnan(baseline).any()
+        rms = np.sqrt(np.mean((baseline - true_baseline) ** 2))
+        assert rms < 5.0, f"mpls baseline strayed too far from the true baseline (RMS={rms:.3f})"
+
+    def test_p_actually_changes_the_fit(self):
+        """p is the weight given to every NON-anchor point (0.0 by
+        default, i.e. ignored entirely) -- raising it should visibly
+        change the fit, same documentation-by-test pattern used for
+        ALS/psalsa's own p."""
+        spectrum, _ = _make_spectrum(seed=31)
+        mgr = AutomatedBaselineManager()
+        baseline_p0 = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e6, p=0.0)
+        baseline_p_high = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e6, p=0.5)
+        assert not np.allclose(baseline_p0, baseline_p_high)
+
+    def test_lambda_actually_changes_the_fit(self):
+        spectrum, _ = _make_spectrum(seed=32)
+        mgr = AutomatedBaselineManager()
+        baseline_low = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e3, p=0.0)
+        baseline_high = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e8, p=0.0)
+        assert not np.allclose(baseline_low, baseline_high)
+
+    def test_exclude_indices_changes_the_fit(self):
+        spectrum, _ = _make_spectrum(seed=33)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = (x >= 850) & (x <= 950)
+        baseline_plain = mgr.calculate_mpls_baseline(y, lam=1e6, p=0.0, exclude_indices=None)
+        baseline_excluded = mgr.calculate_mpls_baseline(y, lam=1e6, p=0.0, exclude_indices=exclude)
+        assert not np.isnan(baseline_plain).any()
+        assert not np.isnan(baseline_excluded).any()
+        assert not np.allclose(baseline_plain, baseline_excluded)
+
+    def test_full_exclusion_fails_gracefully(self):
+        spectrum, _ = _make_spectrum(seed=34)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_mpls_baseline(y, lam=1e6, p=0.0, exclude_indices=np.ones_like(x, dtype=bool))
+        assert np.isnan(baseline).all()
+
+    def test_too_few_points_fails_gracefully(self):
+        """Same 3-point floor as calculate_morphological_baseline, since
+        mpls's own window-growth loop starts there too."""
+        spectrum, _ = _make_spectrum(seed=35)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = np.ones_like(x, dtype=bool)
+        exclude[:2] = False
+        baseline = mgr.calculate_mpls_baseline(y, lam=1e6, p=0.0, exclude_indices=exclude)
+        assert np.isnan(baseline).all()
+
+    def test_flat_input_recovers_the_constant(self):
+        """Edge case: a perfectly flat spectrum has no internal
+        flat-region *boundaries* at all (morphology sees one giant flat
+        run, not several), which would otherwise leave every point
+        weighted at p (0.0 by default) and the Whittaker solve
+        under-determined -- see the fallback in calculate_mpls_baseline.
+        Without that fallback this collapses to a near-zero baseline
+        instead of recovering the (correct) flat value."""
+        mgr = AutomatedBaselineManager()
+        flat = np.full(100, 5.0)
+        baseline = mgr.calculate_mpls_baseline(flat, lam=1e6, p=0.0)
+        assert not np.isnan(baseline).any()
+        assert np.allclose(baseline, 5.0, atol=1e-6)
+
+    def test_converges_without_warnings(self):
+        import warnings
+        spectrum, _ = _make_spectrum(seed=36, noise=0.1)
+        mgr = AutomatedBaselineManager()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            baseline = mgr.calculate_mpls_baseline(spectrum['y_scale'], lam=1e6, p=0.0)
+        assert not np.isnan(baseline).any()
+
+
 # ---------------------------------------------------------------------------
 # apply_correction — algorithm dispatch, water band, metadata contract
 # ---------------------------------------------------------------------------
@@ -766,6 +846,22 @@ class TestApplyCorrectionDispatch:
         assert 'poly_order' not in entry
         assert mgr.failed_labels == []
 
+    def test_mpls_dispatch_and_metadata(self):
+        spectrum, _ = _make_spectrum(seed=45)
+        mgr = AutomatedBaselineManager()
+        out = mgr.apply_correction([spectrum], {'algorithm': 'mpls', 'lambda': 1e6, 'p': 0.0, 'n_iter': 300})
+        entry = out[0]['metadata']['correction_history'][-1]
+        assert entry['algorithm'] == 'mpls'
+        assert entry['success'] is True
+        # mpls DOES carry 'p', same as ALS/psalsa, just with a different
+        # meaning and default (see calculate_mpls_baseline).
+        assert entry['p'] == 0.0
+        assert entry['lambda'] == 1e6
+        # No 'eta' or 'poly_order' -- those are drPLS/I-ModPoly-only.
+        assert 'eta' not in entry
+        assert 'poly_order' not in entry
+        assert mgr.failed_labels == []
+
     def test_als_and_airpls_produce_different_results(self):
         """Sanity check that algorithm selection actually reaches the
         computation, not just the metadata label."""
@@ -780,6 +876,7 @@ class TestApplyCorrectionDispatch:
         out_psalsa = mgr.apply_correction([dict(spectrum)], {'algorithm': 'psalsa', 'lambda': 1e6, 'p': 0.5, 'n_iter': 50})
         out_imodpoly = mgr.apply_correction([dict(spectrum)], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
         out_morph = mgr.apply_correction([dict(spectrum)], {'algorithm': 'morphological', 'n_iter': 300})
+        out_mpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'mpls', 'lambda': 1e6, 'p': 0.0, 'n_iter': 300})
         results = {
             'als': out_als[0]['y_scale'], 'airpls': out_airpls[0]['y_scale'],
             'arpls': out_arpls[0]['y_scale'], 'iarpls': out_iarpls[0]['y_scale'],
@@ -788,6 +885,7 @@ class TestApplyCorrectionDispatch:
             'psalsa': out_psalsa[0]['y_scale'],
             'imodpoly': out_imodpoly[0]['y_scale'],
             'morphological': out_morph[0]['y_scale'],
+            'mpls': out_mpls[0]['y_scale'],
         }
         names = list(results)
         for i in range(len(names)):

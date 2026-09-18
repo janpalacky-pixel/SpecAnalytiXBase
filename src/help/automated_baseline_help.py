@@ -22,7 +22,7 @@ def get_automated_baseline_help_content():
         <h1>Automated Baseline Correction Help</h1>
         
         <h2>Overview</h2>
-        <p>This tool offers nine automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>asPLS</b> (adaptive smoothness Penalized Least Squares), <b>drPLS</b> (doubly reweighted Penalized Least Squares), <b>psalsa</b> (peaked signal's asymmetric least squares algorithm), <b>I-ModPoly</b> (Improved Modified Polynomial fit), and <b>Morphological Opening</b> (adaptive structuring element) — the first seven fit a locally-penalized smooth curve, I-ModPoly instead fits a single global polynomial with iterative peak rejection, and Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all. All nine are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
+        <p>This tool offers ten automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>asPLS</b> (adaptive smoothness Penalized Least Squares), <b>drPLS</b> (doubly reweighted Penalized Least Squares), <b>psalsa</b> (peaked signal's asymmetric least squares algorithm), <b>I-ModPoly</b> (Improved Modified Polynomial fit), <b>Morphological Opening</b> (adaptive structuring element), and <b>mpls</b> (morphological weighted Penalized Least Squares) — the first seven fit a locally-penalized smooth curve built up through iterative reweighting, I-ModPoly instead fits a single global polynomial with iterative peak rejection, Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all, and mpls combines both ideas: morphological opening locates a handful of trustworthy anchor points, then a single, non-iterative penalized-least-squares solve fits a curve through them. All ten are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
 
         <div class="warning">
             <strong>Baseline-correct first — don't skip this if you're heading into NMF or MCR-ALS.</strong>
@@ -35,7 +35,7 @@ def get_automated_baseline_help_content():
         <h2>Workflow</h2>
         <ol>
             <li>Select a spectrum from the list on the left to preview it.</li>
-            <li>Pick a <b>Baseline Method</b>: ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly, or Morphological Opening (see below for the difference).</li>
+            <li>Pick a <b>Baseline Method</b>: ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly, Morphological Opening, or mpls (see below for the difference).</li>
             <li>Define the regions for the baseline calculation using one of the two modes below —
                 optionally start from a <b>Region Shortcut</b> checkbox (e.g. the water band, for
                 aqueous/biological samples) and add or adjust ranges from there.</li>
@@ -45,7 +45,7 @@ def get_automated_baseline_help_content():
                 <b>Add as New</b> to keep the originals untouched and add the result under new names.</li>
         </ol>
 
-        <h3>ALS vs. airPLS vs. arPLS vs. iarPLS vs. asPLS vs. drPLS vs. psalsa vs. I-ModPoly vs. Morphological Opening — which one?</h3>
+        <h3>ALS vs. airPLS vs. arPLS vs. iarPLS vs. asPLS vs. drPLS vs. psalsa vs. I-ModPoly vs. Morphological Opening vs. mpls — which one?</h3>
         <div class="tip">
             <p><b>ALS</b> is the more predictable default: its <b>Smoothness (λ)</b> and <b>Asymmetry (p)</b>
             sliders give direct, independent control, and it tends to be forgiving of a wide range of
@@ -64,6 +64,7 @@ def get_automated_baseline_help_content():
             <p><b>psalsa</b> goes back to ALS's own λ scale and keeps ALS's <b>Asymmetry (p)</b> slider too — but where ALS gives every point above the fit the same fixed weight regardless of how tall it is, psalsa decays that weight exponentially the further above the fit a point sits, so a small bump keeps some influence while a tall peak is suppressed almost immediately. That lets p sit much higher here than ALS typically wants (0.5 is a reasonable starting point, versus ALS's 0.01) while still handling noisy data and real peaks well. Worth trying if ALS feels too all-or-nothing about what counts as a peak.</p>
             <p><b>I-ModPoly</b> is a different kind of method entirely: instead of a locally-penalized smooth curve, it fits one global low-order polynomial (its only parameter is <b>Polynomial Order</b> — no λ, no asymmetry), iteratively rejecting points that look like peaks from the fit. That makes it more predictable on backgrounds that are genuinely polynomial-shaped (e.g. a broad, simple fluorescence curve), and less flexible than ALS/airPLS/arPLS on backgrounds with local structure a fixed polynomial order can't follow. Worth trying when the other three all seem to either chase peaks or miss background curvature — a different fitting family sometimes just suits the data better.</p>
             <p><b>Morphological Opening</b> is the odd one out: no fitted model, no parameter to tune at all — it estimates the baseline directly from local minima and maxima, automatically growing its own window size until the result stabilizes. No assumption about the background's shape (unlike ALS/airPLS/arPLS's smoothness penalty or I-ModPoly's polynomial), which makes it a reasonable option when a background is smooth but doesn't fit a fixed polynomial order or a single global penalty well. Being minimum-based, it tends to sit at or slightly below the true background rather than following it exactly — check the preview against the other methods if that matters for your data.</p>
+            <p><b>mpls</b> is a genuine hybrid rather than a variant of either family above: it reuses Morphological Opening's own min/max machinery to pick out a handful of trustworthy "anchor" points, then solves ALS's own smoothness-penalty equation exactly once through them — no iterative reweighting loop at all, unlike every ALS/airPLS/arPLS-family method above. Worth trying when a spectrum's morphology already makes the baseline fairly obvious to the eye and you'd rather trust a small set of clearly-baseline points than tune a weighting rule iteration after iteration.</p>
         </div>
 
         <div class="tip">
@@ -147,6 +148,11 @@ def get_automated_baseline_help_content():
         <ul>
             <li><b>(no parameters)</b> Nothing to set. The structuring-element size every other method would need a slider for is instead grown automatically, starting from 3 points, until the result stops changing — see Technical Details below.</li>
         </ul>
+        <h3>mpls</h3>
+        <ul>
+            <li><b>Smoothness (λ):</b> Same role and the same numeric scale as ALS's own λ slider (the dialog's mpls slider also defaults to <code>1e6</code>) — mpls reuses ALS's second-difference penalty unchanged, just solved once instead of iteratively reweighted.</li>
+            <li><b>Non-Anchor Weight (p):</b> A different quantity than ALS/psalsa's own p, on the same 0–1 range but defaulting to <code>0.00</code> rather than a small positive value. Morphology-identified "anchor" points always get weight <code>1 - p</code>; this slider sets the weight given to every other point, which is fully ignored (weight 0) by default. Raising it lets the rest of the spectrum start influencing the fit too, rather than only the anchor points.</li>
+        </ul>
 
         <h2>Technical Details</h2>
         <h3>ALS</h3>
@@ -178,6 +184,8 @@ def get_automated_baseline_help_content():
         <p>I-ModPoly fits a single polynomial of the chosen order by least squares, then rebuilds the working spectrum for the next fit: points within one residual standard deviation of the current fit keep their own value, points further above it are pulled down to the fit itself, so real peaks stop dragging the polynomial upward. The very first iteration also permanently drops any point more than one residual standard deviation above that initial fit, before the per-iteration reconstruction rule starts running on what's left. Iteration stops once the residual standard deviation changes by less than 5% (relative) between iterations — an automated cutoff built into the method itself — or after a fixed number of iterations.</p>
         <h3>Morphological Opening</h3>
         <p>Erosion replaces each point with the minimum value in a window of width <code>Y</code> centered on it; dilation replaces each point with the maximum. Opening is erosion followed by dilation with the same window — a min-then-max pass that tracks the spectrum's lower envelope without following sharp, narrow peaks up. Starting from a 3-point window, the window is grown by 2 points and the opening recomputed each time; once three consecutive openings come out exactly identical, growth stops, and the smallest of those three window sizes is the "optimal" one — no window size to choose by hand. That opening is then refined once more to correct for band-shape distortion it can introduce: it's dilated and eroded again with the same optimal window, the two results averaged, and the final baseline is whichever is lower at each point — the averaged correction or the plain opening — so the correction only ever pulls the curve down, never up.</p>
+        <h3>mpls</h3>
+        <p>mpls runs the same window-growth procedure as Morphological Opening to get a rough opening of the spectrum, but uses it only to locate "anchor points" rather than as the baseline itself: a point is a boundary of one of the opening's flat runs if exactly one of its two neighboring differences is zero, and the minimum y-value within each pair of consecutive boundaries becomes that run's anchor. Anchor points get weight <code>1 - p</code>, every other point gets weight <code>p</code>, and ALS's own equation, <code>(W + λ DᵀD) z = W y</code>, is solved exactly once with those weights — no iterative reweighting loop at all, unlike every ALS/airPLS/arPLS-family method above. (When the opening has no internal flat-region boundaries at all — e.g. a perfectly flat or perfectly monotonic spectrum — every point is treated as an anchor instead, since nothing in the morphology singles any point out as more "baseline" than any other.)</p>
 
         <h2>References</h2>
         <ul>
@@ -191,6 +199,7 @@ def get_automated_baseline_help_content():
             <li>Lieber, C. A., & Mahadevan-Jansen, A. (2003). <i>Automated method for subtraction of fluorescence from biological Raman spectra.</i> Applied Spectroscopy, 57(11), 1363–1367. (base polynomial method underlying I-ModPoly)</li>
             <li>Zhao, J., Lui, H., McLean, D. I., & Zeng, H. (2007). <i>Automated autofluorescence background subtraction algorithm for biomedical Raman spectroscopy.</i> Applied Spectroscopy, 61(11), 1225–1232. (I-ModPoly)</li>
             <li>Perez-Pueyo, R., Soneira, M. J., & Ruiz-Moreno, S. (2010). <i>Morphology-based automated baseline removal for Raman spectra of artistic pigments.</i> Applied Spectroscopy, 64(6), 595–600. (Morphological Opening)</li>
+            <li>Li, Z., Zhan, D., Wang, J., Huang, J., Xu, Q., Zhang, Z., Zheng, Y., Liang, Y., & Wang, H. (2013). <i>Morphological weighted penalized least squares for background correction.</i> Analyst, 138(16), 4483–4492. (mpls)</li>
         </ul>
     <h2>Shorten Names</h2>
     <p>This dialog has its own independent <strong>Shorten names</strong>

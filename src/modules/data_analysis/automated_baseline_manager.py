@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Nine algorithms,
+    Business logic for automated baseline correction. Ten algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -77,7 +77,20 @@ class AutomatedBaselineManager:
         structuring-element size that the other three methods would ask
         the user to choose is instead grown automatically until the
         result stops changing (see calculate_morphological_baseline).
-    All nine support region exclusion via params['fitting_ranges'] +
+      - 'mpls': morphological weighted penalized least squares (Li,
+        Zhan, Wang, Huang, Xu, Zhang, Zheng, Liang & Wang, 2013) -- a
+        genuine hybrid of the previous two ideas rather than another
+        arPLS derivative: it reuses 'morphological' opening's own
+        min/max machinery to locate a handful of "anchor points" it
+        trusts as pure baseline, then solves ALS's own second-order
+        Whittaker system exactly once, weighted so those anchor points
+        dominate the fit. No iterative reweighting loop at all -- the
+        paper's whole premise is that morphology alone already tells
+        you where the baseline is, without guessing a residual
+        threshold iteration after iteration the way every other
+        Whittaker-family method above does (see
+        calculate_mpls_baseline).
+    All ten support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -923,6 +936,138 @@ class AutomatedBaselineManager:
         # calculate_als_baseline -- see that method for why.
         return np.interp(np.arange(L), included_indices, c_opt)
 
+    def calculate_mpls_baseline(self, y, lam=1e6, p=0.0, itermax=300, exclude_indices=None):
+        """
+        Calculates a baseline using mpls (morphological weighted
+        penalized least squares), ignoring specified regions the same
+        way calculate_morphological_baseline does -- exclusion is
+        handled identically here since this method starts from that
+        same morphological opening step.
+
+        Two ideas combined into one baseline, rather than either used
+        alone: (1) grow a structuring-element window exactly as
+        calculate_morphological_baseline does (start at 3, widen by 2
+        each step, stop once three consecutive openings agree exactly)
+        to get a rough, order-statistics estimate of the baseline's
+        shape; (2) instead of using that opening as the baseline
+        directly, use it only to pick out a handful of trustworthy
+        "anchor points" -- specifically, the index of the minimum
+        y-value within each flat segment of the opening -- and solve
+        ALS's own second-order-penalty Whittaker system, (W + lam*D^T
+        D) z = W y, exactly once, with anchor points weighted 1-p and
+        every other point weighted p. There is no iterative reweighting
+        loop here at all, unlike every other Whittaker-family method in
+        this class: the paper's central claim is that the morphology
+        alone already identifies where the baseline is, so a single
+        weighted solve suffices -- no residual-threshold guessing,
+        iteration after iteration, the way ALS/airPLS/arPLS/etc. all
+        need. p defaults to 0.0 (anchor points fully trusted, weight 1;
+        every other point fully ignored, weight 0), matching both the
+        paper's own default and the open-source implementation this was
+        checked against; raising p lets the non-anchor points
+        contribute to the fit too, rather than being weighted out
+        entirely.
+
+        The paper does not itself mandate a specific half-window search
+        procedure for the opening step -- it treats window growth as an
+        implementation detail, not part of its core contribution (the
+        anchor-point-and-single-solve idea is). This reuses the exact
+        same growth loop as calculate_morphological_baseline (Perez-
+        Pueyo et al., 2010) rather than inventing a second, different
+        heuristic, so the two methods agree on what "the" morphological
+        opening of a given spectrum is.
+
+        Flat-segment detection and anchor-point selection are carried
+        over unchanged (variable names included) from the open-source
+        implementation this was cross-checked against, since getting
+        the off-by-one boundary logic exactly right matters more than
+        writing it differently for its own sake: a value is a boundary
+        of a flat run if exactly one of its two neighboring differences
+        is zero, and consecutive boundary-pairs mark out each run,
+        within which the minimum y-value becomes that run's anchor.
+
+        Reference: Li, Z., Zhan, D., Wang, J., Huang, J., Xu, Q.,
+        Zhang, Z., Zheng, Y., Liang, Y., & Wang, H. (2013).
+        Morphological weighted penalized least squares for background
+        correction. Analyst, 138(16), 4483-4492.
+        """
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        included_indices = np.where(include_mask)[0]
+        n = len(included_indices)
+        if n < 3:
+            logger.warning("Warning: Not enough included points for mpls.")
+            return np.full_like(y, np.nan)
+
+        y_work = y[included_indices]
+
+        try:
+            window = 3
+            window_history = []
+            opening_history = []
+            optimal_opening = None
+            for _ in range(itermax):
+                if window > n:
+                    break
+                eroded = grey_erosion(y_work, size=window, mode='nearest')
+                opening = grey_dilation(eroded, size=window, mode='nearest')
+                window_history.append(window)
+                opening_history.append(opening)
+                if len(opening_history) >= 3:
+                    a, b, c = opening_history[-3:]
+                    if np.array_equal(a, b) and np.array_equal(b, c):
+                        optimal_opening = a
+                        break
+                window += 2
+
+            if optimal_opening is None:
+                # Same safety fallback as calculate_morphological_baseline:
+                # use the widest opening reached rather than the paper's
+                # exact-equality convergence, which wasn't hit within the cap.
+                optimal_opening = opening_history[-1]
+
+            # Anchor-point selection, carried over from the reference
+            # implementation (see docstring): a boundary of a flat run in
+            # the opening is a point where exactly one of its two
+            # neighboring differences is zero; the minimum y-value within
+            # each pair of consecutive boundaries becomes that run's
+            # anchor point.
+            padded = np.concatenate([optimal_opening[:1], optimal_opening, optimal_opening[-1:]])
+            diff = np.diff(padded)
+            boundary_mask = ((diff[1:] == 0) | (diff[:-1] == 0)) & ((diff[1:] != 0) | (diff[:-1] != 0))
+            indices = np.flatnonzero(boundary_mask)
+
+            if len(indices) < 2:
+                # The opening has no internal flat-region boundaries at
+                # all -- e.g. a perfectly flat or perfectly monotonic
+                # spectrum, where morphology finds nothing to single out
+                # as "more baseline" than anything else. Falling through
+                # to the normal loop would leave w entirely at p (0.0 by
+                # default), which under-determines the Whittaker solve's
+                # null space and returns a near-zero baseline instead of
+                # the correct one. Trusting every point equally (as if
+                # the whole spectrum were one giant anchor) is the
+                # reasonable fallback here, and recovers the input
+                # exactly for both edge cases above.
+                w = np.full(n, 1.0 - p)
+            else:
+                w = np.full(n, p)
+                for previous_segment, next_segment in zip(indices[1::2], indices[2::2]):
+                    anchor = np.argmin(y_work[previous_segment:next_segment + 1]) + previous_segment
+                    w[anchor] = 1.0 - p
+
+            z_included = self._whittaker_smooth(y_work, w, lam, differences=2)
+        except Exception as e:
+            logger.error(f"Warning: Error during mpls fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        if n == L:
+            return z_included
+
+        return np.interp(np.arange(L), included_indices, z_included)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
@@ -951,7 +1096,7 @@ class AutomatedBaselineManager:
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
         'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
-        'imodpoly', or 'morphological'.
+        'imodpoly', 'morphological', or 'mpls'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -962,6 +1107,7 @@ class AutomatedBaselineManager:
         is_psalsa = (algorithm == 'psalsa')
         is_imodpoly = (algorithm == 'imodpoly')
         is_morph = (algorithm == 'morphological')
+        is_mpls = (algorithm == 'mpls')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
@@ -978,6 +1124,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e6, 100  # lambda unused by I-ModPoly; n_iter is its itermax safety cap
         elif is_morph:
             default_lam, default_n_iter = 1e6, 300  # lambda unused; n_iter is the structuring-element growth-step cap
+        elif is_mpls:
+            default_lam, default_n_iter = 1e6, 300  # same lambda scale as ALS (single weighted solve, not iterative); n_iter is the shared structuring-element growth-step cap
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
@@ -985,7 +1133,12 @@ class AutomatedBaselineManager:
         # higher than ALS's own default without under-suppressing real
         # peaks -- 0.5 matches the value used in the reference/the
         # open-source implementation this was checked against.
-        default_p = 0.5 if is_psalsa else 0.01
+        # mpls's p has a different meaning and scale than ALS/psalsa's:
+        # it's the weight given to every NON-anchor point (anchor points
+        # always get 1-p), so 0.0 -- trusting the morphology-identified
+        # anchors completely and ignoring everything else -- is both the
+        # paper's own default and the open-source implementation's.
+        default_p = 0.0 if is_mpls else (0.5 if is_psalsa else 0.01)
         p = params.get('p', default_p)
         # drPLS's own second tunable parameter -- how much the
         # second-order penalty relaxes under high-weight (peak)
@@ -1050,6 +1203,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_morphological_baseline(
                     y_scale, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'Morphological Opening'
+            elif is_mpls:
+                baseline = self.calculate_mpls_baseline(
+                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'mpls'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'

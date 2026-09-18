@@ -224,6 +224,18 @@ class AutomatedBaselineDialog(QDialog):
         self.imodpoly_order_slider.setValue(int(np.clip(
             poly_order_val, self.imodpoly_order_slider.minimum(), self.imodpoly_order_slider.maximum())))
 
+        # Load mpls's own lambda/p -- p defaults to 0.0 here, not
+        # ALS/psalsa's defaults, since it means something different
+        # (see the params-page comment above).
+        mpls_lam_val = self.current_settings.get('lambda', 1e6) if algorithm == 'mpls' else 1e6
+        slider_mpls_lam_val = int(np.clip(
+            10 * np.log10(mpls_lam_val), self.mpls_lam_slider.minimum(), self.mpls_lam_slider.maximum()))
+        self.mpls_lam_slider.setValue(slider_mpls_lam_val)
+        mpls_p_val = self.current_settings.get('p', 0.0) if algorithm == 'mpls' else 0.0
+        slider_mpls_p_val = int(np.clip(
+            mpls_p_val * 100, self.mpls_p_slider.minimum(), self.mpls_p_slider.maximum()))
+        self.mpls_p_slider.setValue(slider_mpls_p_val)
+
         # Load fitting ranges and update the table. current_settings
         # stores plain (start, end) pairs (see get_settings) with no
         # record of which came from a preset checkbox versus a manual
@@ -284,6 +296,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
+        self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -535,6 +548,43 @@ class AutomatedBaselineDialog(QDialog):
         morph_layout.addWidget(morph_note)
         morph_layout.addStretch()
 
+        # mpls Parameters -- its own Smoothness (lambda) slider on ALS's
+        # scale (default 1e6, single weighted solve, not iterative), and
+        # its own Asymmetry (p) slider -- a different quantity than
+        # ALS/psalsa's p: it's the weight given to every point NOT
+        # identified as a morphological anchor, so 0.00 (fully trusting
+        # the anchors, fully ignoring everything else) is the default,
+        # not psalsa's 0.5.
+        mpls_params_page = QWidget()
+        mpls_layout = QVBoxLayout(mpls_params_page)
+        mpls_layout.setContentsMargins(0, 0, 0, 0)
+        mpls_lam_label = QLabel("Smoothness (λ): 1e6.0")
+        self.mpls_lam_slider = QSlider(Qt.Horizontal)
+        self.mpls_lam_slider.setRange(20, 90)
+        self.mpls_lam_slider.setValue(60)  # 10*log10(1e6)
+        self.mpls_lam_slider.valueChanged.connect(
+            lambda v: mpls_lam_label.setText(f"Smoothness (λ): 1e{v/10:.1f}"))
+        self.mpls_lam_slider.valueChanged.connect(self.update_preview)
+        mpls_layout.addWidget(mpls_lam_label); mpls_layout.addWidget(self.mpls_lam_slider)
+
+        mpls_p_label = QLabel("Non-Anchor Weight (p): 0.00")
+        self.mpls_p_slider = QSlider(Qt.Horizontal)
+        self.mpls_p_slider.setRange(0, 99)
+        self.mpls_p_slider.setValue(0)
+        self.mpls_p_slider.valueChanged.connect(
+            lambda v: mpls_p_label.setText(f"Non-Anchor Weight (p): {v/100:.2f}"))
+        self.mpls_p_slider.valueChanged.connect(self.update_preview)
+        mpls_layout.addWidget(mpls_p_label); mpls_layout.addWidget(self.mpls_p_slider)
+        mpls_note = QLabel(
+            "Morphological opening picks a handful of trustworthy\n"
+            '"anchor" points and solves ALS\'s own penalty once --\n'
+            "no iterative reweighting. Anchor points always get\n"
+            "weight 1-p; this slider sets everyone else's weight,\n"
+            "0 by default (ignored entirely)."
+        )
+        mpls_note.setStyleSheet("color: gray; font-style: italic;")
+        mpls_layout.addWidget(mpls_note)
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
@@ -547,6 +597,7 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(psalsa_params_page)    # index 6 == 'psalsa'
         self.params_stack.addWidget(imodpoly_params_page)  # index 7 == 'imodpoly'
         self.params_stack.addWidget(morph_params_page)     # index 8 == 'morphological'
+        self.params_stack.addWidget(mpls_params_page)      # index 9 == 'mpls'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -838,6 +889,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'morphological':
             baseline = self.manager.calculate_morphological_baseline(
                 y, itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'mpls':
+            baseline = self.manager.calculate_mpls_baseline(
+                y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -961,6 +1015,15 @@ class AutomatedBaselineDialog(QDialog):
         if algorithm == 'morphological':
             return {
                 'algorithm': 'morphological',
+                'n_iter': 300,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'mpls':
+            return {
+                'algorithm': 'mpls',
+                'lambda': 10**(self.mpls_lam_slider.value() / 10.0),
+                'p': self.mpls_p_slider.value() / 100.0,
                 'n_iter': 300,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
