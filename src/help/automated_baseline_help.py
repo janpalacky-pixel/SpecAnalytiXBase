@@ -22,7 +22,7 @@ def get_automated_baseline_help_content():
         <h1>Automated Baseline Correction Help</h1>
         
         <h2>Overview</h2>
-        <p>This tool offers five automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>I-ModPoly</b> (Improved Modified Polynomial fit), and <b>Morphological Opening</b> (adaptive structuring element) — the first three fit a locally-penalized smooth curve, I-ModPoly instead fits a single global polynomial with iterative peak rejection, and Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all. All five are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
+        <p>This tool offers six automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>I-ModPoly</b> (Improved Modified Polynomial fit), and <b>Morphological Opening</b> (adaptive structuring element) — the first four fit a locally-penalized smooth curve, I-ModPoly instead fits a single global polynomial with iterative peak rejection, and Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all. All six are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
 
         <div class="warning">
             <strong>Baseline-correct first — don't skip this if you're heading into NMF or MCR-ALS.</strong>
@@ -35,7 +35,7 @@ def get_automated_baseline_help_content():
         <h2>Workflow</h2>
         <ol>
             <li>Select a spectrum from the list on the left to preview it.</li>
-            <li>Pick a <b>Baseline Method</b>: ALS, airPLS, arPLS, I-ModPoly, or Morphological Opening (see below for the difference).</li>
+            <li>Pick a <b>Baseline Method</b>: ALS, airPLS, arPLS, iarPLS, I-ModPoly, or Morphological Opening (see below for the difference).</li>
             <li>Define the regions for the baseline calculation using one of the two modes below —
                 optionally start from a <b>Region Shortcut</b> checkbox (e.g. the water band, for
                 aqueous/biological samples) and add or adjust ranges from there.</li>
@@ -45,7 +45,7 @@ def get_automated_baseline_help_content():
                 <b>Add as New</b> to keep the originals untouched and add the result under new names.</li>
         </ol>
 
-        <h3>ALS vs. airPLS vs. arPLS vs. I-ModPoly vs. Morphological Opening — which one?</h3>
+        <h3>ALS vs. airPLS vs. arPLS vs. iarPLS vs. I-ModPoly vs. Morphological Opening — which one?</h3>
         <div class="tip">
             <p><b>ALS</b> is the more predictable default: its <b>Smoothness (λ)</b> and <b>Asymmetry (p)</b>
             sliders give direct, independent control, and it tends to be forgiving of a wide range of
@@ -58,6 +58,7 @@ def get_automated_baseline_help_content():
             the two). Use the live preview — a λ that's too large for airPLS will flatten out broad,
             genuine background curvature instead of following it.</p>
             <p><b>arPLS</b> also needs no asymmetry parameter, and — unlike airPLS — uses the <em>same</em> second-difference penalty as ALS, so its λ slider sits on ALS's scale, not airPLS's much smaller one. Where it differs from both is the weighting rule: each iteration, every point is re-weighted by a logistic function of how far its residual sits below a data-driven threshold, rather than ALS's fixed asymmetry split or airPLS's exponentially growing weights. This tends to be a little steadier on noisy baselines than airPLS. Worth trying as a second opinion alongside airPLS on the same spectrum — the live preview makes the comparison quick.</p>
+            <p><b>iarPLS</b> is a direct refinement of arPLS, on the same λ scale and with the same single slider — it targets one specific known weakness of arPLS: a tendency to overestimate (sit a bit high under) small peaks in noisy data. It reaches that with a different weighting curve that sharpens as iterations proceed instead of arPLS's fixed logistic one. If arPLS's baseline looks like it's cutting into small peaks, try iarPLS on the same λ before reaching for a different method entirely.</p>
             <p><b>I-ModPoly</b> is a different kind of method entirely: instead of a locally-penalized smooth curve, it fits one global low-order polynomial (its only parameter is <b>Polynomial Order</b> — no λ, no asymmetry), iteratively rejecting points that look like peaks from the fit. That makes it more predictable on backgrounds that are genuinely polynomial-shaped (e.g. a broad, simple fluorescence curve), and less flexible than ALS/airPLS/arPLS on backgrounds with local structure a fixed polynomial order can't follow. Worth trying when the other three all seem to either chase peaks or miss background curvature — a different fitting family sometimes just suits the data better.</p>
             <p><b>Morphological Opening</b> is the odd one out: no fitted model, no parameter to tune at all — it estimates the baseline directly from local minima and maxima, automatically growing its own window size until the result stabilizes. No assumption about the background's shape (unlike ALS/airPLS/arPLS's smoothness penalty or I-ModPoly's polynomial), which makes it a reasonable option when a background is smooth but doesn't fit a fixed polynomial order or a single global penalty well. Being minimum-based, it tends to sit at or slightly below the true background rather than following it exactly — check the preview against the other methods if that matters for your data.</p>
         </div>
@@ -117,6 +118,10 @@ def get_automated_baseline_help_content():
         <ul>
             <li><b>Smoothness (λ):</b> Same role and the <em>same numeric scale</em> as ALS's λ (the dialog's arPLS slider defaults to <code>1e5</code>) — not airPLS's much smaller scale, since arPLS uses the same second-difference penalty ALS does. arPLS has no separate asymmetry parameter to tune.</li>
         </ul>
+        <h3>iarPLS</h3>
+        <ul>
+            <li><b>Smoothness (λ):</b> Same role and the same numeric scale as arPLS's own λ slider (the dialog's iarPLS slider also defaults to <code>1e5</code>) — iarPLS reuses arPLS's second-difference penalty unchanged and only replaces the per-iteration weighting rule. iarPLS has no separate asymmetry parameter to tune.</li>
+        </ul>
         <h3>I-ModPoly</h3>
         <ul>
             <li><b>Polynomial Order:</b> The degree of the single polynomial fitted to the whole spectrum (default <code>5</code>). Lower orders (e.g. <code>2</code>–<code>3</code>) follow only broad, simple curvature; higher orders can follow more background shape but risk fitting into broad peaks instead of around them — use the preview to check. I-ModPoly has no λ or asymmetry parameter at all; its iteration count and convergence threshold are fixed internally.</li>
@@ -144,6 +149,8 @@ def get_automated_baseline_help_content():
         signal, or after a fixed number of iterations.</p>
         <h3>arPLS</h3>
         <p>arPLS fits the same penalized-least-squares equation as ALS (second-difference smoothness penalty), but instead of ALS's fixed asymmetry split, re-weights every point each iteration by a logistic function of how far its residual <code>d</code> sits below a data-driven threshold built from the <em>negative</em> residuals' own mean <code>m</code> and standard deviation <code>s</code>: <code>w = 1 / (1 + exp(2(d - (2s - m)) / s))</code>. Points far below the threshold get a weight near 1 (treated as baseline), points far above it get a weight near 0 (treated as peak), and the transition between the two is smooth rather than airPLS's hard exponential growth. Iteration stops once the weight vector stops changing appreciably between steps, or after a fixed number of iterations.</p>
+        <h3>iarPLS</h3>
+        <p>iarPLS keeps arPLS's second-difference penalized-least-squares fit unchanged and only replaces the weighting rule, to fix arPLS's documented tendency to overestimate the baseline under small peaks in noisy data. The threshold is built from only the standard deviation <code>s</code> of the negative residuals (no mean term), and the weighting curve itself sharpens as iterations proceed: at iteration <code>i</code>, <code>w = 0.5 (1 - g / sqrt(1 + g²))</code> where <code>g = (exp(min(i, 100)) / s)·(d - 2s)</code>. That <code>x / sqrt(1 + x²)</code> curve (an ISRU-style function) is self-normalizing and can never overflow the way arPLS's raw <code>exp()</code> weighting needed explicit clipping for, while the <code>exp(min(i, 100))</code> term makes the cutoff between "baseline" and "peak" progressively sharper in later iterations. Iteration stops once the weight vector stops changing appreciably between steps, or after a fixed number of iterations.</p>
         <h3>I-ModPoly</h3>
         <p>I-ModPoly fits a single polynomial of the chosen order by least squares, then rebuilds the working spectrum for the next fit: points within one residual standard deviation of the current fit keep their own value, points further above it are pulled down to the fit itself, so real peaks stop dragging the polynomial upward. The very first iteration also permanently drops any point more than one residual standard deviation above that initial fit, before the per-iteration reconstruction rule starts running on what's left. Iteration stops once the residual standard deviation changes by less than 5% (relative) between iterations — an automated cutoff built into the method itself — or after a fixed number of iterations.</p>
         <h3>Morphological Opening</h3>
@@ -154,6 +161,7 @@ def get_automated_baseline_help_content():
             <li>Eilers, P. H. C., & Boelens, H. F. M. (2005). <i>Baseline Correction with Asymmetric Least Squares Smoothing</i>. Leiden University Medical Centre Report. (ALS)</li>
             <li>Zhang, Z.-M., Chen, S., & Liang, Y.-Z. (2010). <i>Baseline correction using adaptive iteratively reweighted penalized least squares.</i> Analyst, 135(5), 1138–1146. (airPLS)</li>
             <li>Baek, S.-J., Park, A., Ahn, Y.-J., & Choo, J. (2015). <i>Baseline correction using asymmetrically reweighted penalized least squares smoothing.</i> Analyst, 140(1), 250–257. (arPLS)</li>
+            <li>Ye, J., Tian, Z., Wei, H., & Li, Y. (2020). <i>Baseline correction method based on improved asymmetrically reweighted penalized least squares for the Raman spectrum.</i> Applied Optics, 59(34), 10933–10943. (iarPLS)</li>
             <li>Lieber, C. A., & Mahadevan-Jansen, A. (2003). <i>Automated method for subtraction of fluorescence from biological Raman spectra.</i> Applied Spectroscopy, 57(11), 1363–1367. (base polynomial method underlying I-ModPoly)</li>
             <li>Zhao, J., Lui, H., McLean, D. I., & Zeng, H. (2007). <i>Automated autofluorescence background subtraction algorithm for biomedical Raman spectroscopy.</i> Applied Spectroscopy, 61(11), 1225–1232. (I-ModPoly)</li>
             <li>Perez-Pueyo, R., Soneira, M. J., & Ruiz-Moreno, S. (2010). <i>Morphology-based automated baseline removal for Raman spectra of artistic pigments.</i> Applied Spectroscopy, 64(6), 595–600. (Morphological Opening)</li>

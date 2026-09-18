@@ -2,9 +2,9 @@
 #
 # Tests for the Automated Baseline dialog's business logic
 # (src/modules/data_analysis/automated_baseline_manager.py) — the ALS,
-# airPLS, arPLS, I-ModPoly, and Morphological Opening baseline-fitting
-# algorithms and their shared region-exclusion handling (user fitting
-# ranges + invert mode).
+# airPLS, arPLS, iarPLS, I-ModPoly, and Morphological Opening
+# baseline-fitting algorithms and their shared region-exclusion handling
+# (user fitting ranges + invert mode).
 #
 # Before this file, NONE of AutomatedBaselineManager had any automated
 # coverage at all (verified: `grep -rl "AutomatedBaselineManager" tests/`
@@ -224,6 +224,74 @@ class TestArPLSBaseline:
         assert not np.isnan(baseline).any()
 
 
+class TestIarPLSBaseline:
+    def test_recovers_smooth_baseline_under_peaks(self):
+        spectrum, true_baseline = _make_spectrum(seed=16)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_iarpls_baseline(spectrum['y_scale'], lam=1e5, itermax=100, ratio=0.001)
+        assert not np.isnan(baseline).any()
+        rms = np.sqrt(np.mean((baseline - true_baseline) ** 2))
+        assert rms < 2.0, f"iarPLS baseline strayed too far from the true baseline (RMS={rms:.3f})"
+        assert np.max(baseline - true_baseline) < 5.0
+
+    def test_no_asymmetry_parameter_needed(self):
+        # calculate_iarpls_baseline's signature has no 'p', same as
+        # calculate_arpls_baseline/calculate_airpls_baseline --
+        # documentation-by-test.
+        spectrum, _ = _make_spectrum(seed=17)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_iarpls_baseline(spectrum['y_scale'], lam=1e5)
+        assert not np.isnan(baseline).any()
+
+    def test_exclude_indices_changes_the_fit(self):
+        """Same reasoning as TestArPLSBaseline's own version of this
+        check: excluding a region should demonstrably change the fitted
+        baseline there, otherwise the exclude_indices plumbing isn't
+        doing anything."""
+        spectrum, _ = _make_spectrum(seed=18)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = (x >= 850) & (x <= 950)
+
+        baseline_plain = mgr.calculate_iarpls_baseline(y, lam=1e5, exclude_indices=None)
+        baseline_excluded = mgr.calculate_iarpls_baseline(y, lam=1e5, exclude_indices=exclude)
+        assert not np.isnan(baseline_plain).any()
+        assert not np.isnan(baseline_excluded).any()
+        assert not np.allclose(baseline_plain[exclude], baseline_excluded[exclude])
+
+    def test_full_exclusion_fails_gracefully(self):
+        """Mirrors calculate_arpls_baseline's own contract: too few
+        included points -> NaN array, not an exception."""
+        spectrum, _ = _make_spectrum(seed=19)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_iarpls_baseline(y, lam=1e5,
+                                                  exclude_indices=np.ones_like(x, dtype=bool))
+        assert np.isnan(baseline).all()
+
+    def test_single_included_point_fails_gracefully(self):
+        spectrum, _ = _make_spectrum(seed=20)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = np.ones_like(x, dtype=bool)
+        exclude[0] = False  # exactly one point left -- still "not enough"
+        baseline = mgr.calculate_iarpls_baseline(y, lam=1e5, exclude_indices=exclude)
+        assert np.isnan(baseline).all()
+
+    def test_converges_without_warnings(self):
+        """iarPLS's weight update is a self-normalizing ISRU-style curve
+        (x / sqrt(1 + x**2)) rather than arPLS's raw exp(), specifically
+        so it can't overflow the way arPLS's exponent needed explicit
+        clipping for -- this is the regression check for that."""
+        import warnings
+        spectrum, _ = _make_spectrum(seed=21, noise=0.1)
+        mgr = AutomatedBaselineManager()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            baseline = mgr.calculate_iarpls_baseline(spectrum['y_scale'], lam=1e5)
+        assert not np.isnan(baseline).any()
+
+
 class TestIModPolyBaseline:
     def test_recovers_smooth_baseline_under_peaks(self):
         spectrum, true_baseline = _make_spectrum(seed=1)
@@ -397,6 +465,17 @@ class TestApplyCorrectionDispatch:
         assert 'p' not in entry
         assert mgr.failed_labels == []
 
+    def test_iarpls_dispatch_and_metadata(self):
+        spectrum, _ = _make_spectrum(seed=22)
+        mgr = AutomatedBaselineManager()
+        out = mgr.apply_correction([spectrum], {'algorithm': 'iarpls', 'lambda': 1e5, 'n_iter': 100})
+        entry = out[0]['metadata']['correction_history'][-1]
+        assert entry['algorithm'] == 'iarPLS'
+        assert entry['success'] is True
+        # 'p' (asymmetry) is ALS-only, same as airPLS/arPLS.
+        assert 'p' not in entry
+        assert mgr.failed_labels == []
+
     def test_imodpoly_dispatch_and_metadata(self):
         spectrum, _ = _make_spectrum(seed=14)
         mgr = AutomatedBaselineManager()
@@ -431,11 +510,13 @@ class TestApplyCorrectionDispatch:
         out_als = mgr.apply_correction([dict(spectrum)], {'algorithm': 'als', 'lambda': 1e6, 'p': 0.01, 'n_iter': 10})
         out_airpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'airpls', 'lambda': 200.0, 'n_iter': 20})
         out_arpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'arpls', 'lambda': 1e5, 'n_iter': 50})
+        out_iarpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'iarpls', 'lambda': 1e5, 'n_iter': 100})
         out_imodpoly = mgr.apply_correction([dict(spectrum)], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
         out_morph = mgr.apply_correction([dict(spectrum)], {'algorithm': 'morphological', 'n_iter': 300})
         results = {
             'als': out_als[0]['y_scale'], 'airpls': out_airpls[0]['y_scale'],
-            'arpls': out_arpls[0]['y_scale'], 'imodpoly': out_imodpoly[0]['y_scale'],
+            'arpls': out_arpls[0]['y_scale'], 'iarpls': out_iarpls[0]['y_scale'],
+            'imodpoly': out_imodpoly[0]['y_scale'],
             'morphological': out_morph[0]['y_scale'],
         }
         names = list(results)

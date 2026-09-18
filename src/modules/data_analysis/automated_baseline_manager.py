@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Five algorithms,
+    Business logic for automated baseline correction. Six algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -25,6 +25,13 @@ class AutomatedBaselineManager:
         each iteration via a logistic function of the residuals instead
         of ALS's fixed p split or airPLS's exponential growth, which the
         reference reports is somewhat more robust on noisy baselines.
+      - 'iarpls': improved arPLS (Ye, Tian, Wei & Li, 2020) — same
+        second-order-penalty Whittaker solver and λ scale as arPLS,
+        but a different per-iteration weight formula (an
+        iteration-sharpened ISRU-style curve rather than arPLS's fixed
+        logistic one) that specifically fixes arPLS's tendency to
+        overestimate the baseline under small peaks in noisy data (see
+        calculate_iarpls_baseline).
       - 'imodpoly': Improved Modified Polynomial fit (Zhao, Lui, McLean
         & Zeng, 2007) — fits a single low-order polynomial rather than a
         Whittaker-smoothed curve, with its own iterative peak-rejection
@@ -39,7 +46,7 @@ class AutomatedBaselineManager:
         structuring-element size that the other three methods would ask
         the user to choose is instead grown automatically until the
         result stops changing (see calculate_morphological_baseline).
-    All five support region exclusion via params['fitting_ranges'] +
+    All six support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -264,6 +271,90 @@ class AutomatedBaselineManager:
         # Same post-hoc interpolation through excluded regions as
         # calculate_als_baseline/calculate_airpls_baseline -- see
         # calculate_als_baseline for why.
+        if exclude_indices is not None and np.any(exclude_indices):
+            included_indices = np.where(~exclude_indices)[0]
+            if len(included_indices) < 2:
+                logger.warning("Warning: Not enough included points to create a reliable baseline.")
+                return np.full_like(y, np.nan)
+            z = np.interp(np.arange(L), included_indices, z[included_indices])
+
+        return z
+
+    def calculate_iarpls_baseline(self, y, lam, itermax=100, ratio=0.001, exclude_indices=None):
+        """
+        Calculates a baseline using iarPLS (improved asymmetrically
+        reweighted penalized least squares), ignoring specified regions
+        the same way calculate_arpls_baseline does. Fixes arPLS's
+        documented tendency to overestimate the baseline under small
+        peaks in noisy data.
+
+        Reuses the same second-order-penalty Whittaker solver as
+        calculate_arpls_baseline (same _whittaker_smooth call, same λ
+        scale -- ALS's, not airPLS's) -- only the per-iteration weight
+        formula changes. Where arPLS thresholds each residual against
+        2*std - mean of the negative residuals and squashes it through a
+        logistic function, iarPLS thresholds against 2*std alone (no
+        mean term) and squashes it through an ISRU-style function
+        (x / sqrt(1+x^2), the paper's own "ISRU weighting function")
+        scaled by exp(min(iteration, 100)) -- an iteration-dependent
+        term that reshapes the weighting curve from gentle/logistic-like
+        at low iterations to a near step-function at high iterations,
+        which is specifically what stops it from overestimating under
+        small peaks the way arPLS can (Ye et al.'s own stated mechanism,
+        Figure 1). The exponent is capped at iteration 100 since the
+        curve is already effectively a step function well before then,
+        matching the choice made by the open-source implementation this
+        was cross-checked against -- unlike arPLS's raw exp() weighting,
+        this ISRU form is self-normalizing and never overflows, so no
+        separate exponent clipping is needed here.
+
+        exclude_indices handling, the try/except-then-NaN failure
+        contract, and the post-hoc interpolation through excluded points
+        all mirror calculate_arpls_baseline exactly -- see that method's
+        docstring for the full reasoning.
+
+        Reference: J. Ye, Z. Tian, H. Wei, and Y. Li, "Baseline
+        correction method based on improved asymmetrically reweighted
+        penalized least squares for the Raman spectrum." Applied
+        Optics 59(34), 10933-10943 (2020).
+        """
+        L = len(y)
+        w = np.ones(L)
+        z = y.copy()
+
+        try:
+            for i in range(1, itermax + 1):
+                z = self._whittaker_smooth(y, w, lam, differences=2)
+                d = y - z
+                neg = d < 0
+
+                if np.count_nonzero(neg) < 2:
+                    # Fewer than 2 negative-residual points makes the
+                    # sample standard deviation below (ddof=1) undefined
+                    # -- same early-exit condition used by the reference
+                    # implementation this was checked against.
+                    break
+
+                s = np.std(d[neg], ddof=1)
+                if s == 0:
+                    break
+
+                growth = np.exp(min(i, 100))
+                inner = (growth / s) * (d - 2.0 * s)
+                w_new = 0.5 * (1.0 - inner / np.sqrt(1.0 + inner ** 2))
+                w_new = w_new * ~exclude_indices if exclude_indices is not None else w_new
+
+                denom = np.linalg.norm(w)
+                converged = denom > 0 and np.linalg.norm(w_new - w) / denom < ratio
+                w = w_new
+                if converged:
+                    break
+        except Exception as e:
+            logger.error(f"Warning: Linear algebra error during iarPLS fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        # Same post-hoc interpolation through excluded regions as
+        # calculate_arpls_baseline -- see calculate_als_baseline for why.
         if exclude_indices is not None and np.any(exclude_indices):
             included_indices = np.where(~exclude_indices)[0]
             if len(included_indices) < 2:
@@ -542,17 +633,20 @@ class AutomatedBaselineManager:
 
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
-        'airpls', 'arpls', 'imodpoly', or 'morphological'.
+        'airpls', 'arpls', 'iarpls', 'imodpoly', or 'morphological'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
         is_arpls = (algorithm == 'arpls')
+        is_iarpls = (algorithm == 'iarpls')
         is_imodpoly = (algorithm == 'imodpoly')
         is_morph = (algorithm == 'morphological')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
             default_lam, default_n_iter = 1e5, 50
+        elif is_iarpls:
+            default_lam, default_n_iter = 1e5, 100  # same lambda scale as arPLS; itermax higher since iarpls's weighting keeps sharpening up to iteration 100
         elif is_imodpoly:
             default_lam, default_n_iter = 1e6, 100  # lambda unused by I-ModPoly; n_iter is its itermax safety cap
         elif is_morph:
@@ -595,6 +689,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_arpls_baseline(
                     y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'arPLS'
+            elif is_iarpls:
+                baseline = self.calculate_iarpls_baseline(
+                    y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'iarPLS'
             elif is_imodpoly:
                 baseline = self.calculate_imodpoly_baseline(
                     x_scale, y_scale, poly_order=poly_order, itermax=n_iter, exclude_indices=exclude_mask)
@@ -642,7 +740,7 @@ class AutomatedBaselineManager:
                 pass  # fully parameter-free -- no lambda, p, or poly_order applies
             else:
                 entry_fields['lambda'] = lam
-                if not is_airpls and not is_arpls:
+                if not is_airpls and not is_arpls and not is_iarpls:
                     entry_fields['p'] = p
             # Shared, chronologically-ordered history across every
             # operation type that records one (see correction_history.py).

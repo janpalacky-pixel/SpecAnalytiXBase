@@ -1187,7 +1187,8 @@ def get_user_guide_help_content():
         <h3 id="auto-baseline">Automated Baseline <a href="help://automated_baseline" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
         <p>Fits a baseline automatically without manual point placement, using
         ALS (Asymmetric Least Squares), airPLS (adaptive iteratively reweighted
-        PLS), arPLS (asymmetrically reweighted PLS), I-ModPoly (a global
+        PLS), arPLS (asymmetrically reweighted PLS), iarPLS (an improved arPLS
+        that fixes its small-peak overestimation), I-ModPoly (a global
         polynomial fit with iterative peak rejection), or Morphological Opening
         (parameter-free, adaptive structuring element) — selectable in the dialog, with one-click "Region Shortcut" presets
         (e.g. water band, for aqueous/biological samples) that add straight into

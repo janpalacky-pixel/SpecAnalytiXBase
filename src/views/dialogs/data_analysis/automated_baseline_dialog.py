@@ -178,6 +178,13 @@ class AutomatedBaselineDialog(QDialog):
             10 * np.log10(arpls_lam_val), self.arpls_lam_slider.minimum(), self.arpls_lam_slider.maximum()))
         self.arpls_lam_slider.setValue(slider_arpls_lam_val)
 
+        # Load lambda (smoothness) -- iarPLS, same scale as arPLS's own
+        # slider (see create_control_panel).
+        iarpls_lam_val = self.current_settings.get('lambda', 1e5) if algorithm == 'iarpls' else 1e5
+        slider_iarpls_lam_val = int(np.clip(
+            10 * np.log10(iarpls_lam_val), self.iarpls_lam_slider.minimum(), self.iarpls_lam_slider.maximum()))
+        self.iarpls_lam_slider.setValue(slider_iarpls_lam_val)
+
         # Load polynomial order -- I-ModPoly, no log-scale slider needed
         # since it's a plain small integer, not a smoothness magnitude.
         poly_order_val = self.current_settings.get('poly_order', 5) if algorithm == 'imodpoly' else 5
@@ -238,6 +245,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("ALS (Asymmetric Least Squares)", "als")
         self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
+        self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
@@ -319,6 +327,32 @@ class AutomatedBaselineDialog(QDialog):
         arpls_note.setStyleSheet("color: gray; font-style: italic;")
         arpls_layout.addWidget(arpls_note)
 
+        # iarPLS Parameters -- its own lambda slider, same scale as
+        # arPLS's (arPLS's second-order-penalty solver, unchanged): the
+        # improvement over arPLS here is entirely in the per-iteration
+        # weight formula (see calculate_iarpls_baseline), not the
+        # smoothness penalty, so the slider itself is identical in
+        # range/behavior to arPLS's own.
+        iarpls_params_page = QWidget()
+        iarpls_layout = QVBoxLayout(iarpls_params_page)
+        iarpls_layout.setContentsMargins(0, 0, 0, 0)
+        iarpls_lam_label = QLabel("Smoothness (λ): 1e5.0")
+        self.iarpls_lam_slider = QSlider(Qt.Horizontal)
+        self.iarpls_lam_slider.setRange(20, 90)
+        self.iarpls_lam_slider.setValue(50)  # 10*log10(1e5)
+        self.iarpls_lam_slider.valueChanged.connect(
+            lambda v: iarpls_lam_label.setText(f"Smoothness (λ): 1e{v/10:.1f}"))
+        self.iarpls_lam_slider.valueChanged.connect(self.update_preview)
+        iarpls_layout.addWidget(iarpls_lam_label); iarpls_layout.addWidget(self.iarpls_lam_slider)
+        iarpls_note = QLabel(
+            "A fix for arPLS's known tendency to overestimate the\n"
+            "baseline under small peaks in noisy data -- same λ slider,\n"
+            "different internal weighting. Try this first if arPLS\n"
+            "seems to sit a bit high under small peaks."
+        )
+        iarpls_note.setStyleSheet("color: gray; font-style: italic;")
+        iarpls_layout.addWidget(iarpls_note)
+
         # I-ModPoly Parameters -- a single polynomial order, not a
         # lambda: I-ModPoly fits one global low-order polynomial rather
         # than a locally-penalized smooth curve, so it isn't part of the
@@ -374,8 +408,9 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(als_params_page)       # index 0 == 'als'
         self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
-        self.params_stack.addWidget(imodpoly_params_page)  # index 3 == 'imodpoly'
-        self.params_stack.addWidget(morph_params_page)     # index 4 == 'morphological'
+        self.params_stack.addWidget(iarpls_params_page)    # index 3 == 'iarpls'
+        self.params_stack.addWidget(imodpoly_params_page)  # index 4 == 'imodpoly'
+        self.params_stack.addWidget(morph_params_page)     # index 5 == 'morphological'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -649,6 +684,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'arpls':
             baseline = self.manager.calculate_arpls_baseline(
                 y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'iarpls':
+            baseline = self.manager.calculate_iarpls_baseline(
+                y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         elif settings['algorithm'] == 'imodpoly':
             baseline = self.manager.calculate_imodpoly_baseline(
                 x, y, poly_order=settings['poly_order'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
@@ -730,6 +768,14 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'arpls',
                 'lambda': 10**(self.arpls_lam_slider.value() / 10.0),
                 'n_iter': 50,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'iarpls':
+            return {
+                'algorithm': 'iarpls',
+                'lambda': 10**(self.iarpls_lam_slider.value() / 10.0),
+                'n_iter': 100,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }
