@@ -85,7 +85,7 @@ class AutomatedBaselineController:
 
             if add_as_new:
                 # Suffix reflects which algorithm actually ran — 'als',
-                # 'airpls', 'arpls', 'iarpls', 'imodpoly', or
+                # 'airpls', 'arpls', 'iarpls', 'psalsa', 'imodpoly', or
                 # 'morphological' (settings['algorithm'], defaulting to
                 # 'als' for any settings dict saved before airPLS existed).
                 algo_suffix = settings.get('algorithm', 'als')

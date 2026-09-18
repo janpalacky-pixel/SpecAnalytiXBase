@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Six algorithms,
+    Business logic for automated baseline correction. Seven algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -32,6 +32,16 @@ class AutomatedBaselineManager:
         logistic one) that specifically fixes arPLS's tendency to
         overestimate the baseline under small peaks in noisy data (see
         calculate_iarpls_baseline).
+      - 'psalsa': peaked signal's asymmetric least squares algorithm
+        (Oller-Moreno, Pardo, Jimenez-Soto, Samitier & Marco, 2014) --
+        same second-order-penalty Whittaker solver and lambda scale as
+        ALS, but replaces ALS's hard p/(1-p) split with an exponential
+        decay on the weight of any point above the current baseline fit
+        (points at or below it still get the fixed 1-p weight) -- tall
+        peaks are suppressed smoothly rather than being all-or-nothing
+        rejected, which the reference reports allows using a higher
+        (less extreme) asymmetry p than plain ALS while still fitting
+        noisy data well (see calculate_psalsa_baseline).
       - 'imodpoly': Improved Modified Polynomial fit (Zhao, Lui, McLean
         & Zeng, 2007) — fits a single low-order polynomial rather than a
         Whittaker-smoothed curve, with its own iterative peak-rejection
@@ -46,7 +56,7 @@ class AutomatedBaselineManager:
         structuring-element size that the other three methods would ask
         the user to choose is instead grown automatically until the
         result stops changing (see calculate_morphological_baseline).
-    All six support region exclusion via params['fitting_ranges'] +
+    All seven support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -364,6 +374,89 @@ class AutomatedBaselineManager:
 
         return z
 
+    def calculate_psalsa_baseline(self, y, lam, p=0.5, k=None, itermax=50, ratio=0.001, exclude_indices=None):
+        """
+        Calculates a baseline using psalsa (peaked signal's asymmetric
+        least squares algorithm), ignoring specified regions the same
+        way calculate_als_baseline does.
+
+        Reuses the same second-order-penalty Whittaker solver as
+        calculate_arpls_baseline/calculate_iarpls_baseline
+        (_whittaker_smooth, differences=2) -- the same penalty order,
+        and therefore the same lambda scale, as calculate_als_baseline's
+        own hand-rolled solve. Where ALS gives every point above the
+        current fit the same fixed weight p regardless of how far above
+        it sits, psalsa instead decays that weight exponentially with
+        the residual's size: w = p * exp(-residual / k) for points above
+        the baseline (residual = y - z > 0), and the fixed 1 - p for
+        points at or below it. A tall peak's weight collapses toward 0
+        almost immediately while a small bump keeps a meaningful
+        fraction of p -- which is what lets p itself be set less
+        aggressively (e.g. 0.5) than plain ALS typically needs (e.g.
+        0.01) while still suppressing real peaks, per the reference. k
+        sets the residual scale the decay runs on -- roughly "how tall
+        counts as a peak" -- and defaults to one-tenth of the spectrum's
+        own standard deviation when not given, matching the default used
+        by the open-source implementation this was cross-checked
+        against. Convergence is checked the same way as
+        calculate_arpls_baseline/calculate_iarpls_baseline (relative
+        change in the weight vector via `ratio`), since unlike ALS's
+        fixed p/(1-p) split, psalsa's weights do settle rather than
+        oscillate indefinitely.
+
+        exclude_indices handling, the try/except-then-NaN failure
+        contract, and the post-hoc interpolation through excluded points
+        all mirror calculate_als_baseline/calculate_arpls_baseline --
+        see calculate_als_baseline's docstring for the full reasoning.
+
+        Reference: S. Oller-Moreno, A. Pardo, J. M. Jimenez-Soto,
+        J. Samitier, and S. Marco, "Adaptive Asymmetric Least Squares
+        baseline estimation for analytical instruments." 2014 IEEE 11th
+        International Multi-Conference on Systems, Signals & Devices
+        (SSD14), 1-5 (2014).
+        """
+        L = len(y)
+        if k is None:
+            k = np.std(y) / 10.0
+        w = np.ones(L)
+        z = y.copy()
+
+        try:
+            if k == 0:
+                # A perfectly flat input has nothing for the exponential
+                # decay to scale against -- fall back to a plain fixed
+                # p/(1-p) split (k's role becomes moot: every residual
+                # is 0 too, so there's no peak to suppress anyway).
+                k = 1.0
+            for _ in range(itermax):
+                z = self._whittaker_smooth(y, w, lam, differences=2)
+                d = y - z
+                above = d > 0
+
+                w_new = np.full(L, 1.0 - p)
+                w_new[above] = p * np.exp(-d[above] / k)
+                w_new = w_new * ~exclude_indices if exclude_indices is not None else w_new
+
+                denom = np.linalg.norm(w)
+                converged = denom > 0 and np.linalg.norm(w_new - w) / denom < ratio
+                w = w_new
+                if converged:
+                    break
+        except Exception as e:
+            logger.error(f"Warning: Linear algebra error during psalsa fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        # Same post-hoc interpolation through excluded regions as
+        # calculate_als_baseline -- see that method for why.
+        if exclude_indices is not None and np.any(exclude_indices):
+            included_indices = np.where(~exclude_indices)[0]
+            if len(included_indices) < 2:
+                logger.warning("Warning: Not enough included points to create a reliable baseline.")
+                return np.full_like(y, np.nan)
+            z = np.interp(np.arange(L), included_indices, z[included_indices])
+
+        return z
+
     def calculate_imodpoly_baseline(self, x, y, poly_order=5, itermax=100, tol=0.05, exclude_indices=None):
         """
         Calculates a baseline using I-ModPoly (Improved Modified
@@ -633,12 +726,14 @@ class AutomatedBaselineManager:
 
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
-        'airpls', 'arpls', 'iarpls', 'imodpoly', or 'morphological'.
+        'airpls', 'arpls', 'iarpls', 'psalsa', 'imodpoly', or
+        'morphological'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
         is_arpls = (algorithm == 'arpls')
         is_iarpls = (algorithm == 'iarpls')
+        is_psalsa = (algorithm == 'psalsa')
         is_imodpoly = (algorithm == 'imodpoly')
         is_morph = (algorithm == 'morphological')
         if is_airpls:
@@ -647,6 +742,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e5, 50
         elif is_iarpls:
             default_lam, default_n_iter = 1e5, 100  # same lambda scale as arPLS; itermax higher since iarpls's weighting keeps sharpening up to iteration 100
+        elif is_psalsa:
+            default_lam, default_n_iter = 1e6, 50  # same lambda scale as ALS -- psalsa reuses ALS's second-order penalty, just a different weight formula
         elif is_imodpoly:
             default_lam, default_n_iter = 1e6, 100  # lambda unused by I-ModPoly; n_iter is its itermax safety cap
         elif is_morph:
@@ -654,7 +751,12 @@ class AutomatedBaselineManager:
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
-        p = params.get('p', 0.01)
+        # psalsa's exponential peak-decay weighting lets p sit much
+        # higher than ALS's own default without under-suppressing real
+        # peaks -- 0.5 matches the value used in the reference/the
+        # open-source implementation this was checked against.
+        default_p = 0.5 if is_psalsa else 0.01
+        p = params.get('p', default_p)
         n_iter = params.get('n_iter', default_n_iter)
         poly_order = params.get('poly_order', 5)
         fitting_ranges = params.get('fitting_ranges', [])
@@ -693,6 +795,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_iarpls_baseline(
                     y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'iarPLS'
+            elif is_psalsa:
+                baseline = self.calculate_psalsa_baseline(
+                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'psalsa'
             elif is_imodpoly:
                 baseline = self.calculate_imodpoly_baseline(
                     x_scale, y_scale, poly_order=poly_order, itermax=n_iter, exclude_indices=exclude_mask)

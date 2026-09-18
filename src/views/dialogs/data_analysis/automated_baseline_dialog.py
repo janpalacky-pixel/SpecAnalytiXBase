@@ -185,6 +185,19 @@ class AutomatedBaselineDialog(QDialog):
             10 * np.log10(iarpls_lam_val), self.iarpls_lam_slider.minimum(), self.iarpls_lam_slider.maximum()))
         self.iarpls_lam_slider.setValue(slider_iarpls_lam_val)
 
+        # Load lambda (smoothness) and p (asymmetry) -- psalsa, its own
+        # sliders again: lambda on ALS's scale (see create_control_panel),
+        # p on its own 0.01-0.99 range since psalsa's natural p (0.5)
+        # sits far outside ALS's own p slider's range.
+        psalsa_lam_val = self.current_settings.get('lambda', 1e6) if algorithm == 'psalsa' else 1e6
+        slider_psalsa_lam_val = int(np.clip(
+            10 * np.log10(psalsa_lam_val), self.psalsa_lam_slider.minimum(), self.psalsa_lam_slider.maximum()))
+        self.psalsa_lam_slider.setValue(slider_psalsa_lam_val)
+        psalsa_p_val = self.current_settings.get('p', 0.5) if algorithm == 'psalsa' else 0.5
+        slider_psalsa_p_val = int(np.clip(
+            psalsa_p_val * 100, self.psalsa_p_slider.minimum(), self.psalsa_p_slider.maximum()))
+        self.psalsa_p_slider.setValue(slider_psalsa_p_val)
+
         # Load polynomial order -- I-ModPoly, no log-scale slider needed
         # since it's a plain small integer, not a smoothness magnitude.
         poly_order_val = self.current_settings.get('poly_order', 5) if algorithm == 'imodpoly' else 5
@@ -246,6 +259,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
         self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls")
+        self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
@@ -353,6 +367,43 @@ class AutomatedBaselineDialog(QDialog):
         iarpls_note.setStyleSheet("color: gray; font-style: italic;")
         iarpls_layout.addWidget(iarpls_note)
 
+        # psalsa Parameters -- its own λ slider on ALS's scale (same
+        # second-order-penalty solver, same range/default as the ALS
+        # slider above), plus its own Asymmetry (p) slider -- unlike
+        # airPLS/arPLS/iarPLS, psalsa's weighting still uses p the way
+        # ALS's does, just with an exponential decay above the fit
+        # instead of ALS's hard split, which is what lets its natural p
+        # sit much higher than ALS's own (0.5 vs. 0.01) -- see
+        # calculate_psalsa_baseline.
+        psalsa_params_page = QWidget()
+        psalsa_layout = QVBoxLayout(psalsa_params_page)
+        psalsa_layout.setContentsMargins(0, 0, 0, 0)
+        psalsa_lam_label = QLabel("Smoothness (\u03bb): 1e6.0")
+        self.psalsa_lam_slider = QSlider(Qt.Horizontal)
+        self.psalsa_lam_slider.setRange(20, 90)
+        self.psalsa_lam_slider.setValue(60)  # 10*log10(1e6)
+        self.psalsa_lam_slider.valueChanged.connect(
+            lambda v: psalsa_lam_label.setText(f"Smoothness (\u03bb): 1e{v/10:.1f}"))
+        self.psalsa_lam_slider.valueChanged.connect(self.update_preview)
+        psalsa_layout.addWidget(psalsa_lam_label); psalsa_layout.addWidget(self.psalsa_lam_slider)
+
+        psalsa_p_label = QLabel("Asymmetry (p): 0.50")
+        self.psalsa_p_slider = QSlider(Qt.Horizontal)
+        self.psalsa_p_slider.setRange(1, 99)
+        self.psalsa_p_slider.setValue(50)
+        self.psalsa_p_slider.valueChanged.connect(
+            lambda v: psalsa_p_label.setText(f"Asymmetry (p): {v/100:.2f}"))
+        self.psalsa_p_slider.valueChanged.connect(self.update_preview)
+        psalsa_layout.addWidget(psalsa_p_label); psalsa_layout.addWidget(self.psalsa_p_slider)
+        psalsa_note = QLabel(
+            "Peaks are suppressed by exponential decay rather than a\n"
+            "hard cutoff, which is why a higher p than ALS's still\n"
+            "works well here. The decay's own peak-height scale (k)\n"
+            "is set automatically from the spectrum's noise level."
+        )
+        psalsa_note.setStyleSheet("color: gray; font-style: italic;")
+        psalsa_layout.addWidget(psalsa_note)
+
         # I-ModPoly Parameters -- a single polynomial order, not a
         # lambda: I-ModPoly fits one global low-order polynomial rather
         # than a locally-penalized smooth curve, so it isn't part of the
@@ -409,8 +460,9 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
         self.params_stack.addWidget(iarpls_params_page)    # index 3 == 'iarpls'
-        self.params_stack.addWidget(imodpoly_params_page)  # index 4 == 'imodpoly'
-        self.params_stack.addWidget(morph_params_page)     # index 5 == 'morphological'
+        self.params_stack.addWidget(psalsa_params_page)    # index 4 == 'psalsa'
+        self.params_stack.addWidget(imodpoly_params_page)  # index 5 == 'imodpoly'
+        self.params_stack.addWidget(morph_params_page)     # index 6 == 'morphological'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -687,6 +739,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'iarpls':
             baseline = self.manager.calculate_iarpls_baseline(
                 y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'psalsa':
+            baseline = self.manager.calculate_psalsa_baseline(
+                y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         elif settings['algorithm'] == 'imodpoly':
             baseline = self.manager.calculate_imodpoly_baseline(
                 x, y, poly_order=settings['poly_order'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
@@ -776,6 +831,15 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'iarpls',
                 'lambda': 10**(self.iarpls_lam_slider.value() / 10.0),
                 'n_iter': 100,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'psalsa':
+            return {
+                'algorithm': 'psalsa',
+                'lambda': 10**(self.psalsa_lam_slider.value() / 10.0),
+                'p': self.psalsa_p_slider.value() / 100.0,
+                'n_iter': 50,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }
