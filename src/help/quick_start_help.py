@@ -221,9 +221,9 @@ def get_quick_start_help_content():
             <tr><td>Manual Baseline</td><td>Click points on the plot to define a
                 baseline, interpolated between them</td>
                 <td><a href="help://manual_baseline">Open help</a></td></tr>
-            <tr><td>Automated Baseline (ALS / airPLS / arPLS / iarPLS / asPLS / drPLS / psalsa / I-ModPoly / Morphological / mpls / Mollification / mpspline)</td><td>Twelve automatic baseline
+            <tr><td>Automated Baseline (ALS / airPLS / arPLS / iarPLS / asPLS / drPLS / psalsa / I-ModPoly / Morphological / mpls / Mollification / mpspline / jbcd)</td><td>Thirteen automatic baseline
                 algorithms (Asymmetric Least Squares, adaptive iteratively
-                reweighted PLS, asymmetrically reweighted PLS, an improved arPLS fixing its small-peak overestimation, an arPLS variant with a point-by-point adaptive smoothness penalty, an arPLS variant with a second, peak-region-specific relaxation control, a peak-decay variant of ALS, a global polynomial fit with iterative peak rejection, parameter-free adaptive morphological opening, a morphology-plus-single-solve hybrid of the two, a parameter-free morphology-plus-convolution hybrid, or a morphology-plus-spline hybrid), with one-click region-shortcut presets (e.g. water band)</td>
+                reweighted PLS, asymmetrically reweighted PLS, an improved arPLS fixing its small-peak overestimation, an arPLS variant with a point-by-point adaptive smoothness penalty, an arPLS variant with a second, peak-region-specific relaxation control, a peak-decay variant of ALS, a global polynomial fit with iterative peak rejection, parameter-free adaptive morphological opening, a morphology-plus-single-solve hybrid of the two, a parameter-free morphology-plus-convolution hybrid, a morphology-plus-spline hybrid, or a joint baseline/denoising solve pulled toward a morphological opening), with one-click region-shortcut presets (e.g. water band)</td>
                 <td><a href="help://automated_baseline">Open help</a></td></tr>
             <tr><td>SNIP Baseline</td><td>Statistics-sensitive Non-linear Iterative
                 Peak-clipping — another automatic baseline estimator</td>

@@ -1463,6 +1463,197 @@ class AutomatedBaselineManager:
             return baseline_fit
         return np.interp(np.arange(L), included_indices, baseline_fit)
 
+    def calculate_jbcd_baseline(self, y, alpha=0.1, beta=10.0, itermax=300,
+                                 exclude_indices=None):
+        """
+        Calculates a baseline using jbcd (joint baseline-correction and
+        denoising), ignoring specified regions the same way
+        calculate_morphological_baseline does -- exclusion is handled
+        identically here since this method starts from that same
+        morphological opening step.
+
+        Unlike every other hybrid here (mpls, mpspline), which use
+        morphology once to pick a handful of anchor points and then
+        solve a single weighted system through them, jbcd never singles
+        out individual anchor points at all. Instead it solves a single
+        joint energy function for a *smooth, denoised spectrum* f and a
+        *smooth baseline* b together, minimizing
+
+            E(f,b) = (1/2)||f+b-g||^2 + alpha*||b-Og||^2
+                     + beta_t*||D1 b||^2 + gamma_t*||D1 f||^2
+
+        where g is the raw spectrum, Og is the morphological opening of
+        g (the same auto-grown-window opening
+        calculate_morphological_baseline uses, but *without* that
+        method's own erosion/dilation-averaged refinement step -- the
+        reference's own Eq. 5 defines Og as the plain opening,
+        erosion-then-dilation, nothing more), and D1 is the first-
+        difference operator (D1 x)_i = x_{i+1}-x_i, so ||D1 x||^2 is a
+        roughness/Tikhonov penalty on x's own slope (not curvature, the
+        way ALS's second-difference D penalizes -- a real difference
+        from every Whittaker-family method in this class). The first
+        term keeps f+b a faithful reconstruction of g; the second pulls
+        b toward the morphology-based guide Og (weight alpha, fixed
+        throughout); the third and fourth smooth b and f respectively,
+        at their own weights beta_t and gamma_t, which change every
+        iteration (see below) rather than staying fixed like every
+        other algorithm's lambda.
+
+        Solved by alternating minimization (the reference's own
+        two-step scheme): fix b, solve the resulting linear system for
+        f; fix that f, solve the resulting linear system for b; repeat
+        until both stop changing appreciably. Each half-step is an
+        ordinary weighted Tikhonov/Whittaker-style solve --
+
+            Step f: (I + 2*gamma_t*D1^T D1) f = (g-b)
+            Step b: [(1+2*alpha)*I + 2*beta_t*D1^T D1] b
+                        = (g-f) + 2*alpha*Og
+
+        -- so both are solved directly via the existing
+        _whittaker_smooth helper (an exact sparse linear solve) rather
+        than the reference's own conjugate-gradient iteration: the two
+        are mathematically equivalent at convergence (both minimize the
+        same convex quadratic), and a direct solve is both simpler and
+        exact rather than approximate, the same substitution this
+        codebase already makes for the Whittaker family generally
+        (ALS's own iterative reweighting solves each step exactly via
+        spsolve, not by hand-rolled gradient descent either).
+
+        beta_t and gamma_t are annealed every iteration exactly as the
+        reference specifies -- beta_t *= 1.2, gamma_t /= 1.1, starting
+        from small/large internal initial values respectively -- which
+        the reference describes as shifting weight from denoising
+        toward fidelity as the fit settles. One real numerical issue
+        found during testing, not in the reference: run long enough
+        (compared to this codebase's own synthetic test fixture, tens
+        of iterations more than the reference's own reported ~75-
+        iteration convergence on their test spectra), beta_t's
+        unbounded exponential growth eventually swamps the +2*alpha*I
+        term in the b-step's matrix to the point of floating-point
+        breakdown (SciPy warns the matrix is "exactly singular"),
+        collapsing b to a near-constant flat line regardless of alpha.
+        Fixed by capping beta_t's growth at the user-facing `beta`
+        value -- not in the reference, which doesn't anneal long enough
+        on its own examples to hit this -- rather than letting it grow
+        without bound.
+
+        Testing also found that the initial values beta_t and gamma_t
+        anneal *from*, and the exact 1.2/1.1 ratios themselves, only
+        change how many iterations convergence takes -- not the
+        converged baseline itself (confirmed directly: varying either
+        initial value by eight orders of magnitude changed the
+        converged b by no more than ~1e-4). Only alpha and the beta
+        ceiling actually change the returned baseline, so those are the
+        only two exposed as dialog sliders -- not three, despite the
+        reference nominally having three regularization parameters
+        (alpha, beta, gamma) -- with gamma's own initial value, decay
+        ratio, and floor, and beta's initial value and growth ratio,
+        all fixed internally instead (same reasoning as mpspline's
+        internal-only lam_smooth: exposing a parameter the fit doesn't
+        actually depend on would just mislead, not help).
+
+        A perfectly flat spectrum has no internal structure for D1 to
+        penalize at all (D1's null space is exactly the constant
+        vector), so it's recovered essentially exactly -- verified
+        numerically, no special-case fallback needed here, the same
+        situation calculate_mollification_baseline's own docstring
+        describes for the same reason.
+
+        Reference: H. Liu, Z. Zhang, S. Liu, L. Yan, T. Liu, and T.
+        Zhang, "Joint Baseline-Correction and Denoising for Raman
+        Spectra." Applied Spectroscopy 69(9), 1013-1022 (2015). DOI:
+        10.1366/14-07760.
+        """
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        included_indices = np.where(include_mask)[0]
+        n = len(included_indices)
+        if n < 3:
+            logger.warning("Warning: Not enough included points for jbcd.")
+            return np.full_like(y, np.nan)
+
+        y_work = y[included_indices]
+
+        # Internal-only constants -- see docstring for why these three
+        # (plus the growth/decay ratios themselves) aren't exposed as
+        # sliders. gamma_min is this implementation's own defensive
+        # floor (not in the reference), stopping gamma_t underflowing
+        # to exactly zero over many iterations.
+        gamma_init = 10.0
+        beta_init = 1e-6
+        beta_growth = 1.2
+        gamma_decay = 1.1
+        gamma_min = 1e-3
+        tol = 1e-6
+
+        try:
+            # Og: the plain morphological opening (erosion then
+            # dilation), growing the structuring-element window exactly
+            # as calculate_morphological_baseline does -- but stopping
+            # there, without that method's own extra refinement step
+            # (see docstring).
+            window = 3
+            window_history = []
+            opening_history = []
+            optimal_opening = None
+            for _ in range(itermax):
+                if window > n:
+                    break
+                eroded = grey_erosion(y_work, size=window, mode='nearest')
+                opening = grey_dilation(eroded, size=window, mode='nearest')
+                window_history.append(window)
+                opening_history.append(opening)
+                if len(opening_history) >= 3:
+                    a, b_hist, c = opening_history[-3:]
+                    if np.array_equal(a, b_hist) and np.array_equal(b_hist, c):
+                        optimal_opening = a
+                        break
+                window += 2
+            if optimal_opening is None:
+                optimal_opening = opening_history[-1]
+            Og = optimal_opening
+
+            f = y_work.copy()
+            b = Og.copy()
+            gamma_t = gamma_init
+            beta_t = beta_init
+            ones = np.ones(n)
+            converged_count = 0
+            for _ in range(itermax):
+                f_prev, b_prev = f, b
+
+                # Step f (Eq. 11 of the reference).
+                f = self._whittaker_smooth(y_work - b, ones, 2 * gamma_t, differences=1)
+                gamma_t = max(gamma_t / gamma_decay, gamma_min)
+
+                # Step b (Eq. 13 of the reference).
+                combined_target = ((y_work - f) + 2 * alpha * Og) / (1 + 2 * alpha)
+                b = self._whittaker_smooth(
+                    combined_target, np.full(n, 1 + 2 * alpha), 2 * beta_t, differences=1)
+                beta_t = min(beta_t * beta_growth, beta)
+
+                denom_f = np.linalg.norm(f_prev)
+                denom_b = np.linalg.norm(b_prev)
+                rel_f = np.linalg.norm(f - f_prev) / denom_f if denom_f > 0 else np.linalg.norm(f - f_prev)
+                rel_b = np.linalg.norm(b - b_prev) / denom_b if denom_b > 0 else np.linalg.norm(b - b_prev)
+                # "More than two consecutive iterations" below both
+                # thresholds, per the reference's own Algorithm 1.
+                if rel_f < tol and rel_b < tol:
+                    converged_count += 1
+                    if converged_count > 2:
+                        break
+                else:
+                    converged_count = 0
+        except Exception as e:
+            logger.error(f"Warning: Error during jbcd fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        if n == L:
+            return b
+        return np.interp(np.arange(L), included_indices, b)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
@@ -1491,8 +1682,8 @@ class AutomatedBaselineManager:
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
         'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
-        'imodpoly', 'morphological', 'mpls', 'mollification', or
-        'mpspline'.
+        'imodpoly', 'morphological', 'mpls', 'mollification',
+        'mpspline', or 'jbcd'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -1506,6 +1697,7 @@ class AutomatedBaselineManager:
         is_mpls = (algorithm == 'mpls')
         is_mollification = (algorithm == 'mollification')
         is_mpspline = (algorithm == 'mpspline')
+        is_jbcd = (algorithm == 'jbcd')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
@@ -1528,6 +1720,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e6, 200  # lambda unused -- no system of equations to solve at all; n_iter is the convolution-loop's own itermax (distinct from the structuring-element growth cap, fixed internally at 300)
         elif is_mpspline:
             default_lam, default_n_iter = 1e4, 300  # a different lambda scale than every other method here -- this one penalizes ~100 spline coefficients directly, not the data grid, so it isn't comparable to ALS/mpls's 1e6; matches the open-source implementation's own default. n_iter is the shared structuring-element growth-step cap
+        elif is_jbcd:
+            default_lam, default_n_iter = 1e6, 300  # lambda unused -- jbcd has its own alpha/beta regularization pair instead; n_iter is the shared alternating-minimization itermax (also bounds the structuring-element growth loop for its own Og step)
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
@@ -1551,6 +1745,11 @@ class AutomatedBaselineManager:
         eta = params.get('eta', 0.5)
         n_iter = params.get('n_iter', default_n_iter)
         poly_order = params.get('poly_order', 5)
+        # jbcd's own two exposed regularization weights -- see
+        # calculate_jbcd_baseline's docstring for why only these two
+        # (of the reference's nominal three) are user-facing.
+        alpha = params.get('alpha', 0.1)
+        beta = params.get('beta', 10.0)
         fitting_ranges = params.get('fitting_ranges', [])
         invert_regions = params.get('invert_regions', False)
 
@@ -1619,6 +1818,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_mpspline_baseline(
                     y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'mpspline'
+            elif is_jbcd:
+                baseline = self.calculate_jbcd_baseline(
+                    y_scale, alpha=alpha, beta=beta, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'jbcd'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'
@@ -1656,6 +1859,9 @@ class AutomatedBaselineManager:
                 entry_fields['poly_order'] = poly_order
             elif is_morph or is_mollification:
                 pass  # fully parameter-free -- no lambda, p, or poly_order applies
+            elif is_jbcd:
+                entry_fields['alpha'] = alpha
+                entry_fields['beta'] = beta
             else:
                 entry_fields['lambda'] = lam
                 if not is_airpls and not is_arpls and not is_iarpls and not is_aspls and not is_drpls:

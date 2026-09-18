@@ -1199,10 +1199,13 @@ def get_user_guide_help_content():
         locate anchor points, then a single non-iterative ALS-style solve
         through them), Morphology + Mollification (parameter-free,
         repeated min/max operations smoothed by a fixed convolution
-        kernel, no system of equations to solve at all), or mpspline
+        kernel, no system of equations to solve at all), mpspline
         (morphology to locate anchor points as mpls does, but a single
         non-iterative cubic-spline solve through them instead of mpls's
-        direct Whittaker smoother)
+        direct Whittaker smoother), or jbcd (never singles out anchor
+        points at all -- alternates solving a joint baseline-plus-
+        denoising equation, both pulled toward the same morphological
+        opening)
         — selectable in the dialog, with one-click "Region Shortcut" presets
         (e.g. water band, for aqueous/biological samples) that add straight into
         the fitting-regions table. Useful for batch processing where manual

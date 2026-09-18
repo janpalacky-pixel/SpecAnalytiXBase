@@ -1841,12 +1841,14 @@ class OperationParametersDialog(QDialog):
     def setup_automated_baseline_parameters(self):
         """Parameters table for Automated Baseline (ALS, airPLS, arPLS,
         iarPLS, asPLS, drPLS, psalsa, I-ModPoly, Morphological Opening,
-        mpls, Morphology + Mollification, or mpspline — see the
+        mpls, Morphology + Mollification, mpspline, or jbcd — see the
         'algorithm' entry; 'p' applies to ALS, psalsa, mpls and mpspline
         (a different quantity in each of the last two — see
         calculate_mpls_baseline/calculate_mpspline_baseline for their
         own meaning), 'eta'
-        only to drPLS, 'poly_order' only to I-ModPoly, and Morphological
+        only to drPLS, 'poly_order' only to I-ModPoly, 'alpha'/'beta'
+        only to jbcd (its own two-parameter pair, unrelated to
+        lambda/p — see calculate_jbcd_baseline), and Morphological
         Opening / Morphology + Mollification have neither (both fully
         parameter-free) — each blank on any row it doesn't apply to,
         same as any other key missing from a given entry)."""
@@ -1854,15 +1856,15 @@ class OperationParametersDialog(QDialog):
             "Per-Spectrum Detail", "Click to view the baseline result used per spectrum",
             operation_tag='Automated Baseline',
             entry_keys=['success', 'algorithm', 'lambda', 'p', 'eta', 'poly_order',
-                        'iterations', 'fitting_ranges', 'inverted_regions'])
+                        'alpha', 'beta', 'iterations', 'fitting_ranges', 'inverted_regions'])
 
     def show_automated_baseline_details_dialog(self):
         self.show_per_spectrum_details_dialog(
             'Automated Baseline', 'Baseline result by spectrum',
             ['Spectrum', 'Success', 'Algorithm', 'Lambda', 'P', 'Eta', 'Poly Order',
-             'Iterations', 'Fitting Ranges', 'Inverted Regions'],
-            ['success', 'algorithm', 'lambda', 'p', 'eta', 'poly_order', 'iterations',
-             'fitting_ranges', 'inverted_regions'],
+             'Alpha', 'Beta', 'Iterations', 'Fitting Ranges', 'Inverted Regions'],
+            ['success', 'algorithm', 'lambda', 'p', 'eta', 'poly_order', 'alpha', 'beta',
+             'iterations', 'fitting_ranges', 'inverted_regions'],
         )
 
     def setup_snip_baseline_parameters(self):

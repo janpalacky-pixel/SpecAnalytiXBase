@@ -104,7 +104,7 @@ def get_batch_pipeline_help_content():
             <td>
                 <ul style="margin:0; padding-left:16px;">
                     <li>SNIP Baseline</li>
-                    <li>Automated Baseline (ALS / airPLS / arPLS / iarPLS / asPLS / drPLS / psalsa / I-ModPoly / Morphological / mpls / Mollification / mpspline)</li>
+                    <li>Automated Baseline (ALS / airPLS / arPLS / iarPLS / asPLS / drPLS / psalsa / I-ModPoly / Morphological / mpls / Mollification / mpspline / jbcd)</li>
                     <li>Normalization<sup>*</sup></li>
                     <li>SG Smoothing</li>
                     <li>FFT Denoising</li>

@@ -531,6 +531,18 @@ class AutomatedBaselineDialog(QDialog):
             mpspline_p_val * 100, self.mpspline_p_slider.minimum(), self.mpspline_p_slider.maximum()))
         self.mpspline_p_slider.setValue(slider_mpspline_p_val)
 
+        # Load jbcd's own alpha/beta -- unlike every lambda/p pair
+        # above, these aren't shared with any other algorithm's
+        # convention (see calculate_jbcd_baseline's docstring).
+        jbcd_alpha_val = self.current_settings.get('alpha', 0.1) if algorithm == 'jbcd' else 0.1
+        slider_jbcd_alpha_val = int(np.clip(
+            jbcd_alpha_val * 100, self.jbcd_alpha_slider.minimum(), self.jbcd_alpha_slider.maximum()))
+        self.jbcd_alpha_slider.setValue(slider_jbcd_alpha_val)
+        jbcd_beta_val = self.current_settings.get('beta', 10.0) if algorithm == 'jbcd' else 10.0
+        slider_jbcd_beta_val = int(np.clip(
+            jbcd_beta_val, self.jbcd_beta_slider.minimum(), self.jbcd_beta_slider.maximum()))
+        self.jbcd_beta_slider.setValue(slider_jbcd_beta_val)
+
         # Load fitting ranges and update the table. current_settings
         # stores plain (start, end) pairs (see get_settings) with no
         # record of which came from a preset checkbox versus a manual
@@ -597,6 +609,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls", _MORPH_FAMILY)
         self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification", _MORPH_FAMILY)
         self.method_combo.addItem("mpspline (morphology-based penalized spline)", "mpspline", _MORPH_FAMILY)
+        self.method_combo.addItem("jbcd (joint baseline-correction and denoising)", "jbcd", _MORPH_FAMILY)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -946,6 +959,47 @@ class AutomatedBaselineDialog(QDialog):
         mpspline_note.setStyleSheet("color: gray; font-style: italic;")
         mpspline_layout.addWidget(mpspline_note)
 
+
+        # jbcd Parameters -- unlike every other morphology-family method
+        # here, jbcd doesn't use morphology to pick anchor points at all;
+        # it solves a joint energy function for baseline + denoised
+        # spectrum together (see calculate_jbcd_baseline). Only 2 of the
+        # reference's nominal 3 regularization weights are exposed --
+        # testing found the third (and the fixed annealing ratios) only
+        # change how fast the fit converges, not the converged baseline
+        # itself (see that method's own docstring for the full reasoning).
+        jbcd_params_page = QWidget()
+        jbcd_layout = QVBoxLayout(jbcd_params_page)
+        jbcd_layout.setContentsMargins(0, 0, 0, 0)
+        jbcd_alpha_label = QLabel("Baseline Fidelity to Opening (α): 0.10")
+        self.jbcd_alpha_slider = QSlider(Qt.Horizontal)
+        self.jbcd_alpha_slider.setRange(1, 100)
+        self.jbcd_alpha_slider.setValue(10)  # 0.10
+        self.jbcd_alpha_slider.valueChanged.connect(
+            lambda v: jbcd_alpha_label.setText(f"Baseline Fidelity to Opening (α): {v/100:.2f}"))
+        self.jbcd_alpha_slider.valueChanged.connect(self.update_preview)
+        jbcd_layout.addWidget(jbcd_alpha_label); jbcd_layout.addWidget(self.jbcd_alpha_slider)
+
+        jbcd_beta_label = QLabel("Baseline Smoothness Ceiling (β): 10.0")
+        self.jbcd_beta_slider = QSlider(Qt.Horizontal)
+        self.jbcd_beta_slider.setRange(1, 100)
+        self.jbcd_beta_slider.setValue(10)  # 10.0
+        self.jbcd_beta_slider.valueChanged.connect(
+            lambda v: jbcd_beta_label.setText(f"Baseline Smoothness Ceiling (β): {float(v):.1f}"))
+        self.jbcd_beta_slider.valueChanged.connect(self.update_preview)
+        jbcd_layout.addWidget(jbcd_beta_label); jbcd_layout.addWidget(self.jbcd_beta_slider)
+        jbcd_note = QLabel(
+            "Jointly solves for a smooth baseline AND a denoised\n"
+            "spectrum, rather than picking anchor points from\n"
+            "morphology and fitting once. α pulls the baseline\n"
+            "toward the morphological opening; β caps how strongly\n"
+            "the baseline is smoothed as the fit anneals. Slower\n"
+            "than the other morphology-family methods, but doesn't\n"
+            "depend on picking good anchor points."
+        )
+        jbcd_note.setStyleSheet("color: gray; font-style: italic;")
+        jbcd_layout.addWidget(jbcd_note)
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
@@ -961,6 +1015,7 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(mpls_params_page)      # index 9 == 'mpls'
         self.params_stack.addWidget(mollification_params_page)  # index 10 == 'mollification'
         self.params_stack.addWidget(mpspline_params_page)      # index 11 == 'mpspline'
+        self.params_stack.addWidget(jbcd_params_page)          # index 12 == 'jbcd'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -1263,6 +1318,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'mpspline':
             baseline = self.manager.calculate_mpspline_baseline(
                 y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'jbcd':
+            baseline = self.manager.calculate_jbcd_baseline(
+                y, alpha=settings['alpha'], beta=settings['beta'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -1411,6 +1469,15 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'mpspline',
                 'lambda': 10**(self.mpspline_lam_slider.value() / 10.0),
                 'p': self.mpspline_p_slider.value() / 100.0,
+                'n_iter': 300,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'jbcd':
+            return {
+                'algorithm': 'jbcd',
+                'alpha': self.jbcd_alpha_slider.value() / 100.0,
+                'beta': float(self.jbcd_beta_slider.value()),
                 'n_iter': 300,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
