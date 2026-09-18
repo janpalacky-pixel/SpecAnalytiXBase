@@ -4,8 +4,12 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QSlider, QLabel, QDialogButtonBox, QListWidget,
                              QWidget, QSplitter, QSizePolicy, QPushButton,
                              QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
-                             QComboBox, QStackedWidget, QTabWidget)
-from PyQt5.QtCore import Qt, pyqtSignal
+                             QComboBox, QStackedWidget, QTabWidget, QFrame,
+                             QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator,
+                             QAbstractItemView, QApplication)
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent
+from PyQt5.QtGui import QFont
+import time
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -17,6 +21,284 @@ from src.help.automated_baseline_help import (get_automated_baseline_help_conten
                                               get_automated_baseline_help_title)
 from src.help.help_window import show_help_window
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+
+class _MethodTreeCombo(QWidget):
+    """Categorised dropdown for "Baseline Method".
+
+    Eleven methods in one flat QComboBox made the list hard to scan and
+    easy to under-scroll (see the "Morphology + Mollification" visibility
+    report this replaced) -- picking a method now means scanning within
+    a small family rather than a flat list of eleven similar-sounding
+    names. Visually and mechanically modelled on
+    main_window.OperationTreeComboBox (the same button + Qt.Popup +
+    QTreeWidget pattern, the same styling, the same category-header-is-
+    not-selectable / outside-click-closes / follows-the-window behaviour)
+    so the app has one consistent "hierarchical dropdown" feel, but kept
+    as its own small class here rather than reusing or subclassing
+    OperationTreeComboBox: that class's public surface
+    (currentText()/currentTextChanged/addItems()/clear()) is tailored to
+    OperationsController's plain-text menu and has no notion of a
+    per-item data key, whereas everything in this dialog --
+    apply_correction() dispatch, load_settings()/get_settings(), the
+    Operations Summary table, the test suite -- already selects and
+    restores algorithms by their short key ('als', 'mpls', ...), never
+    by display string. Reusing OperationTreeComboBox here would mean
+    either bolting a data-key concept onto a class the main menu also
+    depends on (regression risk there) or re-plumbing this whole dialog
+    around display text instead (regression risk here). A local class
+    exposing the slice of QComboBox's own API this dialog actually uses
+    -- addItem(text, data, category), count(), currentData(),
+    currentIndex(), setCurrentIndex(index), itemData(index),
+    findData(value), and a currentIndexChanged(int) signal -- means
+    _on_method_changed/load_settings/get_settings needed no logic
+    changes at all beyond grouping the addItem calls by family; only
+    create_control_panel's construction of the widget changed.
+
+    Category headers exist only inside the popup's QTreeWidget -- they
+    are not entries in self._items, so the index space handed to
+    currentIndexChanged/currentData/itemData is exactly the eleven
+    algorithms in the same order as before, with no renumbering needed
+    anywhere else in this file (in particular self.params_stack's index
+    still mirrors this widget's index 1:1, same as when it was a plain
+    QComboBox -- see _on_method_changed).
+    """
+
+    currentIndexChanged = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._items = []  # [{'text': str, 'data': object, 'category': str|None}, ...]
+        self._current_index = -1
+        self._popup_closed_at = 0.0
+        self._build_widget()
+        self._build_popup()
+
+    # ------------------------------------------------------------------ #
+    # Construction                                                        #
+    # ------------------------------------------------------------------ #
+
+    def _build_widget(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._button = QPushButton(self)
+        self._button.setCursor(Qt.PointingHandCursor)
+        self._button.setSizePolicy(QSizePolicy(QSizePolicy.Expanding,
+                                               QSizePolicy.Fixed))
+        self._button.setStyleSheet(
+            "QPushButton {"
+            "  text-align: left;"
+            "  padding: 4px 6px 4px 6px;"
+            "  border: 1px solid #B0B8C8;"
+            "  border-radius: 4px;"
+            "  background-color: #FFFFFF;"
+            "  color: #2C3E6B;"
+            "}"
+            "QPushButton:hover { border-color: #7A9CC8; background-color: #E8EFF8; }"
+            "QPushButton:pressed { background-color: #D0DDF0; }"
+        )
+        self._update_button_text()
+        self._button.clicked.connect(self._toggle_popup)
+        layout.addWidget(self._button)
+
+    def _build_popup(self):
+        # Qt.Popup: always above parent, closes on outside click, correct
+        # z-order -- same rationale as OperationTreeComboBox._build_popup.
+        self._popup = QFrame(self.window(), Qt.Popup | Qt.FramelessWindowHint)
+        self._popup.setFrameShape(QFrame.StyledPanel)
+        self._popup.setFrameShadow(QFrame.Raised)
+
+        pop_layout = QVBoxLayout(self._popup)
+        pop_layout.setContentsMargins(2, 2, 2, 2)
+        pop_layout.setSpacing(0)
+
+        self._tree = QTreeWidget(self._popup)
+        self._tree.setHeaderHidden(True)
+        self._tree.setRootIsDecorated(True)
+        self._tree.setIndentation(16)
+        self._tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._tree.setFocusPolicy(Qt.NoFocus)
+        self._tree.setFrameShape(QFrame.NoFrame)
+        self._tree.setStyleSheet(
+            "QTreeWidget { background-color: #FFFFFF; }"
+            "QTreeWidget::item { padding: 3px; color: #2C3E6B; }"
+            "QTreeWidget::item:selected { "
+            "  background-color: #E3EAF4; "
+            "  color: #1A1A2E; "
+            "}"
+            "QTreeWidget::item:hover { background-color: #F0F4FA; }"
+        )
+        self._tree.itemClicked.connect(self._on_item_clicked)
+        pop_layout.addWidget(self._tree)
+
+        self._popup.installEventFilter(self)
+        self._tree.installEventFilter(self)
+        top = self.window()
+        if top is not None:
+            top.installEventFilter(self)
+
+    # ------------------------------------------------------------------ #
+    # Population -- QComboBox-compatible API                              #
+    # ------------------------------------------------------------------ #
+
+    def addItem(self, text, data=None, category=None):
+        self._items.append({'text': text, 'data': data, 'category': category})
+        if self._current_index == -1:
+            self._current_index = 0
+        self._rebuild_tree()
+        self._update_button_text()
+
+    def count(self):
+        return len(self._items)
+
+    def itemData(self, index):
+        if 0 <= index < len(self._items):
+            return self._items[index]['data']
+        return None
+
+    def findData(self, value):
+        for i, entry in enumerate(self._items):
+            if entry['data'] == value:
+                return i
+        return -1
+
+    def currentIndex(self):
+        return self._current_index
+
+    def currentData(self):
+        return self.itemData(self._current_index)
+
+    def setCurrentIndex(self, index):
+        if not (0 <= index < len(self._items)) or index == self._current_index:
+            return
+        self._current_index = index
+        self._update_button_text()
+        self.currentIndexChanged.emit(index)
+
+    def _rebuild_tree(self):
+        self._tree.clear()
+        bold = QFont()
+        bold.setBold(True)
+        category_items = {}
+        for i, entry in enumerate(self._items):
+            cat_name = entry['category']
+            if cat_name is None:
+                parent = self._tree
+            else:
+                cat_item = category_items.get(cat_name)
+                if cat_item is None:
+                    cat_item = QTreeWidgetItem(self._tree, [cat_name])
+                    cat_item.setFont(0, bold)
+                    # Category rows: enabled but NOT selectable, same as
+                    # OperationTreeComboBox's own category headers.
+                    cat_item.setFlags(Qt.ItemIsEnabled)
+                    cat_item.setExpanded(True)
+                    category_items[cat_name] = cat_item
+                parent = cat_item
+            leaf = QTreeWidgetItem(parent, [entry['text']])
+            leaf.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            leaf.setData(0, Qt.UserRole, i)
+        self._tree.expandAll()
+
+    # ------------------------------------------------------------------ #
+    # Popup show / hide (same mechanics as OperationTreeComboBox)         #
+    # ------------------------------------------------------------------ #
+
+    def _toggle_popup(self):
+        if self._popup.isVisible():
+            self._close_popup()
+            return
+        # Same click-vs-deactivate race guard as OperationTreeComboBox.
+        if time.monotonic() - self._popup_closed_at < 0.25:
+            return
+        self._open_popup()
+
+    def _open_popup(self):
+        width = max(self._button.width(), 260)
+        row_h = max(self._tree.sizeHintForRow(0), 20) if self._tree.topLevelItemCount() else 20
+        n_categories = len({e['category'] for e in self._items if e['category']})
+        n_rows = len(self._items) + n_categories
+        height = min(n_rows * row_h + 8, 340)
+        self._popup.setFixedSize(width, height)
+
+        btn_bottom_left = self._button.mapToGlobal(self._button.rect().bottomLeft())
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            y = btn_bottom_left.y()
+            if y + height > screen.bottom():
+                y = self._button.mapToGlobal(self._button.rect().topLeft()).y() - height
+            btn_bottom_left.setY(y)
+        except Exception:
+            pass
+
+        self._popup.move(btn_bottom_left)
+        self._popup.show()
+        self._popup.raise_()
+        self._sync_tree_selection()
+
+    def _close_popup(self):
+        self._popup.hide()
+        self._popup_closed_at = time.monotonic()
+
+    def _reposition_popup(self):
+        if not self._popup.isVisible():
+            return
+        btn_bottom_left = self._button.mapToGlobal(self._button.rect().bottomLeft())
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            y = btn_bottom_left.y()
+            if y + self._popup.height() > screen.bottom():
+                y = self._button.mapToGlobal(self._button.rect().topLeft()).y() - self._popup.height()
+            btn_bottom_left.setY(y)
+        except Exception:
+            pass
+        self._popup.move(btn_bottom_left)
+
+    def _sync_tree_selection(self):
+        if not (0 <= self._current_index < len(self._items)):
+            return
+        it = QTreeWidgetItemIterator(self._tree, QTreeWidgetItemIterator.Selectable)
+        while it.value():
+            item = it.value()
+            if item.data(0, Qt.UserRole) == self._current_index:
+                self._tree.setCurrentItem(item)
+                return
+            it += 1
+
+    # ------------------------------------------------------------------ #
+    # Event handling                                                       #
+    # ------------------------------------------------------------------ #
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.WindowDeactivate and obj is self._popup:
+            self._close_popup()
+        elif event.type() == QEvent.Move and obj is self.window():
+            self._reposition_popup()
+        elif event.type() == QEvent.WindowStateChange and obj is self.window():
+            if self.window().isMinimized():
+                self._close_popup()
+        return super().eventFilter(obj, event)
+
+    def _on_item_clicked(self, item, _col):
+        if not (item.flags() & Qt.ItemIsSelectable):
+            # Category header: toggle expand/collapse, same as
+            # OperationTreeComboBox.
+            item.setExpanded(not item.isExpanded())
+            return
+        self._close_popup()
+        index = item.data(0, Qt.UserRole)
+        if index is not None:
+            self.setCurrentIndex(index)
+
+    def _update_button_text(self):
+        arrow = "  ▾"
+        if 0 <= self._current_index < len(self._items):
+            label = self._items[self._current_index]['text']
+        else:
+            label = "Select method..."
+        self._button.setText(label + arrow)
+
 
 class AutomatedBaselineCanvas(FigureCanvas):
     """Canvas for plotting and selecting exclusion ranges."""
@@ -286,18 +568,21 @@ class AutomatedBaselineDialog(QDialog):
         # combo is the single place that string is chosen from.
         method_group = QGroupBox("Baseline Method")
         method_layout = QVBoxLayout()
-        self.method_combo = QComboBox()
-        self.method_combo.addItem("ALS (Asymmetric Least Squares)", "als")
-        self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls")
-        self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
-        self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls")
-        self.method_combo.addItem("asPLS (adaptive smoothness PLS)", "aspls")
-        self.method_combo.addItem("drPLS (doubly reweighted PLS)", "drpls")
-        self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa")
-        self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
-        self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
-        self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls")
-        self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification")
+        self.method_combo = _MethodTreeCombo()
+        _ALS_FAMILY = "ALS / Whittaker-smoothing family"
+        _POLY_FAMILY = "Polynomial"
+        _MORPH_FAMILY = "Morphological family"
+        self.method_combo.addItem("ALS (Asymmetric Least Squares)", "als", _ALS_FAMILY)
+        self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls", _ALS_FAMILY)
+        self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls", _ALS_FAMILY)
+        self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls", _ALS_FAMILY)
+        self.method_combo.addItem("asPLS (adaptive smoothness PLS)", "aspls", _ALS_FAMILY)
+        self.method_combo.addItem("drPLS (doubly reweighted PLS)", "drpls", _ALS_FAMILY)
+        self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa", _ALS_FAMILY)
+        self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly", _POLY_FAMILY)
+        self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological", _MORPH_FAMILY)
+        self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls", _MORPH_FAMILY)
+        self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification", _MORPH_FAMILY)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -736,9 +1021,11 @@ class AutomatedBaselineDialog(QDialog):
     def _on_method_changed(self, index):
         """Swap the visible parameter panel to match the selected
         algorithm (self.params_stack index mirrors self.method_combo's
-        item order — see create_control_panel) and refresh the preview,
-        since ALS and airPLS will generally produce a different baseline
-        for the same spectrum."""
+        item order — see create_control_panel; _MethodTreeCombo's
+        category headers exist only in its popup and are not items, so
+        this stays a plain 1:1 mapping) and refresh the preview, since
+        ALS and airPLS will generally produce a different baseline for
+        the same spectrum."""
         self.params_stack.setCurrentIndex(index)
         self.update_preview()
 

@@ -23,6 +23,7 @@ def get_automated_baseline_help_content():
         
         <h2>Overview</h2>
         <p>This tool offers eleven automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>asPLS</b> (adaptive smoothness Penalized Least Squares), <b>drPLS</b> (doubly reweighted Penalized Least Squares), <b>psalsa</b> (peaked signal's asymmetric least squares algorithm), <b>I-ModPoly</b> (Improved Modified Polynomial fit), <b>Morphological Opening</b> (adaptive structuring element), <b>mpls</b> (morphological weighted Penalized Least Squares), and <b>Morphology + Mollification</b> — the first seven fit a locally-penalized smooth curve built up through iterative reweighting, I-ModPoly instead fits a single global polynomial with iterative peak rejection, Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all, mpls combines both ideas with a single non-iterative penalized-least-squares solve through morphology-identified anchor points, and Morphology + Mollification combines them a different way — no linear system to solve at all, just repeated min/max operations smoothed by a fixed convolution kernel until the result settles. All eleven are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
+        <p>The <b>Baseline Method</b> dropdown groups these eleven into three families so the list stays easy to scan: <b>ALS / Whittaker-smoothing family</b> (ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa), <b>Polynomial</b> (I-ModPoly), and <b>Morphological family</b> (Morphological Opening, mpls, Morphology + Mollification) — click a family heading in the dropdown to expand or collapse it.</p>
 
         <div class="warning">
             <strong>Baseline-correct first — don't skip this if you're heading into NMF or MCR-ALS.</strong>
@@ -35,7 +36,7 @@ def get_automated_baseline_help_content():
         <h2>Workflow</h2>
         <ol>
             <li>Select a spectrum from the list on the left to preview it.</li>
-            <li>Pick a <b>Baseline Method</b>: ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly, Morphological Opening, mpls, or Morphology + Mollification (see below for the difference).</li>
+            <li>Pick a <b>Baseline Method</b> from the grouped dropdown: ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, or psalsa under ALS / Whittaker-smoothing family; I-ModPoly under Polynomial; or Morphological Opening, mpls, or Morphology + Mollification under Morphological family (see below for the difference).</li>
             <li>Define the regions for the baseline calculation using one of the two modes below —
                 optionally start from a <b>Region Shortcut</b> checkbox (e.g. the water band, for
                 aqueous/biological samples) and add or adjust ranges from there.</li>
