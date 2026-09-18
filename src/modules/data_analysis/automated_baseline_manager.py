@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Ten algorithms,
+    Business logic for automated baseline correction. Eleven algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -90,7 +90,22 @@ class AutomatedBaselineManager:
         threshold iteration after iteration the way every other
         Whittaker-family method above does (see
         calculate_mpls_baseline).
-    All ten support region exclusion via params['fitting_ranges'] +
+      - 'mollification': morphology + mollification (Koch, Suhr, Roth
+        & Meinhardt-Wollweber, 2017, introducing the mollifier-kernel
+        idea; refined by Chen, Xu & Broderick, 2019, adding the
+        "averaging" step below) -- a third hybrid, and the only method
+        here with no system of equations to solve at all, Whittaker or
+        otherwise: each iteration takes the element-wise minimum of the
+        original spectrum against the average of a morphological
+        closing and opening of the *current* baseline estimate, then
+        smooths that candidate with a fixed, compactly-supported
+        "mollifier" kernel (a standard bump function from real
+        analysis) via convolution. Repeated until the baseline stops
+        changing appreciably. Like Morphological Opening, it has no
+        smoothness or asymmetry parameter to tune -- its structuring-
+        element window is grown automatically the same way (see
+        calculate_mollification_baseline).
+    All eleven support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -1068,6 +1083,152 @@ class AutomatedBaselineManager:
 
         return np.interp(np.arange(L), included_indices, z_included)
 
+    def calculate_mollification_baseline(self, y, itermax=200, tol=1e-3, exclude_indices=None):
+        """
+        Calculates a baseline using morphology + mollification, ignoring
+        specified regions the same way calculate_morphological_baseline
+        and calculate_mpls_baseline do.
+
+        The only method in this class with no system of equations to
+        solve at all, Whittaker or otherwise -- it's pure order-statistics
+        (min/max) plus a fixed convolution kernel, repeated until the
+        result stops changing:
+
+        1. Find a structuring-element window the same way
+           calculate_morphological_baseline does (grow from 3 points by
+           2 each step until three consecutive openings agree exactly).
+           Neither reference paper below mandates a specific window-
+           selection rule (Koch & Suhr's own abstract describes theirs
+           as "three experimentally-determined parameters" rather than
+           an automatic search), so this reuses the same well-tested
+           growth loop as the other two morphological methods here
+           rather than adding a third, different heuristic.
+        2. Build a "mollifier" kernel -- not something invented for this
+           algorithm, but a standard compactly-supported, infinitely
+           smooth bump function from real analysis (a Friedrichs
+           mollifier): over its own local coordinate x in (-1, 1),
+           exp(-1 / (1 - x^2)), zero at and beyond |x| = 1, normalized
+           to sum to 1 so convolving with it preserves the data's
+           overall scale.
+        3. Pad the spectrum on both ends (linear extrapolation from each
+           edge's own local trend, one window's worth of points) so the
+           convolution steps below don't distort the two ends.
+        4. Starting from that padded spectrum as the first baseline
+           estimate, repeat: take the morphological closing and opening
+           of the *current* baseline estimate (same window as step 1),
+           average the two, then take the element-wise minimum of that
+           average against the (padded) original spectrum -- this is
+           the "averaging" refinement Chen, Xu & Broderick's 2019 paper
+           adds on top of Koch & Suhr's original 2017 method, and it's
+           what keeps the estimate from drifting upward into real peaks
+           over repeated iterations. Smooth that candidate with the
+           mollifier kernel via convolution (itself edge-padded by
+           reflection, to keep the convolution's own boundary from
+           reintroducing the artifact step 3 removed) to get the next
+           baseline estimate. Stop once the relative change in the
+           baseline between iterations drops below tol, or after
+           itermax iterations.
+        5. Trim the padding back off before returning.
+
+        References: (1) M. Koch, C. Suhr, B. Roth, and M.
+        Meinhardt-Wollweber, "Iterative morphological and
+        mollifier-based baseline correction for Raman spectra." Journal
+        of Raman Spectroscopy 48(2), 336-342 (2017) -- introduces the
+        morphology-plus-mollifier-kernel idea itself. (2) H. Chen, W.
+        Xu, and N. G. R. Broderick, "An adaptive and fully automated
+        baseline correction method for Raman spectroscopy based on
+        morphological operations and mollification." Applied
+        Spectroscopy 73(3), 284-293 (2019) -- adds the closing/opening
+        "averaging" step used above, which this implementation follows.
+        """
+        y = np.asarray(y, dtype=float)
+        L = len(y)
+
+        include_mask = ~exclude_indices if exclude_indices is not None else np.ones(L, dtype=bool)
+        included_indices = np.where(include_mask)[0]
+        n = len(included_indices)
+        if n < 3:
+            logger.warning("Warning: Not enough included points for morphology + mollification.")
+            return np.full_like(y, np.nan)
+
+        y_work = y[included_indices]
+
+        try:
+            window = 3
+            window_history = []
+            opening_history = []
+            window_size = None
+            for _ in range(300):
+                if window > n:
+                    break
+                eroded = grey_erosion(y_work, size=window, mode='nearest')
+                opening = grey_dilation(eroded, size=window, mode='nearest')
+                window_history.append(window)
+                opening_history.append(opening)
+                if len(opening_history) >= 3:
+                    a, b, c = opening_history[-3:]
+                    if np.array_equal(a, b) and np.array_equal(b, c):
+                        window_size = window_history[-3]
+                        break
+                window += 2
+
+            if window_size is None:
+                # Same safety fallback as calculate_morphological_baseline
+                # and calculate_mpls_baseline.
+                window_size = window_history[-1]
+
+            half_window = (window_size - 1) // 2
+            if half_window == 0:
+                kernel = np.ones(1)
+            else:
+                kx = (np.arange(2 * half_window + 1) - half_window) / half_window
+                kernel = np.zeros_like(kx)
+                interior = np.abs(kx) < 1
+                kernel[interior] = np.exp(-1.0 / (1.0 - kx[interior] ** 2))
+                kernel_sum = kernel.sum()
+                if kernel_sum > 0:
+                    kernel = kernel / kernel_sum
+
+            # Edge padding: linear extrapolation from each end's own
+            # local trend, one window's worth of points on each side.
+            fit_pts = min(window_size, n)
+            left_x = np.arange(fit_pts)
+            left_coef = np.polyfit(left_x, y_work[:fit_pts], 1)
+            pad_left = np.polyval(left_coef, np.arange(-window_size, 0))
+            right_x = np.arange(fit_pts)
+            right_coef = np.polyfit(right_x, y_work[-fit_pts:], 1)
+            pad_right = np.polyval(right_coef, np.arange(fit_pts, fit_pts + window_size))
+            padded_y = np.concatenate([pad_left, y_work, pad_right])
+
+            baseline = padded_y.copy()
+            for _ in range(itermax):
+                baseline_old = baseline
+                eroded = grey_erosion(baseline, size=window_size, mode='nearest')
+                opening = grey_dilation(eroded, size=window_size, mode='nearest')
+                dilated = grey_dilation(baseline, size=window_size, mode='nearest')
+                closing = grey_erosion(dilated, size=window_size, mode='nearest')
+                candidate = np.minimum(padded_y, 0.5 * (closing + opening))
+
+                conv_pad = int(np.ceil(min(len(candidate), len(kernel)) / 2))
+                reflected = np.pad(candidate, conv_pad, mode='reflect')
+                convolved = np.convolve(reflected, kernel, mode='same')
+                baseline = convolved[conv_pad:-conv_pad] if conv_pad > 0 else convolved
+
+                denom = np.linalg.norm(baseline_old)
+                calc_diff = np.linalg.norm(baseline - baseline_old) / denom if denom > 0 else 0.0
+                if calc_diff < tol:
+                    break
+
+            z_included = baseline[window_size:window_size + n]
+        except Exception as e:
+            logger.error(f"Warning: Error during morphology + mollification fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        if n == L:
+            return z_included
+
+        return np.interp(np.arange(L), included_indices, z_included)
+
     def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
@@ -1096,7 +1257,7 @@ class AutomatedBaselineManager:
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
         'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
-        'imodpoly', 'morphological', or 'mpls'.
+        'imodpoly', 'morphological', 'mpls', or 'mollification'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -1108,6 +1269,7 @@ class AutomatedBaselineManager:
         is_imodpoly = (algorithm == 'imodpoly')
         is_morph = (algorithm == 'morphological')
         is_mpls = (algorithm == 'mpls')
+        is_mollification = (algorithm == 'mollification')
         if is_airpls:
             default_lam, default_n_iter = 1e4, 20
         elif is_arpls:
@@ -1126,6 +1288,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e6, 300  # lambda unused; n_iter is the structuring-element growth-step cap
         elif is_mpls:
             default_lam, default_n_iter = 1e6, 300  # same lambda scale as ALS (single weighted solve, not iterative); n_iter is the shared structuring-element growth-step cap
+        elif is_mollification:
+            default_lam, default_n_iter = 1e6, 200  # lambda unused -- no system of equations to solve at all; n_iter is the convolution-loop's own itermax (distinct from the structuring-element growth cap, fixed internally at 300)
         else:
             default_lam, default_n_iter = 1e6, 10
         lam = params.get('lambda', default_lam)
@@ -1207,6 +1371,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_mpls_baseline(
                     y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'mpls'
+            elif is_mollification:
+                baseline = self.calculate_mollification_baseline(
+                    y_scale, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'Morphology + Mollification'
             else:
                 baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'ALS'
@@ -1242,7 +1410,7 @@ class AutomatedBaselineManager:
             # shows a blank cell for any key missing from a given entry.
             if is_imodpoly:
                 entry_fields['poly_order'] = poly_order
-            elif is_morph:
+            elif is_morph or is_mollification:
                 pass  # fully parameter-free -- no lambda, p, or poly_order applies
             else:
                 entry_fields['lambda'] = lam

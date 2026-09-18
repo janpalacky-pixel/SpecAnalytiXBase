@@ -297,6 +297,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
         self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls")
+        self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification")
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
         method_group.setLayout(method_layout)
@@ -585,6 +586,28 @@ class AutomatedBaselineDialog(QDialog):
         mpls_note.setStyleSheet("color: gray; font-style: italic;")
         mpls_layout.addWidget(mpls_note)
 
+        # Morphology + Mollification Parameters -- fully parameter-free,
+        # same spirit as Morphological Opening's own page: the
+        # structuring-element window is grown automatically the same
+        # way, and the mollifier-kernel smoothing / convergence check
+        # are fixed internally (see calculate_mollification_baseline).
+        mollification_params_page = QWidget()
+        mollification_layout = QVBoxLayout(mollification_params_page)
+        mollification_layout.setContentsMargins(0, 0, 0, 0)
+        mollification_note = QLabel(
+            'Fully automatic -- no parameters to tune. Each pass takes\n'
+            'the smaller of the raw spectrum and the average of a\n'
+            'morphological closing/opening of the current baseline\n'
+            'estimate, then smooths that with a fixed "mollifier"\n'
+            'kernel, repeating until the result stops changing. Good\n'
+            "when a background's morphology already makes the\n"
+            'baseline fairly obvious, without an iterative-reweighting\n'
+            "or single-solve method's own assumptions."
+        )
+        mollification_note.setStyleSheet("color: gray; font-style: italic;")
+        mollification_layout.addWidget(mollification_note)
+        mollification_layout.addStretch()
+
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
         self.params_stack = QStackedWidget()
@@ -598,6 +621,7 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(imodpoly_params_page)  # index 7 == 'imodpoly'
         self.params_stack.addWidget(morph_params_page)     # index 8 == 'morphological'
         self.params_stack.addWidget(mpls_params_page)      # index 9 == 'mpls'
+        self.params_stack.addWidget(mollification_params_page)  # index 10 == 'mollification'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -892,6 +916,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'mpls':
             baseline = self.manager.calculate_mpls_baseline(
                 y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'mollification':
+            baseline = self.manager.calculate_mollification_baseline(
+                y, itermax=settings['n_iter'], exclude_indices=exclude_mask)
         else:
             baseline = self.manager.calculate_als_baseline(
                 y, lam=settings['lambda'], p=settings['p'], exclude_indices=exclude_mask)
@@ -1025,6 +1052,13 @@ class AutomatedBaselineDialog(QDialog):
                 'lambda': 10**(self.mpls_lam_slider.value() / 10.0),
                 'p': self.mpls_p_slider.value() / 100.0,
                 'n_iter': 300,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'mollification':
+            return {
+                'algorithm': 'mollification',
+                'n_iter': 200,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }

@@ -3,8 +3,9 @@
 # Tests for the Automated Baseline dialog's business logic
 # (src/modules/data_analysis/automated_baseline_manager.py) — the ALS,
 # airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa, I-ModPoly,
-# Morphological Opening, and mpls baseline-fitting algorithms and their
-# shared region-exclusion handling (user fitting ranges + invert mode).
+# Morphological Opening, mpls, and Morphology + Mollification
+# baseline-fitting algorithms and their shared region-exclusion
+# handling (user fitting ranges + invert mode).
 #
 # Before this file, NONE of AutomatedBaselineManager had any automated
 # coverage at all (verified: `grep -rl "AutomatedBaselineManager" tests/`
@@ -738,6 +739,81 @@ class TestMplsBaseline:
         assert not np.isnan(baseline).any()
 
 
+class TestMollificationBaseline:
+    def test_stays_at_or_below_true_baseline(self):
+        """Same one-sided expectation as TestMorphologicalBaseline's own
+        version of this check -- it's a min-based method (the candidate
+        each iteration is clamped to <= the raw spectrum), so it should
+        sit at or below the true background rather than average
+        around it."""
+        spectrum, true_baseline = _make_spectrum(seed=40)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_mollification_baseline(spectrum['y_scale'])
+        assert not np.isnan(baseline).any()
+        assert np.max(baseline - true_baseline) < 1.0
+        rms = np.sqrt(np.mean((baseline - true_baseline) ** 2))
+        assert rms < 10.0, f"Mollification baseline strayed too far below the true baseline (RMS={rms:.3f})"
+
+    def test_no_tunable_parameters_needed(self):
+        # calculate_mollification_baseline's signature has no lambda, p,
+        # eta, or poly_order -- documentation-by-test, same spirit as
+        # TestMorphologicalBaseline's own version of this.
+        spectrum, _ = _make_spectrum(seed=41)
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_mollification_baseline(spectrum['y_scale'])
+        assert not np.isnan(baseline).any()
+
+    def test_exclude_indices_changes_the_fit(self):
+        spectrum, _ = _make_spectrum(seed=42)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = (x >= 850) & (x <= 950)
+        baseline_plain = mgr.calculate_mollification_baseline(y, exclude_indices=None)
+        baseline_excluded = mgr.calculate_mollification_baseline(y, exclude_indices=exclude)
+        assert not np.isnan(baseline_plain).any()
+        assert not np.isnan(baseline_excluded).any()
+        assert not np.allclose(baseline_plain, baseline_excluded)
+
+    def test_full_exclusion_fails_gracefully(self):
+        spectrum, _ = _make_spectrum(seed=43)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        baseline = mgr.calculate_mollification_baseline(y, exclude_indices=np.ones_like(x, dtype=bool))
+        assert np.isnan(baseline).all()
+
+    def test_too_few_points_fails_gracefully(self):
+        """Same 3-point floor as calculate_morphological_baseline/
+        calculate_mpls_baseline, since this method's window-growth loop
+        starts there too."""
+        spectrum, _ = _make_spectrum(seed=44)
+        x, y = spectrum['x_scale'], spectrum['y_scale']
+        mgr = AutomatedBaselineManager()
+        exclude = np.ones_like(x, dtype=bool)
+        exclude[:2] = False
+        baseline = mgr.calculate_mollification_baseline(y, exclude_indices=exclude)
+        assert np.isnan(baseline).all()
+
+    def test_flat_input_recovers_the_constant(self):
+        """Unlike mpls's own flat-input edge case, this method has no
+        weight array to under-determine -- min/max operations and
+        linear-extrapolation padding all preserve a constant exactly,
+        so no special-case fallback was needed here."""
+        mgr = AutomatedBaselineManager()
+        flat = np.full(100, 5.0)
+        baseline = mgr.calculate_mollification_baseline(flat)
+        assert not np.isnan(baseline).any()
+        assert np.allclose(baseline, 5.0, atol=1e-6)
+
+    def test_converges_without_warnings(self):
+        import warnings
+        spectrum, _ = _make_spectrum(seed=45, noise=0.1)
+        mgr = AutomatedBaselineManager()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            baseline = mgr.calculate_mollification_baseline(spectrum['y_scale'])
+        assert not np.isnan(baseline).any()
+
+
 # ---------------------------------------------------------------------------
 # apply_correction — algorithm dispatch, water band, metadata contract
 # ---------------------------------------------------------------------------
@@ -862,6 +938,21 @@ class TestApplyCorrectionDispatch:
         assert 'poly_order' not in entry
         assert mgr.failed_labels == []
 
+    def test_mollification_dispatch_and_metadata(self):
+        spectrum, _ = _make_spectrum(seed=46)
+        mgr = AutomatedBaselineManager()
+        out = mgr.apply_correction([spectrum], {'algorithm': 'mollification', 'n_iter': 200})
+        entry = out[0]['metadata']['correction_history'][-1]
+        assert entry['algorithm'] == 'Morphology + Mollification'
+        assert entry['success'] is True
+        # Fully parameter-free, same as Morphological Opening -- none of
+        # lambda/p/eta/poly_order apply.
+        assert 'lambda' not in entry
+        assert 'p' not in entry
+        assert 'eta' not in entry
+        assert 'poly_order' not in entry
+        assert mgr.failed_labels == []
+
     def test_als_and_airpls_produce_different_results(self):
         """Sanity check that algorithm selection actually reaches the
         computation, not just the metadata label."""
@@ -877,6 +968,7 @@ class TestApplyCorrectionDispatch:
         out_imodpoly = mgr.apply_correction([dict(spectrum)], {'algorithm': 'imodpoly', 'poly_order': 3, 'n_iter': 100})
         out_morph = mgr.apply_correction([dict(spectrum)], {'algorithm': 'morphological', 'n_iter': 300})
         out_mpls = mgr.apply_correction([dict(spectrum)], {'algorithm': 'mpls', 'lambda': 1e6, 'p': 0.0, 'n_iter': 300})
+        out_mollification = mgr.apply_correction([dict(spectrum)], {'algorithm': 'mollification', 'n_iter': 200})
         results = {
             'als': out_als[0]['y_scale'], 'airpls': out_airpls[0]['y_scale'],
             'arpls': out_arpls[0]['y_scale'], 'iarpls': out_iarpls[0]['y_scale'],
@@ -886,6 +978,7 @@ class TestApplyCorrectionDispatch:
             'imodpoly': out_imodpoly[0]['y_scale'],
             'morphological': out_morph[0]['y_scale'],
             'mpls': out_mpls[0]['y_scale'],
+            'mollification': out_mollification[0]['y_scale'],
         }
         names = list(results)
         for i in range(len(names)):
