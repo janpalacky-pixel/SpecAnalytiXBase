@@ -1840,24 +1840,24 @@ class OperationParametersDialog(QDialog):
 
     def setup_automated_baseline_parameters(self):
         """Parameters table for Automated Baseline (ALS, airPLS, arPLS,
-        iarPLS, asPLS, psalsa, I-ModPoly, or Morphological Opening — see
-        the 'algorithm' entry; 'p' only applies to ALS and psalsa,
-        'poly_order' only to I-ModPoly, and Morphological Opening has
-        neither (it's fully parameter-free) — each blank on any row it
-        doesn't apply to, same as any other key missing from a given
-        entry)."""
+        iarPLS, asPLS, drPLS, psalsa, I-ModPoly, or Morphological Opening
+        — see the 'algorithm' entry; 'p' only applies to ALS and psalsa,
+        'eta' only to drPLS, 'poly_order' only to I-ModPoly, and
+        Morphological Opening has neither (it's fully parameter-free) —
+        each blank on any row it doesn't apply to, same as any other key
+        missing from a given entry)."""
         self._setup_standard_parameters_with_detail_row(
             "Per-Spectrum Detail", "Click to view the baseline result used per spectrum",
             operation_tag='Automated Baseline',
-            entry_keys=['success', 'algorithm', 'lambda', 'p', 'poly_order',
+            entry_keys=['success', 'algorithm', 'lambda', 'p', 'eta', 'poly_order',
                         'iterations', 'fitting_ranges', 'inverted_regions'])
 
     def show_automated_baseline_details_dialog(self):
         self.show_per_spectrum_details_dialog(
             'Automated Baseline', 'Baseline result by spectrum',
-            ['Spectrum', 'Success', 'Algorithm', 'Lambda', 'P', 'Poly Order',
+            ['Spectrum', 'Success', 'Algorithm', 'Lambda', 'P', 'Eta', 'Poly Order',
              'Iterations', 'Fitting Ranges', 'Inverted Regions'],
-            ['success', 'algorithm', 'lambda', 'p', 'poly_order', 'iterations',
+            ['success', 'algorithm', 'lambda', 'p', 'eta', 'poly_order', 'iterations',
              'fitting_ranges', 'inverted_regions'],
         )
 

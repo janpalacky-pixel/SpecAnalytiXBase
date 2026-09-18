@@ -193,6 +193,18 @@ class AutomatedBaselineDialog(QDialog):
             10 * np.log10(aspls_lam_val), self.aspls_lam_slider.minimum(), self.aspls_lam_slider.maximum()))
         self.aspls_lam_slider.setValue(slider_aspls_lam_val)
 
+        # Load lambda (smoothness) and eta (peak relaxation) -- drPLS,
+        # its own sliders: lambda on arPLS's scale (see
+        # create_control_panel), eta on its own 0-1 range.
+        drpls_lam_val = self.current_settings.get('lambda', 1e5) if algorithm == 'drpls' else 1e5
+        slider_drpls_lam_val = int(np.clip(
+            10 * np.log10(drpls_lam_val), self.drpls_lam_slider.minimum(), self.drpls_lam_slider.maximum()))
+        self.drpls_lam_slider.setValue(slider_drpls_lam_val)
+        drpls_eta_val = self.current_settings.get('eta', 0.5) if algorithm == 'drpls' else 0.5
+        slider_drpls_eta_val = int(np.clip(
+            drpls_eta_val * 100, self.drpls_eta_slider.minimum(), self.drpls_eta_slider.maximum()))
+        self.drpls_eta_slider.setValue(slider_drpls_eta_val)
+
         # Load lambda (smoothness) and p (asymmetry) -- psalsa, its own
         # sliders again: lambda on ALS's scale (see create_control_panel),
         # p on its own 0.01-0.99 range since psalsa's natural p (0.5)
@@ -268,6 +280,7 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls")
         self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls")
         self.method_combo.addItem("asPLS (adaptive smoothness PLS)", "aspls")
+        self.method_combo.addItem("drPLS (doubly reweighted PLS)", "drpls")
         self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa")
         self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly")
         self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological")
@@ -402,6 +415,40 @@ class AutomatedBaselineDialog(QDialog):
         aspls_note.setStyleSheet("color: gray; font-style: italic;")
         aspls_layout.addWidget(aspls_note)
 
+        # drPLS Parameters -- its own λ slider on arPLS's scale, plus a
+        # second slider for eta (0-1): how much the smoothness penalty
+        # relaxes under high-weight (peak) regions, on top of an
+        # unweighted first-order penalty term with no slider of its own
+        # (see calculate_drpls_baseline).
+        drpls_params_page = QWidget()
+        drpls_layout = QVBoxLayout(drpls_params_page)
+        drpls_layout.setContentsMargins(0, 0, 0, 0)
+        drpls_lam_label = QLabel("Smoothness (\u03bb): 1e5.0")
+        self.drpls_lam_slider = QSlider(Qt.Horizontal)
+        self.drpls_lam_slider.setRange(20, 90)
+        self.drpls_lam_slider.setValue(50)  # 10*log10(1e5)
+        self.drpls_lam_slider.valueChanged.connect(
+            lambda v: drpls_lam_label.setText(f"Smoothness (\u03bb): 1e{v/10:.1f}"))
+        self.drpls_lam_slider.valueChanged.connect(self.update_preview)
+        drpls_layout.addWidget(drpls_lam_label); drpls_layout.addWidget(self.drpls_lam_slider)
+
+        drpls_eta_label = QLabel("Peak Relaxation (\u03b7): 0.50")
+        self.drpls_eta_slider = QSlider(Qt.Horizontal)
+        self.drpls_eta_slider.setRange(0, 100)
+        self.drpls_eta_slider.setValue(50)
+        self.drpls_eta_slider.valueChanged.connect(
+            lambda v: drpls_eta_label.setText(f"Peak Relaxation (\u03b7): {v/100:.2f}"))
+        self.drpls_eta_slider.valueChanged.connect(self.update_preview)
+        drpls_layout.addWidget(drpls_eta_label); drpls_layout.addWidget(self.drpls_eta_slider)
+        drpls_note = QLabel(
+            "Higher \u03b7 lets peak regions relax more independently\n"
+            "of the surrounding baseline's smoothness -- 0 behaves\n"
+            "closest to arPLS, 1 relaxes the peak-region penalty\n"
+            "the most."
+        )
+        drpls_note.setStyleSheet("color: gray; font-style: italic;")
+        drpls_layout.addWidget(drpls_note)
+
         # psalsa Parameters -- its own λ slider on ALS's scale (same
         # second-order-penalty solver, same range/default as the ALS
         # slider above), plus its own Asymmetry (p) slider -- unlike
@@ -496,9 +543,10 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
         self.params_stack.addWidget(iarpls_params_page)    # index 3 == 'iarpls'
         self.params_stack.addWidget(aspls_params_page)     # index 4 == 'aspls'
-        self.params_stack.addWidget(psalsa_params_page)    # index 5 == 'psalsa'
-        self.params_stack.addWidget(imodpoly_params_page)  # index 6 == 'imodpoly'
-        self.params_stack.addWidget(morph_params_page)     # index 7 == 'morphological'
+        self.params_stack.addWidget(drpls_params_page)     # index 5 == 'drpls'
+        self.params_stack.addWidget(psalsa_params_page)    # index 6 == 'psalsa'
+        self.params_stack.addWidget(imodpoly_params_page)  # index 7 == 'imodpoly'
+        self.params_stack.addWidget(morph_params_page)     # index 8 == 'morphological'
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -778,6 +826,9 @@ class AutomatedBaselineDialog(QDialog):
         elif settings['algorithm'] == 'aspls':
             baseline = self.manager.calculate_aspls_baseline(
                 y, lam=settings['lambda'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
+        elif settings['algorithm'] == 'drpls':
+            baseline = self.manager.calculate_drpls_baseline(
+                y, lam=settings['lambda'], eta=settings['eta'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
         elif settings['algorithm'] == 'psalsa':
             baseline = self.manager.calculate_psalsa_baseline(
                 y, lam=settings['lambda'], p=settings['p'], itermax=settings['n_iter'], exclude_indices=exclude_mask)
@@ -878,6 +929,15 @@ class AutomatedBaselineDialog(QDialog):
                 'algorithm': 'aspls',
                 'lambda': 10**(self.aspls_lam_slider.value() / 10.0),
                 'n_iter': 100,
+                'fitting_ranges': flat_ranges,
+                'invert_regions': self.invert_regions_checkbox.isChecked(),
+            }
+        if algorithm == 'drpls':
+            return {
+                'algorithm': 'drpls',
+                'lambda': 10**(self.drpls_lam_slider.value() / 10.0),
+                'eta': self.drpls_eta_slider.value() / 100.0,
+                'n_iter': 50,
                 'fitting_ranges': flat_ranges,
                 'invert_regions': self.invert_regions_checkbox.isChecked(),
             }

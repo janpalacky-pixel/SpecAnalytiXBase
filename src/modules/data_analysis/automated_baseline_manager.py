@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineManager:
     """
-    Business logic for automated baseline correction. Eight algorithms,
+    Business logic for automated baseline correction. Nine algorithms,
     selected via apply_correction()'s params['algorithm']:
       - 'als' (default): Asymmetric Least Squares (Eilers & Boelens).
       - 'airpls': adaptive iteratively reweighted penalized least squares
@@ -42,6 +42,17 @@ class AutomatedBaselineManager:
         own maximum), letting the fit stay stiff under confidently-flat
         baseline regions while relaxing near features it isn't sure
         about yet (see calculate_aspls_baseline).
+      - 'drpls': doubly reweighted penalized least squares (Xu, Liu,
+        Cai & Yang, 2019) -- the most structurally different of the
+        arPLS-family additions: on top of arPLS's usual second-order
+        smoothness penalty and logistic-style weighting, it adds an
+        unweighted first-order penalty term (discourages a sloped, not
+        just curved, baseline) and a second tunable parameter eta
+        (0-1) that scales how much the second-order penalty itself
+        gets relaxed under high-weight (peak) regions -- letting peak
+        and non-peak areas be smoothed differently in a way none of
+        the single-lambda methods above can (see
+        calculate_drpls_baseline).
       - 'psalsa': peaked signal's asymmetric least squares algorithm
         (Oller-Moreno, Pardo, Jimenez-Soto, Samitier & Marco, 2014) --
         same second-order-penalty Whittaker solver and lambda scale as
@@ -66,7 +77,7 @@ class AutomatedBaselineManager:
         structuring-element size that the other three methods would ask
         the user to choose is instead grown automatically until the
         result stops changing (see calculate_morphological_baseline).
-    All eight support region exclusion via params['fitting_ranges'] +
+    All nine support region exclusion via params['fitting_ranges'] +
     params['invert_regions'], applied identically by apply_correction.
     The dialog's "Region Shortcuts" checkboxes (see
     src/modules/data_analysis/baseline_region_presets.py) are pure UI
@@ -487,6 +498,106 @@ class AutomatedBaselineManager:
 
         return z
 
+    def calculate_drpls_baseline(self, y, lam, eta=0.5, itermax=50, ratio=0.001, exclude_indices=None):
+        """
+        Calculates a baseline using drPLS (doubly reweighted penalized
+        least squares), ignoring specified regions the same way
+        calculate_arpls_baseline does.
+
+        The most structurally different of the arPLS-family additions
+        here: instead of a single second-order-penalty Whittaker solve
+        with a reweighted diagonal (calculate_arpls_baseline/
+        calculate_iarpls_baseline/calculate_aspls_baseline's shared
+        pattern), each iteration solves
+        (P1 + Pn + W - eta*W@Pn) z = W y, where Pn = lam*D2^T D2 is the
+        usual second-order penalty, P1 = D1^T D1 (D1 the first-order
+        difference matrix, unweighted -- no separate lambda on this
+        term) adds a mild penalty against an overall *sloped* baseline
+        on top of Pn's penalty against curvature, and the eta*W@Pn term
+        relaxes the second-order penalty itself in proportion to how
+        strongly a point is currently weighted as a peak (W) -- letting
+        peak and non-peak regions be smoothed differently in a way none
+        of the single-lambda Whittaker methods above can. Built
+        directly here rather than through _whittaker_smooth, since that
+        helper has no hook for either the extra P1 term or eta's
+        interaction with W.
+
+        Weighting is a softsign-based variant of arPLS's own logistic
+        rule, using the identical threshold (2*std - mean of the
+        *negative* residuals) but with an iteration-sharpened
+        prefactor, the same exp(min(iteration, 100)) term
+        calculate_iarpls_baseline uses:
+        w = 0.5*(1 - g/(1 + |g|)) where
+        g = (exp(min(i, 100))/s)*(d - (2s - m)). Like iarPLS's ISRU
+        curve, softsign (x/(1+|x|)) is self-normalizing and never
+        overflows, so -- unlike calculate_arpls_baseline's raw exp()
+        weighting -- no separate exponent clipping is needed here
+        either.
+
+        exclude_indices handling, the try/except-then-NaN failure
+        contract, and the post-hoc interpolation through excluded points
+        all mirror calculate_arpls_baseline exactly -- see that method's
+        docstring for the full reasoning.
+
+        Reference: D. Xu, S. Liu, Y. Cai, and C. Yang, "Baseline
+        correction method based on doubly reweighted penalized least
+        squares." Applied Optics 58(14), 3913-3920 (2019).
+        """
+        L = len(y)
+        E = sparse.eye(L, format='csc')
+        D1 = E[1:] - E[:-1]
+        P1 = D1.transpose().dot(D1)
+        D2 = E[2:] - 2 * E[1:-1] + E[:-2]
+        Pn = lam * D2.transpose().dot(D2)
+
+        w = np.ones(L)
+        z = y.copy()
+
+        try:
+            for i in range(1, itermax + 1):
+                W = sparse.diags(w, 0, shape=(L, L))
+                A = sparse.csc_matrix(P1 + Pn + W - eta * W.dot(Pn))
+                B = sparse.csc_matrix(W.dot(y.reshape(-1, 1)))
+                z = np.asarray(spsolve(A, B)).ravel()
+
+                d = y - z
+                neg = d < 0
+                if np.count_nonzero(neg) < 2:
+                    # Same early-exit condition as calculate_arpls_baseline
+                    # -- too few negative-residual points to build a
+                    # reliable threshold from.
+                    break
+
+                m = np.mean(d[neg])
+                s = np.std(d[neg], ddof=1)
+                if s == 0:
+                    break
+
+                growth = np.exp(min(i, 100))
+                inner = (growth / s) * (d - (2.0 * s - m))
+                w_new = 0.5 * (1.0 - inner / (1.0 + np.abs(inner)))
+                w_new = w_new * ~exclude_indices if exclude_indices is not None else w_new
+
+                denom = np.linalg.norm(w)
+                converged = denom > 0 and np.linalg.norm(w_new - w) / denom < ratio
+                w = w_new
+                if converged:
+                    break
+        except Exception as e:
+            logger.error(f"Warning: Linear algebra error during drPLS fitting: {e}")
+            return np.full_like(y, np.nan)
+
+        # Same post-hoc interpolation through excluded regions as
+        # calculate_arpls_baseline -- see calculate_als_baseline for why.
+        if exclude_indices is not None and np.any(exclude_indices):
+            included_indices = np.where(~exclude_indices)[0]
+            if len(included_indices) < 2:
+                logger.warning("Warning: Not enough included points to create a reliable baseline.")
+                return np.full_like(y, np.nan)
+            z = np.interp(np.arange(L), included_indices, z[included_indices])
+
+        return z
+
     def calculate_psalsa_baseline(self, y, lam, p=0.5, k=None, itermax=50, ratio=0.001, exclude_indices=None):
         """
         Calculates a baseline using psalsa (peaked signal's asymmetric
@@ -839,14 +950,15 @@ class AutomatedBaselineManager:
 
         params['algorithm'] selects the fitting algorithm: 'als' (the
         default — unchanged behavior from before airPLS existed),
-        'airpls', 'arpls', 'iarpls', 'aspls', 'psalsa', 'imodpoly', or
-        'morphological'.
+        'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
+        'imodpoly', or 'morphological'.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
         is_arpls = (algorithm == 'arpls')
         is_iarpls = (algorithm == 'iarpls')
         is_aspls = (algorithm == 'aspls')
+        is_drpls = (algorithm == 'drpls')
         is_psalsa = (algorithm == 'psalsa')
         is_imodpoly = (algorithm == 'imodpoly')
         is_morph = (algorithm == 'morphological')
@@ -858,6 +970,8 @@ class AutomatedBaselineManager:
             default_lam, default_n_iter = 1e5, 100  # same lambda scale as arPLS; itermax higher since iarpls's weighting keeps sharpening up to iteration 100
         elif is_aspls:
             default_lam, default_n_iter = 1e6, 100  # same lambda scale as ALS -- the alpha-scaled penalty (not a bigger lambda) is what does asPLS's adaptive work
+        elif is_drpls:
+            default_lam, default_n_iter = 1e5, 50  # same lambda scale as arPLS -- the extra first-order penalty term has no lambda of its own
         elif is_psalsa:
             default_lam, default_n_iter = 1e6, 50  # same lambda scale as ALS -- psalsa reuses ALS's second-order penalty, just a different weight formula
         elif is_imodpoly:
@@ -873,6 +987,11 @@ class AutomatedBaselineManager:
         # open-source implementation this was checked against.
         default_p = 0.5 if is_psalsa else 0.01
         p = params.get('p', default_p)
+        # drPLS's own second tunable parameter -- how much the
+        # second-order penalty relaxes under high-weight (peak)
+        # regions. 0.5 matches the default used by the open-source
+        # implementation this was checked against.
+        eta = params.get('eta', 0.5)
         n_iter = params.get('n_iter', default_n_iter)
         poly_order = params.get('poly_order', 5)
         fitting_ranges = params.get('fitting_ranges', [])
@@ -915,6 +1034,10 @@ class AutomatedBaselineManager:
                 baseline = self.calculate_aspls_baseline(
                     y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
                 algo_label = 'asPLS'
+            elif is_drpls:
+                baseline = self.calculate_drpls_baseline(
+                    y_scale, lam=lam, eta=eta, itermax=n_iter, exclude_indices=exclude_mask)
+                algo_label = 'drPLS'
             elif is_psalsa:
                 baseline = self.calculate_psalsa_baseline(
                     y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
@@ -966,8 +1089,10 @@ class AutomatedBaselineManager:
                 pass  # fully parameter-free -- no lambda, p, or poly_order applies
             else:
                 entry_fields['lambda'] = lam
-                if not is_airpls and not is_arpls and not is_iarpls and not is_aspls:
+                if not is_airpls and not is_arpls and not is_iarpls and not is_aspls and not is_drpls:
                     entry_fields['p'] = p
+                if is_drpls:
+                    entry_fields['eta'] = eta
             # Shared, chronologically-ordered history across every
             # operation type that records one (see correction_history.py).
             # This used to ALSO be written as a separate flat

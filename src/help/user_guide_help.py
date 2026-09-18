@@ -1190,6 +1190,8 @@ def get_user_guide_help_content():
         PLS), arPLS (asymmetrically reweighted PLS), iarPLS (an improved arPLS
         that fixes its small-peak overestimation), asPLS (an arPLS variant
         whose smoothness penalty adapts point-by-point to the residuals),
+        drPLS (an arPLS variant with a second, tunable control that relaxes
+        the smoothness penalty specifically under peak regions),
         psalsa (a peak-decay variant of ALS that tolerates a higher
         asymmetry setting), I-ModPoly (a global polynomial fit with
         iterative peak rejection), or Morphological Opening (parameter-free,
