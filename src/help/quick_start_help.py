@@ -221,8 +221,9 @@ def get_quick_start_help_content():
             <tr><td>Manual Baseline</td><td>Click points on the plot to define a
                 baseline, interpolated between them</td>
                 <td><a href="help://manual_baseline">Open help</a></td></tr>
-            <tr><td>Automated Baseline (ALS)</td><td>Asymmetric Least Squares —
-                fits a baseline automatically without picking points</td>
+            <tr><td>Automated Baseline (ALS / airPLS / arPLS)</td><td>Three automatic baseline
+                algorithms (Asymmetric Least Squares, adaptive iteratively
+                reweighted PLS, or asymmetrically reweighted PLS), with one-click region-shortcut presets (e.g. water band)</td>
                 <td><a href="help://automated_baseline">Open help</a></td></tr>
             <tr><td>SNIP Baseline</td><td>Statistics-sensitive Non-linear Iterative
                 Peak-clipping — another automatic baseline estimator</td>

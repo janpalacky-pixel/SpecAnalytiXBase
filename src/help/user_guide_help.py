@@ -1185,8 +1185,12 @@ def get_user_guide_help_content():
 
         <!-- Automated Baseline -->
         <h3 id="auto-baseline">Automated Baseline <a href="help://automated_baseline" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
-        <p>Fits a baseline automatically without manual point placement. Useful for
-        batch processing where manual correction would be impractical.</p>
+        <p>Fits a baseline automatically without manual point placement, using
+        ALS (Asymmetric Least Squares), airPLS (adaptive iteratively reweighted
+        PLS), or arPLS (asymmetrically reweighted PLS) — selectable in the dialog, with one-click "Region Shortcut" presets
+        (e.g. water band, for aqueous/biological samples) that add straight into
+        the fitting-regions table. Useful for batch processing where manual
+        correction would be impractical.</p>
 
         <!-- SVD Background -->
         <h3 id="svd-background">SVD Background <a href="help://svd_background" style="font-size:8pt; font-weight:normal;">📖 open help</a> Correction</h3>

@@ -11,7 +11,8 @@ logger = get_logger(__name__)
 
 class AutomatedBaselineController:
     """
-    Controller for the Automated Baseline (ALS) correction operation.
+    Controller for the Automated Baseline correction operation (ALS,
+    airPLS, or arPLS — see AutomatedBaselineManager).
 
     Same thin-controller pattern as every other extracted controller in
     this codebase (SVDBackgroundController, BaselineCorrectionController,
@@ -48,7 +49,7 @@ class AutomatedBaselineController:
     # ------------------------------------------------------------------ #
 
     def commit_automated_baseline(self, settings, add_as_new, selected_spectra):
-        """Commit the Automated Baseline (ALS) operation directly, called by
+        """Commit the Automated Baseline operation directly, called by
         the dialog's own Apply / Add as New buttons rather than through the
         generic Run dispatch.
 
@@ -82,10 +83,14 @@ class AutomatedBaselineController:
             current_state = self.oc.operations_manager.get_current_spectra()
 
             if add_as_new:
+                # Suffix reflects which algorithm actually ran — 'als',
+                # 'airpls', or 'arpls' (settings['algorithm'], defaulting to
+                # 'als' for any settings dict saved before airPLS existed).
+                algo_suffix = settings.get('algorithm', 'als')
                 all_labels = {s['label'] for s in current_state}
                 renamed = []
                 for spec in processed_spectra:
-                    base_name = f"{spec['label']}_baseline_als"
+                    base_name = f"{spec['label']}_baseline_{algo_suffix}"
                     new_name = base_name
                     suffix = 1
                     while new_name in all_labels:
@@ -164,7 +169,7 @@ class AutomatedBaselineController:
         else:
             message = f'Replaced {n} {noun} with the baseline-corrected result.'
         # apply_correction() may have silently left some spectra unchanged
-        # (the ALS fit failed — e.g. the selected fitting regions excluded
+        # (the baseline fit failed — e.g. the selected fitting regions excluded
         # every point) while still counting them in n above. Previously
         # nothing here checked for that, so a failed correction looked
         # identical to a successful one from the message alone; the only
