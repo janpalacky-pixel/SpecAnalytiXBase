@@ -1095,6 +1095,58 @@ class Map2DManager:
             return self._pca_Vt[ci, :]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
+    def get_reconstructed_spectrum(self, kind, pixel_index, n_components):
+        """
+        Return (x_axis, values) for the spectrum reconstructed from the
+        first *n_components* components, at *pixel_index* (the flat,
+        row-major index into the spectra list — the same indexing
+        get_component_coefficients()'s returned array uses).
+
+        SVD/PCA store U/Vt unscaled by the singular value, so the sum
+        needs s[k] folded back in: U[:, :n] @ (s[:n] * Vt[:n, pixel]).
+        PCA additionally adds back the mean spectrum that was subtracted
+        before its SVD. NMF/MCR-ALS are directly additive — W @ H and
+        C @ ST already carry the right amplitude, no extra scaling.
+
+        n_components is clamped to [1, get_n_components(kind)] and
+        pixel_index is clamped to the valid range, mirroring the other
+        unified accessors above. Returns (None, None) if *kind* hasn't
+        been computed yet.
+        """
+        if kind == 'svd':
+            if self._U is None or self._s is None or self._Vt is None:
+                return None, None
+            n  = max(1, min(n_components, self._U.shape[1]))
+            pi = max(0, min(pixel_index, self._Vt.shape[1] - 1))
+            y  = self._U[:, :n] @ (self._s[:n] * self._Vt[:n, pi])
+            return self._svd_x_axis, y
+        if kind == 'pca':
+            if self._pca_U is None or self._pca_s is None or self._pca_Vt is None:
+                return None, None
+            n  = max(1, min(n_components, self._pca_U.shape[1]))
+            pi = max(0, min(pixel_index, self._pca_Vt.shape[1] - 1))
+            y  = self._pca_U[:, :n] @ (self._pca_s[:n] * self._pca_Vt[:n, pi])
+            if self._pca_mean_spectrum is not None:
+                y = y + self._pca_mean_spectrum
+            return self._pca_x_axis, y
+        if kind == 'nmf':
+            mgr = self._nmf_manager
+            if mgr is None or mgr.W is None or mgr.H is None:
+                return None, None
+            n  = max(1, min(n_components, mgr.H.shape[0]))
+            pi = max(0, min(pixel_index, mgr.W.shape[0] - 1))
+            y  = mgr.W[pi, :n] @ mgr.H[:n, :]
+            return mgr.x_axis, y
+        if kind == 'mcr':
+            mgr = self._mcr_manager
+            if mgr is None or mgr.C is None or mgr.ST is None:
+                return None, None
+            n  = max(1, min(n_components, mgr.ST.shape[0]))
+            pi = max(0, min(pixel_index, mgr.C.shape[0] - 1))
+            y  = mgr.C[pi, :n] @ mgr.ST[:n, :]
+            return mgr.x_axis, y
+        raise ValueError(f"Unknown decomposition kind: {kind!r}")
+
     def get_component_explained_variance(self, kind):
         """Full explained-variance array for *kind*, or None."""
         if kind == 'svd':

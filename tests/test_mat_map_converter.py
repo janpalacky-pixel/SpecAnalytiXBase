@@ -176,10 +176,26 @@ class TestLabelsAndMetadata:
         spectra = read_mat_map_data(str(path))
         labels = [sp['label'] for sp in spectra]
         assert len(set(labels)) == len(labels)
-        # 11 columns needs 2 digits (0..10); single-digit row/col numbers
-        # are still zero-padded to that width.
-        assert any('_c00]' in lbl for lbl in labels)
-        assert any('_c10]' in lbl for lbl in labels)
+        # Labels are 1-based (row 1, col 1 — matching how a person would
+        # read off a map position, not the 0-based pixel_row/pixel_col
+        # used for array indexing, checked separately below). 11 columns
+        # means 1-based values run 1..11, needing 2 digits; single-digit
+        # values are still zero-padded to that width.
+        assert any('_c01]' in lbl for lbl in labels)
+        assert any('_c11]' in lbl for lbl in labels)
+        assert not any('_c00]' in lbl for lbl in labels)
+
+    def test_labels_use_1_based_row_col_not_0_based_pixel_indices(self, tmp_path):
+        """The label a person sees ("...[r1_c1]") starts at 1, even though
+        the internal pixel_row/pixel_col metadata (used for array
+        indexing elsewhere) stays 0-based — see test_row_col_assignment_
+        matches_data above for that invariant."""
+        path = tmp_path / 'map.mat'
+        _write_synthetic_map(path, n_dim0=3, n_dim1=2, n_wl=2)
+        spectra = read_mat_map_data(str(path))
+        for sp in spectra:
+            p = sp['metadata']['import_parameters']
+            assert f"r{p['pixel_row'] + 1}_c{p['pixel_col'] + 1}]" in sp['label']
 
     def test_metadata_carries_dataset_name_and_history(self, tmp_path):
         path = tmp_path / 'map.mat'

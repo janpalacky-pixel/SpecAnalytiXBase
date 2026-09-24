@@ -242,7 +242,7 @@ maps the coefficient vector V<sub>k</sub> as pixel values.</p>
 
 <div class="screenshot">
     <img src="$TYPE_SVD" width="$TYPE_SVD_W" height="$TYPE_SVD_H" alt="Map Type panel with SVD selected" />
-    <p class="caption">Map Type panel in SVD mode: Component selector, Invert, Multi-map…, Diagnostics… buttons.</p>
+    <p class="caption">Map Type panel in SVD mode: Browse-component selector, Invert, Multi-map…, Diagnostics… buttons.</p>
 </div>
 
 <p>Configure the <b>SVD computation range</b> using the <b>Configure SVD range…</b>
@@ -303,16 +303,29 @@ available here.</p>
 
 <div class="screenshot">
     <img src="$SVD_SPECTRUM_PANEL" width="$SVD_SPECTRUM_PANEL_W" height="$SVD_SPECTRUM_PANEL_H" alt="Spectrum panel in SVD mode comparing the clicked spectrum against the SVD component" />
-    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the SVD component (orange dashed, right axis, "U amplitude").</p>
+    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the SVD component (orange dashed, right axis, "U amplitude"); the panel title states the clicked pixel's Row/Col (1-based). If "Show reconstructed spectrum using N components" is checked, the reconstruction appears as a green dashed line on the same (left) axis as the raw spectrum.</p>
 </div>
 
-<p>Two display options in the spectrum panel header:</p>
+<p>Three display options in the spectrum panel header:</p>
 <ul>
   <li><b>Show SVD component</b> — overlays the SVD subspectrum (orange dashed) on a twin axis.</li>
   <li><b>Full spectrum</b> — when unchecked (default), the panel shows the spectrum
       clipped to the SVD range so the x-axis matches the component exactly.
       When checked, shows the full input spectrum with the SVD range shaded
       and the component on a twin axis.</li>
+  <li><b>Show reconstructed spectrum using N components</b> — unchecked by
+      default; overlays the spectrum rebuilt from the first N fitted
+      components (green dashed). N has its own spinbox, right next to the
+      checkbox — deliberately separate from the <b>Browse component</b>
+      dropdown above, which just browses one component's own map/shape at
+      a time. It
+      defaults to using every fitted component (full reconstruction) until
+      you dial it down, and its range always tracks however many components
+      are actually fitted. Unlike a single component's own subspectrum, a
+      reconstruction is in the same intensity units as the clicked-pixel
+      spectrum, so it's drawn directly on the main axis rather than a twin
+      axis — the more components included, the closer it should track the
+      measured spectrum.</li>
 </ul>
 
 <div class="screenshot">
@@ -335,7 +348,7 @@ in common so the decomposition finds only how they differ.</p>
 
 <div class="screenshot">
     <img src="$TYPE_PCA" width="$TYPE_PCA_W" height="$TYPE_PCA_H" alt="Map Type panel with PCA selected" />
-    <p class="caption">Map Type panel in PCA mode: Component selector, Invert, Multi-map… buttons (Diagnostics… stays SVD-only).</p>
+    <p class="caption">Map Type panel in PCA mode: Browse-component selector, Invert, Multi-map… buttons (Diagnostics… stays SVD-only).</p>
 </div>
 
 <p>The Map Type panel, Component selector, <b>Configure PCA range…</b>
@@ -346,7 +359,7 @@ SVD-only for now.</p>
 
 <div class="screenshot">
     <img src="$PCA_SPECTRUM_PANEL" width="$PCA_SPECTRUM_PANEL_W" height="$PCA_SPECTRUM_PANEL_H" alt="Spectrum panel in PCA mode comparing the clicked spectrum against the PCA component" />
-    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the PCA component (orange dashed, right axis) — same layout as SVD mode's spectrum panel.</p>
+    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the PCA component (orange dashed, right axis) — same layout as SVD mode's spectrum panel, including the Row/Col title and the optional green reconstruction overlay.</p>
 </div>
 
 <div class="note">
@@ -380,7 +393,14 @@ MCR-ALS are very sensitive to an uncorrected shared background: with real
 Raman/IR maps, it can account for &gt;99.9% of the data's total variance,
 leaving almost nothing for the components to tell pixels apart with. The
 symptom is noisy, spiky-looking component spectra and a map that barely
-resembles real structure, even though the reported fit quality looks fine.
+resembles real structure, even though the reported fit quality looks fine
+&mdash; and it looks fine specifically because of how <b>Lack of fit</b> is
+computed: it's a residual normalised by the data's own total squared
+magnitude, and an uncorrected shared background dominates that total so
+completely that even a trivial fit which barely distinguishes pixels from
+each other can already report a lack-of-fit under 1%. In other words, a
+suspiciously tiny lack-of-fit on NMF/MCR-ALS is itself a warning sign of
+missing baseline correction, not confirmation of a good fit.
 <strong>Apply Baseline correction (even an imperfect one) to your spectra
 before switching to NMF or MCR-ALS map mode</strong> &mdash; see the
 standalone NMF / MCR-ALS help pages' "Read this first" sections for why.
@@ -388,29 +408,35 @@ standalone NMF / MCR-ALS help pages' "Read this first" sections for why.
 
 <div class="screenshot">
     <img src="$TYPE_NMF" width="$TYPE_NMF_W" height="$TYPE_NMF_H" alt="Map Type panel with NMF selected" />
-    <p class="caption">Map Type panel in NMF mode: Components spinner, Component selector, and Configure NMF range&hellip; button.</p>
+    <p class="caption">Map Type panel in NMF mode: Components-to-fit spinner, Browse-component selector, and Configure NMF range&hellip; button.</p>
 </div>
 
 <div class="screenshot">
     <img src="$TYPE_MCR" width="$TYPE_MCR_W" height="$TYPE_MCR_H" alt="Map Type panel with MCR-ALS selected" />
-    <p class="caption">Map Type panel in MCR-ALS mode: Components spinner, Component selector, and Configure MCR-ALS range&hellip; button.</p>
+    <p class="caption">Map Type panel in MCR-ALS mode: Components-to-fit spinner, Browse-component selector, and Configure MCR-ALS range&hellip; button.</p>
 </div>
 
 <p>Unlike SVD (which yields every component from a single fit), NMF and
 MCR-ALS need the number of components chosen <i>before</i> fitting. A
-<b>Components</b> spinner (2–20, capped by the number of spectra in the map)
-shares a row with the component selector in these two modes — set it, then press
-<b>Update Map</b> to fit and show component 1. Changing it requires pressing
-<b>Update Map</b> again; browsing already-fitted components with the
-<b>Component</b> dropdown does not.</p>
+<b>Components to fit</b> spinner (2–20, capped by the number of spectra in
+the map) shares a row with the component selector in these two modes — set
+it, then press <b>Update Map</b> to fit and show component 1. Changing it
+requires pressing <b>Update Map</b> again; browsing already-fitted
+components with the <b>Browse component</b> dropdown does not — and until
+you do, changing <b>Components to fit</b> greys out the <b>Browse
+component</b> dropdown and shows "Components changed — press 'Update Map'
+to refit" in red, so the dropdown's item count and EV%s are never left
+silently describing the old fit. (The two are deliberately worded
+differently, rather than both just saying "Component[s]", since one sets
+how many to fit and the other picks which already-fitted one to browse.)</p>
 
 <p>Configure the spectral range used for the fit with <b>Configure NMF
 range…</b> / <b>Configure MCR-ALS range…</b> — the same restrict-to-region
-mechanism as SVD's <b>Configure SVD range…</b>. The <b>Component</b> dropdown's
-label is always <b>Explained var.(%)</b> in these two modes (σ and Residual
-error, meaningful only for SVD, aren't offered).</p>
+mechanism as SVD's <b>Configure SVD range…</b>. The <b>Browse component</b>
+dropdown's label is always <b>Explained var.(%)</b> in these two modes (σ
+and Residual error, meaningful only for SVD, aren't offered).</p>
 
-<p>Below the Components spinner, each mode shows its own fit-control
+<p>Below the Components-to-fit spinner, each mode shows its own fit-control
 settings — previously fixed at the standalone tools' defaults, now
 adjustable here too:</p>
 <ul>
@@ -482,7 +508,12 @@ or fixed-reference toggle.
 <p>After a fit, a status line below these controls reports <b>Lack of
 fit</b> and the iteration count (and, after "Run N times, keep best…",
 the consensus among the near-best runs) — the same fit-quality figures
-the standalone tools show next to their Run button.</p>
+the standalone tools show next to their Run button. On real, noisy maps
+this number typically plateaus well above 0% — often in the 15&ndash;25%
+range — once the first few components have captured the actual chemistry,
+since it also counts point-to-point measurement noise that no component
+model can fit; see the standalone NMF / MCR-ALS help pages' "Lack of fit"
+notes for the full explanation.</p>
 
 <div class="note">
 NMF and MCR-ALS components are constrained non-negative (MCR-ALS enforces
@@ -506,11 +537,18 @@ its spectrum against the fitted component, and <b>Full spectrum</b> toggles
 between the clipped fit-range view and the full input spectrum with the fit
 range shaded. The overlay checkbox relabels itself to name whichever kind is
 active — <b>Show NMF component</b> or <b>Show MCR-ALS component</b> — but
-otherwise behaves identically to <b>Show SVD component</b> above.</p>
+otherwise behaves identically to <b>Show SVD component</b> above.
+<b>Show reconstructed spectrum using N components</b> works the same way
+here too, reconstructing from whichever fit — NMF or MCR-ALS — is active.
+Its N spinbox is independent of both the <b>Browse component</b> dropdown
+and the <b>Components to fit</b> spinner in the Map Type panel above (which
+sets how many components to <i>fit</i>, and only takes effect after
+pressing <b>Update Map</b>) — it works on whatever is already fitted right
+now.</p>
 
 <div class="screenshot">
     <img src="$NMF_MCR_SPECTRUM_PANEL" width="$NMF_MCR_SPECTRUM_PANEL_W" height="$NMF_MCR_SPECTRUM_PANEL_H" alt="Spectrum panel in NMF/MCR-ALS mode comparing the clicked spectrum against the component" />
-    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the NMF or MCR-ALS component (orange dashed, right axis), same as SVD mode.</p>
+    <p class="caption">Clicked pixel's spectrum (blue, left axis) compared against the NMF or MCR-ALS component (orange dashed, right axis) — same as SVD mode, including the Row/Col title and the optional green reconstruction overlay.</p>
 </div>
 </div>
 
@@ -613,11 +651,16 @@ added to the list immediately.
 <div class="cat">
 <p>The lower-right panel shows the spectrum for the clicked pixel.
 The full input spectrum is always shown (the range configuration only
-affects which region is used for <i>computing</i> the map value, not the display).</p>
+affects which region is used for <i>computing</i> the map value, not the display).
+Its title always states the clicked pixel's <b>Row</b>/<b>Col</b> explicitly
+(1-based — the map's first row/column is Row 1, Col 1), in every mode —
+not just when the spectrum's own label happens to encode it (true only for
+WITec MAT imports' <code>[rNN_cNN]</code>-style labels; other import
+formats have no such label to read a position off of).</p>
 
 <div class="screenshot">
     <img src="$SPECTRUM_PANEL" width="$SPECTRUM_PANEL_W" height="$SPECTRUM_PANEL_H" alt="Spectrum panel showing the spectrum for the clicked pixel" />
-    <p class="caption">The spectrum panel, showing the spectrum at the clicked pixel.</p>
+    <p class="caption">The spectrum panel, showing the spectrum at the clicked pixel, with its Row/Col (1-based) stated in the title.</p>
 </div>
 
 <h3>Show range bands checkbox</h3>
@@ -627,11 +670,12 @@ as a blended colour. Available in Intensity, Arithmetic, and Cluster modes.</p>
 
 <h3>Hover tooltip</h3>
 <p>Move the mouse over any map pixel without clicking to see a tooltip
-showing the spectrum label and map value at that position.</p>
+showing the pixel's Row/Col (1-based, same convention as everywhere else
+in this dialog), its spectrum label, and the map value at that position.</p>
 
 <div class="screenshot">
     <img src="$HOVER_TOOLTIP" width="$HOVER_TOOLTIP_W" height="$HOVER_TOOLTIP_H" alt="Hover tooltip showing spectrum label and map value at the cursor position" />
-    <p class="caption">Hovering over a pixel shows its spectrum label and map value.</p>
+    <p class="caption">Hovering over a pixel shows its Row/Col (1-based), spectrum label, and map value.</p>
 </div>
 </div>
 
@@ -798,13 +842,13 @@ they work regardless of whether spectra share an axis.
 <ol>
   <li>Apply baseline correction and normalisation beforehand if desired.</li>
   <li>Switch to <b>NMF</b> or <b>MCR-ALS</b>.</li>
-  <li>Set <b>Components</b> to how many you expect (start with 2–4).</li>
+  <li>Set <b>Components to fit</b> to how many you expect (start with 2–4).</li>
   <li>Optionally configure the fit range via <b>Configure NMF/MCR-ALS range…</b>.</li>
   <li>Press <b>Update Map</b> to fit and show component 1.</li>
   <li>Browse components in the dropdown to find chemically meaningful ones.</li>
   <li>If a component looks noisy or redundant, refit with a different
-      <b>Components</b> count rather than looking for an Invert-style fix —
-      NMF/MCR-ALS components are non-negative by construction.</li>
+      <b>Components to fit</b> count rather than looking for an Invert-style
+      fix — NMF/MCR-ALS components are non-negative by construction.</li>
 </ol>
 </div>
 

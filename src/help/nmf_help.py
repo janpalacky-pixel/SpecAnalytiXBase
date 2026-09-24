@@ -603,6 +603,34 @@ def get_nmf_help_content():
         adding more components stops reducing it meaningfully.
     </div>
 
+    <div class="note">
+        <strong>Why lack of fit plateaus well above 0% on real data:</strong>
+        baseline correction (SNIP or otherwise) removes a slowly-varying
+        background — it does not remove the point-to-point shot/detector
+        noise riding on every peak and every "flat" region, and no smooth,
+        low-rank model (however many components) can fit genuine random
+        noise, since by definition noise isn't a pattern shared across
+        spectra. On real, noisy Raman/IR maps that noise floor typically
+        accounts for most of the reported lack-of-fit once the first few
+        components have already captured the actual chemistry — a plain,
+        non-chemical smoothing pass applied to the same raw data (which
+        "fits" nothing at all about the sample) will already show a
+        comparable lack-of-fit purely from the noise it removes. So a
+        lack-of-fit that stalls at, say, 15&ndash;25% and stops improving
+        after 2&ndash;3 components is not necessarily a poor fit or a bug:
+        it usually means those first few components have already captured
+        essentially all of the real chemical signal (the per-component EV%
+        figure is the better number to check for that), and adding further
+        components mostly chases noise rather than finding more chemistry.
+        Visual inspection can be misleading in the same way: a
+        reconstruction overlaid on a raw, noisy spectrum with a few
+        dominant sharp peaks can look like an excellent match to the eye
+        even at a lack-of-fit in that range, since point-to-point noise
+        scattered across hundreds of wavelength points is easy to miss
+        visually but still contributes fully to the squared-residual sum
+        the metric is built from.
+    </div>
+
     <div class="screenshot">
         <img src="$FIT_QUALITY_TAB" width="${FIT_QUALITY_TAB_W}" height="${FIT_QUALITY_TAB_H}" alt="Fit Quality tab: per-spectrum residual bars, Elbow lack-of-fit vs component count, or Median residual vs component count" />
         <p class="caption">The Fit Quality tab: Per spectrum, Elbow, and Median residual views.</p>

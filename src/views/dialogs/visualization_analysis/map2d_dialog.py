@@ -207,7 +207,7 @@ class _MapCanvas(FigureCanvas):
 
         label   = self._hover_spectra[sp_idx].get('label', f'#{sp_idx}')
         val     = self._hover_map_data[row, col]
-        text    = f"Row {row}, Col {col}\n{label}\nValue: {val:.4g}"
+        text    = f"Row {row + 1}, Col {col + 1}\n{label}\nValue: {val:.4g}"
 
         if self._ref_picking_active:
             self._show_mini_spectrum_preview(sp_idx, event)
@@ -1006,6 +1006,8 @@ class Map2DDialog(QDialog):
         row.addWidget(self._cols_spin)
         # Suggest dimensions on the same row
         self._btn_autofill = QPushButton("Suggest…")
+        self._btn_autofill.setAutoDefault(False)
+        self._btn_autofill.setDefault(False)
         self._btn_autofill.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._btn_autofill.setToolTip(
             "Show all valid (rows × cols) factor pairs and auto-fill the most square option."
@@ -1257,7 +1259,7 @@ class Map2DDialog(QDialog):
 
         comp_label_row = QHBoxLayout()
         comp_label_row.setSpacing(4)
-        self._decomp_n_label = QLabel("Components:")
+        self._decomp_n_label = QLabel("Components to fit:")
         self._decomp_n_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         comp_label_row.addWidget(self._decomp_n_label)
         self._decomp_n_spin = QSpinBox()
@@ -1273,7 +1275,11 @@ class Map2DDialog(QDialog):
         comp_label_row.addWidget(self._decomp_n_spin)
         self._decomp_n_label.setVisible(False)
         self._decomp_n_spin.setVisible(False)
-        lbl_comp = QLabel("Component:")
+        # Deliberately worded differently from "Components to fit" above
+        # (rather than both just saying "Component[s]") — one sets how
+        # many to fit, this one picks which already-fitted one to browse;
+        # same word for both was confusing them together.
+        lbl_comp = QLabel("Browse component:")
         lbl_comp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         comp_label_row.addWidget(lbl_comp)
         self._component_combo = QComboBox()
@@ -1629,20 +1635,66 @@ class Map2DDialog(QDialog):
         self._show_svd_cb = QCheckBox("Show SVD component")
         self._show_svd_cb.setChecked(True)
         self._show_svd_cb.setToolTip(
-            "Overlay the component's own spectral shape (orange dashed) on the\n"
-            "clicked-pixel spectrum. Active in SVD, NMF, and MCR-ALS modes\n"
-            "(label and tooltip update to name whichever is active).")
+            "Overlay the component's own spectral shape (orange dashed) on\n"
+            "the clicked-pixel spectrum.")
         hdr.addWidget(self._show_svd_cb)
 
         self._svd_full_range_cb = QCheckBox("Full spectrum")
         self._svd_full_range_cb.setChecked(False)
         self._svd_full_range_cb.setToolTip(
-            "Checked: show the full spectrum with SVD band region shaded and\n"
-            "component overlaid on a twin axis within that region.\n"
-            "Unchecked (default): show the spectrum clipped to the SVD range\n"
-            "so it matches the component x-axis exactly.")
+            "Checked: show the full spectrum, with the fit range shaded.\n"
+            "Unchecked (default): show the spectrum clipped to the fit\n"
+            "range so it matches the component x-axis exactly.")
         hdr.addWidget(self._svd_full_range_cb)
+
+        # Reconstructed-spectrum overlay, on the SAME row as the checkboxes
+        # above rather than a row of its own — now that the title label no
+        # longer repeats the component name/EV% (see _update_subspectrum_in_panel),
+        # there's room. Its own explicit "how many components" spinbox is
+        # deliberately NOT tied to the Component dropdown above (which just
+        # browses one component's own map/shape at a time) or, for
+        # NMF/MCR-ALS, to the Components spinner in the Map Type panel
+        # (which sets how many to *fit* and only takes effect after "Update
+        # Map" — this spinbox works on whatever is already fitted, right
+        # away).
+        self._show_reconstructed_cb = QCheckBox("Show reconstr. spectrum using")
+        self._show_reconstructed_cb.setChecked(False)
+        self._show_reconstructed_cb.setToolTip(
+            "Overlay the spectrum rebuilt from the first N fitted components\n"
+            "(N set by the spinbox to the right) on the same axis as the\n"
+            "clicked-pixel spectrum, since it's in the same intensity units\n"
+            "(green dashed). Active in SVD, PCA, NMF, and MCR-ALS modes.")
+        hdr.addWidget(self._show_reconstructed_cb)
+
+        self._recon_n_spin = QSpinBox()
+        self._recon_n_spin.setRange(1, 1)
+        self._recon_n_spin.setValue(1)
+        self._recon_n_spin.setEnabled(False)
+        self._recon_n_spin.setToolTip(
+            "How many already-fitted components to sum into the\n"
+            "reconstruction above (its range tracks how many components\n"
+            "are actually fitted for the active mode). Defaults to using\n"
+            "every fitted component until you dial it down.")
+        hdr.addWidget(self._recon_n_spin)
+        self._recon_n_user_set = False
+
+        self._recon_n_suffix_label = QLabel("comp.")
+        hdr.addWidget(self._recon_n_suffix_label)
+
         vlay.addLayout(hdr)
+
+        # All five of the widgets above are decomposition-only (SVD, PCA,
+        # NMF, MCR-ALS) — hidden explicitly right here rather than relying
+        # solely on _on_mode_changed, which only runs on an actual radio
+        # click: the dialog opens with Intensity checked programmatically
+        # (no click, so no buttonClicked signal), so without this they'd
+        # sit visible-but-meaningless in Intensity/Arithmetic/Cluster mode
+        # until the user happened to click a mode radio once.
+        self._show_svd_cb.setVisible(False)
+        self._svd_full_range_cb.setVisible(False)
+        self._show_reconstructed_cb.setVisible(False)
+        self._recon_n_spin.setVisible(False)
+        self._recon_n_suffix_label.setVisible(False)
 
         self._spectrum_canvas  = _SpectrumCanvas(height_inches=2.4)
         self._spectrum_toolbar = NavigationToolbar(
@@ -1668,6 +1720,8 @@ class Map2DDialog(QDialog):
         self._show_bands_cb.stateChanged.connect(self._on_show_bands_changed)
         self._show_svd_cb.stateChanged.connect(self._on_show_svd_changed)
         self._svd_full_range_cb.stateChanged.connect(self._on_svd_display_changed)
+        self._show_reconstructed_cb.stateChanged.connect(self._on_show_reconstructed_changed)
+        self._recon_n_spin.valueChanged.connect(self._on_recon_n_spin_changed)
         self._component_combo.currentIndexChanged.connect(
             self._on_component_changed)
         self._comp_label_combo.currentIndexChanged.connect(
@@ -1676,7 +1730,7 @@ class Map2DDialog(QDialog):
         self._btn_multi_map.clicked.connect(self._show_multi_map)
         self._btn_diagnostics.clicked.connect(self._show_diagnostics)
         self._btn_decomp_run_n.clicked.connect(self._run_decomp_best_of_n)
-        self._decomp_n_spin.valueChanged.connect(self._rebuild_reference_rows)
+        self._decomp_n_spin.valueChanged.connect(self._on_decomp_n_changed)
         self._ref_fix_cb.toggled.connect(self._on_reference_settings_changed)
         self._ref_autorecompute_cb.toggled.connect(self._on_ref_autorecompute_toggled)
         self._cmap_combo.currentTextChanged.connect(
@@ -1824,6 +1878,7 @@ class Map2DDialog(QDialog):
         # only needs to fire when leaving the decomposition modes entirely)
         if not is_decomp:
             self._clear_twin_axis()
+            self._clear_reconstructed_overlay()
 
         # Metric panel and band config visible for intensity and arithmetic only
         self._metric_panel.setVisible(is_int or is_arith)
@@ -1887,8 +1942,19 @@ class Map2DDialog(QDialog):
         if is_decomp:
             kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             self._show_svd_cb.setText(f"Show {kind_label} component")
+            self._show_svd_cb.setToolTip(
+                f"Overlay the {kind_label} component's own spectral shape\n"
+                "(orange dashed) on the clicked-pixel spectrum.")
+            self._svd_full_range_cb.setToolTip(
+                f"Checked: show the full spectrum, with the {kind_label} range\n"
+                "shaded.\n"
+                f"Unchecked (default): show the spectrum clipped to the\n"
+                f"{kind_label} range so it matches the component x-axis exactly.")
         self._show_svd_cb.setVisible(is_decomp)
         self._svd_full_range_cb.setVisible(is_decomp)
+        self._show_reconstructed_cb.setVisible(is_decomp)
+        self._recon_n_spin.setVisible(is_decomp)
+        self._recon_n_suffix_label.setVisible(is_decomp)
 
 
         self._invalidate_map()
@@ -1899,6 +1965,16 @@ class Map2DDialog(QDialog):
             self._spectrum_title_label.setText(f"Press 'Update Map' to compute {kind_label}")
             self._spectrum_canvas.ax.cla()
             self._spectrum_canvas.draw_idle()
+            self._recon_n_user_set = False
+            self._recon_n_spin.blockSignals(True)
+            self._recon_n_spin.setMaximum(1)
+            self._recon_n_spin.setValue(1)
+            self._recon_n_spin.blockSignals(False)
+            # Undo any "Components changed — press Update Map" staleness
+            # left over from a previous visit to NMF/MCR-ALS mode.
+            self._component_combo.setEnabled(True)
+            self._decomp_status_label.setStyleSheet(
+                "font-size:8pt; color:#2E7D32;")
         elif is_int or is_arith or is_cluster:
             # Always recompute for fast modes when dims are valid —
             # regardless of whether a previous map existed (covers jumping from SVD)
@@ -2637,6 +2713,11 @@ class Map2DDialog(QDialog):
                 title=title,
                 equal_aspect=self._equal_aspect_cb.isChecked(),
             )
+            # Freshly (re)fit — the panel below is about to fall back to
+            # its default spectrum-0 preview, so a previous click's pixel
+            # is no longer what's being shown; drop it rather than let
+            # the reconstruction overlay keep referencing it.
+            self._last_clicked_pixel = None
             self._update_subspectrum_in_panel(comp_idx)
             self._update_decomp_status_label(kind)
             self._on_map_computed()
@@ -2644,6 +2725,37 @@ class Map2DDialog(QDialog):
         self._map_canvas.setFocus()
 
     # ── NMF/MCR-ALS: reference-spectra anchoring ────────────────────────
+
+    def _on_decomp_n_changed(self, *_):
+        """'Components' spinner (how many to fit next) changed.
+
+        The Component dropdown, its EV%s, and the Lack-of-fit/iterations
+        status line all still describe the OLD fit until 'Update Map' is
+        pressed — so rather than leaving a mismatched count on screen
+        with no explanation (e.g. "Components: 6" next to a dropdown
+        still only listing C1-C4 from a 4-component fit), mark the map
+        and the whole spectrum panel stale, exactly like a range change
+        does for NMF/MCR-ALS (see _configure_ranges).
+        """
+        self._rebuild_reference_rows()
+        kind = self._decomp_kind()
+        if kind not in ('nmf', 'mcr'):
+            return
+        kind_label = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        self._invalidate_map()
+        self._component_combo.setEnabled(False)
+        self._decomp_status_label.setStyleSheet(
+            "font-size:8pt; color:#B71C1C; font-weight:bold;")
+        self._decomp_status_label.setText(
+            f"Components changed to {self._decomp_n_spin.value()} — "
+            f"press 'Update Map' to refit {kind_label}")
+        self._decomp_status_label.setVisible(True)
+        self._spectrum_title_label.setText(
+            f"{kind_label} components changed — press 'Update Map' to refit")
+        self._spectrum_canvas.ax.cla()
+        self._spectrum_canvas.draw_idle()
+        self._clear_twin_axis()
+        self._clear_reconstructed_overlay()
 
     def _rebuild_reference_rows(self, *_):
         """One reference row per component slot, synced to the current
@@ -2726,7 +2838,8 @@ class Map2DDialog(QDialog):
         sp_idx = row * n_cols + col
         label = (self.spectra[sp_idx].get('label', f'r{row}_c{col}')
                  if 0 <= sp_idx < self.n_spectra else f'r{row}_c{col}')
-        row_widgets['status_label'].setText(f"row {row}, col {col}  —  {label}")
+        row_widgets['status_label'].setText(
+            f"row {row + 1}, col {col + 1}  —  {label}")
         row_widgets['view_btn'].setEnabled(0 <= sp_idx < self.n_spectra)
 
     def _sync_ref_markers(self):
@@ -2861,6 +2974,10 @@ class Map2DDialog(QDialog):
         """Show lack-of-fit / iterations (and, after a best-of-n run,
         the consensus info) for NMF/MCR-ALS — SVD has no equivalent
         concept (it's an exact, non-iterative decomposition)."""
+        # A fresh fit is in hand — undo the red "Components changed —
+        # press Update Map" styling _on_decomp_n_changed may have set.
+        self._decomp_status_label.setStyleSheet(
+            "font-size:8pt; color:#2E7D32;")
         if kind not in ('nmf', 'mcr'):
             self._decomp_status_label.setText("")
             return
@@ -2970,6 +3087,11 @@ class Map2DDialog(QDialog):
             title=title,
             equal_aspect=self._equal_aspect_cb.isChecked(),
         )
+        # Same reasoning as _compute_map's decomp branch: a fresh best-of-n
+        # refit falls back to the default spectrum-0 preview below, so
+        # drop any previous click rather than leave the reconstruction
+        # overlay pointing at a pixel from before this refit.
+        self._last_clicked_pixel = None
         self._update_subspectrum_in_panel(comp_idx)
         self._update_decomp_status_label(kind)
         self._on_map_computed()
@@ -3015,6 +3137,35 @@ class Map2DDialog(QDialog):
         idx = min(keep_index, max(0, n - 1))
         self._component_combo.setCurrentIndex(idx)
         self._component_combo.blockSignals(False)
+        self._component_combo.setEnabled(True)
+        self._refresh_recon_n_spin()
+
+    def _refresh_recon_n_spin(self):
+        """Keep the reconstruction spinbox's range in sync with how many
+        components are actually fitted for the active kind.
+
+        Defaults to the full component count until the user explicitly
+        dials it down (self._recon_n_user_set) — after that, their choice
+        is preserved across refreshes (switching the σ/EV/RE label combo,
+        re-running NMF/MCR-ALS, etc.) as long as it's still in range.
+        """
+        kind = self._decomp_kind()
+        if kind is None:
+            return
+        n_total = self.controller.get_n_components(kind)
+        if n_total <= 0:
+            return
+        self._recon_n_spin.blockSignals(True)
+        self._recon_n_spin.setMaximum(n_total)
+        if not self._recon_n_user_set or self._recon_n_spin.value() > n_total:
+            self._recon_n_spin.setValue(n_total)
+        self._recon_n_spin.blockSignals(False)
+
+    def _on_recon_n_spin_changed(self, _value):
+        """User picked a specific N — remember that and refresh the overlay."""
+        self._recon_n_user_set = True
+        if self._show_reconstructed_cb.isChecked() and self._is_decomp_mode():
+            self._draw_reconstructed_overlay()
 
     def _refresh_component_combo_labels(self):
         """Called when the user switches EV% ↔ σ label selector."""
@@ -3391,7 +3542,7 @@ class Map2DDialog(QDialog):
                 self._map_canvas.mark_pixel(row, col)
                 self._act_line_roi.setText("Cancel line profile")
                 self._click_info_label.setText(
-                    f"Line mode: P1 set at row={row}, col={col}.  "
+                    f"Line mode: P1 set at row={row + 1}, col={col + 1}.  "
                     f"Now click the END point.")
             else:
                 r0, c0 = self._line_p1
@@ -3462,7 +3613,7 @@ class Map2DDialog(QDialog):
         map_val = self._last_map_data[row, col]
 
         self._click_info_label.setText(
-            f"Row {row}, Col {col}  →  spectrum: {label}  "
+            f"Row {row + 1}, Col {col + 1}  →  spectrum: {label}  "
             f"(map value: {map_val:.5g})")
 
         if self._right_splitter.sizes()[1] == 0:
@@ -3476,11 +3627,12 @@ class Map2DDialog(QDialog):
             self._update_subspectrum_in_panel(comp_idx, clicked_sp=sp)
         elif self._radio_cluster.isChecked():
             cluster_id = int(round(map_val))
+            pos = f"Row {row + 1}, Col {col + 1}"
             self._spectrum_title_label.setText(
-                f"{label}  [Cluster {cluster_id}]")
+                f"{label}  [{pos}]  [Cluster {cluster_id}]")
             self._spectrum_canvas.update_spectrum(
                 x, y,
-                title=f"{label}  (Cluster {cluster_id})",
+                title=f"{label}  ({pos})  (Cluster {cluster_id})",
                 xlabel="Wavenumber / x",
                 ylabel="Intensity",
                 color='#1565C0',
@@ -3488,11 +3640,12 @@ class Map2DDialog(QDialog):
             self._draw_range_bands(x)
         else:
             mode = self._metric_combo.currentText()
+            pos = f"Row {row + 1}, Col {col + 1}"
             self._spectrum_title_label.setText(
-                f"{label}  [{mode} = {map_val:.4g}]")
+                f"{label}  [{pos}]  [{mode} = {map_val:.4g}]")
             self._spectrum_canvas.update_spectrum(
                 x, y,
-                title=f"{label}  ({mode} = {map_val:.4g})",
+                title=f"{label}  ({pos})  ({mode} = {map_val:.4g})",
                 xlabel="Wavenumber / x",
                 ylabel="Intensity",
                 color='#1565C0',
@@ -3559,14 +3712,96 @@ class Map2DDialog(QDialog):
         self._spectrum_canvas.fig.tight_layout()
         self._spectrum_canvas.draw_idle()
 
+    def _clear_reconstructed_overlay(self):
+        """Remove the reconstructed-spectrum overlay from the spectrum canvas."""
+        canvas = self._spectrum_canvas
+        if hasattr(canvas, '_recon_line') and canvas._recon_line is not None:
+            try:
+                canvas._recon_line.remove()
+            except Exception:
+                pass
+            canvas._recon_line = None
+            legend = canvas.ax.get_legend()
+            if legend is not None:
+                try:
+                    legend.remove()
+                except Exception:
+                    pass
+            canvas.draw_idle()
+
+    def _on_show_reconstructed_changed(self):
+        """Toggle the reconstructed-spectrum overlay instantly (SVD/PCA/NMF/MCR-ALS)."""
+        checked = self._show_reconstructed_cb.isChecked()
+        self._recon_n_spin.setEnabled(checked)
+        self._recon_n_suffix_label.setEnabled(checked)
+        if checked:
+            if self._is_decomp_mode():
+                self._draw_reconstructed_overlay()
+        else:
+            self._clear_reconstructed_overlay()
+
+    def _draw_reconstructed_overlay(self):
+        """Add/refresh the reconstructed-spectrum overlay — only if checkbox
+        is on AND a pixel has actually been clicked.
+
+        Unlike a component's own subspectrum (a different physical
+        quantity, hence the twin axis in _draw_twin_subspectrum), a
+        reconstruction built from N components is in the same intensity
+        units as the clicked-pixel spectrum, so it's plotted as a second
+        line directly on the primary axis rather than on a twin axis.
+
+        N comes from its own spinbox (self._recon_n_spin) — deliberately
+        independent of which single component the Component dropdown is
+        browsing. Deliberately does NOT fall back to spectrum index 0
+        before any pixel has been clicked (unlike the raw component
+        overlay, which previews spectrum 0) — a reconstruction claims to
+        approximate a specific pixel's spectrum, and showing one with no
+        Row/Col shown for it looked like a stale/wrong result.
+        """
+        kind = self._decomp_kind()
+        if kind is None or self._last_clicked_pixel is None:
+            self._clear_reconstructed_overlay()
+            return
+        if not self._show_reconstructed_cb.isChecked():
+            self._clear_reconstructed_overlay()
+            return
+        n_cols = self._cols_spin.value()
+        row, col = self._last_clicked_pixel
+        sp_idx = row * n_cols + col
+        if not (0 <= sp_idx < self.n_spectra):
+            self._clear_reconstructed_overlay()
+            return
+        n_components = self._recon_n_spin.value()
+        rx, ry = self.controller.get_reconstructed_spectrum(
+            kind, sp_idx, n_components)
+        if rx is None or ry is None:
+            return
+        ax = self._spectrum_canvas.ax
+        # Remove previous reconstruction line cleanly
+        if hasattr(self._spectrum_canvas, '_recon_line') and \
+                self._spectrum_canvas._recon_line is not None:
+            try:
+                self._spectrum_canvas._recon_line.remove()
+            except Exception:
+                pass
+            self._spectrum_canvas._recon_line = None
+        line, = ax.plot(rx, ry, color='#2E7D32', linewidth=1.1,
+                        linestyle='--', alpha=0.85,
+                        label=f"Reconstructed ({n_components} comp.)")
+        self._spectrum_canvas._recon_line = line
+        ax.legend(handles=[line], fontsize=6, loc='upper right', framealpha=0.7)
+        self._spectrum_canvas.fig.tight_layout()
+        self._spectrum_canvas.draw_idle()
+
     # ── Spectrum / subspectrum panel helpers ────────────────────────────
 
     def _show_range_spectrum_in_panel(self):
         """After compute or mode switch: show first spectrum with range band shading."""
         if self._right_splitter.sizes()[1] == 0 or not self.spectra:
             return
-        # Clear any SVD twin axis from a previous mode
+        # Clear any SVD twin axis / reconstruction overlay from a previous mode
         self._clear_twin_axis()
+        self._clear_reconstructed_overlay()
 
         sp    = self.spectra[0]
         x     = np.asarray(sp.get('original_x_scale', sp['x_scale']), dtype=float)
@@ -3737,13 +3972,20 @@ class Map2DDialog(QDialog):
         y_full = np.asarray(sp.get('original_y_scale', sp['y_scale']),
                              dtype=float)
 
-        ev_arr = self.controller.get_component_explained_variance(kind)
-        ev     = (ev_arr[comp_idx]
-                  if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
-        kind_title = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
-        title  = f"{kind_title} component {comp_idx + 1}  (EV = {ev:.3f}%)"
-        self._spectrum_title_label.setText(
-            f"{title}  — click a pixel to see its spectrum")
+        # The component name and its EV% are already shown just above, in
+        # the Map Type panel's Browse-component dropdown — repeating them
+        # here, in both this label AND the plot's own title, was pure
+        # duplication. The one thing this panel alone tells you is which
+        # pixel is being shown, so that's all its title states now.
+        if clicked_sp is not None and self._last_clicked_pixel is not None:
+            # Row/Col of the clicked pixel — shown explicitly rather than
+            # relying on it being decodable from the spectrum's own label
+            # (only true for WITec MAT imports; not for other formats).
+            r, c = self._last_clicked_pixel
+            title = f"Row {r + 1}, Col {c + 1}"
+        else:
+            title = "Click a pixel to see its spectrum"
+        self._spectrum_title_label.setText(title)
 
         show_full = self._svd_full_range_cb.isChecked()
 
@@ -3782,6 +4024,10 @@ class Map2DDialog(QDialog):
         # Overlay component subspectrum if checkbox is checked
         if self._show_svd_cb.isChecked():
             self._draw_twin_subspectrum()
+
+        # Overlay reconstructed spectrum if checkbox is checked
+        if self._show_reconstructed_cb.isChecked():
+            self._draw_reconstructed_overlay()
 
         self._set_spectrum_panel_visible(True)
 
@@ -4549,6 +4795,29 @@ class Map2DDialog(QDialog):
     # ------------------------------------------------------------------ #
     # QDialog cleanup                                                      #
     # ------------------------------------------------------------------ #
+
+    def keyPressEvent(self, event):
+        """Enter/Return never triggers a button click in this dialog.
+
+        QDialog's own base implementation reacts to Return/Enter by
+        clicking whichever button Qt considers "the" default — every
+        QPushButton is autoDefault=True unless told otherwise, and with
+        none of this dialog's many buttons explicitly exempted, Qt was
+        free to pick any one of them. Disabling autoDefault on a single
+        button (e.g. "Suggest…") only made Qt fall through to the next
+        eligible one (e.g. the "?" info button) — the bug wasn't about
+        which button was nearby, it was this dialog-wide default-button
+        mechanism itself. This dialog is a persistent tool panel, not a
+        simple form with one obvious "submit" action, so Return/Enter
+        should never fire a button on its own no matter which widget has
+        focus — intercepting it here, before QDialog's base class gets
+        to act on it, is the one place that reliably covers every
+        widget and every button at once.
+        """
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def closeEvent(self, event):
         try:

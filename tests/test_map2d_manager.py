@@ -294,6 +294,116 @@ def test_unknown_kind_raises():
         mgr.get_component_coefficients('bogus', 0)
     with pytest.raises(ValueError):
         mgr.get_component_explained_variance('bogus')
+    with pytest.raises(ValueError):
+        mgr.get_reconstructed_spectrum('bogus', 0, 1)
+
+
+# ---------------------------------------------------------------------------
+# get_reconstructed_spectrum — sum-of-components reconstruction
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("kind", ALL_KINDS)
+def test_get_reconstructed_spectrum_before_compute_returns_none(kind):
+    mgr = Map2DManager()
+    x, y = mgr.get_reconstructed_spectrum(kind, 0, 1)
+    assert x is None and y is None
+
+
+@pytest.mark.parametrize("kind", ALL_KINDS)
+def test_get_reconstructed_spectrum_shape(map_fixture, kind):
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    rx, ry = mgr.get_reconstructed_spectrum(kind, 0, 1)
+    assert rx is not None and ry is not None
+    assert len(rx) == len(ry)
+
+
+@pytest.mark.parametrize("kind", ("svd", "pca"))
+def test_get_reconstructed_spectrum_full_rank_is_exact(map_fixture, kind):
+    """SVD/PCA are plain linear algebra: summing ALL singular components
+    back together must reproduce the original (filtered) pixel spectrum
+    to numerical precision — the Eckart-Young full-rank identity, unlike
+    NMF/MCR-ALS's approximate iterative fit."""
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    n_total = mgr.get_n_components(kind)
+    pixel_y = np.asarray(spectra[0]['y_scale'], dtype=float)
+    _, y_full = mgr.get_reconstructed_spectrum(kind, 0, n_total)
+    np.testing.assert_allclose(y_full, pixel_y, atol=1e-8)
+
+
+@pytest.mark.parametrize("kind", ("svd", "pca"))
+def test_get_reconstructed_spectrum_error_shrinks_with_more_components(map_fixture, kind):
+    """Singular vectors are orthogonal, so each additional component can
+    only reduce (never increase) the reconstruction's distance to the
+    true pixel spectrum."""
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    n_total = mgr.get_n_components(kind)
+    assert n_total >= 2
+    pixel_y = np.asarray(spectra[0]['y_scale'], dtype=float)
+    prev_err = None
+    for n in range(1, n_total + 1):
+        _, y_n = mgr.get_reconstructed_spectrum(kind, 0, n)
+        err = np.linalg.norm(y_n - pixel_y)
+        if prev_err is not None:
+            assert err <= prev_err + 1e-8
+        prev_err = err
+
+
+@pytest.mark.parametrize("kind", ("nmf", "mcr"))
+def test_get_reconstructed_spectrum_full_components_reasonably_close(map_fixture, kind):
+    """NMF/MCR-ALS are iterative approximate fits (their own fit
+    correctness is covered elsewhere per this file's header) — here just
+    check the accessor returns the model's own W@H / C@ST approximation,
+    reasonably close to the measured pixel spectrum for this easy
+    2-component synthetic dataset."""
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    n_total = mgr.get_n_components(kind)
+    pixel_y = np.asarray(spectra[0]['y_scale'], dtype=float)
+    _, y_full = mgr.get_reconstructed_spectrum(kind, 0, n_total)
+    rel_err = np.linalg.norm(y_full - pixel_y) / np.linalg.norm(pixel_y)
+    assert rel_err < 0.15
+
+
+def test_get_reconstructed_spectrum_n_components_clamped(map_fixture):
+    """n_components beyond the fitted count, and below 1, are clamped —
+    same convention as the other unified accessors' component_index
+    clamping."""
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    n_total = mgr.get_n_components('svd')
+
+    _, y_over  = mgr.get_reconstructed_spectrum('svd', 0, n_total + 50)
+    _, y_exact = mgr.get_reconstructed_spectrum('svd', 0, n_total)
+    np.testing.assert_allclose(y_over, y_exact, atol=1e-12)
+
+    _, y_under = mgr.get_reconstructed_spectrum('svd', 0, 0)
+    _, y_one   = mgr.get_reconstructed_spectrum('svd', 0, 1)
+    np.testing.assert_allclose(y_under, y_one, atol=1e-12)
+
+
+def test_get_reconstructed_spectrum_pixel_index_clamped(map_fixture):
+    """pixel_index outside the valid range is clamped rather than raising
+    an IndexError."""
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    n_pixels = n_rows * n_cols
+
+    _, y_over = mgr.get_reconstructed_spectrum('svd', n_pixels + 50, 1)
+    _, y_last = mgr.get_reconstructed_spectrum('svd', n_pixels - 1, 1)
+    np.testing.assert_allclose(y_over, y_last, atol=1e-12)
+
+    _, y_under = mgr.get_reconstructed_spectrum('svd', -5, 1)
+    _, y_first = mgr.get_reconstructed_spectrum('svd', 0, 1)
+    np.testing.assert_allclose(y_under, y_first, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------

@@ -315,8 +315,13 @@ def read_mat_map_data(
 
     base_name = os.path.splitext(os.path.basename(filepath))[0]
     zero_padding = max(1, zero_padding)
-    row_digits = max(1, len(str(n_rows - 1)))
-    col_digits = max(1, len(str(n_cols - 1)))
+    # Labels are 1-based (row 1, col 1 — not the internal 0-based
+    # pixel_row/pixel_col used for array indexing below and throughout
+    # the app), matching how a person would read off a map position.
+    # Digit width is sized off the 1-based maximum (n_rows/n_cols), not
+    # n_rows-1/n_cols-1 as it would be for 0-based labels.
+    row_digits = max(1, len(str(n_rows)))
+    col_digits = max(1, len(str(n_cols)))
 
     data = data.astype(float)
 
@@ -332,8 +337,8 @@ def read_mat_map_data(
         y_scale = data[pixel_index, :]
 
         label = (
-            f"{base_name} [r{str(row).zfill(row_digits)}"
-            f"_c{str(col).zfill(col_digits)}]"
+            f"{base_name} [r{str(row + 1).zfill(row_digits)}"
+            f"_c{str(col + 1).zfill(col_digits)}]"
         )
 
         import_parameters = {

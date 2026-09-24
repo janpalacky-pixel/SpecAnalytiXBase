@@ -1118,6 +1118,22 @@ def get_mcr_als_help_content():
     / &Sigma;D&sup2;) — the same formula used throughout this dialog and
     in NMF's status line, for direct comparability between the two
     methods.</p>
+    <div class="note">
+        <strong>Why lack of fit plateaus well above 0% on real data:</strong>
+        baseline correction removes a slowly-varying background, not the
+        point-to-point shot/detector noise riding on every peak — and no
+        smooth, non-negative low-rank model can fit genuine random noise,
+        since it isn't a pattern shared across spectra. On real, noisy
+        maps that noise floor often accounts for most of a lack-of-fit
+        that stalls at, say, 15&ndash;25% once the first few components
+        have already captured the actual chemistry (check each
+        component's EV% for confirmation) — adding more components beyond
+        that point mostly chases noise rather than finding more chemistry,
+        and this is not by itself a sign of a poor fit or a bug. See
+        NMF's help page ("What 'Lack of fit' means") for the full
+        explanation, which applies identically here since both methods
+        share this formula.
+    </div>
     <p>Background: Tauler, R. "Multivariate curve resolution applied to
     second order data." <em>Chemometrics and Intelligent Laboratory
     Systems</em> 30 (1995): 133-146 — the original MCR-ALS formulation

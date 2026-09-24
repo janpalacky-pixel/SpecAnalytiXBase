@@ -155,6 +155,9 @@ class Map2DController:
     def get_component_coefficients(self, kind, component_index):
         return self.manager.get_component_coefficients(kind, component_index)
 
+    def get_reconstructed_spectrum(self, kind, pixel_index, n_components):
+        return self.manager.get_reconstructed_spectrum(kind, pixel_index, n_components)
+
     def get_component_explained_variance(self, kind):
         return self.manager.get_component_explained_variance(kind)
 

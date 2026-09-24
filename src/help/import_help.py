@@ -454,11 +454,12 @@ def get_import_help_content():
     </p>
     <p>
         Importing one of these files creates <b>one spectrum per pixel</b>,
-        labelled <code>&lt;file&gt; [rNN_cNN]</code> (row/column numbers
-        zero-padded to the map's own grid size), all sharing that one
-        spectral x-axis. Nothing needs to be configured — the row/col grid
-        size, spectral axis, and pixel coordinates all come from the file
-        itself.
+        labelled <code>&lt;file&gt; [rNN_cNN]</code> — row/column numbers
+        1-based (the map's first row/column is <code>r1_c1</code>, not
+        <code>r0_c0</code>) and zero-padded to the map's own grid size —
+        all sharing that one spectral x-axis. Nothing needs to be
+        configured — the row/col grid size, spectral axis, and pixel
+        coordinates all come from the file itself.
     </p>
     <p>
         Every imported spectrum's <code>import_parameters</code> metadata
@@ -466,9 +467,11 @@ def get_import_help_content():
         map's full grid size), <code>pixel_row</code> / <code>pixel_col</code>
         (that spectrum's own position in it), and — when the file recorded
         physical spacing — <code>spatial_x</code> / <code>spatial_y</code> in
-        <code>spatial_unit</code>. This is what lets the map's spatial
-        structure be reconstructed afterwards — the <b>2-D Map</b> dialog
-        reads <code>map_n_rows</code> &times; <code>map_n_cols</code> straight
+        <code>spatial_unit</code>. Unlike the label, these are <b>0-based</b>
+        array indices (the first row/column is <code>0</code>, not
+        <code>1</code>) — this is what lets the map's spatial structure be
+        reconstructed afterwards — the <b>2-D Map</b> dialog reads
+        <code>map_n_rows</code> &times; <code>map_n_cols</code> straight
         from the imported spectra and fills them in automatically, reshaping
         back into the original spatial grid for visualization with no manual
         dimension entry needed.
@@ -494,10 +497,10 @@ def get_import_help_content():
         those coincide). They're listed in that grid's own natural
         reading order &mdash; every column from the first sampled row,
         then every column from the middle row, then every column from the
-        last row &mdash; which is why the header order (e.g.
-        <code>r0_c0, r0_c71, r0_c143, r57_c0, &hellip;</code>) can look
-        non-sequential: it's a spatial sample, not a walk through the
-        file's own flat pixel order. Hovering over the table repeats this
+        last row &mdash; which is why the header order (e.g., 1-based
+        like the imported labels: <code>r1_c1, r1_c72, r1_c144, r58_c1,
+        &hellip;</code>) can look non-sequential: it's a spatial sample,
+        not a walk through the file's own flat pixel order. Hovering over the table repeats this
         same explanation. The <b>Rows to show</b> spin box above the
         table controls how many spectral points are listed (default 20);
         changing it just redraws the already-loaded preview, it never

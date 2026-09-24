@@ -1511,8 +1511,11 @@ class ImportDialog(QDialog):
         self._preview_table.setColumnCount(1 + len(preview_pixels))
         self._preview_table.setHorizontalHeaderLabels(
             [unit] + [
-                f"r{p['metadata']['import_parameters']['pixel_row']}"
-                f"_c{p['metadata']['import_parameters']['pixel_col']}"
+                # +1: match the 1-based r/c numbering mat_map_converter
+                # now uses in the imported spectra's own labels, not the
+                # 0-based pixel_row/pixel_col used for array indexing.
+                f"r{p['metadata']['import_parameters']['pixel_row'] + 1}"
+                f"_c{p['metadata']['import_parameters']['pixel_col'] + 1}"
                 for p in preview_pixels
             ]
         )
