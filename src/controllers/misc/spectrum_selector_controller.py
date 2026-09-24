@@ -442,19 +442,24 @@ class SpectrumSelector:
             
     def show_spectra_selection_dialog(self):
         """
-        Show dialog for selecting spectra by range with step option.
+        Show dialog for selecting spectra by index range, text search, or
+        common root name.
         """
         # Get the current list of spectra
-        total_spectra = self.controller.spectra_list_widget.count()
-        
+        widget = self.controller.spectra_list_widget
+        total_spectra = widget.count()
+
         if not total_spectra:
             return
-            
+
+        labels = [widget.item(i).text() for i in range(total_spectra)]
+
         # Create and show reusable spectra selection dialog
         dialog = SpectraSelectionDialog(
             parent=self.controller.view,
             total_spectra=total_spectra,
-            title="Select Spectra"
+            title="Select Spectra",
+            labels=labels,
         )
         
         if dialog.exec_() == QDialog.Accepted:
@@ -466,11 +471,9 @@ class SpectrumSelector:
         Apply the selection based on parameters from the dialog.
         
         Args:
-            params (dict): Selection parameters with keys 'start', 'end', 'step', 'action'
+            params (dict): Selection parameters with keys 'indices', 'action'
         """
-        start = params['start']
-        end = params['end']
-        step = params['step']
+        indices = params['indices']
         action = params['action']
         
         self.is_handling_selection = True
@@ -479,10 +482,7 @@ class SpectrumSelector:
             if action == "select":
                 self.controller.spectra_list_widget.clearSelection()
                 self.selected_indices.clear()
-            
-            # Prepare the indices to be affected
-            indices = list(range(start, end + 1, step))
-            
+
             # Apply the selection changes
             for idx in indices:
                 if idx < self.controller.spectra_list_widget.count():

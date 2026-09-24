@@ -196,11 +196,12 @@ class RenameSpectraDialog(QDialog):
         total_spectra = self.table.rowCount()
         if total_spectra == 0:
             return
-            
+
         dialog = SpectraSelectionDialog(
             parent=self,
             total_spectra=total_spectra,
-            title="Select Spectra for Renaming"
+            title="Select Spectra for Renaming",
+            labels=self.spectra_labels,
         )
         
         if dialog.exec_() == QDialog.Accepted:
@@ -209,14 +210,9 @@ class RenameSpectraDialog(QDialog):
     
     def apply_selection(self, params):
         """Apply the selection based on parameters from the dialog."""
-        start = params['start']
-        end = params['end']
-        step = params['step']
+        indices = params['indices']
         action = params['action']
-        
-        # Get indices in the range with the specified step
-        indices = range(start, end + 1, step)
-        
+
         # Clear current selection first if this is a new selection
         if action == "select":
             self.table.clearSelection()
