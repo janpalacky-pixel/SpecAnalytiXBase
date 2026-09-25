@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout,
     QGroupBox, QRadioButton, QCheckBox, QComboBox,
-    QLabel, QPushButton, QButtonGroup, QMessageBox,
+    QLabel, QPushButton, QButtonGroup, QMessageBox, QWidget,
 )
 
 from src.help.help_window import open_help_topic
@@ -188,6 +188,32 @@ class SaveOptionsDialog(QDialog):
         self.snapshot_info.setVisible(False)
         opts_layout.addWidget(self.snapshot_info)
 
+        # Snapshot compression -- a few named presets rather than exposing
+        # gzip's raw 1-9 level directly, which means nothing without
+        # documentation. Wrapped in its own QWidget (not just a bare
+        # QHBoxLayout) so the whole row can be shown/hidden as a unit via
+        # setVisible() in _refresh(), the same way self.snapshot_info is --
+        # a bare layout has no setVisible of its own.
+        self.compression_row = QWidget()
+        comp_row_layout = QHBoxLayout()
+        comp_row_layout.setContentsMargins(0, 0, 0, 0)
+        comp_row_layout.addWidget(QLabel("Compression:"))
+        self.compression_level = QComboBox()
+        self.compression_level.addItems(["Fast", "Balanced (default)", "Maximum"])
+        self.compression_level.setCurrentIndex(1)  # Balanced -- matches
+        # SaveManager.SNAPSHOT_GZIP_LEVEL's own default (gzip level 6)
+        self.compression_level.setToolTip(
+            "How hard to compress the .snapx file. Fast = quicker save, "
+            "larger file. Maximum = smaller file, slower save (can be "
+            "noticeably slower for a large workspace). Balanced is a good "
+            "default for most sessions."
+        )
+        comp_row_layout.addWidget(self.compression_level)
+        comp_row_layout.addStretch()
+        self.compression_row.setLayout(comp_row_layout)
+        self.compression_row.setVisible(False)
+        opts_layout.addWidget(self.compression_row)
+
         opts_group.setLayout(opts_layout)
         layout.addWidget(opts_group)
 
@@ -243,6 +269,7 @@ class SaveOptionsDialog(QDialog):
         self.value_separator.setEnabled(not is_snapshot and is_text)
         self.decimal_separator.setEnabled(not is_snapshot and is_text)
         self.snapshot_info.setVisible(is_snapshot)
+        self.compression_row.setVisible(is_snapshot)
         self.spc_info.setVisible(is_spc and is_table)
 
         show_interlaced_hint = (
@@ -290,6 +317,16 @@ class SaveOptionsDialog(QDialog):
     # Settings extraction
     # ------------------------------------------------------------------
 
+    # Display text -> gzip compresslevel. "Balanced" matches
+    # SaveManager.SNAPSHOT_GZIP_LEVEL's own default (6) exactly, so
+    # leaving this combo untouched behaves identically to before this
+    # control existed.
+    _COMPRESSION_PRESETS = {
+        "Fast": 1,
+        "Balanced (default)": 6,
+        "Maximum": 9,
+    }
+
     def get_settings(self) -> dict:
         sep_display = self.value_separator.currentText()
         sep_map = {'tab': '\t', ';': ';', ',': ',', ' ': ' '}
@@ -308,4 +345,6 @@ class SaveOptionsDialog(QDialog):
             'use_labels':        self.use_labels.isChecked(),
             'value_separator':   value_sep,
             'decimal_separator': self.decimal_separator.currentText(),
+            'compression_level': self._COMPRESSION_PRESETS.get(
+                self.compression_level.currentText(), 6),
         }

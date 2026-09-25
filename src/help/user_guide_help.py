@@ -1857,6 +1857,27 @@ def get_user_guide_help_content():
                 it was when that snapshot was saved</li>
         </ul>
 
+        <div class="info">
+            <strong>Snapshot files are compressed automatically.</strong> A
+            <strong>.snapx</strong> file stores your data losslessly &mdash;
+            nothing is thrown away or approximated, and it still opens exactly
+            the same way &mdash; but the file itself takes up noticeably less
+            disk space than it used to, especially for a workspace with many
+            spectra (a large 2D map, for example) and several Operations
+            History steps applied. Saving a large workspace can take a few
+            extra seconds because of this; a progress bar is shown for the
+            whole save so it's clear the application is working, not stuck.
+            Every snapshot you saved before this change still loads exactly
+            as before.<br><br>
+            When File &rarr; Save&hellip; &rarr; <strong>Snapshot</strong> is
+            selected, the Save dialog shows a <strong>Compression</strong>
+            choice: <strong>Fast</strong> (quickest save, larger file),
+            <strong>Balanced</strong> (the default, and what earlier versions
+            of this note assumed), or <strong>Maximum</strong> (smallest
+            file, slower save &mdash; worth it if you're archiving a
+            snapshot rather than working with it day to day).
+        </div>
+
         <h4>What Happens When You Load a Snapshot</h4>
         <p>Loading a snapshot <strong>replaces your current workspace</strong>
         &mdash; this can't be undone, so save anything you want to keep first.

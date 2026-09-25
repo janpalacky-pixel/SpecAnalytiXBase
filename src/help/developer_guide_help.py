@@ -1050,6 +1050,220 @@ if (operation in self.current_parameters and
             being the one exception to it.
         </div>
 
+        <h3 id="snapshot-file-size">The .snapx File Size: Deduplication and Compression</h3>
+        <p>A real 95&nbsp;MB text file (an 85&times;55 Raman 2D map &mdash;
+        4675 spectra) produced an 837&nbsp;MB <code>.snapx</code> file after
+        just two operations (a SNIP baseline correction, then cosmic-ray
+        removal). That's not a JSON/base64 encoding problem &mdash;
+        <code>_json_encode()</code>'s base64-encoded numpy arrays are already
+        an efficient binary representation. It's <strong>logical
+        duplication</strong>: before the fix described here,
+        <code>_build_state()</code> could write out <em>five</em> full copies
+        of the same spectra data, when only three are ever genuinely
+        distinct.</p>
+
+        <table>
+            <tr><th>Slot</th><th>Genuinely distinct?</th><th>Handling</th></tr>
+            <tr><td>Top-level <code>original_spectra</code></td>
+                <td>Yes &mdash; the canonical copy</td>
+                <td>Always stored</td></tr>
+            <tr><td><code>selected_spectra</code></td>
+                <td>No &mdash; always reconstructable as
+                    <code>original_spectra</code> filtered by
+                    <code>selected_indices</code>, in ascending order (exactly
+                    what <code>SpectrumSelectorController.get_selected_spectra()</code>
+                    itself builds)</td>
+                <td>Omitted whenever it matches that reconstruction; stored
+                    only when it doesn't (see below)</td></tr>
+            <tr><td><code>operations.original_spectra</code> (pre-operations
+                    baseline)</td>
+                <td>Only when operations have actually been applied</td>
+                <td>Omitted when identical to the top-level copy (existing
+                    dedup &mdash; see
+                    <a href="#snapshot-vs-delta">Why Full Snapshots, Not Diffs</a>)</td></tr>
+            <tr><td>Each <code>operations_chain[i]['output_spectra']</code></td>
+                <td>Yes, for every entry <strong>except</strong> whichever one
+                    is currently active</td>
+                <td>Every other entry is a genuinely distinct frozen copy
+                    (intended design &mdash; see
+                    <a href="#history-scope">What Belongs in Operations History</a>);
+                    only the <strong>active</strong> entry is checked, because
+                    <code>main_controller.original_spectra</code> always
+                    mirrors <code>get_current_spectra()</code>'s output (see
+                    <code>operations_controller.jump_to_operation_state()</code>)
+                    &mdash; so that one entry is always a second copy of data
+                    already saved at the top level</td></tr>
+        </table>
+
+        <p>Whether the two new dedup cases fire is decided the same way the
+        existing baseline dedup already did: by comparing actual content with
+        <code>_spectra_lists_equal()</code> (every field, including nested
+        metadata &mdash; not just label/x_scale/y_scale), never by checking
+        which entry <em>should</em> be active or assuming the chain's shape.
+        <code>_spectra_lists_equal</code> fails toward <strong>not
+        equal</strong> on anything it can't be fully sure about &mdash; the
+        safe direction here, since the only thing riding on the answer is
+        whether a second copy gets kept. A deduped
+        <code>operations_chain</code> entry doesn't just drop its
+        <code>output_spectra</code> key; it's marked
+        <code>output_spectra_omitted: True</code> so
+        <code>_restore_operations()</code> knows to backfill it on load, using
+        <code>_deep_copy_spectra_list()</code> to give that entry its own
+        independent copy &mdash; never a second reference to
+        <code>main_controller.original_spectra</code>, or a later edit to one
+        would silently corrupt the other. The <code>output_spectra_omitted</code>
+        flag is deleted immediately after a successful backfill: leaving it
+        behind would let a <em>future</em> save-then-reload cycle
+        misinterpret it, overwriting that entry's by-then-legitimately-different
+        data with whatever <code>original_spectra</code> happens to be at that
+        later load.</p>
+
+        <div class="info">
+            <strong>A more aggressive option was tried and rejected.</strong>
+            A content-addressed array-pooling prototype &mdash; deduplicating
+            <code>x_scale</code> by content hash across all 4675 spectra,
+            since every pixel in a 2D map shares the same wavenumber axis
+            &mdash; got a single copy's JSON size from 161.8&nbsp;MB down to
+            81.8&nbsp;MB. But gzip alone on that same single copy (see below)
+            already reaches 44.0&nbsp;MB &mdash; capturing nearly all of that
+            benefit without introducing shared, pooled objects that every
+            future piece of code touching a spectrum dict would need to know
+            not to mutate in place. Not implemented, on a risk/benefit call.
+        </div>
+
+        <p>On top of the deduplication, <code>save_snapshot()</code> now
+        gzip-compresses the JSON before writing it, at
+        <code>SNAPSHOT_GZIP_LEVEL = 6</code> by default &mdash; the same idea
+        as a <code>.docx</code> or <code>.xlsx</code> file really being a zip
+        archive under a familiar extension. The <code>.snapx</code> extension
+        and the Save/Load dialogs' file filters are completely unchanged;
+        only the bytes on disk differ. <code>_load_state()</code> checks for
+        gzip's own 2-byte magic number (<code>b'\x1f\x8b'</code>) before
+        falling back to the plain <code>'{'</code>-byte check it always used
+        &mdash; so every <code>.snapx</code> file saved before this change,
+        which is plain UTF-8 JSON text with no magic number, keeps loading
+        exactly as before, forever. A file that starts with the gzip magic
+        number but isn't actually a valid gzip stream (a truncated or
+        corrupted copy) raises the same friendly "not a valid snapshot"
+        error as any other unreadable file, rather than a raw
+        <code>gzip.BadGzipFile</code>.</p>
+
+        <p><code>save_snapshot()</code> takes an optional
+        <code>compression_level</code> argument overriding
+        <code>SNAPSHOT_GZIP_LEVEL</code> for that one save. Any caller
+        (not the GUI &mdash; see below) can in principle pass a value
+        outside gzip's valid 1-9 range; rather than raising and failing
+        the whole save over that, the manager <strong>clamps</strong> it
+        &mdash; quietly caps it to the nearest valid value instead of
+        rejecting it (15 becomes 9, -3 becomes 1) &mdash; via
+        <code>max(1, min(9, int(compression_level)))</code>. The GUI
+        itself can never trigger this: <code>SaveOptionsDialog</code>
+        exposes three named presets
+        rather than the raw number &mdash; "Fast" / "Balanced (default)" /
+        "Maximum" mapping to levels 1 / 6 / 9
+        (<code>SaveOptionsDialog._COMPRESSION_PRESETS</code>) &mdash; visible
+        only when Snapshot is the selected format, and passed through
+        <code>SaveController._save_snapshot()</code> from
+        <code>settings['compression_level']</code>. "Balanced" is
+        deliberately kept equal to <code>SNAPSHOT_GZIP_LEVEL</code>, so
+        leaving the control at its default behaves identically to before it
+        existed.</p>
+
+        <p>Real numbers, measured end-to-end on the same 85&times;55 Raman
+        map, after both fixes and verified with an actual
+        <code>save_snapshot()</code> / <code>load_snapshot()</code> round trip
+        (including confirming the backfilled operations-chain entry matches
+        exactly and isn't an aliased object). These specific numbers use
+        SYNTHETIC stand-ins for SNIP Baseline and Cosmic Ray Removal (a
+        shared linear ramp; one shared replacement row) &mdash; they
+        demonstrate the dedup + gzip mechanism cleanly, but see
+        <a href="#chain-entry-order-independent">A Second Bug</a> below for
+        the number confirmed with the real algorithms, on a real user's
+        machine:</p>
+
+        <table>
+            <tr><th>Stage</th><th>Size</th></tr>
+            <tr><td>5 stored copies, plain JSON (the old behaviour)</td>
+                <td>811&nbsp;MB &mdash; matches the ~837&nbsp;MB originally
+                    reported</td></tr>
+            <tr><td>3 distinct copies, deduplicated, still plain JSON</td>
+                <td>487&nbsp;MB</td></tr>
+            <tr><td>3 distinct copies, deduplicated <strong>and</strong>
+                    gzip-compressed (level 6) &mdash; the shipped result</td>
+                <td>226&nbsp;MB &mdash; a 3.6&times; reduction, 72% smaller
+                    than the original 811&nbsp;MB</td></tr>
+        </table>
+
+        <p>Gzip's compression level is a real time/size trade-off, measured
+        on this same ~487&nbsp;MB deduplicated payload: level 1 compresses in
+        about 4&nbsp;s to roughly 155&nbsp;MB; level 6 (the level used) takes
+        roughly 8&ndash;13&nbsp;s and reaches the sizes above. Decompression
+        on load is fast regardless of the level it was saved at (roughly
+        1.5&nbsp;s for this file), since gzip's decompression cost doesn't
+        depend on the compression level used to create the stream &mdash;
+        only the save side pays for the extra squeeze.</p>
+
+        <div class="warning">
+            <strong>These exact ratios are specific to this file, not a
+            guarantee.</strong> How much dedup and gzip help depends on how
+            many genuinely-redundant copies a given session's operations
+            history happens to contain, and how compressible the actual
+            spectral data is. A session with many distinct operations kept
+            deliberately (the intended "frozen copy per operation" design)
+            will still produce a large file &mdash; that growth with the
+            number of operations was never the bug being fixed here.
+        </div>
+
+        <h3 id="chain-entry-order-independent">A Second Bug: The Active Chain Entry's Dedup Check Was Order-Sensitive</h3>
+        <p>The numbers above (3 distinct copies &rarr; 226&nbsp;MB) were
+        measured with the real algorithms and the real 85&times;55 data
+        file, and the dedup logic worked exactly as intended &mdash; in a
+        hand-built test. In actual GUI use, real users kept seeing files
+        around 328&nbsp;MB instead: the active <code>operations_chain</code>
+        entry's dedup (see the table above) was silently never firing.</p>
+
+        <p>The cause: <code>_spectra_lists_equal()</code> originally
+        compared its two lists <strong>positionally</strong> &mdash;
+        <code>zip(a, b)</code>, item by item. <code>MainController.
+        original_spectra</code> gets re-sorted into natural label order by
+        <code>order_spectra()</code> after every operation (see
+        <a href="#natural-sort">The Master Spectra List Is Always
+        Re-sorted</a>). The matching <code>operations_chain</code> entry's
+        own <code>output_spectra</code>, however, is built as "unaffected
+        spectra in their current order, then the processed spectra
+        appended at the end" (see <code>SNIPBaselineController.
+        commit_snip_baseline()</code> / <code>CosmicRayController.
+        commit_cosmic_ray_removal()</code>) and is never sorted. Both lists
+        end up holding the exact same spectra, genuinely identical content
+        &mdash; just in a different order &mdash; and a purely positional
+        comparison reported that as "not equal," keeping a second full
+        copy that should have been dropped.</p>
+
+        <p><code>_spectra_lists_equal()</code> now tries the positional
+        comparison first (unchanged, and still the only comparison used
+        when it already succeeds), and only when that fails does it fall
+        back to matching spectra by their <code>label</code> instead of
+        their position &mdash; sorting both lists by label onto temporary
+        copies used only for this one comparison, never touching the real,
+        in-memory lists or anything written to the file. This fallback
+        only runs when every label is unique on both sides; if either list
+        has a duplicate or missing label, it stays with "not equal" (the
+        same fail-safe direction as everywhere else in this function
+        &mdash; at worst a second copy is kept, never data lost). See
+        <code>TestSpectraListsEqual.test_same_spectra_in_different_order_is_equal</code>
+        and the sibling tests around it for the exact cases covered,
+        including one confirming a genuine content difference still isn't
+        masked by reordering.</p>
+
+        <p>Confirmed fixed on a real user's machine, real data, real GUI
+        session (load 2D map &rarr; SNIP Baseline &rarr; Cosmic Ray Removal
+        &rarr; Save as compressed Snapshot, Balanced preset): <strong>328
+        &rarr; 233&nbsp;MB</strong>. The remaining size is the two things
+        this dedup was never meant to remove: the SNIP-only intermediate
+        step kept in the operations history (real, intentional undo data),
+        and the pre-operations baseline (kept so the whole chain can be
+        reverted) &mdash; see the table above.</p>
+
         <!-- ═══════════════════════════════════════════════════════════
              THE GOLDEN RULE
              ═══════════════════════════════════════════════════════════ -->

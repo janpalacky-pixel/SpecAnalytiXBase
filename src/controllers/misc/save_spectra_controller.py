@@ -120,7 +120,48 @@ class SaveController:
 
         file_path = _ensure_extension(file_path, 'snapshot')
 
-        success = self.save_manager.save_snapshot(self.controller, file_path)
+        # A staged progress dialog, same QProgressDialog +
+        # QApplication.processEvents() pattern load_snapshot() below
+        # already uses for the same reason: gzip-compressing a large
+        # snapshot (a big 2D map's worth of spectra) can take several
+        # seconds on its own, on top of building and serialising the
+        # state -- without pumping events and showing SOME feedback, the
+        # window just reports "Not Responding" to the OS for that whole
+        # time, with nothing telling the user a save is even in progress.
+        progress = QProgressDialog(self.controller.view)
+        progress.setWindowTitle("Saving Snapshot")
+        progress.setCancelButton(None)  # saving isn't safely interruptible partway through
+        # One step PAST SAVE_SNAPSHOT_STAGE_COUNT, not up to it -- same
+        # reasoning as load_snapshot()'s dialog below: the last stage is
+        # reported right BEFORE its own work runs, so the true 100% is
+        # only reached once save_snapshot() has actually returned.
+        progress.setRange(0, SaveManager.SAVE_SNAPSHOT_STAGE_COUNT + 1)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)  # show immediately, even for a fast save
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setLabelText("Preparing to save…")
+        progress.setValue(0)
+        QApplication.processEvents()
+
+        def _report_progress(stage, label):
+            progress.setValue(stage)
+            progress.setLabelText(label)
+            QApplication.processEvents()
+
+        # save_manager.save_snapshot() only ever returns True or False --
+        # it never raises (any failure is caught and logged internally) --
+        # so there's no exception handling needed here, just the same
+        # success/failure branch this method already had.
+        success = self.save_manager.save_snapshot(
+            self.controller, file_path, progress_callback=_report_progress,
+            compression_level=settings.get('compression_level'),
+        )
+
+        progress.setValue(SaveManager.SAVE_SNAPSHOT_STAGE_COUNT + 1)
+        QApplication.processEvents()
+        progress.close()
+
         if success:
             QMessageBox.information(
                 self.controller.view,

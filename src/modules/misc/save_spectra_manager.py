@@ -48,6 +48,7 @@
 # output transformation applied right before writing.
 
 import os
+import gzip
 import pandas as pd
 import numpy as np
 
@@ -64,6 +65,20 @@ class SaveManager:
     # (SaveController.load_snapshot) can size a progress bar's range
     # without hard-coding the same number twice.
     LOAD_SNAPSHOT_STAGE_COUNT = 6
+
+    # Same idea as LOAD_SNAPSHOT_STAGE_COUNT above, for save_snapshot()'s
+    # own optional progress_callback (see SaveController._save_snapshot).
+    SAVE_SNAPSHOT_STAGE_COUNT = 4
+
+    # gzip level for .snapx files. Level 6 (Python's own gzip default) --
+    # not the max (9) -- is a deliberate choice: on a genuinely large
+    # snapshot (a big 2D map with a couple of operations applied), level
+    # 9 measured under 10% smaller than level 6 but took noticeably
+    # longer to compress. If you need to retune this, measure both size
+    # AND wall-clock time on a large real snapshot, not just size -- see
+    # the Developer Guide's ".snapx File Size" section for the numbers
+    # this was chosen from.
+    SNAPSHOT_GZIP_LEVEL = 6
 
     def __init__(self):
         pass
@@ -494,11 +509,12 @@ class SaveManager:
         # skip whatever wasn't saved.
         plot_settings = {k: v for k, v in plot_settings.items() if v is not None}
 
+        selected_indices = list(main_controller.spectrum_selector.selected_indices)
+
         state = {
             'timestamp': pd.Timestamp.now().isoformat(),
             'original_spectra': main_controller.original_spectra,
-            'selected_spectra': main_controller.selected_spectra,
-            'selected_indices': list(main_controller.spectrum_selector.selected_indices),
+            'selected_indices': selected_indices,
             'plot_settings': plot_settings,
             'link_axes': {
                 'link_x':           self._safe_get(ui, 'link_x_axes_checkBox', 'isChecked', default=False),
@@ -508,6 +524,25 @@ class SaveManager:
             },
         }
 
+        # selected_spectra is reconstructable from original_spectra +
+        # selected_indices in the exact same order
+        # SpectrumSelectorController.get_selected_spectra() always builds
+        # it -- see that method's own "sort indices to maintain the order
+        # as they appear in original_spectra" comment. Only store it
+        # explicitly (a second time) when it does NOT match that
+        # reconstruction; on a large snapshot with most/all spectra
+        # selected, that's normally never, which is most of where the
+        # old file-size blowup came from (see the Developer Guide's
+        # ".snapx File Size" section).
+        reconstructed_selection = [
+            main_controller.original_spectra[i]
+            for i in sorted(selected_indices)
+            if 0 <= i < len(main_controller.original_spectra)
+        ]
+        if not self._spectra_lists_equal(
+                main_controller.selected_spectra, reconstructed_selection):
+            state['selected_spectra'] = main_controller.selected_spectra
+
         if hasattr(main_controller, 'custom_plot_properties_manager'):
             state['plot_properties'] = (
                 main_controller.custom_plot_properties_manager.spectrum_properties.copy()
@@ -516,8 +551,33 @@ class SaveManager:
         if hasattr(main_controller, 'operations_controller'):
             op = main_controller.operations_controller
             if hasattr(op, 'operations_manager'):
+                # Any chain entry whose output_spectra is content-identical
+                # to the top-level original_spectra just saved above (in
+                # practice: whichever entry is currently active --
+                # main_controller.original_spectra always mirrors
+                # get_current_spectra()'s output, see the comment on
+                # MainController.original_spectra) is a second full copy
+                # of data already being saved. Omit output_spectra from
+                # that entry and mark it for backfilling on load instead
+                # of storing it twice -- checked per entry, by content,
+                # rather than assumed to only ever be the active one, so
+                # this stays correct even if that invariant is ever
+                # violated somewhere.
+                deduped_chain = []
+                for entry in op.operations_manager.operations_chain:
+                    if (isinstance(entry, dict)
+                            and self._spectra_lists_equal(
+                                entry.get('output_spectra', []),
+                                state['original_spectra'])):
+                        entry_copy = {k: v for k, v in entry.items()
+                                      if k != 'output_spectra'}
+                        entry_copy['output_spectra_omitted'] = True
+                        deduped_chain.append(entry_copy)
+                    else:
+                        deduped_chain.append(entry)
+
                 state['operations'] = {
-                    'operations_chain': op.operations_manager.operations_chain,
+                    'operations_chain': deduped_chain,
                     'active_operation_index': op.operations_manager.active_operation_index,
                     'current_parameters': op.current_parameters,
                 }
@@ -589,27 +649,103 @@ class SaveManager:
         """
         Exhaustive equality check between two spectrum-dict lists -- every
         key each spectrum has, including nested metadata, not a curated
-        subset of fields. Used only to decide whether
-        operations_manager's pre-operations baseline is genuinely
-        identical to the top-level original_spectra (see _build_state),
-        so the snapshot file isn't made to store the same spectral data
-        twice. An earlier version of this compared only label/x_scale/
-        y_scale, which a metadata-only change could have fooled into a
-        false "equal" -- this compares everything, and defers to
-        _values_equal's fail-toward-"not-equal" behavior on anything it
-        can't be sure about.
+        subset of fields. Used by _build_state to decide whether three
+        different things are genuinely identical to the top-level
+        original_spectra already being saved -- operations_manager's
+        pre-operations baseline, main_controller.selected_spectra, and
+        each operations_chain entry's output_spectra -- so the snapshot
+        file isn't made to store the same spectral data twice (see the
+        Developer Guide's ".snapx File Size" section). An earlier
+        version of this compared only label/x_scale/y_scale, which a
+        metadata-only change could have fooled into a false "equal" --
+        this compares everything, and defers to _values_equal's
+        fail-toward-"not-equal" behavior on anything it can't be sure
+        about.
+
+        Order-independent: a positional (zip-based) pass is tried first
+        as a fast path, but a real, confirmed bug meant this dedup
+        silently never fired for operations_chain entries in actual GUI
+        use. main_controller.original_spectra is re-sorted into natural
+        label order by MainController.order_spectra() right after most
+        operations (SNIP Baseline, Cosmic Ray Removal, ...), while the
+        corresponding operations_chain entry's output_spectra is built
+        as "unaffected spectra in their current order, then the
+        processed spectra appended at the end" and is never sorted. Both
+        lists end up holding the exact same spectra, just in a different
+        order -- which the positional pass alone reports as "not equal",
+        defeating the whole optimization on every real snapshot with more
+        than a couple of spectra (measured: this alone roughly doubled
+        the size of the affected chain entry's contribution to the file).
+        When the fast path fails, this falls back to matching spectra by
+        their 'label' and comparing those pairs instead -- but only when
+        every label in each list is unique, so there's no ambiguity in
+        the pairing; if either list has a duplicate or missing label, or
+        the label sets don't match, it stays with "not equal" (the safe
+        direction: at worst a second copy is kept, never data loss).
         """
         if a is b:
             return True
         if len(a) != len(b):
             return False
-        for sa, sb in zip(a, b):
-            if sa.keys() != sb.keys():
-                return False
-            for key in sa:
-                if not SaveManager._values_equal(sa[key], sb[key]):
+
+        def _positional_equal(list_a, list_b):
+            for sa, sb in zip(list_a, list_b):
+                if sa.keys() != sb.keys():
                     return False
-        return True
+                for key in sa:
+                    if not SaveManager._values_equal(sa[key], sb[key]):
+                        return False
+            return True
+
+        if _positional_equal(a, b):
+            return True
+
+        # Fast path failed -- possibly just a different order for the
+        # exact same spectra. Only attempt to re-pair by label when that
+        # pairing is unambiguous on both sides.
+        try:
+            labels_a = [sa['label'] for sa in a]
+            labels_b = [sb['label'] for sb in b]
+        except (KeyError, TypeError):
+            return False
+        if len(set(labels_a)) != len(labels_a) or len(set(labels_b)) != len(labels_b):
+            return False
+        if set(labels_a) != set(labels_b):
+            return False
+
+        a_by_label = sorted(a, key=lambda s: s['label'])
+        b_by_label = sorted(b, key=lambda s: s['label'])
+        return _positional_equal(a_by_label, b_by_label)
+
+    @staticmethod
+    def _deep_copy_spectra_list(spectra: list) -> list:
+        """
+        Independent copy of a list of spectrum dicts -- a fresh dict per
+        spectrum, and a fresh .copy() of every numpy array and nested
+        dict inside it, so the result shares no mutable object with
+        *spectra*. Used only to backfill an operations_chain entry whose
+        output_spectra was omitted at save time because it was identical
+        to main_controller.original_spectra (see _build_state and
+        _restore_operations): that entry needs its OWN copy, not a
+        second reference to the same list object main_controller.
+        original_spectra already points at, or a later in-place edit to
+        one would silently corrupt the other. Mirrors the same
+        shallow-dict-plus-array-copy pattern used for the same reason in
+        SpectrumSelectorController.get_selected_spectra() and
+        IncrementalOperationsManager's own _deep_copy_spectra.
+        """
+        out = []
+        for spectrum in spectra:
+            copy = {}
+            for key, value in spectrum.items():
+                if isinstance(value, np.ndarray):
+                    copy[key] = value.copy()
+                elif isinstance(value, dict):
+                    copy[key] = value.copy()
+                else:
+                    copy[key] = value
+            out.append(copy)
+        return out
 
     # ------------------------------------------------------------------
     # Defensive UI widget access (snapshot save/load)
@@ -669,16 +805,61 @@ class SaveManager:
                 "Snapshot: failed restoring %s.%s(%r)", attr, setter, value,
                 exc_info=True)
 
-    def save_snapshot(self, main_controller, file_path: str) -> bool:
-        """Save application state as a JSON snapshot file."""
+    def save_snapshot(self, main_controller, file_path: str, progress_callback=None,
+                       compression_level=None) -> bool:
+        """
+        Save application state as a gzip-compressed JSON snapshot file.
+
+        The '.snapx' extension and the Save/Load dialogs' file filters
+        are unchanged -- only the bytes on disk are now a gzip stream
+        instead of plain UTF-8 text, the same way a .docx or .xlsx file
+        is really a zip archive wearing a familiar extension. See the
+        Developer Guide's ".snapx File Size" section for why, and the
+        real measured numbers this was based on. _load_state() reads
+        both this and the older, uncompressed format transparently.
+
+        progress_callback, if given, is called as progress_callback(stage,
+        label) at each of SAVE_SNAPSHOT_STAGE_COUNT points below -- same
+        (stage, label) contract as load_snapshot()'s own progress_callback
+        -- so a caller can drive a progress dialog through a slow save (a
+        large 2D map's worth of spectra, where the gzip step alone can
+        take several seconds) instead of the UI just sitting there
+        looking frozen. Purely optional -- every existing caller that
+        doesn't pass one behaves exactly as before.
+
+        compression_level, if given, overrides SNAPSHOT_GZIP_LEVEL for
+        this one save (SaveOptionsDialog's "Fast"/"Balanced"/"Maximum"
+        presets map to gzip levels 1/6/9 -- see
+        SaveOptionsDialog._COMPRESSION_PRESETS). Anything outside gzip's
+        valid 1-9 range is quietly clamped rather than raising, since a
+        bad value here should never be the reason a save fails. None (the
+        default) uses SNAPSHOT_GZIP_LEVEL, unchanged from before this
+        parameter existed.
+        """
         try:
+            self._report_progress(progress_callback, 1, "Collecting application state…")
             state = self._build_state(main_controller)
+
+            self._report_progress(progress_callback, 2, "Serializing…")
             json_text = self._to_json(state)
+            json_bytes = json_text.encode('utf-8')
 
-            with open(file_path, 'w', encoding='utf-8') as fh:
-                fh.write(json_text)
+            if compression_level is None:
+                level = self.SNAPSHOT_GZIP_LEVEL
+            else:
+                level = max(1, min(9, int(compression_level)))
 
-            logger.info("Snapshot saved: %s", file_path)
+            self._report_progress(progress_callback, 3, "Compressing…")
+            compressed = gzip.compress(json_bytes, compresslevel=level)
+
+            self._report_progress(progress_callback, 4, "Writing file…")
+            with open(file_path, 'wb') as fh:
+                fh.write(compressed)
+
+            logger.info(
+                "Snapshot saved: %s (%d bytes, gzip level %d, %.1fx "
+                "smaller than uncompressed JSON)", file_path, len(compressed),
+                level, len(json_bytes) / max(len(compressed), 1))
             return True
 
         except Exception:
@@ -702,8 +883,12 @@ class SaveManager:
             self._report_progress(progress_callback, 1, "Reading snapshot file…")
             state = self._load_state(file_path)
 
-            # Basic sanity check
-            required = {'original_spectra', 'selected_spectra'}
+            # Basic sanity check. 'selected_spectra' is deliberately NOT
+            # required here -- _build_state omits it whenever it's
+            # reconstructable from original_spectra + selected_indices (see
+            # that method's comment), which is the common case, so a valid
+            # snapshot may legitimately not have that key at all.
+            required = {'original_spectra', 'selected_indices'}
             if not required.issubset(state.keys()):
                 raise ValueError(
                     "The file does not appear to be a valid snapshot "
@@ -734,7 +919,21 @@ class SaveManager:
             self._report_progress(progress_callback, 2, "Restoring plot settings…")
             self._restore_ui_state(main_controller, state)
             main_controller.original_spectra = state['original_spectra']
-            main_controller.selected_spectra = state['selected_spectra']
+            # 'selected_spectra' is only present in state when it wasn't
+            # reconstructable from original_spectra + selected_indices at
+            # save time (see _build_state's dedupe) -- when it's missing,
+            # rebuild it exactly the way
+            # SpectrumSelectorController.get_selected_spectra() always
+            # does: original_spectra filtered by selected_indices, in
+            # ascending index order.
+            if 'selected_spectra' in state:
+                main_controller.selected_spectra = state['selected_spectra']
+            else:
+                main_controller.selected_spectra = [
+                    main_controller.original_spectra[i]
+                    for i in sorted(state.get('selected_indices', []))
+                    if 0 <= i < len(main_controller.original_spectra)
+                ]
 
             # SpectrumManager's own bookkeeping (the dict spectra are
             # actually stored under, plus its id<->label maps) was
@@ -877,23 +1076,37 @@ class SaveManager:
 
     def _load_state(self, file_path: str) -> dict:
         """
-        Read and deserialise a JSON snapshot file.
-        Raises a clear error if the file is not a valid JSON snapshot.
+        Read and deserialise a JSON snapshot file -- gzip-compressed
+        (the current format, see save_snapshot) or plain UTF-8 text (any
+        snapshot saved before that change). Raises a clear error if the
+        file is not a valid snapshot in either form.
         """
+        not_a_snapshot_error = ValueError(
+            "This file is not a valid snapshot file.\n\n"
+            "Snapshot files must have the '.snapx' extension and be "
+            "saved using File → Save → Snapshot.\n\n"
+            f"Selected file: {os.path.basename(file_path)}"
+        )
+
         with open(file_path, 'rb') as fh:
-            magic = fh.read(1)
+            raw = fh.read()
 
-        if magic != b'{':
-            raise ValueError(
-                "This file is not a valid snapshot file.\n\n"
-                "Snapshot files must have the '.snapx' extension and be "
-                "saved using File → Save → Snapshot.\n\n"
-                f"Selected file: {os.path.basename(file_path)}"
-            )
+        # gzip's own magic number -- present at the start of every file
+        # this codebase's current save_snapshot() writes. A file that
+        # starts this way but isn't actually a valid gzip stream (rare,
+        # but possible for a truncated/corrupted download) must still
+        # give the same friendly message as any other unreadable file,
+        # not a raw gzip.BadGzipFile/OSError.
+        if raw[:2] == b'\x1f\x8b':
+            try:
+                raw = gzip.decompress(raw)
+            except OSError:
+                raise not_a_snapshot_error
 
-        with open(file_path, 'r', encoding='utf-8') as fh:
-            text = fh.read()
+        if raw[:1] != b'{':
+            raise not_a_snapshot_error
 
+        text = raw.decode('utf-8')
         state = self._from_json(text)
         return state
 
@@ -1000,6 +1213,45 @@ class SaveManager:
         # other stale.
         new_chain = ops.get('operations_chain', mgr.operations_chain)
         new_index = ops.get('active_operation_index', mgr.active_operation_index)
+
+        # Backfill any entry whose output_spectra was omitted at save
+        # time because it was identical to the top-level original_spectra
+        # (see _build_state's dedupe) -- BEFORE the validation below ever
+        # sees it, so that validation keeps seeing exactly what it always
+        # has: either a real list, or something genuinely malformed that
+        # it should reset. This never touches a live, in-memory chain
+        # entry (only ops.get('operations_chain', ...)'s JSON-decoded
+        # fallback would reach this, and a live entry never carries the
+        # 'output_spectra_omitted' key in the first place). A backfill
+        # failure is deliberately not special-cased: it just leaves that
+        # one entry without a usable output_spectra, which the validation
+        # immediately below already treats as malformed.
+        if isinstance(new_chain, list):
+            for entry in new_chain:
+                if isinstance(entry, dict) and entry.get('output_spectra_omitted'):
+                    try:
+                        entry['output_spectra'] = self._deep_copy_spectra_list(
+                            main_controller.original_spectra)
+                        # Clear the flag now that output_spectra is a
+                        # real list again -- if this snapshot gets
+                        # re-saved later and THIS entry is no longer the
+                        # one matching the (by-then-different) current
+                        # state, a stale flag left behind here would
+                        # make a FUTURE load overwrite this entry's own,
+                        # by-then-legitimately-different output_spectra
+                        # with whatever original_spectra happens to be
+                        # at that later load -- silently corrupting a
+                        # step in the operations history. _build_state
+                        # always re-derives this flag fresh from actual
+                        # content on every save, never from a leftover
+                        # flag, so it isn't needed once backfilled.
+                        del entry['output_spectra_omitted']
+                    except Exception:
+                        logger.warning(
+                            "Snapshot: failed to backfill a deduped "
+                            "operations_chain entry's output_spectra",
+                            exc_info=True)
+
         try:
             if not isinstance(new_chain, list):
                 raise TypeError(
