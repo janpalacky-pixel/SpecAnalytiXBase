@@ -577,6 +577,23 @@ if (operation in self.current_parameters and
                 returning.</li>
         </ul>
 
+        <div class="info">
+            <strong>Naming collision, not two concepts.</strong>
+            <code>MainController</code> also has an attribute called
+            <code>original_spectra</code> — but it is a completely different thing
+            that just happens to share this name. <code>MainController.
+            original_spectra</code> is the full list of spectra currently in
+            memory (as opposed to <code>selected_spectra</code>, whichever subset
+            is checked in the list widget), and it gets overwritten every time an
+            operation runs — right after Baseline Correction, for instance, it
+            holds the corrected result, not the raw import. Only
+            <code>IncrementalOperationsManager.original_spectra</code> (this one)
+            is the frozen, never-overwritten baseline. When reading or writing
+            code that touches <code>original_spectra</code>, check which object
+            owns it before assuming which behavior applies — see also the comment
+            at its definition in <code>MainController.initialize_attributes()</code>.
+        </div>
+
         <h3 id="snapshot-vs-delta">Why Full Snapshots, Not Diffs</h3>
         <p>There are two standard ways to build an undo/history system. This
         codebase deliberately picked the simpler of the two:</p>
@@ -675,6 +692,363 @@ if (operation in self.current_parameters and
         identity-based matching <em>and</em> keep the forward-only history entry as
         the baseline behaviour, rather than reaching for retroactive rewriting again
         as the default.</p>
+
+        <!-- ═══════════════════════════════════════════════════════════
+             SNAPSHOT FILE SAVE/LOAD PIPELINE
+             ═══════════════════════════════════════════════════════════ -->
+        <h2 id="snapshot-pipeline">Snapshot Files (.snapx): Save/Load Pipeline</h2>
+
+        <div class="info">
+            <strong>Naming collision to watch for:</strong> "snapshot" is used in
+            two unrelated senses on this page. Above (see
+            <a href="#history-internals">Operations History</a> and
+            <a href="#snapshot-vs-delta">Why Full Snapshots, Not Diffs</a>) it means
+            one saved copy of a spectrum's state at one step in
+            <code>operations_chain</code> — an in-memory concept, never written to
+            disk on its own. Here it means the <em>other</em> sense: a
+            <code>.snapx</code> <strong>file</strong>, written by
+            <code>SaveManager.save_snapshot()</code> and read back by
+            <code>SaveManager.load_snapshot()</code>, that captures the
+            <em>entire</em> application state — including every one of those
+            in-memory operations-chain entries — in one JSON file. The rest of
+            this section is about the file.
+        </div>
+
+        <p>A <code>.snapx</code> file is a JSON dump of everything
+        <code>_build_state()</code> can reach: <code>original_spectra</code>,
+        <code>selected_spectra</code>, plot/UI settings, and — when present — the
+        operations-history block (<code>operations_chain</code>,
+        <code>active_operation_index</code>, <code>current_parameters</code>,
+        <code>import_batches</code>, and a deduplicated operations-baseline copy of
+        <code>original_spectra</code>; see
+        <a href="#snapshot-vs-delta">Why Full Snapshots, Not Diffs</a> for the
+        dedup logic). <code>load_snapshot()</code> is the reverse: read the file,
+        then restore each of those pieces back onto a live
+        <code>main_controller</code>.</p>
+
+        <div style="background:#FFFFFF; border:1px solid #D0D3DA; border-radius:6px; padding:10px; margin:12px 0; overflow-x:auto;">
+        <svg viewBox="0 0 900 1100" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; font-family:Arial,sans-serif;">
+            <defs>
+                <marker id="snapArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+                </marker>
+            </defs>
+
+            <rect x="250" y="16" width="400" height="44" rx="6" fill="#2E7D32"/>
+            <text x="450" y="43" font-size="13" fill="#fff" text-anchor="middle">User: File &rarr; Import Snapshot</text>
+
+            <line x1="450" y1="60" x2="450" y2="92" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+
+            <rect x="150" y="92" width="600" height="64" rx="6" fill="#1976D2"/>
+            <text x="450" y="116" font-size="13" fill="#fff" text-anchor="middle">SaveSpectraController.load_snapshot()</text>
+            <text x="450" y="132" font-size="10" fill="#BBDEFB" text-anchor="middle">shows Yes/No confirmation, with an orange "?" HelpRole button</text>
+            <text x="450" y="146" font-size="10" fill="#BBDEFB" text-anchor="middle">"?" re-asks this same question after showing the info &mdash; see the tip below</text>
+
+            <line x1="450" y1="156" x2="450" y2="185" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+            <polygon points="450,185 530,215 450,245 370,215" fill="#FFF3E0" stroke="#E65100" stroke-width="1.5"/>
+            <text x="450" y="219" font-size="12" fill="#E65100" text-anchor="middle" font-weight="bold">Yes?</text>
+
+            <line x1="530" y1="215" x2="620" y2="215" stroke="#555" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#snapArrow)"/>
+            <rect x="620" y="190" width="240" height="50" rx="6" fill="#F4F5F7" stroke="#B0B8C8"/>
+            <text x="740" y="211" font-size="11" fill="#555" text-anchor="middle">No &rarr; return False</text>
+            <text x="740" y="225" font-size="10" fill="#555" text-anchor="middle">workspace untouched</text>
+
+            <line x1="450" y1="245" x2="450" y2="275" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+            <rect x="120" y="275" width="660" height="64" rx="6" fill="#1976D2"/>
+            <text x="450" y="299" font-size="13" fill="#fff" text-anchor="middle">Show QProgressDialog (range 0..LOAD_SNAPSHOT_STAGE_COUNT+1) &middot; call</text>
+            <text x="450" y="315" font-size="11.5" fill="#fff" text-anchor="middle" font-family="monospace">SaveManager.load_snapshot(main_controller, file_path, progress_callback)</text>
+            <text x="450" y="330" font-size="10" fill="#BBDEFB" text-anchor="middle">old workspace stays exactly as it was &mdash; nothing is cleared before this returns</text>
+
+            <line x1="450" y1="339" x2="450" y2="369" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+
+            <rect x="70" y="369" width="760" height="430" rx="8" fill="none" stroke="#C2185B" stroke-width="1.5"/>
+            <text x="450" y="391" font-size="12" fill="#C2185B" text-anchor="middle" font-weight="bold">SaveManager.load_snapshot() &mdash; internal stages, each reporting progress</text>
+
+            <rect x="100" y="405" width="700" height="34" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="427" font-size="11" fill="#8E1339">1. Reading snapshot file &mdash; parse JSON, sanity-check keys, reject duplicate labels</text>
+
+            <rect x="100" y="447" width="700" height="34" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="469" font-size="11" fill="#8E1339">2. Restoring plot settings &mdash; _restore_ui_state()</text>
+
+            <rect x="100" y="489" width="700" height="34" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="511" font-size="11" fill="#8E1339">3. Restoring spectra &mdash; assign original_spectra/selected_spectra; _resync_spectrum_manager()</text>
+
+            <rect x="100" y="531" width="700" height="46" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="549" font-size="11" fill="#8E1339">4. Restoring Operations History &mdash; _restore_operations()</text>
+            <text x="120" y="563" font-size="9.5" fill="#AD1457">operations_chain + active_operation_index restored as ONE atomic, validated pair &mdash; see below</text>
+
+            <rect x="100" y="587" width="700" height="34" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="609" font-size="11" fill="#8E1339">5. Restoring spectrum selection &mdash; _restore_spectrum_selection()</text>
+
+            <rect x="100" y="629" width="700" height="34" rx="5" fill="#FCE4EC"/>
+            <text x="120" y="651" font-size="11" fill="#8E1339">6. Rendering plot &mdash; plot_spectra(); the bar stays just under 100% for the whole render, reaching true 100% only after this returns</text>
+
+            <text x="450" y="687" font-size="10" fill="#555" text-anchor="middle">each stage above calls _report_progress(stage, label) &rarr; progress_callback(stage, label)</text>
+            <text x="450" y="701" font-size="10" fill="#555" text-anchor="middle">&rarr; the controller's closure does progress.setValue(stage); progress.setLabelText(label); QApplication.processEvents()</text>
+
+            <rect x="100" y="723" width="700" height="60" rx="6" fill="#FFF3E0" stroke="#E65100" stroke-width="1.3"/>
+            <text x="450" y="745" font-size="11" fill="#E65100" text-anchor="middle" font-weight="bold">Fault tolerance: independent try/except per field&#8230;</text>
+            <text x="450" y="761" font-size="10" fill="#8E1339" text-anchor="middle">&#8230;EXCEPT stage 4's chain/index pair, which is computed, shape-validated, and</text>
+            <text x="450" y="775" font-size="10" fill="#8E1339" text-anchor="middle">assigned together, or both reset to ([], -1) together &mdash; never left mismatched.</text>
+
+            <line x1="450" y1="799" x2="450" y2="829" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+
+            <rect x="80" y="829" width="330" height="82" rx="6" fill="#2E7D32"/>
+            <text x="245" y="851" font-size="12" fill="#fff" text-anchor="middle">Success: return True</text>
+            <text x="245" y="867" font-size="10" fill="#DCEDC8" text-anchor="middle">progress dialog closed &middot;</text>
+            <text x="245" y="881" font-size="10" fill="#DCEDC8" text-anchor="middle">"Snapshot Loaded" info shown</text>
+            <text x="245" y="895" font-size="9" fill="#DCEDC8" text-anchor="middle">(progress reaches its true 100% only now)</text>
+
+            <rect x="490" y="829" width="330" height="82" rx="6" fill="#C62828"/>
+            <text x="655" y="851" font-size="12" fill="#fff" text-anchor="middle">Any exception: raise RuntimeError</text>
+            <text x="655" y="867" font-size="10" fill="#FFCDD2" text-anchor="middle">progress dialog closed &middot;</text>
+            <text x="655" y="881" font-size="10" fill="#FFCDD2" text-anchor="middle">"Error Loading Snapshot" critical shown</text>
+            <text x="655" y="895" font-size="9" fill="#FFEBEE" text-anchor="middle">old workspace was never touched &mdash; there was nothing to recover</text>
+
+            <rect x="30" y="927" width="840" height="150" rx="6" fill="#FAFAFA" stroke="#E0E0E0"/>
+            <text x="46" y="947" font-size="11" fill="#333" font-weight="bold">Legend</text>
+            <line x1="46" y1="967" x2="86" y2="967" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
+            <text x="94" y="971" font-size="10" fill="#333">normal flow</text>
+            <line x1="46" y1="989" x2="86" y2="989" stroke="#555" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#snapArrow)"/>
+            <text x="94" y="993" font-size="10" fill="#333">declined / aborted path</text>
+            <text x="46" y="1017" font-size="10" fill="#666">This diagram covers the current implementation (progress_callback + atomic chain/index-pair validation).</text>
+            <text x="46" y="1033" font-size="10" fill="#666">If you change the stage sequence, update SaveManager.LOAD_SNAPSHOT_STAGE_COUNT and this diagram together.</text>
+            <text x="46" y="1053" font-size="10" fill="#666">See the table and callouts below for exactly which fields fail independently vs. as an atomic pair.</text>
+        </svg>
+        </div>
+
+        <p>The stage numbers in the diagram match
+        <code>SaveManager.LOAD_SNAPSHOT_STAGE_COUNT</code> (currently 6) and the
+        six <code>self._report_progress(progress_callback, N, "...")</code> calls
+        inside <code>load_snapshot()</code>. This <code>progress_callback</code>
+        is a different shape from the
+        <a href="#progress-callback">per-spectrum progress_callback hook</a>
+        described above — it's called once per named stage with
+        <code>(stage, label)</code> arguments, not once per spectrum with no
+        arguments, because a snapshot load has a handful of coarse phases rather
+        than one big per-spectrum loop. Don't assume the two
+        <code>progress_callback</code> conventions are interchangeable if you're
+        touching either one.</p>
+
+        <p>Stage 6 specifically needs both conventions at once: a large 2D map's
+        Grid render can itself run long enough to need pumping <em>during</em> it,
+        not just before/after, and that pumping is <code>plot_spectra()</code>'s
+        own no-arg <code>progress_callback</code> (forwarded straight into
+        <code>grid_plot_mode()</code> / <code>overlay_plot_mode()</code>'s
+        per-item <code>notify_progress()</code> calls). So
+        <code>load_snapshot()</code> builds a tiny no-arg adapter around its own
+        <code>(stage, label)</code> callback — <code>render_progress_callback()</code>
+        in the code — and passes <em>that</em> to <code>plot_spectra()</code>,
+        rather than either passing its own callback straight through (wrong
+        shape) or leaving the render unpumped (freezes visibly for a big grid).</p>
+
+        <p>Stage 5 (<code>_restore_spectrum_selection()</code>) also makes the
+        spectrum-selection panel (<code>main_controller.view.spectrum_selection_frame</code>)
+        visible, right after it repopulates the list &mdash; deliberately
+        <em>before</em> stage 6's render, not after it.
+        <code>ImportController.import_snapshot()</code> used to be the
+        <em>only</em> place that showed this panel, and only once
+        <code>load_snapshot()</code> had returned &mdash; i.e. after the
+        render <em>and</em> after the user dismissed the "Snapshot Loaded"
+        dialog. That panel starts hidden on a fresh app session (nothing to
+        select yet), so the very first time it's ever shown, Qt pays a
+        one-time layout/paint cost for it. Landing that cost after
+        everything else made a large snapshot look "frozen twice" in a row
+        &mdash; once for the render, then again, separately, for the panel
+        to pop in. Moving the call to stage 5 pays that one-time cost while
+        the progress dialog is still up and already accounting for the
+        time being spent, instead of stacking it on top afterwards. The
+        call in <code>import_snapshot()</code> is now a harmless,
+        idempotent safety net rather than the only place this happens.</p>
+
+        <div class="tip">
+            <strong>Adding a stage?</strong> Bump
+            <code>LOAD_SNAPSHOT_STAGE_COUNT</code>, add the new
+            <code>_report_progress(...)</code> call at the right point, and update
+            this diagram together — the controller's <code>QProgressDialog</code>
+            range is set from that constant, so a stale count just makes the bar
+            finish early or never reach full, not crash.
+        </div>
+
+        <div class="danger">
+            <strong>Real Qt gotcha #1 — a custom button's role does not stop
+            <code>QMessageBox</code> from closing on it.</strong> An earlier
+            version of the confirmation dialog assumed
+            <code>QMessageBox.HelpRole</code> meant a button added with that role
+            wouldn't close the box when clicked — reasonable-sounding, and wrong.
+            Every button added to a <code>QMessageBox</code> (via
+            <code>addButton()</code>, whatever role) shares the same internal
+            <code>QDialogButtonBox</code>, whose <code>clicked</code> signal
+            <code>QMessageBox</code> connects, internally, straight to closing
+            itself — role plays no part in that. Clicking the orange "?" was
+            closing the still-unanswered "replace workspace?" question along with
+            the info box, every time. Confirmed by actually running this dialog,
+            not by re-reading the docs more carefully — the fix
+            (<code>SaveSpectraController.load_snapshot()</code>) doesn't fight
+            this behaviour; it works with it: <code>msg_box.exec_()</code> runs
+            in a loop, and a click identified as the help button
+            (<code>msg_box.clickedButton() is help_button</code>) shows the info
+            and then simply calls <code>exec_()</code> again on the same
+            instance, which Qt allows any number of times. Only a real Yes/No
+            click breaks the loop. If you add a second custom button anywhere in
+            this codebase, assume it will close its <code>QMessageBox</code> too,
+            and design for that instead of trying to prevent it.
+        </div>
+
+        <div class="danger">
+            <strong>Real Qt gotcha #2 — <code>QProgressDialog</code> auto-closes
+            itself the instant <code>setValue()</code> reaches the maximum.</strong>
+            <code>autoClose</code> and <code>autoReset</code> both default to
+            <code>True</code>: reaching the maximum value triggers an internal
+            <code>reset()</code>, which (with <code>autoClose</code> still
+            <code>True</code>) hides the dialog — regardless of whether the work
+            that value is supposed to represent has actually finished. Stage 6
+            ("Rendering plot…") reports itself by calling
+            <code>progress.setValue(6)</code>, which <em>is</em> this dialog's
+            configured maximum (<code>progress.setRange(0,
+            SaveManager.LOAD_SNAPSHOT_STAGE_COUNT)</code>) — so the dialog was
+            vanishing the instant the label changed to "Rendering plot…",
+            <em>before</em> the actual (potentially slow, for a large Grid plot)
+            render underneath it had even started. The app then looked frozen
+            with no progress feedback at all for however long that render took,
+            followed eventually by the "Snapshot Loaded" message appearing on its
+            own. Fixed by calling <code>progress.setAutoClose(False)</code> and
+            <code>progress.setAutoReset(False)</code> right after creating the
+            dialog — <code>load_snapshot()</code> already closes it explicitly on
+            every exit path, so the automatic behaviour was never needed, only
+            harmful. Any new <code>QProgressDialog</code> in this codebase whose
+            last reported value equals its maximum needs the same two lines,
+            unless it genuinely wants the auto-close.
+            <br><br>
+            <strong>Addendum:</strong> disabling auto-close alone does not fix a
+            second, separate visual problem &mdash; a bar whose <em>reported</em>
+            value equals the dialog's configured maximum sits at a literal 100%
+            for the entire duration of whatever work that value represents,
+            which still reads as "stuck" even once the dialog stops vanishing.
+            Stage 6 hit this too: <code>progress.setValue(6)</code> against
+            <code>progress.setRange(0, 6)</code> is 100% the moment the label
+            changes, not when the render actually finishes. Fixed by widening
+            the range to <code>(0, LOAD_SNAPSHOT_STAGE_COUNT + 1)</code> &mdash;
+            one step past the real stage count &mdash; so stage 6's reported
+            value is always below the maximum, and only calling
+            <code>progress.setValue(LOAD_SNAPSHOT_STAGE_COUNT + 1)</code> (the
+            true 100%) once the whole load has actually returned successfully.
+        </div>
+
+        <div class="danger">
+            <strong>Real Qt gotcha #3 &mdash; clearing a widget can silently
+            change application state through a signal you forgot was
+            connected.</strong> An earlier version of this controller called
+            <code>main_controller.spectra_list_widget.clear()</code> right after
+            confirmation, before the load even started, purely to avoid showing
+            stale spectra while a slow load ran. <code>QListWidget.clear()</code>
+            fires <code>itemSelectionChanged</code>, which is connected (see
+            <code>SpectrumSelectorController.on_item_selection_changed()</code>)
+            straight to recomputing <code>main_controller.selected_spectra</code>
+            from whatever is currently selected in the widget &mdash; which,
+            right after a <code>.clear()</code>, is nothing. So the very act of
+            "just tidying the list" was silently wiping the real selection
+            before <code>SaveManager.load_snapshot()</code> had even been
+            called, every single time. It went unnoticed until a user tested a
+            <em>failed</em> load and reported that everything came back
+            correctly except the selection &mdash; which, by then, had already
+            been destroyed by this codebase's own cleanup, not by the failure
+            itself. <code>_restore_spectrum_selection()</code> (stage 5, in
+            <code>save_spectra_manager.py</code>) already knew to
+            <code>blockSignals(True)</code> around its own
+            <code>clear()</code>/repopulate for exactly this reason &mdash; the
+            bug was a second, unguarded <code>.clear()</code> call outside that
+            method entirely. Lesson: a widget's <code>.clear()</code> (or any
+            bulk mutation) is never purely cosmetic once something is connected
+            to its change signals &mdash; check what's listening before adding
+            one, especially outside code that already knows to guard it.
+        </div>
+
+        <h3>Fault Tolerance, Field By Field</h3>
+        <p>Every consumer of the operations history — starting with
+        <code>IncrementalOperationsManager.get_current_spectra()</code>, which
+        does a direct, unbounds-checked
+        <code>self.operations_chain[self.active_operation_index]</code> — trusts
+        that <code>active_operation_index</code> is always a valid position in
+        <code>operations_chain</code>, or <code>-1</code>. That's the reason
+        stage&nbsp;4 is the one exception to the "restore each field
+        independently" rule used everywhere else in <code>_restore_operations()</code>:</p>
+        <table>
+            <tr><th>Field</th><th>Restored by</th><th>On failure</th></tr>
+            <tr><td>Plot/UI settings</td><td><code>_restore_ui_state()</code></td>
+                <td>Warning logged; that one setting stays at its pre-load value —
+                    the rest of the load continues</td></tr>
+            <tr><td><code>original_spectra</code> / <code>selected_spectra</code></td>
+                <td>Direct assignment, after <code>_validate_unique_labels()</code></td>
+                <td>Duplicate labels raise <code>ValueError</code> before
+                    assignment — this specific failure aborts the <strong>whole</strong>
+                    load (see the danger box below), unlike everything else in this
+                    table</td></tr>
+            <tr><td><code>operations_chain</code> + <code>active_operation_index</code></td>
+                <td><code>_restore_operations()</code>'s atomic block</td>
+                <td>Any shape or range problem in <strong>either</strong> resets
+                    <strong>both</strong> to <code>([], -1)</code> together</td></tr>
+            <tr><td><code>current_parameters</code>, <code>import_batches</code>,
+                    per-operation <code>original_spectra</code> baseline</td>
+                <td><code>_restore_operations()</code>, independent try/except each</td>
+                <td>Warning logged; that one field is skipped, the rest of
+                    <code>_restore_operations()</code> continues</td></tr>
+            <tr><td>Spectrum selection</td>
+                <td><code>_restore_spectrum_selection()</code></td>
+                <td>Warning logged; selection left at whatever
+                    <code>_resync_spectrum_manager()</code> produced</td></tr>
+        </table>
+
+        <div class="warning">
+            <strong>Two different failure classes — easy to conflate when reading
+            the code quickly.</strong> The per-entry/per-field defensiveness inside
+            <code>_restore_operations()</code> only kicks in once
+            <code>load_snapshot()</code>'s own outer structure is intact — the
+            outer <code>try/except Exception</code> around the <em>entire</em>
+            method (reading the file, validating labels, restoring UI, resyncing
+            <code>SpectrumManager</code>, restoring operations, restoring
+            selection, and the final render) converts <strong>any</strong>
+            unhandled exception, at <strong>any</strong> of those stages, into one
+            generic <code>RuntimeError</code>. So a truly malformed file (bad
+            JSON, duplicate labels, a missing required key) aborts the whole load
+            before anything is restored — but a well-formed file with one bad
+            <em>piece</em> inside an otherwise-good operations-history block does
+            <strong>not</strong> abort the load; only that one piece is skipped.
+        </div>
+
+        <div class="warning">
+            <strong>Why there's no proactive "clear the old workspace" step
+            anymore.</strong> An earlier version of
+            <code>SaveSpectraController.load_snapshot()</code> cleared the
+            graphics view and the spectra list widget <em>before</em> calling
+            <code>SaveManager.load_snapshot()</code>, purely so a slow load
+            wouldn't leave the previous workspace's spectra sitting on screen
+            while it ran. That single line caused the bug described in
+            "Real Qt gotcha #3" above (a silent, connected-signal wipe of
+            <code>selected_spectra</code>), and it complicated failure handling
+            for no real benefit: <code>SaveManager.load_snapshot()</code> already
+            replaces every piece of the workspace itself once it succeeds
+            &mdash; stage&nbsp;3 assigns <code>original_spectra</code> /
+            <code>selected_spectra</code> directly, stage&nbsp;5 rebuilds the
+            spectra list widget from scratch (with signals blocked,
+            correctly), and stage&nbsp;6 redraws the plot. Nothing beyond
+            those stages was ever needed to make a successful load's contents
+            appear; the extra clear only existed to hide the <em>previous</em>
+            contents while waiting, at the cost of the bug above and of
+            leaving the workspace genuinely empty (not merely stale) if the
+            load then failed. It was removed rather than patched, matching
+            this codebase's stated preference (see "Renaming Is Forward-Only")
+            for the design with the fewest states to reason about over a
+            cleverer one with more edge cases. The one real trade-off: on a
+            failed load, whatever was on screen before
+            <strong>Import Snapshot</strong> was clicked stays on screen,
+            completely unchanged &mdash; not because anything was deliberately
+            preserved, but because nothing ever touched it. This also makes
+            snapshot loading match the shape of a regular data import
+            (<strong>File &rarr; Import data &rarr; new</strong> only clears
+            existing spectra once a new file has actually loaded), instead of
+            being the one exception to it.
+        </div>
 
         <!-- ═══════════════════════════════════════════════════════════
              THE GOLDEN RULE

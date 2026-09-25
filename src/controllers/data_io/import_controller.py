@@ -375,15 +375,22 @@ class ImportController(QObject):
 
         if file_path and self.main_controller:
             try:
-                self.main_controller.save_controller.load_snapshot(file_path)
-                self.main_controller.view.spectrum_selection_frame.setVisible(True)
-
-                from PyQt5.QtCore import QCoreApplication
-                QCoreApplication.processEvents()
-
-                if bool(self.main_controller.selected_spectra):
-                    self.main_controller.clear_graphics_view()
-                    self.main_controller.plot_spectra()
+                # load_snapshot() returns False (without raising) both when
+                # the user declines the "replace your workspace?"
+                # confirmation and when the load itself failed (it shows its
+                # own error dialog in that case) — either way nothing
+                # changed, so there's nothing to do here. On success it has
+                # already restored and rendered the full state itself,
+                # including making the spectrum list visible partway
+                # through (see SaveManager._restore_spectrum_selection() --
+                # deliberately done there, before the plot render, not
+                # here after everything including the confirmation dialog
+                # has already finished). This call is now just a harmless
+                # safety net for that same effect, in case a future code
+                # path calls load_snapshot() without going through here.
+                success = self.main_controller.save_controller.load_snapshot(file_path)
+                if success:
+                    self.main_controller.view.spectrum_selection_frame.setVisible(True)
 
             except Exception as e:
                 logger.exception("Traceback:")

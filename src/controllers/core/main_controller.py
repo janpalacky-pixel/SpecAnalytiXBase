@@ -741,6 +741,14 @@ class MainController(QMainWindow):
         self.plotter = None
         self.static_canvas = None
         self.static_toolbar = None
+        # Despite the name, this is NOT a frozen copy of the untouched
+        # import -- it's the full list of spectra currently in memory,
+        # and it gets overwritten as you go (e.g. after running an
+        # operation, this holds the PROCESSED result, not the raw data).
+        # The actual untouched, never-changed baseline used for undo/redo
+        # is operations_manager.original_spectra (see
+        # incremental_operations_manager.py) -- a separate attribute that,
+        # confusingly, happens to share this same name.
         self.original_spectra = []  # List to store original imported spectra
         self.selected_spectra = []  # List to store currently selected spectra
         

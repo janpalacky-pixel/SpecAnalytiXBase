@@ -59,8 +59,28 @@ from src.modules.data_io.spc_data_writer import write_spc_data
 class SaveManager:
     """Business logic for saving spectrum data."""
 
+    # Number of progress stages load_snapshot() reports through its
+    # optional progress_callback -- kept as a named constant so a caller
+    # (SaveController.load_snapshot) can size a progress bar's range
+    # without hard-coding the same number twice.
+    LOAD_SNAPSHOT_STAGE_COUNT = 6
+
     def __init__(self):
         pass
+
+    @staticmethod
+    def _report_progress(progress_callback, stage: int, label: str) -> None:
+        """Call progress_callback(stage, label) if one was given. Wrapped
+        in its own try/except so a callback that itself raises (a UI
+        callback is arbitrary caller code) can never abort the load --
+        reporting progress is a nice-to-have, not something the restore
+        should ever depend on succeeding."""
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(stage, label)
+        except Exception:
+            logger.warning("Snapshot: progress_callback raised, ignoring", exc_info=True)
 
     # ------------------------------------------------------------------
     # Public: save a table (all selected spectra in one file)
@@ -401,8 +421,6 @@ class SaveManager:
     #   {"__ndarray__": true, "data": "<base64 string>", "dtype": "float64", "shape": [261]}
     # ------------------------------------------------------------------
 
-    SNAPSHOT_VERSION = 2
-
     @staticmethod
     def _json_encode(obj):
         """
@@ -478,7 +496,6 @@ class SaveManager:
 
         state = {
             'timestamp': pd.Timestamp.now().isoformat(),
-            'version': self.SNAPSHOT_VERSION,
             'original_spectra': main_controller.original_spectra,
             'selected_spectra': main_controller.selected_spectra,
             'selected_indices': list(main_controller.spectrum_selector.selected_indices),
@@ -500,15 +517,99 @@ class SaveManager:
             op = main_controller.operations_controller
             if hasattr(op, 'operations_manager'):
                 state['operations'] = {
-                    'original_spectra': op.operations_manager.original_spectra,
                     'operations_chain': op.operations_manager.operations_chain,
                     'active_operation_index': op.operations_manager.active_operation_index,
                     'current_parameters': op.current_parameters,
                 }
+                # operations_manager.original_spectra is the state BEFORE any
+                # operation was applied — needed so the chain can be
+                # replayed/redone. Whether it needs to be stored separately
+                # from the top-level original_spectra already saved above is
+                # decided by comparing the two directly and completely (every
+                # field, including metadata, not just label/x_scale/y_scale)
+                # — not by any assumption about which code path changed
+                # what. An earlier version of this trusted an empty
+                # operations chain as a proxy for "nothing changed"; that's
+                # only correct as long as every other part of the app keeps
+                # these two lists in sync whenever the chain is empty, which
+                # is an invariant upheld by convention across several files,
+                # not something this one file can verify — and this
+                # codebase has a documented history of exactly this kind of
+                # desync (see the comment in rename_spectra_controller.py
+                # about renames silently vanishing once two spectra lists
+                # drifted apart). Comparing the actual content removes that
+                # assumption entirely: if the two are provably identical,
+                # skip the duplicate; if they differ in ANY way — or the
+                # comparison can't be sure — keep both (see
+                # _spectra_lists_equal: it fails toward "not equal", i.e.
+                # toward keeping both copies, on anything ambiguous).
+                ops_baseline = op.operations_manager.original_spectra
+                if not self._spectra_lists_equal(ops_baseline, state['original_spectra']):
+                    state['operations']['original_spectra'] = ops_baseline
                 if hasattr(op.operations_manager, 'import_batches'):
                     state['operations']['import_batches'] = op.operations_manager.import_batches
 
         return state
+
+    @staticmethod
+    def _values_equal(va, vb) -> bool:
+        """
+        Numpy- and container-safe equality check for one value from a
+        spectrum dict (used by _spectra_lists_equal). Recurses into dicts
+        and lists/tuples so a nested array inside metadata is compared
+        correctly instead of tripping Python's "truth value of an array
+        is ambiguous" error. Anything it can't confidently compare counts
+        as NOT equal -- the safe direction, since the only thing that
+        depends on this is whether to keep a second copy of the data.
+        """
+        if isinstance(va, np.ndarray) or isinstance(vb, np.ndarray):
+            if not (isinstance(va, np.ndarray) and isinstance(vb, np.ndarray)):
+                return False
+            if va.shape != vb.shape:
+                return False
+            try:
+                return bool(np.array_equal(va, vb, equal_nan=True))
+            except Exception:
+                return False
+        if isinstance(va, dict) and isinstance(vb, dict):
+            if va.keys() != vb.keys():
+                return False
+            return all(SaveManager._values_equal(va[k], vb[k]) for k in va)
+        if isinstance(va, (list, tuple)) and isinstance(vb, (list, tuple)):
+            if len(va) != len(vb):
+                return False
+            return all(SaveManager._values_equal(x, y) for x, y in zip(va, vb))
+        try:
+            return bool(va == vb)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _spectra_lists_equal(a: list, b: list) -> bool:
+        """
+        Exhaustive equality check between two spectrum-dict lists -- every
+        key each spectrum has, including nested metadata, not a curated
+        subset of fields. Used only to decide whether
+        operations_manager's pre-operations baseline is genuinely
+        identical to the top-level original_spectra (see _build_state),
+        so the snapshot file isn't made to store the same spectral data
+        twice. An earlier version of this compared only label/x_scale/
+        y_scale, which a metadata-only change could have fooled into a
+        false "equal" -- this compares everything, and defers to
+        _values_equal's fail-toward-"not-equal" behavior on anything it
+        can't be sure about.
+        """
+        if a is b:
+            return True
+        if len(a) != len(b):
+            return False
+        for sa, sb in zip(a, b):
+            if sa.keys() != sb.keys():
+                return False
+            for key in sa:
+                if not SaveManager._values_equal(sa[key], sb[key]):
+                    return False
+        return True
 
     # ------------------------------------------------------------------
     # Defensive UI widget access (snapshot save/load)
@@ -584,16 +685,21 @@ class SaveManager:
             logger.exception("Failed to save snapshot")
             return False
 
-    def load_snapshot(self, main_controller, file_path: str) -> bool:
+    def load_snapshot(self, main_controller, file_path: str, progress_callback=None) -> bool:
         """
-        Load a snapshot file.
+        Load a JSON snapshot file (as written by save_snapshot) and restore
+        the full application state from it: spectra, operations history,
+        and UI/plot settings.
 
-        Supports:
-        - JSON snapshots (version 2+, written by this code)
-        - Legacy pickle snapshots (version 1, written by older code)
-          These are still loaded via pickle for backward compatibility.
+        progress_callback, if given, is called as progress_callback(stage,
+        label) at each of LOAD_SNAPSHOT_STAGE_COUNT points below, so a
+        caller can drive a progress dialog through a slow load (a large
+        2D map's worth of spectra) instead of the UI just sitting there
+        looking frozen. Purely optional -- every existing caller that
+        doesn't pass one behaves exactly as before.
         """
         try:
+            self._report_progress(progress_callback, 1, "Reading snapshot file…")
             state = self._load_state(file_path)
 
             # Basic sanity check
@@ -625,6 +731,7 @@ class SaveManager:
             # check).
             self._validate_unique_labels(state['original_spectra'])
 
+            self._report_progress(progress_callback, 2, "Restoring plot settings…")
             self._restore_ui_state(main_controller, state)
             main_controller.original_spectra = state['original_spectra']
             main_controller.selected_spectra = state['selected_spectra']
@@ -641,30 +748,53 @@ class SaveManager:
             # with one that's only "real" in the old, pre-snapshot
             # state, or fail to detect a collision with what's actually
             # showing now.
+            self._report_progress(progress_callback, 3, "Restoring spectra…")
             self._resync_spectrum_manager(main_controller, state['original_spectra'])
 
             if 'operations' in state and hasattr(main_controller, 'operations_controller'):
+                self._report_progress(progress_callback, 4, "Restoring operations history…")
                 self._restore_operations(main_controller, state['operations'])
 
             if hasattr(main_controller, 'spectrum_selector'):
+                self._report_progress(progress_callback, 5, "Restoring spectrum selection…")
                 self._restore_spectrum_selection(main_controller, state)
 
-            ui = main_controller.view
-            plot_type = self._safe_get(ui, 'comboBox_plot_type_choice', 'currentText', default='')
-            if plot_type == "Grid plot" and main_controller.selected_spectra:
-                rows = main_controller.grid_settings.get('rows', 1)
-                cols = main_controller.grid_settings.get('columns', 1)
-                # Set to 1 first, then the real value — forces a genuine
-                # change even if the restored value happens to match
-                # whatever the spinbox already shows, so the grid layout
-                # signal fires and the plot actually rebuilds.
-                self._safe_set(ui, 'number_of_rows_spinBox', 'setValue', 1)
-                self._safe_set(ui, 'number_of_columns_spinBox', 'setValue', 1)
-                self._safe_set(ui, 'number_of_rows_spinBox', 'setValue', rows)
-                self._safe_set(ui, 'number_of_columns_spinBox', 'setValue', cols)
-                main_controller.plot_spectra()
-            elif main_controller.selected_spectra:
-                main_controller.plot_spectra()
+            # Exactly one render for the whole load, now that every other
+            # piece of state (UI values, operations, selection) has already
+            # been restored above. _restore_ui_state already set
+            # main_controller.grid_settings (and the row/col spinboxes) to
+            # their restored values, so plot_spectra() alone — which reads
+            # comboBox_plot_type_choice and grid_settings itself — is all
+            # ANY plot type needs here, Grid included; there's no separate
+            # update_grid_layout() call (it would only re-read the same
+            # spinbox values _restore_ui_state already set, then call
+            # plot_spectra() anyway). Doing this only once here (instead of
+            # once per intermediate step) matters most for a large 2D map
+            # in Grid plot mode, where each render rebuilds every subplot
+            # in the grid.
+            self._report_progress(progress_callback, 6, "Rendering plot…")
+
+            # For that same large-2D-map case, the render itself can take
+            # long enough that the caller's progress dialog needs to keep
+            # pumping QApplication.processEvents() *during* it, not just
+            # before/after — see plot_spectra()'s own progress_callback
+            # parameter (forwarded straight through to grid_plot_mode /
+            # overlay_plot_mode's per-item notify_progress() calls; see
+            # progress_utils.py). That callback's contract is "no
+            # arguments", unlike the (stage, label) contract this method's
+            # own progress_callback uses (see the Developer Guide's
+            # "Snapshot Files (.snapx): Save/Load Pipeline" section) — so
+            # build a small no-arg adapter around it here rather than
+            # confusing the two conventions at the call site.
+            render_progress_callback = None
+            if progress_callback is not None:
+                def render_progress_callback():
+                    self._report_progress(
+                        progress_callback, self.LOAD_SNAPSHOT_STAGE_COUNT,
+                        "Rendering plot…")
+
+            if main_controller.selected_spectra:
+                main_controller.plot_spectra(progress_callback=render_progress_callback)
 
             logger.info("Snapshot loaded: %s", file_path)
             return True
@@ -765,10 +895,6 @@ class SaveManager:
             text = fh.read()
 
         state = self._from_json(text)
-        logger.debug(
-            "Loaded JSON snapshot version %s",
-            state.get('version', 'unknown')
-        )
         return state
 
     def _restore_ui_state(self, main_controller, state: dict) -> None:
@@ -818,24 +944,150 @@ class SaveManager:
         finally:
             self._safe_set(ui, 'number_of_rows_spinBox', 'blockSignals', False)
             self._safe_set(ui, 'number_of_columns_spinBox', 'blockSignals', False)
-            if 'plot_settings' in state and 'grid_settings' in state['plot_settings']:
-                main_controller.update_grid_layout()
+            # Deliberately NOT calling update_grid_layout() or plot_spectra()
+            # here — this method only restores widget VALUES. load_snapshot()
+            # triggers exactly one render after every piece of state (UI,
+            # operations, selection) has been restored, so the grid/plot
+            # isn't rebuilt multiple times over the course of one load.
 
     def _restore_operations(self, main_controller, ops: dict) -> None:
+        """
+        Restore the operations-history state saved by _build_state.
+
+        Most pieces below are restored independently and defensively, same
+        spirit as _safe_get/_safe_set above: a problem with one of them
+        (e.g. a malformed or hand-edited entry) shouldn't abort restoring
+        the rest of the operations history, or the rest of the snapshot
+        load that follows this method.
+
+        operations_chain and active_operation_index are the one exception,
+        and are restored together as a single atomic, mutually-validated
+        unit instead — see the comment above that block for why.
+        """
         op = main_controller.operations_controller
         if not hasattr(op, 'operations_manager'):
             return
         mgr = op.operations_manager
-        if 'original_spectra' in ops:
-            mgr.original_spectra = ops['original_spectra']
-        if 'operations_chain' in ops:
-            mgr.operations_chain = ops['operations_chain']
-        if 'active_operation_index' in ops:
-            mgr.active_operation_index = ops['active_operation_index']
+
+        # 'original_spectra' (the pre-operations baseline) is only present
+        # in ops when it actually differed from the top-level
+        # original_spectra at save time (see _build_state's dedupe) — when
+        # it's missing, the two were identical, so the original_spectra
+        # just restored onto main_controller a moment ago IS that baseline.
+        try:
+            mgr.original_spectra = ops.get('original_spectra', main_controller.original_spectra)
+        except Exception:
+            logger.warning(
+                "Snapshot: failed restoring operations baseline "
+                "(original_spectra)", exc_info=True)
+
+        # operations_chain and active_operation_index are a PAIR — every
+        # consumer of the operations history (starting with
+        # IncrementalOperationsManager.get_current_spectra(), which does a
+        # direct self.operations_chain[self.active_operation_index] lookup
+        # with no bounds check) trusts that active_operation_index is
+        # always a valid position in operations_chain, or -1. Restoring
+        # them as two independent try/except blocks — as this used to do —
+        # could let one succeed while the other fails (or one key is
+        # simply missing from a hand-edited snapshot), leaving a mismatched
+        # pair that doesn't raise here, but later: as an IndexError the
+        # next time the user opens History, jumps to a step, or applies a
+        # new operation — disconnected in time from the load that actually
+        # caused it. So both are computed first, validated together, and
+        # only then assigned together. If anything about that fails, BOTH
+        # fall back to a guaranteed-consistent empty state (no chain,
+        # "Original State") instead of leaving one half updated and the
+        # other stale.
+        new_chain = ops.get('operations_chain', mgr.operations_chain)
+        new_index = ops.get('active_operation_index', mgr.active_operation_index)
+        try:
+            if not isinstance(new_chain, list):
+                raise TypeError(
+                    f"operations_chain must be a list, got "
+                    f"{type(new_chain).__name__}")
+            # Beyond the chain/index pairing itself, several consumers
+            # index directly into one entry's fields with no .get()
+            # fallback -- IncrementalOperationsManager.set_active_operation()
+            # reads operation['type'], get_operation_description() reads
+            # operation['type']/['parameters'], and
+            # OperationsSummaryDialog reads operation['affected_labels']
+            # in a couple of places. A malformed entry there wouldn't be
+            # caught by the chain/index range check above, but would
+            # raise a KeyError the next time History tries to describe or
+            # jump to that step -- same disconnected-in-time failure mode
+            # as the chain/index mismatch, just one level deeper. So each
+            # entry's minimal required shape is checked here too.
+            for i, entry in enumerate(new_chain):
+                if not isinstance(entry, dict):
+                    raise TypeError(
+                        f"operations_chain[{i}] must be a dict, got "
+                        f"{type(entry).__name__}")
+                if 'type' not in entry:
+                    raise ValueError(f"operations_chain[{i}] is missing 'type'")
+                if not isinstance(entry.get('parameters'), dict):
+                    raise TypeError(
+                        f"operations_chain[{i}]['parameters'] must be a "
+                        f"dict, got {type(entry.get('parameters')).__name__}")
+                if not isinstance(entry.get('output_spectra'), list):
+                    raise TypeError(
+                        f"operations_chain[{i}]['output_spectra'] must be "
+                        f"a list, got "
+                        f"{type(entry.get('output_spectra')).__name__}")
+                if not isinstance(entry.get('affected_labels'), list):
+                    raise TypeError(
+                        f"operations_chain[{i}]['affected_labels'] must be "
+                        f"a list, got "
+                        f"{type(entry.get('affected_labels')).__name__}")
+            if not isinstance(new_index, int) or isinstance(new_index, bool):
+                raise TypeError(
+                    f"active_operation_index must be an int, got "
+                    f"{type(new_index).__name__}")
+            if not (-1 <= new_index < len(new_chain)):
+                raise ValueError(
+                    f"active_operation_index {new_index} out of range for "
+                    f"operations_chain of length {len(new_chain)}")
+            mgr.operations_chain = new_chain
+            mgr.active_operation_index = new_index
+        except Exception:
+            logger.warning(
+                "Snapshot: operations_chain/active_operation_index were "
+                "missing, malformed, or mutually inconsistent — resetting "
+                "operations history to empty ('Original State') instead of "
+                "restoring a pair that could crash later.", exc_info=True)
+            # This reset is itself not guaranteed to succeed (e.g. a
+            # manager whose active_operation_index setter always raises,
+            # for whatever reason) -- if it fails too, that failure must
+            # not be allowed to escape _restore_operations and abort the
+            # rest of the snapshot load, which is the exact fault
+            # tolerance this method exists to provide. Whatever partial
+            # state results is logged loudly rather than silently
+            # swallowed, since it's the one case this method can't fully
+            # repair on its own.
+            try:
+                mgr.operations_chain = []
+                mgr.active_operation_index = -1
+            except Exception:
+                logger.error(
+                    "Snapshot: could not reset operations_chain/"
+                    "active_operation_index to a safe state either -- "
+                    "operations history may be left inconsistent. The "
+                    "History dialog or further operations may misbehave "
+                    "until spectra are re-imported.", exc_info=True)
+
         if 'current_parameters' in ops:
-            op.current_parameters = ops['current_parameters']
+            try:
+                op.current_parameters = ops['current_parameters']
+            except Exception:
+                logger.warning(
+                    "Snapshot: failed restoring current_parameters",
+                    exc_info=True)
         if 'import_batches' in ops and hasattr(mgr, 'import_batches'):
-            mgr.import_batches = ops['import_batches']
+            try:
+                mgr.import_batches = ops['import_batches']
+            except Exception:
+                logger.warning(
+                    "Snapshot: failed restoring import_batches",
+                    exc_info=True)
 
     def _restore_spectrum_selection(self, main_controller, state: dict) -> None:
         if not hasattr(main_controller, 'spectra_list_widget'):
@@ -872,6 +1124,29 @@ class SaveManager:
         finally:
             main_controller.spectra_list_widget.blockSignals(False)
             main_controller.spectrum_selector.is_batch_updating = False
+
+        # Make the spectrum-selection panel visible now, as soon as the
+        # list actually has real content -- not after stage 6's plot
+        # render, and not after the "Snapshot Loaded" confirmation dialog.
+        # ImportController.import_snapshot() used to be the only place
+        # that showed this panel, right at the very end of the whole
+        # load. On a fresh app session the panel starts hidden (see
+        # main_controller's own setup), so the very first time it's ever
+        # shown, Qt pays a one-time layout/paint cost -- leaving that cost
+        # to land after the render made a large snapshot look "frozen
+        # twice": once for the render itself, then again for the panel to
+        # pop in afterwards. Showing it here instead, right after this
+        # stage populates the list, means that one-time cost lands while
+        # the progress dialog is still up (already covering the render
+        # that's about to happen), not stacked visibly on top of it.
+        # Best-effort: a display quirk here must never abort an otherwise
+        # successful load.
+        try:
+            main_controller.view.spectrum_selection_frame.setVisible(True)
+        except Exception:
+            logger.warning(
+                "Snapshot: failed to show the spectrum selection panel",
+                exc_info=True)
 
 
 # ---------------------------------------------------------------------------

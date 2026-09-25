@@ -41,6 +41,7 @@ _SCREENSHOT_FILES = {
     "PIPELINE_PANEL":              "spectra_processing_panel.png",
     "HISTORY_DIALOG":              "operations_history_dialog.png",
     "SAVE_DIALOG":                 "save_options_dialog.png",
+    "SNAPSHOT_CONFIRM_DIALOG":     "snapshot_confirmation_dialog.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -1821,15 +1822,148 @@ def get_user_guide_help_content():
         by selecting <strong>Row-oriented</strong> in the Import dialog's Layout option —
         no other setting needed.</p>
 
-        <h3>Snapshots</h3>
-        <p>Snapshots save the complete application state (all spectra, all processing
-        parameters, selections). Use them as checkpoints:</p>
+        <h3 id="snapshots">Snapshots</h3>
+        <p>A snapshot (a <strong>.snapx</strong> file) is a complete save of your
+        whole workspace &mdash; not just the spectra, but everything about where
+        you currently are in your work:</p>
+
+        <div style="background:#FFFFFF; border:1px solid #D0D3DA; border-radius:6px; padding:10px; margin:12px 0;">
+        <table style="width:100%; border:none; border-collapse:separate; border-spacing:6px;">
+          <tr>
+            <td style="background:#3A6AAF; color:white; font-weight:bold; border-radius:5px; padding:8px; text-align:center; width:50%;">
+              Every spectrum<br><span style="font-weight:normal; font-size:8.5pt;">with its metadata</span>
+            </td>
+            <td style="background:#3A6AAF; color:white; font-weight:bold; border-radius:5px; padding:8px; text-align:center; width:50%;">
+              Your whole Operations History<br><span style="font-weight:normal; font-size:8.5pt;">every step, and which one is currently active</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:#3A6AAF; color:white; font-weight:bold; border-radius:5px; padding:8px; text-align:center;">
+              Your current selection<br><span style="font-weight:normal; font-size:8.5pt;">which spectra are checked/highlighted</span>
+            </td>
+            <td style="background:#3A6AAF; color:white; font-weight:bold; border-radius:5px; padding:8px; text-align:center;">
+              Plot &amp; window settings<br><span style="font-weight:normal; font-size:8.5pt;">plot type, grid layout, axis choices, ...</span>
+            </td>
+          </tr>
+        </table>
+        <p style="text-align:center; color:#3A6AAF; font-size:8.5pt; margin:6px 0 0 0;">&darr; all four are written into one <strong>.snapx</strong> file</p>
+        </div>
+
         <ul>
-            <li><strong>Save snapshot:</strong> File → Save snapshot</li>
-            <li><strong>Load snapshot:</strong> File → Load snapshot</li>
-            <li>Snapshots support undo — reload an earlier snapshot to reverse
-                operations</li>
+            <li><strong>Save snapshot:</strong> File → Save... → choose
+                <strong>Snapshot</strong> as the File Format</li>
+            <li><strong>Load snapshot:</strong> File → Import Snapshot</li>
+            <li>Reload an earlier snapshot to go back to the workspace exactly as
+                it was when that snapshot was saved</li>
         </ul>
+
+        <h4>What Happens When You Load a Snapshot</h4>
+        <p>Loading a snapshot <strong>replaces your current workspace</strong>
+        &mdash; this can't be undone, so save anything you want to keep first.
+        Nothing is actually changed until the very end, when the whole load has
+        succeeded &mdash; here's the sequence:</p>
+
+        <div style="background:#FFFFFF; border:1px solid #D0D3DA; border-radius:6px; padding:10px; margin:12px 0; overflow-x:auto;">
+        <svg viewBox="0 0 900 560" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; font-family:Arial,sans-serif;">
+            <defs>
+                <marker id="ugArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#3A6AAF"/>
+                </marker>
+            </defs>
+
+            <rect x="260" y="16" width="380" height="40" rx="8" fill="#2E7D32"/>
+            <text x="450" y="41" font-size="13" fill="#fff" text-anchor="middle">File &rarr; Import Snapshot</text>
+
+            <line x1="450" y1="56" x2="450" y2="76" stroke="#3A6AAF" stroke-width="2" marker-end="url(#ugArrow)"/>
+
+            <rect x="60" y="76" width="780" height="56" rx="8" fill="#3A6AAF"/>
+            <text x="450" y="99" font-size="13" fill="#fff" text-anchor="middle" font-weight="bold">1. Confirm</text>
+            <text x="450" y="117" font-size="10.5" fill="#D6E4FA" text-anchor="middle">"Replace your current workspace?" &mdash; click the orange <tspan font-weight="bold">?</tspan> button first to see what a snapshot actually contains.</text>
+
+            <line x1="450" y1="132" x2="450" y2="152" stroke="#3A6AAF" stroke-width="2" marker-end="url(#ugArrow)"/>
+
+            <rect x="60" y="152" width="780" height="300" rx="10" fill="#F7F9FD" stroke="#3A6AAF" stroke-width="1.3" stroke-dasharray="5,4"/>
+            <text x="450" y="178" font-size="13" fill="#2C3E66" text-anchor="middle" font-weight="bold">2. Restore &mdash; one step at a time, with a progress bar</text>
+
+            <rect x="90" y="192" width="720" height="30" rx="8" fill="#E3EAF4"/>
+            <circle cx="112" cy="207" r="12" fill="#3A6AAF"/><text x="112" y="211" font-size="11" fill="#fff" text-anchor="middle">1</text>
+            <text x="136" y="212" font-size="11" fill="#2C3E66">Reading the file</text>
+
+            <rect x="90" y="232" width="720" height="30" rx="8" fill="#E3EAF4"/>
+            <circle cx="112" cy="247" r="12" fill="#3A6AAF"/><text x="112" y="251" font-size="11" fill="#fff" text-anchor="middle">2</text>
+            <text x="136" y="252" font-size="11" fill="#2C3E66">Plot &amp; window settings</text>
+
+            <rect x="90" y="272" width="720" height="30" rx="8" fill="#E3EAF4"/>
+            <circle cx="112" cy="287" r="12" fill="#3A6AAF"/><text x="112" y="291" font-size="11" fill="#fff" text-anchor="middle">3</text>
+            <text x="136" y="292" font-size="11" fill="#2C3E66">Spectra</text>
+
+            <rect x="90" y="312" width="720" height="30" rx="8" fill="#E3EAF4"/>
+            <circle cx="112" cy="327" r="12" fill="#3A6AAF"/><text x="112" y="331" font-size="11" fill="#fff" text-anchor="middle">4</text>
+            <text x="136" y="332" font-size="11" fill="#2C3E66">Operations History (every step, and which one's active)</text>
+
+            <rect x="90" y="352" width="720" height="30" rx="8" fill="#E3EAF4"/>
+            <circle cx="112" cy="367" r="12" fill="#3A6AAF"/><text x="112" y="371" font-size="11" fill="#fff" text-anchor="middle">5</text>
+            <text x="136" y="372" font-size="11" fill="#2C3E66">Your selection</text>
+
+            <rect x="90" y="392" width="720" height="30" rx="8" fill="#DCEDC8"/>
+            <circle cx="112" cy="407" r="12" fill="#2E7D32"/><text x="112" y="411" font-size="11" fill="#fff" text-anchor="middle">6</text>
+            <text x="136" y="412" font-size="11" fill="#2C3E66">Redrawing the plot</text>
+
+            <line x1="450" y1="452" x2="450" y2="472" stroke="#3A6AAF" stroke-width="2" marker-end="url(#ugArrow)"/>
+
+            <rect x="60" y="472" width="780" height="48" rx="8" fill="#2E7D32"/>
+            <text x="450" y="501" font-size="13" fill="#fff" text-anchor="middle">3. Done &mdash; your new workspace appears, all at once</text>
+        </svg>
+        </div>
+        <div class="screenshot">
+            <img src="$SNAPSHOT_CONFIRM_DIALOG" width="$SNAPSHOT_CONFIRM_DIALOG_W" height="$SNAPSHOT_CONFIRM_DIALOG_H" alt="Load Snapshot confirmation dialog: 'Loading a snapshot will replace your current workspace. Continue?' with Yes, No, and an orange question-mark help button" />
+            <p class="caption">The actual "1. Confirm" dialog from the diagram above. The orange <strong>?</strong> button shows what a snapshot contains without answering Yes or No for you &mdash; the Yes/No question is still waiting once you close it.</p>
+        </div>
+
+        <p style="font-size:8.5pt; color:#666; text-align:center;">Want the exact
+        technical detail behind each of these steps &mdash; which fields can fail
+        safely on their own and which can't, and what happens if a load fails
+        partway through? See the Developer Guide's
+        <a href="help://developer_guide#snapshot-pipeline">"Snapshot Files
+        (.snapx): Save/Load Pipeline"</a> section.</p>
+
+        <div class="tip">
+            <strong>About the "one bad piece is skipped" behaviour:</strong> if a
+            snapshot file ever has one small, unexpected problem in it (most
+            likely because it was opened and hand-edited outside this
+            application &mdash; something neither this application nor its users
+            are expected to do), the application is deliberately careful about
+            how it responds. Almost everything in a snapshot is restored
+            independently, so one bad piece being skipped (with a note written to
+            the log) never stops the rest from loading correctly. The one
+            exception is your Operations History's list of steps together with
+            "which step is currently active" &mdash; those two always travel
+            together: either both restore correctly, or both are reset together
+            to a safe, empty "Original State". They are never left out of step
+            with each other, which is what would otherwise risk causing a problem
+            somewhere else later, unrelated to whatever caused the original
+            hiccup.
+        </div>
+
+        <div class="warning">
+            <strong>If the file can't be loaded at all</strong> (wrong format,
+            corrupted, or edited so spectrum names are no longer unique), you'll
+            see a clear error message explaining why, and your previous
+            workspace is exactly as you left it &mdash; nothing about it is
+            touched until step&nbsp;2 above has fully succeeded, so a failed
+            load simply leaves you where you started, spectra, history,
+            selection and all. Nothing on disk is ever affected either way
+            &mdash; your spectra files and any other saved snapshots are
+            completely untouched.
+        </div>
+
+        <p style="font-size:8.5pt; color:#666;">This behaves the same way as
+        a regular <a href="#import">data import</a>:
+        <strong>File → Import data → new</strong> also only clears your
+        existing spectra once a new file has actually loaded successfully.
+        Loading a snapshot follows the same rule &mdash; your current
+        workspace is only ever replaced once, at the very end, and only if
+        the whole load succeeded.</p>
 
         <h3>Plot Export</h3>
         <p>Use the Save icon in the matplotlib toolbar to export the current plot.
