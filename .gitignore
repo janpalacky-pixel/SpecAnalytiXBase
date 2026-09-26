@@ -3,6 +3,9 @@ build/
 dist/
 installer/*.exe
 
+# Dev-only tree listing (embeds a local absolute path) — regenerate via generate_project_structure.py
+project_structure.txt
+
 # Python bytecode cache
 __pycache__/
 *.pyc

@@ -2,8 +2,6 @@
 
 A PyQt5 desktop application for processing and analyzing spectroscopic data — UV-Vis, CD, Raman, IR, fluorescence, NMR, and related techniques.
 
-> This is a private pre-release build, shared with close colleagues for testing before a wider release.
-
 ## Overview
 
 SpecAnalytiXBase is built around a single spectra list: import data from several instrument formats, apply a chain of processing operations, and run a range of multivariate and quantitative analyses — all while keeping a full, human-readable history of every operation performed on each spectrum. Each spectrum can be renamed, annotated, and styled independently, and carries its own metadata generated automatically from the operations applied to it.
