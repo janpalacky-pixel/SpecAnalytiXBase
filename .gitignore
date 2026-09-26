@@ -24,6 +24,7 @@ test2.vcw
 
 # Personal, local-only notes (not part of the project) — never tracked
 dev_notes/
+Claude outputs/
 
 # Large real-data 2D map test datasets — too big for git (several are
 # 100+ MB, over or right at GitHub's 100 MB per-file limit). Hosted as
