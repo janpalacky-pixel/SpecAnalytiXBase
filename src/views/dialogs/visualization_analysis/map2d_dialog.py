@@ -1906,6 +1906,24 @@ class Map2DDialog(QDialog):
         self._btn_decomp_run_n.clicked.connect(self._run_decomp_best_of_n)
         self._decomp_n_spin.valueChanged.connect(self._on_decomp_n_changed)
         self._ref_fix_cb.toggled.connect(self._on_reference_settings_changed)
+        # NMF's Init./Max iter., and MCR-ALS's Max iter./Non-neg. C/
+        # Non-neg. ST/Closure, change the fit itself exactly like a
+        # component-count or range change does -- wire them to the
+        # same stale-marking path (_on_fit_settings_changed) so a
+        # mode switch away and back never silently redraws an old
+        # fit computed under different settings.
+        self._nmf_init_combo.currentIndexChanged.connect(
+            lambda *_: self._on_fit_settings_changed('nmf'))
+        self._nmf_maxiter_spin.valueChanged.connect(
+            lambda *_: self._on_fit_settings_changed('nmf'))
+        self._mcr_maxiter_spin.valueChanged.connect(
+            lambda *_: self._on_fit_settings_changed('mcr'))
+        self._mcr_c_nonneg_cb.toggled.connect(
+            lambda *_: self._on_fit_settings_changed('mcr'))
+        self._mcr_st_nonneg_cb.toggled.connect(
+            lambda *_: self._on_fit_settings_changed('mcr'))
+        self._mcr_closure_cb.toggled.connect(
+            lambda *_: self._on_fit_settings_changed('mcr'))
         self._ref_autorecompute_cb.toggled.connect(self._on_ref_autorecompute_toggled)
         self._cmap_combo.currentTextChanged.connect(
             self._on_cmap_interp_changed)
@@ -3270,6 +3288,38 @@ class Map2DDialog(QDialog):
         self._map_canvas.setFocus()
 
     # ── NMF/MCR-ALS: reference-spectra anchoring ────────────────────────
+
+    def _on_fit_settings_changed(self, kind):
+        """NMF's Init./Max iter., or MCR-ALS's Max iter./Non-neg. C/
+        Non-neg. ST/Closure, changed while that kind is the active
+        Map Type.
+
+        These settings feed the fit exactly the way the component
+        count and the range do (see _on_decomp_n_changed and
+        _configure_ranges) -- changing any of them makes the
+        currently-shown map/spectrum describe a fit that no longer
+        matches the controls on screen. Treat it the same way: mark
+        this kind stale so switching Map Type away and back redraws
+        from cache ONLY while nothing invalidating has changed, and
+        otherwise asks for 'Update Map' instead of silently keeping
+        (and mislabeling) the old fit.
+        """
+        if self._decomp_kind() != kind:
+            # Widgets for the other kind are hidden while it isn't
+            # active, but guard anyway in case a signal still fires
+            # programmatically.
+            return
+        kind_label = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        self._invalidate_map()
+        self._decomp_needs_refit[kind] = True
+        self._component_combo.setEnabled(False)
+        self._decomp_status_label.setStyleSheet(
+            "font-size:8pt; color:#B71C1C; font-weight:bold;")
+        self._decomp_status_label.setText(
+            f"Fit settings changed \u2014 press 'Update Map' to refit {kind_label}")
+        self._decomp_status_label.setVisible(True)
+        self._spectrum_title_label.setText(
+            f"{kind_label} fit settings changed \u2014 press 'Update Map' to refit")
 
     def _on_decomp_n_changed(self, *_):
         """'Components' spinner (how many to fit next) changed.

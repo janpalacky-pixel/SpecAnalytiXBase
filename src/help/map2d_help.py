@@ -186,8 +186,11 @@ that has already been fitted for the current settings — the existing fit
 is simply redrawn from cache, with no re-fit and no need to press
 <b>Update Map</b>. Fitting is only needed the first time a kind is used,
 or again after a setting that actually invalidates that fit — its
-spectral range, its component count (NMF/MCR-ALS), or its reference
-spectra — in which case <b>Update Map</b> is required, exactly as before.
+spectral range, its component count (NMF/MCR-ALS), its reference
+spectra, or (NMF/MCR-ALS only) its own fit-control settings such as
+NMF's <b>Init.</b>/<b>Max iter.</b> or MCR-ALS's <b>Max iter.</b>/
+<b>Non-neg. C</b>/<b>Non-neg. ST</b>/<b>Closure</b> — in which case
+<b>Update Map</b> is required, exactly as before.
 <b>RGB overlay</b> never needs <b>Update Map</b> at all: composing it from
 already-fitted components is cheap, so it always redraws live.</p>
 

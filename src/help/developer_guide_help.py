@@ -1888,12 +1888,18 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         <code>compute_svd_map()</code>/<code>compute_pca_map()</code>/<code>compute_nmf_map()</code>/
         <code>compute_mcr_map()</code> entirely. Only when the dirty flag is set (or nothing has
         been fitted yet for that kind) does the mode fall back to its usual "Press 'Update Map' to
-        compute&hellip;" placeholder. This deliberately does <i>not</i> extend to every setting
-        that could plausibly affect a fit &mdash; NMF's <b>Init.</b>/<b>Max iter.</b> and MCR-ALS's
-        <b>Max iter.</b>/<b>Non-neg. C</b>/<b>Non-neg. ST</b>/<b>Closure</b> controls currently mark
-        nothing dirty &mdash; a conscious scope decision matching the specific triggers named when
-        this was requested (range reconfiguration, component count, references), not an
-        oversight.</p>
+        compute&hellip;" placeholder. This now extends to every fit setting, not just range/count/
+        references: NMF's <b>Init.</b>/<b>Max iter.</b> and MCR-ALS's <b>Max iter.</b>/<b>Non-neg. C</b>/
+        <b>Non-neg. ST</b>/<b>Closure</b> controls are wired to <code>_on_fit_settings_changed(kind)</code>,
+        which does exactly what <code>_on_decomp_n_changed</code> and
+        <code>_on_reference_settings_changed</code> already did: set <code>self._decomp_needs_refit[kind]
+        = True</code> and put up the same red "&hellip; changed &mdash; press 'Update Map' to refit&hellip;"
+        status text. These controls only exist (are only visible/enabled) while their own kind is the
+        active Map Type, so <code>_on_fit_settings_changed</code> also guards on
+        <code>self._decomp_kind() == kind</code> before touching anything, purely defensively against a
+        signal firing while that kind isn't current. Changing one of these settings, then switching Map
+        Type away and back without touching anything else, now correctly requires 'Update Map' instead
+        of silently redrawing a fit computed under the old settings.</p>
 
         <p><b>Hover-tooltip artists don't survive <code>ax.cla()</code> &mdash; reset the
         reference, don't just hide it.</b> Found while testing the two features above, but the bug
