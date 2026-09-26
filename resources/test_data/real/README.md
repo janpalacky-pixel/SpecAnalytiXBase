@@ -9,6 +9,14 @@ you that the tools *run*, and let you practise the workflow, but they cannot
 tell you whether a decomposition is *correct*. That is exactly why the
 synthetic datasets exist.
 
+## Data provenance
+
+The real 2D Raman map datasets here — the `.mat` WITec/Project FIVE maps in
+`2D map/`, and `Raman_2D_map_85x55.txt` plus every other map offered via the
+in-app downloader (see `LARGE_TEST_DATASETS` in `src/views/main_window.py`) —
+were measured and kindly provided by Assoc. Prof. Peter Mojzeš, Division of
+Biomolecular Physics, Institute of Physics, Charles University in Prague.
+
 ## Adding a single-series dataset
 
 1. Drop the file (`.xlsx`, `.csv`, `.txt`, …) into this folder.

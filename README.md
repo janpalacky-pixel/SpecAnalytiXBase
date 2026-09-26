@@ -83,3 +83,10 @@ Developed at the Institute of Biophysics of the Czech Academy of Sciences (BFU).
 - Email: [janpalacky@ibp.cz](mailto:janpalacky@ibp.cz)
 - Research group: [Biophysics of Nucleic Acids](https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile)
 - Institute: [ibp.cz](https://www.ibp.cz/en/)
+
+## Acknowledgements
+
+The real, measured 2D Raman map datasets bundled with the app, or offered
+as an in-app download for testing (see `resources/test_data/real/`), were
+measured and kindly provided by Assoc. Prof. Peter Mojzeš, Division of
+Biomolecular Physics, Institute of Physics, Charles University in Prague.

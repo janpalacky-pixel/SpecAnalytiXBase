@@ -37,8 +37,10 @@ REAL_TEST_DATASETS = [
 # forward-slash here for readability; open_real_dataset() below splits
 # on '/' so this is OS-path-safe on Windows too.
 REAL_TEST_DATASETS_2D_MAPS = [
-    ('Raman data for 2D map (85x55)', '2D map/Raman_2D_map_85x55.txt'),
     ('Chlorella (WITec 2D map, 25×25)', '2D map/Chlorella.mat'),
+    ('Gefionella (WITec 2D map, 30×40)', '2D map/Gefionella.mat'),
+    ('Klebsormidium (WITec 2D map, 35×35)', '2D map/Klebsormidium.mat'),
+    ('Microchloropsis (WITec 2D map, 20×40)', '2D map/Microchloropsis.mat'),
 ]
 
 # Real-data 2D maps too large to keep in the git repository (several are
@@ -54,12 +56,10 @@ LARGE_TEST_DATASETS = [
     ('Bigelowiella (WITec 2D map)',    'Bigelowiella.mat'),
     ('Cryptomonas (WITec 2D map)',     'Cryptomonas.mat'),
     ('Eimeria (WITec 2D map)',         'Eimeria.mat'),
-    ('Gefionella (WITec 2D map)',      'Gefionella.mat'),
     ('Glenodinium (WITec 2D map)',     'Glenodinium.mat'),
-    ('Klebsormidium (WITec 2D map)',   'Klebsormidium.mat'),
-    ('Microchloropsis (WITec 2D map)', 'Microchloropsis.mat'),
     ('Naegleria (WITec 2D map)',       'Naegleria.mat'),
     ('Penium (WITec 2D map)',          'Penium.mat'),
+    ('Raman data for 2D map (85x55)',  'Raman_2D_map_85x55.txt'),
     ('Schizochytrium (WITec 2D map)',  'Schizochytrium.mat'),
     ('Tetraselmis (WITec 2D map)',     'Tetraselmis.mat'),
 ]

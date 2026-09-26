@@ -36,11 +36,9 @@ Claude outputs/
 resources/test_data/real/Bigelowiella.mat
 resources/test_data/real/Cryptomonas.mat
 resources/test_data/real/Eimeria.mat
-resources/test_data/real/Gefionella.mat
 resources/test_data/real/Glenodinium.mat
-resources/test_data/real/Klebsormidium.mat
-resources/test_data/real/Microchloropsis.mat
 resources/test_data/real/Naegleria.mat
 resources/test_data/real/Penium.mat
+resources/test_data/real/Raman_2D_map_85x55.txt
 resources/test_data/real/Schizochytrium.mat
 resources/test_data/real/Tetraselmis.mat
