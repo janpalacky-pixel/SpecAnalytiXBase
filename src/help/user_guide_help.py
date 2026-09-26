@@ -1565,6 +1565,13 @@ def get_user_guide_help_content():
                 non-uniqueness problem below &mdash; see the warning.</li>
             <li><strong>Export:</strong> ST (pure spectra) and C (concentrations) to Excel or CSV.</li>
         </ul>
+        <p>MCR-ALS's internal fit is optimized to skip its non-negative
+        solve wherever the constraint isn't actually needed, with no
+        change to results &mdash; on a real, baseline-corrected 2D map
+        this measured roughly 2&times; faster with <strong>"Run N times,
+        keep best"</strong> at higher run counts. How much it helps
+        depends on your data; NMF is unaffected (it has no equivalent
+        step to speed up).</p>
         <div class="warning"><strong>A good fit does not mean a correct answer.</strong>
         This is the single most important thing to understand about both MCR-ALS and NMF.
         Many different decompositions can reproduce your data equally well (&ldquo;rotational

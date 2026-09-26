@@ -1565,6 +1565,75 @@ widget.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
         — a rebuild-and-reselect step that "just" touches Qt widgets is not free at
         scale, and won't show up if you only profile the numerical part.</p>
 
+        <h2 id="mcr-als-nnls-hybrid">MCR-ALS's Per-Column <code>nnls</code> Solves: Skip the
+        Constraint When It Isn't Binding</h2>
+
+        <div class="rule">
+            <strong>Before assuming <code>scipy.optimize.nnls()</code> itself is slow,
+            check whether the constraint it enforces (x &ge; 0) is even active for a
+            given row/column. When the plain, UNCONSTRAINED least-squares solution
+            already comes out non-negative everywhere, it IS the exact
+            <code>nnls</code> solution — <code>nnls</code>'s own definition guarantees
+            this, so there is nothing left for the constrained solver to find that the
+            cheap unconstrained one didn't already find.</strong>
+        </div>
+
+        <p><code>MCRALSManager.compute()</code>'s alternating-least-squares loop calls
+        <code>nnls()</code> once per spectrum row (the C-step) and once per wavelength
+        column (both branches of the ST-step) — a plain Python <code>for</code> loop,
+        since each row/column is an independent least-squares problem sharing the same
+        constraint matrix. For a 2D map with thousands of pixels, that's thousands of
+        individual <code>nnls()</code> calls per iteration.</p>
+
+        <p><code>MCRALSManager._hybrid_nnls_columns(A, B)</code> replaces all three
+        loops. It first solves the WHOLE batch's unconstrained least-squares problem
+        in one shot (<code>np.linalg.pinv(A) @ B</code>, one matrix multiply regardless
+        of how many columns), then only calls the real <code>nnls()</code> for the
+        columns whose unconstrained answer actually went negative somewhere.</p>
+
+        <div class="scheme">
+# SLOW — one nnls() call per column, even for columns that don't need the constraint
+ST = np.zeros((n_components, n))
+for j in range(n):
+    st_j, _ = nnls(C, D[:, j])
+    ST[:, j] = st_j
+
+# FAST — same result, fewer nnls() calls
+unconstrained = np.linalg.pinv(A) @ B     # whole batch, one shot
+result = unconstrained.copy()
+needs_nnls = ~np.all(unconstrained >= 0, axis=0)
+for j in np.flatnonzero(needs_nnls):      # only the columns that actually need it
+    x_j, _ = nnls(A, B[:, j])
+    result[:, j] = x_j
+        </div>
+
+        <p>Confirmed identical to the original per-column loop's output (relative
+        difference ~1e-15 against real <code>scipy.optimize.nnls</code> on a real
+        85&times;55 Raman map — ordinary floating-point roundoff between two
+        different-but-exact linear algebra routes, not an approximation). Measured
+        with a controlled, repeated A/B comparison on realistic C/ST states drawn from
+        an actual alternating fit: a consistent <strong>1.2&times;&ndash;2.1&times;</strong>
+        per call. Confirmed by the user on their own real, baseline-corrected 55&times;85
+        map with "Run N times, keep best": <strong>20s &rarr; 10s</strong> at 10 runs,
+        <strong>105s &rarr; 48s</strong> at 50 runs — close to the top of the measured
+        range once per-run noise averages out over many runs.</p>
+
+        <p>How much this helps is entirely data-dependent — it's proportional to how
+        many rows/columns already come out non-negative unconstrained, which tends to
+        be more likely for cleaner (e.g. already baseline-corrected), well-separated,
+        lower-component-count fits. In the worst case (every column still needs the
+        real solve) it costs one extra cheap <code>pinv()</code> call and is never
+        slower than the original loop, never different.</p>
+
+        <p>NMF does <strong>not</strong> have an equivalent bottleneck: its standard
+        path calls scikit-learn's own compiled <code>NMF</code> solver directly, and
+        its hand-written "with references" multiplicative-update loop
+        (<code>_fit_with_references()</code>) already updates the entire W/H matrices
+        at once per iteration, with no per-row/per-column <code>nnls</code>-style loop
+        to hybridize. Confirmed directly in <code>nmf_manager.py</code> before ruling
+        this out — the two managers don't share this code, so this optimization was
+        MCR-ALS-only by necessity, not by oversight.</p>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">

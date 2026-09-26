@@ -1114,6 +1114,17 @@ def get_mcr_als_help_content():
         <li>Repeat until the lack-of-fit stops improving by more than the
             convergence tolerance, or Max Iterations is reached.</li>
     </ol>
+    <p>Steps 1 and 3's non-negative least-squares solves are optimized
+    internally: whenever a spectrum's (or wavelength's) plain,
+    unconstrained least-squares answer already comes out non-negative,
+    that answer already <em>is</em> the exact non-negative-constrained
+    one, so the more expensive constrained solve is skipped for it. This
+    changes nothing about the result &mdash; only how quickly it's
+    reached &mdash; and speeds up larger 2D maps more noticeably than
+    small spectrum sets (see the Developer Guide's "MCR-ALS's Per-Column
+    nnls Solves" section for the technical detail, if you're curious).
+    NMF has no equivalent bottleneck to begin with, so this doesn't apply
+    to it.</p>
     <p>Lack of fit: 100 &times; &radic;(&Sigma;(D&minus;C&middot;ST)&sup2;
     / &Sigma;D&sup2;) — the same formula used throughout this dialog and
     in NMF's status line, for direct comparability between the two

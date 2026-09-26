@@ -1120,6 +1120,14 @@ def get_nmf_help_content():
     interface over scikit-learn's implementation, not an independent
     reimplementation (unlike MCR-ALS, which is custom-built for this
     app).</p>
+    <p>Unlike MCR-ALS, NMF has no per-pixel or per-column solve loop to
+    speed up: both the standard path (scikit-learn's own compiled
+    solver) and this dialog's "with references" multiplicative-update
+    loop already update the whole W/H matrices at once each iteration.
+    So MCR-ALS's per-column non-negative-solve speed-up (see the
+    Developer Guide) does not apply here — confirmed directly in the
+    code, not assumed, since the two methods' Python implementations are
+    otherwise easy to mix up.</p>
 
     <h2>Shorten Names</h2>
     <p>This dialog has its own independent <strong>Shorten names</strong>
