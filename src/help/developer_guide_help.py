@@ -1968,6 +1968,101 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         are literal data, not a colormap-encoded scalar, so there's nothing for a colorbar to
         show.</p>
 
+        <h2 id="roi-persistence">2D Map: ROI Regions Survive Mode Switches</h2>
+
+        <p>Drawing an ROI region, then switching Map Type (SVD &rarr; NMF, Intensity &rarr;
+        RGB overlay, ...), used to silently delete every region. Root cause: <code>_on_mode_changed()</code>
+        unconditionally calls a shared <code>_invalidate_map()</code> helper at its top, used for
+        many unrelated reasons (mode switch, a metric change with nothing computed yet, a
+        decomposition setting that forces a refit) &mdash; and that helper's job description
+        ("clear the displayed map and show a recompute-needed placeholder") had, for no principled
+        reason, grown a <code>self._clear_all_rois()</code> call inside it. Every one of
+        <code>_invalidate_map()</code>'s callers inherited that side effect whether or not it made
+        sense for them.</p>
+
+        <p><b>The fix is a scope correction, not a feature bolt-on.</b> An ROI region's identity is
+        a set of <code>(row, col)</code> grid positions (<code>bounds</code> in each region dict) &mdash;
+        nothing about which <i>kind</i> of map is being viewed or computed, or what its computed
+        values are, is part of that identity. The only thing that can actually invalidate a
+        region's positions is the grid itself changing shape: <code>n_rows</code>/<code>n_cols</code>
+        are shared, dialog-wide state (not per-mode), so a region drawn in SVD mode is exactly as
+        valid in NMF or RGB overlay mode as it was where it was drawn &mdash; right up until Rows &times;
+        Cols is actually edited, at which point a 25&times;25 region's bounds may no longer even be
+        inside a reshaped 5&times;125 grid. So <code>self._clear_all_rois()</code> was removed from
+        <code>_invalidate_map()</code> entirely and moved to the top of <code>_on_dims_changed()</code>
+        &mdash; the sole handler for both dimension spinboxes' <code>valueChanged</code> signals &mdash;
+        unconditionally, before the existing is_fast/dims_ok branch. This also fixes a latent
+        asymmetry that predates this change: the "fast" modes (Intensity/Arithmetic/Cluster) took
+        the <code>_compute_map()</code> branch on a dims change and never called
+        <code>_invalidate_map()</code> at all, so a dims change previously left stale ROI regions in
+        place for those modes specifically while clearing them for SVD/PCA/NMF/MCR-ALS/RGB &mdash;
+        now both branches clear unconditionally, resolving the inconsistency rather than
+        preserving it.</p>
+
+        <p><b>Data surviving isn't the same as being visible &mdash; the same orphaned-artist bug as
+        the hover tooltip, generalized.</b> Not clearing <code>self._roi_regions</code> only fixes
+        half the problem: every full map redraw (<code>_MapCanvas.update_map()</code>,
+        <code>_draw_rgb_overlay_map()</code>, <code>_draw_cluster_map()</code>, all three calling
+        <code>ax.cla()</code>) destroys every existing ROI <code>Rectangle</code>/<code>Ellipse</code>/
+        <code>PathPatch</code>/<code>Line2D</code> artist the exact same way it was found to destroy
+        the hover-tooltip <code>Annotation</code> (see the RGB overlay section above) &mdash; the
+        region dict's <code>'patch'</code> reference survives as a Python object, but it's no
+        longer part of the axes' artist list and <code>set_visible()</code>/redrawing it changes
+        nothing on screen. <code>_redraw_roi_patches()</code> fixes this the same way
+        <code>_draw_ref_markers()</code> already fixed it for NMF/MCR-ALS reference-pixel markers:
+        rebuild a fresh artist for every region from its OWN stored data (<code>bounds</code>, plus
+        <code>cx</code>/<code>cy</code>/<code>a</code>/<code>b</code> for an ellipse) and reassign
+        <code>reg['patch']</code> to point at it &mdash; except for a <code>'lasso'</code> region,
+        which has no separate vertex store in the dict, so its vertices are read off the existing
+        (orphaned but still perfectly readable as a plain Python object) <code>PathPatch</code> via
+        <code>.get_path().vertices</code> before building its replacement. <code>_last_rect_patch</code>/
+        <code>_last_ellipse_patch</code> (used by <code>_on_roi_selected</code>/
+        <code>_on_ellipse_roi_selected</code> to tell "resize the just-drawn region's handles" apart
+        from "start a new one") are updated to the fresh artist too, in the same loop &mdash; otherwise
+        dragging a handle right after a mode switch would silently mutate an orphaned patch nobody
+        can see instead of the one actually on screen.</p>
+
+        <p><b>Wiring: a canvas-level hook, not a dialog-level afterthought bolted onto six call
+        sites.</b> <code>_MapCanvas.update_map()</code> is called from six different places in the
+        dialog; rather than adding a <code>self._redraw_roi_patches()</code> call after each one
+        (guaranteed to be missed by whichever call site gets added next), <code>_MapCanvas</code>
+        gained a generic <code>self._post_redraw_hook</code> callable (<code>None</code> by default,
+        set once via <code>set_post_redraw_hook()</code> right after dialog construction), invoked
+        at the end of both <code>update_map()</code> and <code>_draw_stale()</code> (the "Settings
+        changed" placeholder) right before the final <code>draw_idle()</code>. The dialog wires
+        <code>self._map_canvas.set_post_redraw_hook(self._redraw_roi_patches)</code> once in
+        <code>__init__</code>, immediately after constructing <code>_map_canvas</code>. This keeps
+        <code>_MapCanvas</code> ignorant of what an "ROI region" even is (same separation of
+        concerns as the existing <code>_ref_pixel_by_component</code> mechanism) while guaranteeing
+        every current AND future <code>update_map()</code>/<code>_draw_stale()</code> call site gets
+        the hook for free. <code>_draw_rgb_overlay_map()</code> and <code>_draw_cluster_map()</code>
+        don't go through <code>update_map()</code> at all (they draw directly on
+        <code>self._map_canvas.ax</code>), so each calls <code>self._redraw_roi_patches()</code>
+        directly, right before its own final <code>draw()</code>.</p>
+
+        <div class="rule">
+            <strong>Take-home: a matplotlib artist does not survive <code>ax.cla()</code>, and
+            "the reference still isn't <code>None</code>" is not evidence that it does.</strong>
+            <code>ax.cla()</code> removes every artist from the axes' internal container lists
+            (<code>ax.texts</code>, <code>ax.patches</code>, <code>ax.lines</code>, ...) but does
+            nothing to whatever external variable still points at one of those artist objects
+            &mdash; the object stays alive, its attributes stay readable and even individually
+            settable, and no exception is ever raised for touching it. It has simply stopped being
+            part of what gets drawn. This codebase hit this same bug twice in one session (the
+            hover-tooltip <code>Annotation</code>, then every ROI patch/line type) precisely
+            because the failure mode looks like nothing at all: no traceback, no visibly-wrong
+            state in a debugger (<code>get_visible()</code> still returns whatever was last set),
+            just a UI element that silently stops appearing after the second redraw and not the
+            first. Any future full-canvas redraw path in this dialog that adds its own persistent
+            overlay artist (on <code>self.ax</code>, surviving across redraws by design) needs
+            either its own re-attach-after-<code>cla()</code> step or a subscription to
+            <code>_post_redraw_hook</code> &mdash; there is no default in matplotlib that does this
+            automatically, and "I didn't touch that code" is exactly how this bug hides for a long
+            time in a path that isn't exercised by an automated test with real Qt widgets and a
+            second real redraw in sequence (a single-redraw test, which is the easy one to write,
+            cannot catch it at all).
+        </div>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">

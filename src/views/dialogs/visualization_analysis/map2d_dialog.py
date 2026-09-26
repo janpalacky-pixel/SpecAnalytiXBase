@@ -122,6 +122,14 @@ class _MapCanvas(FigureCanvas):
         # its own tiny matplotlib canvas, positioned next to the cursor
         # by _on_hover. Built lazily on first use.
         self._ref_picking_active = False
+        # Called (with no arguments) after every full redraw that clears
+        # the axes (_draw_stale/update_map) — set by the dialog to
+        # _redraw_roi_patches so ROI region outlines survive a mode
+        # switch or any other full redraw instead of silently vanishing
+        # (their underlying data in self._roi_regions was never touched;
+        # only their matplotlib artists were destroyed by ax.cla(), the
+        # same class of bug as the hover-tooltip staleness above).
+        self._post_redraw_hook = None
         self._mini_preview_widget = None
         self._mini_preview_ax = None
         self._mini_preview_canvas = None
@@ -343,7 +351,16 @@ class _MapCanvas(FigureCanvas):
                           color='#FF8C00', fontsize=9)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
+        if self._post_redraw_hook is not None:
+            self._post_redraw_hook()
         self.draw_idle()
+
+    def set_post_redraw_hook(self, fn):
+        """Register a callable to run after every full redraw that clears
+        the axes (_draw_stale/update_map), right before the final
+        draw_idle(). Used by the dialog to re-attach ROI region patches
+        (see the comment on self._post_redraw_hook above)."""
+        self._post_redraw_hook = fn
 
     # ------------------------------------------------------------------
     def update_map(self, data, cmap='viridis', interpolation='nearest', title='',
@@ -383,6 +400,8 @@ class _MapCanvas(FigureCanvas):
         self.ax.set_xlabel(xlabel, fontsize=8)
         self.ax.set_ylabel(ylabel, fontsize=8)
         self._draw_ref_markers()
+        if self._post_redraw_hook is not None:
+            self._post_redraw_hook()
         self.draw_idle()
 
     # ------------------------------------------------------------------
@@ -819,6 +838,11 @@ class Map2DDialog(QDialog):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(2, 2, 2, 2)
         self._map_canvas  = _MapCanvas(left_widget)
+        # ROI region outlines must survive every full map redraw
+        # (mode switch, Update Map, cmap/aspect change, ...) — see
+        # _redraw_roi_patches for why this can't just be "leave the
+        # patches alone".
+        self._map_canvas.set_post_redraw_hook(self._redraw_roi_patches)
         self._map_toolbar = NavigationToolbar(self._map_canvas, left_widget)
         left_layout.addWidget(self._map_toolbar)
         left_layout.addWidget(self._map_canvas, stretch=1)
@@ -1169,6 +1193,16 @@ class Map2DDialog(QDialog):
             "Intensity at x              : interpolated intensity at a user-specified x-value"
         )
         metric_row.addWidget(self._metric_combo)
+        # Only shown in Intensity metric mode (not Arithmetic, which
+        # shares this same combo/panel but names its two bands
+        # differently) — the metric options need more room to explain
+        # than a tooltip, in particular that 'Intensity at x' is a
+        # single interpolated point rather than an average over a
+        # range like every other option here.
+        self._metric_help_btn = self._make_info_button(
+            "About the Metric options",
+            "Every option here computes one scalar value per spectrum from the\npixels within the configured Band range — except 'Intensity at x',\nwhich is different (see below).\n\nIntegral: area under the range-filtered spectrum (trapezoidal rule).\nMean: average y-value over the range.\nVariance: spread of y-values within the range.\nPeak intensity: maximum y-value in the range.\nPeak position: x-value at the intensity maximum in the range.\nFWHM: full width at half maximum of the dominant peak in the range.\nBaseline-corrected integral: area above the chord connecting the\nrange endpoints.\n\nIntensity at x: linearly interpolates the full spectrum at one exact\nx-value — a single point, not an average over a range or its\nneighboring points. Because it reads only that one point, it is more\nsensitive to noise at that exact position than the range-based\nmetrics above. If you want noise averaged out, use Mean (or\nIntegral) over a narrow range centered on your feature instead.")
+        metric_row.addWidget(self._metric_help_btn)
         metric_row.addStretch()
         mlay.addLayout(metric_row)
 
@@ -2023,6 +2057,9 @@ class Map2DDialog(QDialog):
 
         # Metric panel and band config visible for intensity and arithmetic only
         self._metric_panel.setVisible(is_int or is_arith)
+        # Only in Intensity mode, not Arithmetic — see the button's
+        # construction comment for why.
+        self._metric_help_btn.setVisible(is_int)
         self._update_x_val_visibility()
         # Band A panel: visible for all modes except cluster/decomposition hides metric
         self._band_a_panel.setVisible(is_int or is_arith or is_decomp or is_cluster)
@@ -2262,6 +2299,16 @@ class Map2DDialog(QDialog):
     def _on_dims_changed(self):
         """Called when rows or cols spinbox changes — update hint and optionally recompute."""
         self._update_dimension_hint()
+        # A dimensions change is the ONE thing that actually invalidates
+        # existing ROI regions: their bounds are row/col INDICES into the
+        # current n_rows × n_cols grid, so reshaping that grid (even to a
+        # still-valid product, e.g. 25×25 → 5×125) can leave old bounds
+        # pointing at the wrong pixels or entirely out of range. Nothing
+        # else that goes through _invalidate_map() (mode switch, changing
+        # a decomposition's range/component count/references, ...) changes
+        # n_rows/n_cols, so only this handler clears ROIs — see
+        # _invalidate_map for the mode-switch case this used to also do.
+        self._clear_all_rois()
         n_rows  = self._rows_spin.value()
         n_cols  = self._cols_spin.value()
         is_fast = (self._radio_intensity.isChecked()
@@ -2275,11 +2322,18 @@ class Map2DDialog(QDialog):
             self._invalidate_map()
 
     def _invalidate_map(self):
-        """Clear the displayed map and show a 'recompute needed' message."""
+        """Clear the displayed map and show a 'recompute needed' message.
+
+        Does NOT clear ROI regions — a region's (row, col) bounds stay
+        meaningful regardless of which map type is showing or being
+        recomputed, as long as the grid dimensions themselves haven't
+        changed (see _on_dims_changed, the one place that DOES need to
+        clear them). Callers of this method include a plain mode switch
+        (SVD → NMF, Intensity → RGB overlay, ...), which is exactly the
+        case ROI regions should survive."""
         self._last_map_data = None
         self._last_map_kind = None
         self._map_canvas.disable_hover()
-        self._clear_all_rois()
         self._map_canvas._draw_stale()
         self._ref_stale_warning_label.setVisible(False)
 
@@ -2495,6 +2549,7 @@ class Map2DDialog(QDialog):
         self._map_canvas.ax.set_xlabel("Column index", fontsize=8)
         self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
         self._map_canvas.fig.tight_layout()
+        self._redraw_roi_patches()
         self._map_canvas.draw()
 
     # ── RGB overlay mode ─────────────────────────────────────────────
@@ -2741,6 +2796,7 @@ class Map2DDialog(QDialog):
         self._map_canvas.ax.set_xlabel("Column index", fontsize=8)
         self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
         self._map_canvas.fig.tight_layout()
+        self._redraw_roi_patches()
         self._map_canvas.draw()
 
     def _export_rgb_overlay_png(self):
@@ -5096,6 +5152,83 @@ class Map2DDialog(QDialog):
             self._clear_all_rois()
         else:
             self._map_canvas.draw()
+
+    def _redraw_roi_patches(self):
+        """Re-create every ROI region's matplotlib artist on the CURRENT
+        axes, and point self._roi_regions' 'patch' entries at the new
+        ones. Registered as the map canvas's post-redraw hook (see
+        _MapCanvas.set_post_redraw_hook) so it runs after every full
+        redraw that clears the axes — mode switch, Update Map, cmap/
+        interpolation/aspect changes, the "Settings changed" placeholder,
+        all of them call ax.cla() somewhere, which silently orphans every
+        existing patch/line the exact same way it orphans the hover
+        tooltip (see the matching comment in _MapCanvas.update_map): the
+        Python object in reg['patch'] survives, but it's no longer part
+        of the axes' artist list and will never be drawn again no matter
+        what. self._roi_regions' own data (bounds, labels, spectra) is
+        untouched by any of this — only the visual artists need rebuilding.
+
+        The 'lasso' case has no separate vertex store in the region dict,
+        so its vertices are read off the existing (orphaned but still
+        readable) PathPatch before building its replacement.
+        """
+        if not self._roi_regions:
+            return
+        from matplotlib.patches import Rectangle, Ellipse, PathPatch
+        from matplotlib.path import Path as MPath
+        import matplotlib.lines as mlines
+
+        ax = self._map_canvas.ax
+        for reg in self._roi_regions:
+            kind = reg['type']
+            if kind == 'rect':
+                row0, row1, col0, col1 = reg['bounds']
+                artist = Rectangle(
+                    (col0 - 0.5, row0 - 0.5),
+                    col1 - col0 + 1, row1 - row0 + 1,
+                    linewidth=1.5, edgecolor='white', facecolor='none',
+                    linestyle='--', zorder=5,
+                )
+                ax.add_patch(artist)
+            elif kind == 'ellipse':
+                artist = Ellipse(
+                    (reg['cx'], reg['cy']),
+                    width=2 * reg['a'], height=2 * reg['b'],
+                    linewidth=1.5, edgecolor='white', facecolor='none',
+                    linestyle='--', zorder=5,
+                )
+                ax.add_patch(artist)
+            elif kind == 'lasso':
+                verts = reg['patch'].get_path().vertices
+                artist = PathPatch(
+                    MPath(verts),
+                    linewidth=1.5, edgecolor='white', facecolor='none',
+                    linestyle='--', zorder=5,
+                )
+                ax.add_patch(artist)
+            elif kind == 'line':
+                r0, r1, c0, c1 = reg['bounds']
+                artist = mlines.Line2D(
+                    [c0, c1], [r0, r1],
+                    color='white', linewidth=1.8,
+                    linestyle='-', marker='o',
+                    markersize=4, zorder=6,
+                )
+                ax.add_line(artist)
+            else:
+                continue
+
+            reg['patch'] = artist
+            # _on_roi_selected / _on_ellipse_roi_selected mutate the
+            # LAST-drawn region's patch in place when the user drags its
+            # resize handles right after drawing it — keep those
+            # references pointing at the fresh artist too, or a resize
+            # right after a mode switch would silently edit an orphaned
+            # patch nobody can see.
+            if self._last_rect_region is reg:
+                self._last_rect_patch = artist
+            if self._last_ellipse_region is reg:
+                self._last_ellipse_patch = artist
 
     def _clear_all_rois(self):
         """Remove all ROI regions and reset."""

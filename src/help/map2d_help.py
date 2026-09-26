@@ -212,6 +212,21 @@ range and maps it as a pixel colour.</p>
 <tr><td><b>Baseline-corrected integral</b></td><td>Area above the chord connecting the range endpoints.</td></tr>
 <tr><td><b>Intensity at x</b></td><td>Interpolated intensity at a single x-value. Enter the x-value in the <b>x:</b> spinbox. No range configuration needed.</td></tr>
 </table>
+
+<div class="note">
+<b>Range-based vs. single-point.</b> Every metric above except
+<b>Intensity at x</b> computes its value from every point within the
+configured <b>Band</b> range — Mean and Integral average/sum across it,
+Peak intensity/position and FWHM find a feature within it, and so on.
+<b>Intensity at x</b> is different: it linearly interpolates the full
+spectrum at exactly the one x-value you enter, a single point rather
+than an average over a range or its neighboring points — so it is more
+sensitive to noise at that exact position than the other options. If
+you want noise averaged out at a specific feature, use <b>Mean</b> (or
+<b>Integral</b>) over a narrow range centered on it instead. Click the
+small orange <b>?</b> button next to the Metric dropdown (visible in
+this mode) for this same explanation without leaving the dialog.</div>
+
 <p>Changing the metric immediately redraws the map.</p>
 </div>
 
@@ -813,6 +828,20 @@ tooltip and the click-info line.</p>
 <p>All ROI tools are accessible via the <b>ROI ▾</b> dropdown menu.
 Only one tool can be active at a time — activating any tool automatically
 deactivates the others.</p>
+
+<div class="note">
+<b>ROI regions persist across Map Type switches.</b> Drawing a region
+while looking at, say, SVD and then switching to NMF, Intensity metric,
+or RGB overlay keeps every region exactly as drawn — the outlines
+redraw on whichever map is now showing, and <b>View/Remove ROI
+regions…</b> still lists them all. The one thing that <i>does</i> clear
+every region is actually changing <b>Rows × Cols</b> in the Map
+Dimensions group: a region's shape is stored as row/col grid positions,
+so reshaping the grid (even to a different still-valid factor pair) can
+leave those positions pointing at the wrong pixels, and there's no way
+to know they're still meaningful — switching Map Type never changes the
+grid shape, only what's computed from it, so regions stay valid there.
+</div>
 
 <div class="screenshot">
     <img src="$ROI_MENU" width="$ROI_MENU_W" height="$ROI_MENU_H" alt="ROI dropdown menu expanded, showing all ROI tool entries" />
