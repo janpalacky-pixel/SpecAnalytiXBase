@@ -184,10 +184,7 @@ class SVDInterpolationController:
         self.oc._rebuild_spectra_list_with_selection(new_ids)
 
         self.controller.selected_spectra = finished
-        try:
-            self.controller.plot_spectra()
-        except ValueError as e:
-            logger.error(f"Error plotting after SVD Interpolation: {e}")
+        self.oc._redraw_after_operation(context="SVD Interpolation")
 
         n = len(finished)
         noun = 'spectrum' if n == 1 else 'spectra'

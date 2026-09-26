@@ -242,18 +242,59 @@ class OperationsController:
             if spectrum_key(s) in highlight_ids
         }
 
-        # Applying an operation always redraws the plot right after this
-        # (every commit_* method calls plot_spectra() next) — regardless
-        # of the Interactive Update checkbox, which is only meant to
-        # control whether SELECTING spectra redraws in real time. Left
-        # unchecked, this was visibly inconsistent: the checkbox said
-        # "off" while a fresh plot appeared anyway. Re-checking it here,
-        # in the one place every operation already passes through, keeps
-        # it truthful without needing a fix in each individual operation
-        # controller. setChecked(True) is a no-op (no signal, no redraw)
-        # if it was already checked.
-        if hasattr(self.controller, 'interactive_mode_checkbox'):
-            self.controller.interactive_mode_checkbox.setChecked(True)
+        # NOTE: this used to force interactive_mode_checkbox back to
+        # checked here ("every operation always redraws, so keep the
+        # checkbox honest about it"). That was itself the bug: with
+        # Interactive Update deliberately left off (e.g. a large 2D map,
+        # to avoid redrawing thousands of spectra after every click),
+        # applying ANY operation silently flipped it back on and drew
+        # anyway, with no way to opt out. See _redraw_after_operation()
+        # below, which every commit_* method now calls instead of calling
+        # self.controller.plot_spectra() directly right after this — it
+        # respects the checkbox instead of overriding it, exactly like an
+        # ordinary spectrum-selection change already does.
+
+    def _redraw_after_operation(self, progress=None, context='operation'):
+        """Redraw the plot right after a commit_* operation (Apply /
+        Add as New) — but ONLY if 'Interactive Update' is still checked.
+
+        Every commit_* method used to call self.controller.plot_spectra()
+        unconditionally here, and _rebuild_spectra_list_with_selection()
+        then forced interactive_mode_checkbox back to checked to match —
+        on the reasoning that since a redraw was about to happen
+        regardless, the checkbox should stay 'honest' about it. That was
+        itself the reported bug: with Interactive Update deliberately
+        left off (e.g. a large 2D map, specifically to avoid redrawing
+        thousands of spectra after every click), applying ANY operation
+        silently re-checked it and drew anyway, with no way to opt out.
+
+        Now this just applies the exact same rule an ordinary spectrum-
+        selection change already follows (see
+        spectrum_selector_controller.py's isChecked() checks): when
+        unchecked, this is a no-op — self.controller.selected_spectra and
+        the spectra list widget's selection are already updated by the
+        caller before this is called, so nothing about the operation's
+        result is lost. The user just sees it only after pressing
+        'Refresh Plot', same as any other change made while Interactive
+        Update is off.
+
+        progress : the caller's QProgressDialog, or None — same object
+            already passed to plot_spectra()'s progress_callback by every
+            caller; used here to update its label text before drawing.
+        context : short description used only in the log message if
+            plot_spectra() raises (e.g. 'normalization', 'SNIP Baseline').
+        """
+        if not self.controller.interactive_mode_checkbox.isChecked():
+            return
+        if progress is not None:
+            progress.setLabelText("Redrawing plot\u2026")
+            QApplication.processEvents()
+        try:
+            self.controller.plot_spectra(
+                progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
+            )
+        except Exception as exc:
+            logger.error(f"Error plotting after {context}: {exc}")
 
     # commit_spectral_arithmetic moved to CombineSpectraController
     # (new file: src/controllers/data_analysis/combine_spectra_controller.py,
@@ -1911,12 +1952,11 @@ class OperationsController:
             
             # Draw the selected spectra
             if self.controller.selected_spectra:
-                # Same "checkbox should stay honest" fix as commit_*
-                # operations (see _rebuild_spectra_list_with_selection) —
-                # jumping to a history step redraws unconditionally too.
-                if hasattr(self.controller, 'interactive_mode_checkbox'):
-                    self.controller.interactive_mode_checkbox.setChecked(True)
-                self.controller.plot_spectra()
+                # Respect Interactive Update instead of overriding it —
+                # see _redraw_after_operation()'s docstring for why the
+                # previous "force it back to checked" behavior was itself
+                # a bug, not a feature.
+                self._redraw_after_operation(context='jumping to a history step')
             else:
                 self.controller.clear_graphics_view()
         finally:

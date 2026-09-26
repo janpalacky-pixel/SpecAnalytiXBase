@@ -180,12 +180,7 @@ class CombineSpectraController:
             self.controller.selected_spectra = (
                 spectra_to_process if add_as_new else [new_spectrum]
             )
-            if progress is not None:
-                progress.setLabelText("Redrawing plot\u2026")
-                QApplication.processEvents()
-            self.controller.plot_spectra(
-                progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
-            )
+            self.oc._redraw_after_operation(progress, "combining spectra")
 
             if add_as_new:
                 message = 'Result spectrum added to the list. Originals are unchanged.'

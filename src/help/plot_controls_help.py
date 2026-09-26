@@ -62,6 +62,16 @@ def get_plot_controls_help_content():
         after every single click.
     </div>
 
+    <div class="note">
+        This applies to applying a processing operation (SNIP baseline,
+        normalization, Data range, etc.) via <strong>Apply</strong>/<strong>Add as
+        New</strong>, not just to changing your selection by hand. With Interactive
+        Update off, committing an operation updates the spectrum list and
+        selection as usual but does not redraw the plot or re-check the box for
+        you &mdash; press <strong>Refresh Plot</strong> when you want to see the
+        result.
+    </div>
+
     <h3>Typical workflow with large datasets</h3>
     <ol>
         <li>Uncheck <strong>Interactive Update</strong>.</li>

@@ -155,15 +155,7 @@ class CDUnitConversionController:
                 selected_spectra if add_as_new else converted_spectra
             )
 
-            if progress is not None:
-                progress.setLabelText("Redrawing plot…")
-                QApplication.processEvents()
-            try:
-                self.controller.plot_spectra(
-                    progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
-                )
-            except Exception as exc:
-                logger.error('Error plotting after CD unit conversion: %s', exc)
+            self.oc._redraw_after_operation(progress, "CD unit conversion")
         finally:
             if progress is not None:
                 progress.close()

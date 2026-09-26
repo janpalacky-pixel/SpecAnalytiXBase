@@ -227,10 +227,7 @@ class SpectralCalculatorController:
             self.controller.selected_spectra = (
                 spectra_to_process if add_as_new else new_spectra
             )
-            if progress is not None:
-                progress.setLabelText("Redrawing plot\u2026")
-                QApplication.processEvents()
-            self.controller.plot_spectra()
+            self.oc._redraw_after_operation(progress, "spectral calculator")
 
             n = len(new_spectra)
             noun = 'spectrum' if n == 1 else 'spectra'

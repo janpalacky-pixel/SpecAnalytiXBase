@@ -194,15 +194,7 @@ class BatchPipelineController:
                 selected_spectra if add_as_new else result_spectra
             )
 
-            if progress is not None:
-                progress.setLabelText("Redrawing plot…")
-                QApplication.processEvents()
-            try:
-                self.controller.plot_spectra(
-                    progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
-                )
-            except Exception as exc:
-                logger.error('Error plotting after batch pipeline run: %s', exc)
+            self.oc._redraw_after_operation(progress, "batch pipeline run")
         finally:
             if progress is not None:
                 progress.close()

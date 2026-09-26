@@ -143,18 +143,13 @@ class SNIPBaselineController:
                 selected_spectra if add_as_new else processed_spectra
             )
 
-            if progress is not None:
-                # Now the dominant cost, since the fixes above — redrawing
-                # is genuinely the slow part left, not an implementation
-                # bug the way the previous per-item selection cost was.
-                progress.setLabelText("Redrawing plot\u2026")
-                QApplication.processEvents()
-            try:
-                self.controller.plot_spectra(
-                    progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
-                )
-            except Exception as exc:
-                logger.error(f"Error plotting after SNIP baseline correction: {exc}")
+            # Now the dominant cost when it happens, since the fixes above
+            # -- redrawing is genuinely the slow part left, not an
+            # implementation bug the way the previous per-item selection
+            # cost was. _redraw_after_operation sets the progress label
+            # itself, and only if a redraw is actually going to happen
+            # (Interactive Update checked) -- see its docstring.
+            self.oc._redraw_after_operation(progress, "SNIP baseline correction")
         finally:
             if progress is not None:
                 progress.close()

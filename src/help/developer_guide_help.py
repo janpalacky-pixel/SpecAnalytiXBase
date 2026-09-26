@@ -2457,7 +2457,58 @@ def _natural_sort_key(cls, label):
         old <code>.lower()</code> key and the new natural-sort key produces
         identical output.</p>
 
-        <h2 id="new-operation">Checklist: Adding a New Operation</h2>
+        <h2 id="redraw-after-operation">Interactive Update Must Survive Apply / Add as New</h2>
+
+        <p>Every <code>commit_*</code> method used to end by calling
+        <code>self.controller.plot_spectra(...)</code> directly, and
+        <code>_rebuild_spectra_list_with_selection()</code> (called just before that,
+        by every one of them) forced <code>interactive_mode_checkbox.setChecked(True)</code>
+        right before it &mdash; the reasoning being that a redraw was about to happen
+        regardless, so the checkbox should stay "honest" about what the user was about
+        to see.</p>
+
+        <div class="rule">
+            <strong>That reasoning was backwards, and it was a real reported bug, not a
+            style choice.</strong> Interactive Update off means "don't redraw until I
+            press Refresh Plot" &mdash; a deliberate choice for large datasets/slow
+            machines, or simply not wanting to watch a big 2D map's source spectra
+            redraw. Applying an operation (SNIP baseline, normalization, Data range,
+            etc.) is just another way the selected/displayed spectra change &mdash; it
+            has no more claim to override that setting than clicking a different row in
+            the spectrum list does, and clicking a row already respects it (see
+            <code>spectrum_selector_controller.py</code>'s <code>isChecked()</code> checks).
+            Forcing the checkbox back to checked and drawing anyway silently took away
+            the user's choice on every single Apply/Add as New, with the checkbox itself
+            lying about having done so.
+        </div>
+
+        <p><b>Fix:</b> <code>OperationsController._redraw_after_operation(progress=None,
+        context='operation')</code> is now the ONE place this decision is made. Every
+        <code>commit_*</code> method calls <code>self.oc._redraw_after_operation(progress,
+        "&lt;description&gt;")</code> instead of calling <code>plot_spectra()</code> directly
+        (20 call sites across <code>src/controllers/data_analysis/</code> plus one inside
+        <code>OperationsController</code> itself, for jumping to an Operations History step
+        &mdash; same bug, same fix). It checks
+        <code>self.controller.interactive_mode_checkbox.isChecked()</code> first: unchecked is
+        a no-op (the spectra list, selection, and <code>self.controller.selected_spectra</code>
+        are already updated by the caller before this runs, so nothing about the operation's
+        result is lost &mdash; the user just sees it after pressing Refresh Plot instead);
+        checked runs exactly the old progress-label-plus-<code>plot_spectra()</code>-plus-
+        error-logging sequence every caller used to hand-roll individually. The forced
+        <code>setChecked(True)</code> calls are gone &mdash; there are now zero places in this
+        codebase that flip that checkbox on the user's behalf.</p>
+
+        <div class="note">
+            The per-caller exception handling this replaced was itself inconsistent &mdash;
+            some caught only <code>ValueError</code>, most caught <code>Exception</code>, two
+            (<code>combine_spectra_controller.py</code>, <code>interactive_subtraction_controller.py</code>)
+            had no <code>try</code>/<code>except</code> at all. <code>_redraw_after_operation</code>
+            catches <code>Exception</code> uniformly and logs
+            <code>f"Error plotting after {context}: {exc}"</code> &mdash; strictly safer than any
+            individual caller's previous coverage, never narrower.
+        </div>
+
+                <h2 id="new-operation">Checklist: Adding a New Operation</h2>
         <ol>
             <li>Decide whether settings are uniform-for-the-whole-batch (most
                 operations) or genuinely per-spectrum. If per-spectrum and the
@@ -2492,6 +2543,12 @@ def _natural_sort_key(cls, label):
                 and never build a per-spectrum result by looping a Qt widget
                 selection call one item at a time — see
                 <a href="#qt-batch-ops">above</a>.</li>
+            <li>Call <code>self.oc._redraw_after_operation(progress, "&lt;description&gt;")</code>
+                right after <code>_rebuild_spectra_list_with_selection()</code> and setting
+                <code>self.controller.selected_spectra</code> &mdash; never call
+                <code>self.controller.plot_spectra(...)</code> directly, and never re-check
+                <code>interactive_mode_checkbox</code> yourself. See
+                <a href="#redraw-after-operation">above</a>.</li>
             <li>Write the test the way this codebase's bugs have actually been
                 found: select A, configure something, close/apply; switch to an
                 unrelated B; come back to A (or a spectrum that reused A's old

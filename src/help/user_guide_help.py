@@ -900,7 +900,12 @@ def get_user_guide_help_content():
         <p>Uncheck <strong>Interactive Update</strong> when working with large datasets.
         The plot clears on selection change and redraws only when you press
         <strong>Refresh Plot</strong> — letting you build the full selection first,
-        then render once.</p>
+        then render once. This applies just as much to applying a processing
+        operation (SNIP baseline, normalization, Data range, etc.) via
+        <strong>Apply</strong>/<strong>Add as New</strong> as it does to changing your
+        selection by hand: with Interactive Update off, committing an operation updates
+        the spectrum list and selection but does not redraw or re-check the box — press
+        <strong>Refresh Plot</strong> when you're ready to see the result.</p>
         <p>The <strong>?</strong> button next to the Legend button opens a concise
         guide explaining when to use each setting and how plot type affects performance.
         See also: <a href="help://plot_controls">Interactive Update &amp; Legend

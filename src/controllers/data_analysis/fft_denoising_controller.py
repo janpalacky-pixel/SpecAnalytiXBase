@@ -129,15 +129,7 @@ class FFTDenoisingController:
             self.controller.selected_spectra = (
                 selected_spectra if add_as_new else processed_spectra
             )
-            if progress is not None:
-                progress.setLabelText("Redrawing plot\u2026")
-                QApplication.processEvents()
-            try:
-                self.controller.plot_spectra(
-                    progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None
-                )
-            except Exception as exc:
-                logger.error(f"Error plotting after FFT denoising: {exc}")
+            self.oc._redraw_after_operation(progress, "FFT denoising")
         finally:
             if progress is not None:
                 progress.close()
