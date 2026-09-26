@@ -59,6 +59,13 @@ _COLORS = [
     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
 ]
 
+# "Bootstrap Uncertainty..." always reports a 95% band -- the overwhelming
+# standard default, so v1 doesn't expose it as its own setting (see the
+# button's tooltip / Help for what it means). Kept as one named constant
+# rather than a literal 0.95 scattered through the bootstrap code, so
+# raising this to a real per-run setting later is a one-line change.
+_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
+
 
 class MCRALSDialog(QDialog):
 
@@ -283,6 +290,17 @@ class MCRALSDialog(QDialog):
         self._spectra_normalize_cb.stateChanged.connect(self._refresh_spectra)
         gl.addWidget(self._spectra_normalize_cb)
 
+        self._spectra_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._spectra_show_bootstrap_cb.setChecked(True)
+        self._spectra_show_bootstrap_cb.setToolTip(
+            'Shades each component with its bootstrap confidence band (see\n'
+            '"Bootstrap Uncertainty\u2026" below) once one has been computed for\n'
+            'the currently loaded fit. Has no visible effect until then \u2014\n'
+            'this is a display toggle, not what triggers the computation.'
+        )
+        self._spectra_show_bootstrap_cb.stateChanged.connect(self._refresh_spectra)
+        gl.addWidget(self._spectra_show_bootstrap_cb)
+
         self.run_btn = QPushButton('\u25b6  Run MCR-ALS')
         self.run_btn.setStyleSheet(
             'QPushButton { background-color:#1976D2; color:white; '
@@ -301,6 +319,20 @@ class MCRALSDialog(QDialog):
         )
         self._run_best_btn.clicked.connect(self._prompt_and_run_best_of_n)
         gl.addWidget(self._run_best_btn)
+
+        self._run_bootstrap_btn = QPushButton('Bootstrap Uncertainty\u2026')
+        self._run_bootstrap_btn.setToolTip(
+            'Estimates how sensitive the CURRENTLY LOADED fit\u2019s pure spectra\n'
+            'and concentrations are to the actual noise in your data \u2014 a\n'
+            'residual bootstrap, warm-started from this exact result, so it\n'
+            'measures noise sensitivity specifically, not the separate\n'
+            'rotational-ambiguity risk "Run N times, keep best" already\n'
+            'checks (see Help for the distinction). Run MCR-ALS (or "Run N\n'
+            'times, keep best") first \u2014 this refits around whatever result\n'
+            'is currently loaded.'
+        )
+        self._run_bootstrap_btn.clicked.connect(self._prompt_and_run_bootstrap)
+        gl.addWidget(self._run_bootstrap_btn)
 
         # The warnings are valuable but were rendered as a large block of red
         # text that dominated the left panel and pushed the real controls out
@@ -421,6 +453,20 @@ class MCRALSDialog(QDialog):
         )
         self._conc_normalize_cb.stateChanged.connect(self._refresh_concentrations)
         cl2.addWidget(self._conc_normalize_cb)
+
+        self._conc_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._conc_show_bootstrap_cb.setChecked(True)
+        self._conc_show_bootstrap_cb.setToolTip(
+            'Adds error bars from the bootstrap confidence band (see\n'
+            '"Bootstrap Uncertainty\u2026" on the left) once one has been\n'
+            'computed for the currently loaded fit. Only drawn for the\n'
+            '"Lines" and "Grouped bars" plot types \u2014 a stacked bar\u2019s\n'
+            'segments do not have a single well-defined position to anchor\n'
+            'an error bar to. Has no visible effect until a bootstrap has\n'
+            'been run.'
+        )
+        self._conc_show_bootstrap_cb.stateChanged.connect(self._refresh_concentrations)
+        cl2.addWidget(self._conc_show_bootstrap_cb)
 
         rot_row = QHBoxLayout()
         rot_row.addWidget(QLabel('Label rotation:'))
@@ -1328,6 +1374,7 @@ class MCRALSDialog(QDialog):
     def _set_mcr_controls_enabled(self, enabled):
         self.run_btn.setEnabled(enabled)
         self._run_best_btn.setEnabled(enabled)
+        self._run_bootstrap_btn.setEnabled(enabled)
 
     def _run_mcr_als(self, *_):
         # Remember HOW this result was produced, so the Elbow / Median sweeps
@@ -1454,6 +1501,104 @@ class MCRALSDialog(QDialog):
             return
         self._last_n_runs = n_runs   # remembered and pre-filled next time
         self._run_mcr_als_best_of_n(n_runs)
+
+    def _prompt_and_run_bootstrap(self):
+        """Ask how many bootstrap resamples to run, mirroring "Run N
+        times, keep best"'s identical prompt pattern. Requires an
+        already-loaded, successful fit (self._mgr.ST/.C/.D all set) --
+        this refits AROUND that specific result to measure its noise
+        sensitivity, it does not produce a new fit from scratch the way
+        Run/Run-N-times do."""
+        if getattr(self, '_mcr_running', False):
+            return
+        if self._mgr is None or self._mgr.ST is None or self._mgr.D is None:
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Run MCR-ALS (or "Run N times, keep best") first \u2014\n'
+                'Bootstrap Uncertainty refits around whatever result is\n'
+                'currently loaded; it doesn\u2019t produce a new one on its own.')
+            return
+        from PyQt5.QtWidgets import QInputDialog
+        n_resamples, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of bootstrap resamples:',
+            value=getattr(self, '_last_n_bootstrap', 30), min=5, max=500)
+        if not ok:
+            return
+        self._last_n_bootstrap = n_resamples   # remembered and pre-filled next time
+        self._run_bootstrap_uncertainty(n_resamples)
+
+    def _run_bootstrap_uncertainty(self, n_resamples):
+        """Residual bootstrap, warm-started from self._mgr's own
+        converged fit -- see MCRALSController.compute_bootstrap_uncertainty
+        for the actual method, and the Developer Guide's "MCR-ALS
+        Bootstrap Uncertainty" section for the full reasoning. This is
+        deliberately a plain sequential loop with a real, cancellable
+        QProgressDialog -- the SAME pattern "Run N times, keep best" uses
+        just above, for the same reasons documented in the Developer
+        Guide's "Run N Times, Keep Best" parallelization section (naive
+        threading/multiprocessing wasn't a clear enough win to justify the
+        added complexity here either)."""
+        if getattr(self, '_mcr_running', False):
+            return
+        self._mcr_running = True
+        self._set_mcr_controls_enabled(False)
+
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
+        s = self._current_settings()
+
+        progress = QProgressDialog(
+            f'Bootstrap resample 1 of {n_resamples}\u2026', 'Cancel', 0, n_resamples, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle('MCR-ALS')
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def _on_progress(b, n):
+            progress.setLabelText(f'Bootstrap resample {b + 1} of {n}\u2026')
+            progress.setValue(b)
+            QApplication.processEvents()
+
+        try:
+            result = self.controller.compute_bootstrap_uncertainty(
+                self._mgr, n_components=self._mgr.n_components,
+                max_iterations=s['max_iterations'], tol=0.01,
+                c_nonneg=s['c_nonneg'], st_nonneg=s['st_nonneg'],
+                normalize_spectra=s['normalize_spectra'], closure=s['closure'],
+                n_resamples=n_resamples,
+                confidence_level=_BOOTSTRAP_CONFIDENCE_LEVEL,
+                random_state=None,
+                references=s.get('references'), fix_references=s.get('fix_references', False),
+                progress_callback=_on_progress,
+                cancel_check=progress.wasCanceled)
+            progress.setValue(n_resamples)
+
+            if result is None:
+                QMessageBox.warning(
+                    self, 'Bootstrap Uncertainty',
+                    self._mgr.last_error or 'All bootstrap resamples failed.')
+                self._status_label.setText(
+                    '\u26a0  Bootstrap uncertainty failed \u2014 see message above.')
+                self._status_label.setStyleSheet('font-size:8pt; color:#C62828;')
+                return
+
+            pct = int(round(_BOOTSTRAP_CONFIDENCE_LEVEL * 100))
+            msg = (f'Bootstrap uncertainty: {pct}% confidence band from '
+                   f'{result["n_resamples_used"]}/{result["n_resamples_requested"]} '
+                   f'resamples')
+            if result['n_failed']:
+                msg += f' ({result["n_failed"]} refit failed and were skipped)'
+            self._status_label.setText(msg)
+            self._status_label.setStyleSheet('font-size:8pt; color:#2E7D32;')
+            self._refresh_spectra()
+            self._refresh_concentrations()
+        finally:
+            self._set_mcr_controls_enabled(True)
+            self._mcr_running = False
+            QApplication.restoreOverrideCursor()
 
     @staticmethod
     def _match_similarity(A, B):
@@ -1738,10 +1883,30 @@ class MCRALSDialog(QDialog):
 
         offset_step = (max(np.max(np.abs(c)) for c in curves) * 1.15 if n_comp > 1 else 0.0) \
             if use_offset else 0.0
+
+        # Bootstrap confidence band (see "Bootstrap Uncertainty..." and
+        # MCRALSController.compute_bootstrap_uncertainty): drawn BEHIND
+        # each component's own curve, in the SAME already-offset/
+        # normalized display units the curve itself uses, so the shading
+        # visually lines up with what's actually plotted rather than the
+        # raw ST scale.
+        br = self._mgr.bootstrap_result
+        show_band = br is not None and self._spectra_show_bootstrap_cb.isChecked()
+
         for k in range(n_comp):
             color = _COLORS[k % len(_COLORS)]
             ev = self._mgr.explained_variance[k]
-            ax.plot(x, curves[k] + k * offset_step, color=color, lw=1.2,
+            if show_band:
+                lower_k = br['ST_lower'][k]
+                upper_k = br['ST_upper'][k]
+                if use_normalize:
+                    peak = np.max(np.abs(self._mgr.ST[k]))
+                    if peak > 0:
+                        lower_k = lower_k / peak
+                        upper_k = upper_k / peak
+                ax.fill_between(x, lower_k + k * offset_step, upper_k + k * offset_step,
+                                color=color, alpha=0.20, linewidth=0, zorder=1)
+            ax.plot(x, curves[k] + k * offset_step, color=color, lw=1.2, zorder=2,
                     label=f'MCR {k+1}  ({ev:.1f} %)')
             if use_offset:
                 ax.axhline(k * offset_step, color=color, lw=0.4, ls=':', alpha=0.5)
@@ -1756,7 +1921,11 @@ class MCRALSDialog(QDialog):
         if use_offset:
             ylabel += ' (offset)'
         ax.set_ylabel(ylabel, fontsize=10)
-        ax.set_title(f'MCR-ALS pure component spectra ({n_comp} components)', fontsize=11)
+        title = f'MCR-ALS pure component spectra ({n_comp} components)'
+        if show_band:
+            pct = int(round(br['confidence_level'] * 100))
+            title += f'  \u2014 shaded: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+        ax.set_title(title, fontsize=11)
         ax.legend(fontsize=8, loc='best', framealpha=0.7)
         ax.grid(True, linestyle='--', alpha=0.35)
         self._spectra_canvas.draw_tight()
@@ -1848,7 +2017,8 @@ class MCRALSDialog(QDialog):
             labels = self._get_display_labels(
                 self._mgr.labels, self._conc_trunc_combo, self._conc_trunc_n_spin)
 
-            if self._conc_normalize_cb.isChecked():
+            normalize_conc = self._conc_normalize_cb.isChecked()
+            if normalize_conc:
                 row_sums = C.sum(axis=1, keepdims=True)
                 row_sums[row_sums == 0] = 1.0   # avoid div-by-zero for an all-zero row
                 C = 100.0 * C / row_sums
@@ -1869,11 +2039,38 @@ class MCRALSDialog(QDialog):
             plot_type = self._conc_plot_type_combo.currentText()
             x = np.arange(n_spec)
 
+            # Bootstrap confidence band (see "Bootstrap Uncertainty..."):
+            # drawn as error bars, in the SAME normalized-or-not units the
+            # bars/lines above use. Only for Lines and Grouped bars -- a
+            # stacked bar's segments don't have a single well-defined
+            # position to anchor an error bar to, so it's deliberately
+            # skipped there rather than drawn somewhere misleading.
+            #
+            # Note the normalization here reuses the REFERENCE fit's own
+            # row sums (computed above), not each bootstrap replicate's
+            # own row sum -- an intentional simplification (re-normalizing
+            # every one of the n_resamples samples individually would be
+            # more rigorous but adds real complexity for a display-only
+            # band); see the Developer Guide for the full caveat.
+            br = self._mgr.bootstrap_result
+            show_band = (br is not None and self._conc_show_bootstrap_cb.isChecked()
+                        and plot_type in ('Lines', 'Grouped bars'))
+            if show_band:
+                C_lo, C_hi = br['C_lower'], br['C_upper']
+                if normalize_conc:
+                    C_lo = 100.0 * C_lo / row_sums
+                    C_hi = 100.0 * C_hi / row_sums
+
             if plot_type == 'Lines':
                 for k in range(n_comp):
                     color = _COLORS[k % len(_COLORS)]
                     ev = self._mgr.explained_variance[k]
-                    ax.plot(x, C[:, k], 'o-', color=color, ms=3, lw=1.2,
+                    if show_band:
+                        yerr_lo = np.clip(C[:, k] - C_lo[:, k], 0, None)
+                        yerr_hi = np.clip(C_hi[:, k] - C[:, k], 0, None)
+                        ax.errorbar(x, C[:, k], yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor=color, alpha=0.5, capsize=2, zorder=1)
+                    ax.plot(x, C[:, k], 'o-', color=color, ms=3, lw=1.2, zorder=2,
                             label=f'MCR {k+1}  ({ev:.1f} %)')
                 tick_positions = x
             elif plot_type == 'Stacked bars':
@@ -1890,8 +2087,14 @@ class MCRALSDialog(QDialog):
                 for k in range(n_comp):
                     color = _COLORS[k % len(_COLORS)]
                     ev = self._mgr.explained_variance[k]
-                    ax.bar(x + k * bar_w, C[:, k], width=bar_w, color=color,
+                    bar_x = x + k * bar_w
+                    ax.bar(bar_x, C[:, k], width=bar_w, color=color,
                            alpha=0.75, label=f'MCR {k+1}  ({ev:.1f} %)')
+                    if show_band:
+                        yerr_lo = np.clip(C[:, k] - C_lo[:, k], 0, None)
+                        yerr_hi = np.clip(C_hi[:, k] - C[:, k], 0, None)
+                        ax.errorbar(bar_x, C[:, k], yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor='#333333', alpha=0.6, capsize=2, zorder=3)
                 tick_positions = x + bar_w * (n_comp - 1) / 2
 
             if self._gt is not None:
@@ -1916,7 +2119,11 @@ class MCRALSDialog(QDialog):
                                     ha=ha, fontsize=label_fontsize)
 
             ax.set_ylabel(y_label, fontsize=10)
-            ax.set_title(f'MCR-ALS concentration profiles  ({n_spec} spectra)', fontsize=11)
+            title = f'MCR-ALS concentration profiles  ({n_spec} spectra)'
+            if show_band:
+                pct = int(round(br['confidence_level'] * 100))
+                title += f'  \u2014 error bars: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+            ax.set_title(title, fontsize=11)
             ax.legend(fontsize=8, loc='best', framealpha=0.7)
             ax.grid(True, axis='y', linestyle='--', alpha=0.35)
             self._conc_canvas.draw_tight()

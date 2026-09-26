@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/mcr_als_controller.py
 
+import numpy as np
 from src.modules.visualization_analysis.mcr_als_manager import MCRALSManager
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import validate_common_x_axis
@@ -45,10 +46,14 @@ class MCRALSController:
 
     def compute_trial(self, spectra, n_components, init, max_iterations, tol,
                        c_nonneg, st_nonneg, normalize_spectra, random_state,
-                       closure=False, references=None, fix_references=False):
+                       closure=False, references=None, fix_references=False,
+                       init_ST=None):
         """Run MCR-ALS on a fresh, independent MCRALSManager rather than
-        self.manager — used by "Run N times, keep best" (random init) and
-        the Elbow tab, mirroring NMFController.compute_trial exactly.
+        self.manager — used by "Run N times, keep best" (random init), the
+        Elbow tab, AND compute_bootstrap_uncertainty() below (init_ST,
+        warm-started from the fit being bootstrapped) — mirroring
+        NMFController.compute_trial exactly, plus this one extra
+        pass-through parameter NMF's own trial helper doesn't need yet.
 
         Returns:
             (MCRALSManager, bool): the trial's manager, and whether it
@@ -62,13 +67,112 @@ class MCRALSController:
                 c_nonneg=c_nonneg, st_nonneg=st_nonneg,
                 normalize_spectra=normalize_spectra, closure=closure,
                 random_state=random_state, references=references,
-                fix_references=fix_references)
+                fix_references=fix_references, init_ST=init_ST)
         except Exception as e:
             logger.error(f"ERROR: Exception in MCR-ALS trial computation: {e}")
             logger.exception("Traceback:")
             mgr.last_error = mgr.last_error or str(e)
             ok = False
         return mgr, ok
+
+    def compute_bootstrap_uncertainty(self, reference_manager, n_components,
+                                       max_iterations, tol, c_nonneg, st_nonneg,
+                                       normalize_spectra, closure, n_resamples,
+                                       confidence_level, random_state=None,
+                                       references=None, fix_references=False,
+                                       progress_callback=None, cancel_check=None):
+        """Residual bootstrap with a warm-started refit — quantifies how
+        sensitive reference_manager's ALREADY-FITTED C/ST are to the actual
+        noise in the data, as a complement to (not a replacement for) "Run
+        N times, keep best": that explores rotational-ambiguity/local-optima
+        risk via random restarts, this measures pure measurement-noise
+        sensitivity of ONE specific, already-chosen fit. See the Developer
+        Guide's "MCR-ALS Bootstrap Uncertainty" section for the full method
+        and why the warm start (rather than a fresh random/SVD init per
+        replicate) is essential to keep the two kinds of uncertainty from
+        contaminating each other.
+
+        reference_manager must already hold a successful fit (.C, .ST, .D,
+        .x_axis, .labels all set — i.e. self.manager right after compute()
+        returned True, or after adopt()-ing a "Run N times" winner).
+        n_components, max_iterations, tol, c_nonneg, st_nonneg,
+        normalize_spectra, closure, references, fix_references: the SAME
+        settings reference_manager was fitted with — every replicate is
+        refit under identical constraints. progress_callback(b, n_resamples)
+        is called before each replicate, if given; cancel_check(), if given,
+        is checked before each replicate and stops early (partial results
+        from however many replicates completed are still used) when it
+        returns True.
+
+        Returns a dict with ST_lower/ST_upper/C_lower/C_upper (pointwise
+        percentile bounds), ST_samples/C_samples (the raw per-replicate
+        arrays), n_resamples_requested/n_resamples_used/n_failed, and
+        confidence_level — or None if reference_manager isn't fitted yet, or
+        every replicate's refit failed. On success, also stored on
+        reference_manager.bootstrap_result.
+        """
+        ref = reference_manager
+        if ref.C is None or ref.ST is None or ref.D is None:
+            ref.last_error = (
+                "Run MCR-ALS successfully before requesting bootstrap "
+                "uncertainty.")
+            return None
+
+        D, C0, ST0 = ref.D, ref.C, ref.ST
+        m = D.shape[0]
+        residuals = D - C0 @ ST0
+        rng = np.random.RandomState(random_state)
+
+        ST_samples, C_samples = [], []
+        n_failed = 0
+        for b in range(n_resamples):
+            if cancel_check is not None and cancel_check():
+                break
+            if progress_callback is not None:
+                progress_callback(b, n_resamples)
+            row_idx = rng.randint(0, m, size=m)
+            D_b = C0 @ ST0 + residuals[row_idx, :]
+            synth_spectra = [
+                {'label': ref.labels[i], 'x_scale': ref.x_axis,
+                 'y_scale': D_b[i, :], 'metadata': {}}
+                for i in range(m)
+            ]
+            trial_mgr, ok = self.compute_trial(
+                synth_spectra, n_components=n_components, init='svd',
+                max_iterations=max_iterations, tol=tol,
+                c_nonneg=c_nonneg, st_nonneg=st_nonneg,
+                normalize_spectra=normalize_spectra, closure=closure,
+                random_state=b, references=references,
+                fix_references=fix_references, init_ST=ST0)
+            if ok:
+                ST_samples.append(trial_mgr.ST)
+                C_samples.append(trial_mgr.C)
+            else:
+                n_failed += 1
+
+        if not ST_samples:
+            ref.last_error = (
+                f"All {n_resamples} bootstrap resamples failed to fit.")
+            return None
+
+        ST_arr = np.array(ST_samples)   # (B_ok, k, n_wl)
+        C_arr = np.array(C_samples)     # (B_ok, m, k)
+        alpha = 1.0 - confidence_level
+        lo_pct, hi_pct = 100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)
+        result = {
+            'ST_lower': np.percentile(ST_arr, lo_pct, axis=0),
+            'ST_upper': np.percentile(ST_arr, hi_pct, axis=0),
+            'C_lower':  np.percentile(C_arr, lo_pct, axis=0),
+            'C_upper':  np.percentile(C_arr, hi_pct, axis=0),
+            'ST_samples': ST_arr,
+            'C_samples': C_arr,
+            'n_resamples_requested': n_resamples,
+            'n_resamples_used': len(ST_samples),
+            'n_failed': n_failed,
+            'confidence_level': confidence_level,
+        }
+        ref.bootstrap_result = result
+        return result
 
     def adopt(self, manager):
         """Make an externally-computed MCRALSManager (e.g. the winner from

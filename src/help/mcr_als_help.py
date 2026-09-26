@@ -362,6 +362,15 @@ def get_mcr_als_help_content():
                 reports how many runs landed within 10% of the best and how
                 strongly the near-best runs agree — a stronger reliability
                 check than any single run.</td></tr>
+        <tr><td><strong>Bootstrap Uncertainty&hellip;</strong></td>
+            <td>Available once a fit is loaded (from Run MCR-ALS or Run N
+                times). A DIFFERENT kind of check from Run N times, keep
+                best: it measures how much the currently loaded result
+                would wobble under a different noise draw of your actual
+                data, rather than the risk of having found the wrong local
+                optimum. See the dedicated "Bootstrap Uncertainty" section
+                below for the full explanation and how to read the
+                resulting shaded bands/error bars.</td></tr>
         <tr><td><strong>Max iterations</strong></td>
             <td>Maximum ALS iterations. The fit stops early once the
                 lack-of-fit changes by less than a small tolerance between
@@ -463,6 +472,57 @@ def get_mcr_als_help_content():
     <div class="screenshot">
         <img src="$CONCENTRATIONS_TAB" width="${CONCENTRATIONS_TAB_W}" height="${CONCENTRATIONS_TAB_H}" alt="Concentrations tab: grouped bars, stacked bars, or lines showing each component's concentration per spectrum" />
         <p class="caption">The Concentrations tab: each component's concentration in every spectrum (columns of C).</p>
+    </div>
+
+    <hr>
+    <h2>Bootstrap Uncertainty</h2>
+    <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (next to "Run N
+    times, keep best" in the settings panel) answers a different
+    question from that button. Both exist because a single MCR-ALS
+    result can be wrong for two UNRELATED reasons, and conflating them
+    leads to false confidence:</p>
+    <ul>
+        <li><strong>Run N times, keep best</strong> guards against
+            landing in the wrong local optimum, or a solution that fits
+            equally well but is chemically wrong (rotational ambiguity —
+            see the warning on the Concentrations/Pure Spectra tabs).
+            It re-fits from different random starting points on the SAME
+            data.</li>
+        <li><strong>Bootstrap Uncertainty</strong> guards against
+            over-trusting one specific, already-chosen result just
+            because it happens to fit THIS particular noisy dataset
+            well. It re-fits many times on synthetic variations of your
+            data built from its own residual noise, keeping the same
+            starting point every time (see the Developer Guide if you
+            want the full mechanism) — so it measures pure measurement-
+            noise sensitivity, deliberately excluding the
+            rotational-ambiguity question Run N times already answers.</li>
+    </ul>
+    <p>Click it after loading a result you trust (from Run MCR-ALS or Run
+    N times, keep best) — it does not produce a new fit on its own, it
+    quantifies the ONE you already have. Choose how many resamples to
+    run (more = a smoother, more reliable band estimate, at
+    proportionally more compute time — 30 is a reasonable default). The
+    result is a 95% confidence band, shown as shaded regions around each
+    pure spectrum on the Pure Spectra tab, and as error bars on the
+    Concentrations tab's <span class="fm">Lines</span> and
+    <span class="fm">Grouped bars</span> views (not
+    <span class="fm">Stacked bars</span> — a stacked segment doesn't have
+    a single well-defined position to put an error bar on). Both are
+    controlled by their own "Show bootstrap confidence band" checkbox, so
+    you can hide them without re-running anything.</p>
+    <div class="note">
+        <strong>Reading the band:</strong> a WIDE band at a given
+        wavelength/spectrum means that region of the fit is genuinely
+        sensitive to the noise in your data — small changes in the
+        measurement could have shifted that value substantially. A
+        NARROW band means that part of the result is well-determined by
+        your data regardless of its particular noise realization. Neither
+        tells you whether the components themselves are the chemically
+        correct ones — that's still the rotational-ambiguity question Run
+        N times, keep best (and reference spectra, if you have them) are
+        for. The two checks are complementary, not substitutes for each
+        other.
     </div>
 
     <hr>

@@ -30,6 +30,10 @@ class MCRALSManager:
     def __init__(self):
         self.C            = None   # (n_spectra x n_comp) — concentration profiles
         self.ST           = None   # (n_comp x n_wl) — pure component spectra
+        self.D            = None   # (n_spectra x n_wl) — the aligned data
+                                    # matrix this fit was run on; kept for
+                                    # compute_bootstrap_uncertainty()
+        self.bootstrap_result = None   # set by compute_bootstrap_uncertainty()
         self.x_axis       = None
         self.labels       = []
         self.n_components = None
@@ -108,7 +112,8 @@ class MCRALSManager:
                 c_nonneg: bool = True, st_nonneg: bool = True,
                 normalize_spectra: bool = True, closure: bool = False,
                 random_state: int = 42,
-                references: dict = None, fix_references: bool = False) -> bool:
+                references: dict = None, fix_references: bool = False,
+                init_ST: np.ndarray = None) -> bool:
         """
         Run MCR-ALS on the selected spectra.
 
@@ -117,7 +122,28 @@ class MCRALSManager:
         spectra : list of spectrum dicts
         n_components : number of components to resolve
         init : 'svd' (deterministic, from the absolute value of the leading
-            right-singular vectors of D) or 'random'
+            right-singular vectors of D) or 'random' -- ignored when
+            init_ST is given (see below)
+        init_ST : optional (n_components, n_wl) array. When given, this
+            EXACT array is used as the starting pure-spectra guess --
+            'init', the sign-orientation fix-up, and the reference-row
+            seeding logic below are all skipped entirely, since init_ST
+            is trusted to already be a valid, converged starting point
+            (typically another MCRALSManager's own self.ST from a prior
+            successful compute() call). This is a warm start, not a new
+            initial guess: it exists so compute_bootstrap_uncertainty()
+            (see below) can refit the SAME dataset-with-resampled-noise
+            from THIS exact solution, keeping every bootstrap replicate
+            in the same solution basin/component identity instead of
+            reintroducing rotational ambiguity on every resample (see
+            the Developer Guide's "MCR-ALS Bootstrap Uncertainty" section
+            for the full reasoning). Also suppresses the end-of-fit
+            reorder-by-explained-variance step below, for the same
+            reason -- a warm-started refit should keep the slot order it
+            started from, not re-sort itself independently each time.
+            Raises no exception on a shape mismatch; returns False with
+            self.last_error set instead, consistent with every other
+            validation failure in this method.
         max_iterations : maximum ALS iterations
         tol : stop early once the lack-of-fit changes by less than this
             (percentage points) between consecutive iterations
@@ -280,6 +306,10 @@ class MCRALSManager:
 
         D = np.array(rows, dtype=float)   # (m, n)
         m, n = D.shape
+        # Kept for later reuse by compute_bootstrap_uncertainty() -- the
+        # exact aligned data matrix this fit was run on, needed to build
+        # its residuals. Not used anywhere else in compute() itself.
+        self.D = D
 
         max_possible = min(m, n)
         if n_components < 1 or n_components > max_possible:
@@ -349,82 +379,96 @@ class MCRALSManager:
                     ST_mat[idx, :] = row
                 return ST_mat
 
-            if init == 'random':
-                # For non-negative spectra a positive random start is right.
-                # For SIGNED spectra (CD, ROA, VCD) it is not: an all-positive
-                # basis cannot represent negative bands, and the non-negative
-                # C-solve then drives the concentrations to zero (see below).
-                ST = rng.rand(n_components, n) if st_nonneg \
-                    else rng.randn(n_components, n)
+            if init_ST is not None:
+                # Warm start (see compute()'s docstring for init_ST) --
+                # skip 'init', the sign-orientation fix-up, and reference-
+                # row seeding entirely: init_ST is trusted to already be a
+                # valid, converged starting point.
+                init_ST_arr = np.asarray(init_ST, dtype=float)
+                if init_ST_arr.shape != (n_components, n):
+                    self.last_error = (
+                        f"Bootstrap warm-start shape mismatch: expected "
+                        f"({n_components}, {n}), got {tuple(init_ST_arr.shape)}."
+                    )
+                    return False
+                ST = init_ST_arr.copy()
             else:
-                # SVD-based initial guess: the leading right-singular vectors
-                # capture the dominant spectral shapes.
-                _, _, Vt = np.linalg.svd(D, full_matrices=False)
-                ST = Vt[:n_components, :]
-                if st_nonneg:
-                    # Only legitimate when the pure spectra really are
-                    # non-negative: abs() gives a usable non-negative start.
-                    ST = np.abs(ST)
+                if init == 'random':
+                    # For non-negative spectra a positive random start is right.
+                    # For SIGNED spectra (CD, ROA, VCD) it is not: an all-positive
+                    # basis cannot represent negative bands, and the non-negative
+                    # C-solve then drives the concentrations to zero (see below).
+                    ST = rng.rand(n_components, n) if st_nonneg \
+                        else rng.randn(n_components, n)
+                else:
+                    # SVD-based initial guess: the leading right-singular vectors
+                    # capture the dominant spectral shapes.
+                    _, _, Vt = np.linalg.svd(D, full_matrices=False)
+                    ST = Vt[:n_components, :]
+                    if st_nonneg:
+                        # Only legitimate when the pure spectra really are
+                        # non-negative: abs() gives a usable non-negative start.
+                        ST = np.abs(ST)
 
-            if not st_nonneg:
-                # BUG FIX (signed data). The initial guess used to be abs()'d
-                # unconditionally, which throws away the sign structure and
-                # leaves an all-positive basis. For genuinely signed spectra
-                # (CD, ROA, VCD) that is fatal: a signed spectrum cannot be
-                # built from positive-only shapes with NON-NEGATIVE
-                # concentrations, so the very first NNLS C-solve returned all
-                # zeros, every component died, and the fit collapsed to
-                # lack-of-fit = 100%. Keeping the signed singular vectors fixes
-                # that.
-                #
-                # A singular vector's sign is arbitrary, though, while C is
-                # constrained >= 0 — so a row pointing "the wrong way" would
-                # still be zeroed out by NNLS. Orient each row so its projection
-                # onto the data is predominantly positive, giving the
-                # non-negative C-solve something it can actually use.
-                for k_ in range(n_components):
-                    if np.sum(D @ ST[k_]) < 0:
-                        ST[k_] = -ST[k_]
+                if not st_nonneg:
+                    # BUG FIX (signed data). The initial guess used to be abs()'d
+                    # unconditionally, which throws away the sign structure and
+                    # leaves an all-positive basis. For genuinely signed spectra
+                    # (CD, ROA, VCD) that is fatal: a signed spectrum cannot be
+                    # built from positive-only shapes with NON-NEGATIVE
+                    # concentrations, so the very first NNLS C-solve returned all
+                    # zeros, every component died, and the fit collapsed to
+                    # lack-of-fit = 100%. Keeping the signed singular vectors fixes
+                    # that.
+                    #
+                    # A singular vector's sign is arbitrary, though, while C is
+                    # constrained >= 0 — so a row pointing "the wrong way" would
+                    # still be zeroed out by NNLS. Orient each row so its projection
+                    # onto the data is predominantly positive, giving the
+                    # non-negative C-solve something it can actually use.
+                    for k_ in range(n_components):
+                        if np.sum(D @ ST[k_]) < 0:
+                            ST[k_] = -ST[k_]
 
-            # Seed the referenced rows with the known spectra (whether or
-            # not they'll be held fixed — a good starting point either way).
-            if ref_rows:
-                ST = _impose_refs(ST)
-                # When the references are HELD FIXED, initialise the free
-                # rows from the residual left after subtracting the best fit
-                # of the fixed references, rather than from raw SVD/random.
-                # Otherwise a poor free-row guess can be so collinear with a
-                # fixed reference that the very first non-negative C-solve
-                # assigns the free component ZERO concentration, killing it
-                # permanently and leaving only the references to fit (which
-                # was producing a spuriously huge lack-of-fit). Seeding from
-                # the residual guarantees the free rows start on the part of
-                # the data the references don't already explain.
-                if fix_references:
-                    _fixed = sorted(ref_rows.keys())
-                    _free = [j for j in range(n_components) if j not in ref_rows]
-                    if _free:
-                        ST_fx = np.array([ref_rows[i] for i in _fixed])
-                        C_fx = D @ np.linalg.pinv(ST_fx)
-                        R = D - C_fx @ ST_fx
-                        _, _, VtR = np.linalg.svd(R, full_matrices=False)
-                        for pos, idx in enumerate(_free):
-                            base = VtR[pos] if pos < VtR.shape[0] else rng.rand(n)
-                            if st_nonneg:
-                                ST[idx, :] = np.abs(base)
-                            else:
-                                # Signed data: the residual singular vector's
-                                # sign is arbitrary, but the C-solve forces
-                                # concentrations >= 0. Orient the row so its
-                                # own projection onto the residual is mostly
-                                # positive, so the first non-negative C-solve
-                                # doesn't immediately zero the component out.
-                                proj = R @ base
-                                if np.sum(proj) < 0:
-                                    base = -base
-                                if init == 'random':
-                                    base = base + 0.05 * rng.rand(n)
-                                ST[idx, :] = base
+                # Seed the referenced rows with the known spectra (whether or
+                # not they'll be held fixed — a good starting point either way).
+                if ref_rows:
+                    ST = _impose_refs(ST)
+                    # When the references are HELD FIXED, initialise the free
+                    # rows from the residual left after subtracting the best fit
+                    # of the fixed references, rather than from raw SVD/random.
+                    # Otherwise a poor free-row guess can be so collinear with a
+                    # fixed reference that the very first non-negative C-solve
+                    # assigns the free component ZERO concentration, killing it
+                    # permanently and leaving only the references to fit (which
+                    # was producing a spuriously huge lack-of-fit). Seeding from
+                    # the residual guarantees the free rows start on the part of
+                    # the data the references don't already explain.
+                    if fix_references:
+                        _fixed = sorted(ref_rows.keys())
+                        _free = [j for j in range(n_components) if j not in ref_rows]
+                        if _free:
+                            ST_fx = np.array([ref_rows[i] for i in _fixed])
+                            C_fx = D @ np.linalg.pinv(ST_fx)
+                            R = D - C_fx @ ST_fx
+                            _, _, VtR = np.linalg.svd(R, full_matrices=False)
+                            for pos, idx in enumerate(_free):
+                                base = VtR[pos] if pos < VtR.shape[0] else rng.rand(n)
+                                if st_nonneg:
+                                    ST[idx, :] = np.abs(base)
+                                else:
+                                    # Signed data: the residual singular vector's
+                                    # sign is arbitrary, but the C-solve forces
+                                    # concentrations >= 0. Orient the row so its
+                                    # own projection onto the residual is mostly
+                                    # positive, so the first non-negative C-solve
+                                    # doesn't immediately zero the component out.
+                                    proj = R @ base
+                                    if np.sum(proj) < 0:
+                                        base = -base
+                                    if init == 'random':
+                                        base = base + 0.05 * rng.rand(n)
+                                    ST[idx, :] = base
 
             C = np.zeros((m, n_components))
             prev_lof = None
@@ -555,7 +599,13 @@ class MCRALSManager:
         # reordering would move their reference out of the slot they
         # assigned it to — so we keep the fit's slot order intact in that
         # case, so "Component 2 = my known spectrum" stays true.
-        if self.reference_components:
+        # SAME reasoning for a warm start (init_ST): the whole point of
+        # warm-starting from another fit's own ST is to keep every
+        # component in the slot it started in (see compute()'s docstring
+        # and compute_bootstrap_uncertainty()) -- re-sorting by this
+        # replicate's own, slightly noisy explained variance would
+        # silently break that correspondence across bootstrap replicates.
+        if self.reference_components or init_ST is not None:
             self.explained_variance = self.explained_variance
         else:
             order = np.argsort(-self.explained_variance)

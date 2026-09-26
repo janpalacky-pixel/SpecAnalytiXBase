@@ -1700,6 +1700,104 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         a future feature (e.g. bootstrap resampling, which needs the same "refit many times
         independently" shape) makes the sequential cost actually painful in practice.</p>
 
+        <h2 id="mcr-als-bootstrap-uncertainty">MCR-ALS Bootstrap Uncertainty: Residual
+        Resampling With a Warm-Started Refit</h2>
+
+        <div class="rule">
+            <strong>Two different kinds of "how much should I trust this MCR-ALS result"
+            question exist, and answering one does not answer the other. Conflating them
+            &mdash; e.g. re-fitting from random inits and calling the spread "uncertainty" &mdash;
+            silently mixes rotational-ambiguity noise into what should be a pure
+            measurement-noise-sensitivity estimate, or vice versa.</strong>
+        </div>
+
+        <p><strong>"Run N times, keep best"</strong> (see its own section above) answers
+        "did this fit land in the wrong local optimum, or a solution that fits equally well
+        but is chemically wrong?" by re-fitting from different random starting points ON THE
+        SAME DATA. <strong>"Bootstrap Uncertainty"</strong> (<code>MCRALSController.
+        compute_bootstrap_uncertainty()</code>) answers a different question: "how much would
+        THIS specific, already-chosen result change if I'd collected this data with a
+        different noise realization?" That needs the opposite discipline: every replicate
+        must be refit from the SAME starting point (the result being bootstrapped), on
+        DIFFERENT synthetic data built from that result's own residual noise.</p>
+
+        <h3>The method</h3>
+        <ol>
+            <li>Fit once normally (or via "Run N times, keep best") to get a reference
+                C0, ST0, and the aligned data matrix D0 the fit was run on
+                (<code>MCRALSManager.D</code> &mdash; stored specifically so this doesn't
+                need to rebuild it from spectra and re-run the whole alignment/interpolation
+                pipeline a second time).</li>
+            <li>Compute residuals: <code>residuals = D0 - C0 @ ST0</code>.</li>
+            <li>For each of B resamples: resample whole residual ROWS (each spectrum's own
+                residual vector, kept intact) with replacement, and build
+                <code>D_b = C0 @ ST0 + residuals[row_idx, :]</code>. Resampling whole rows
+                rather than individual points preserves whatever wavelength-to-wavelength
+                correlation the real noise has within one spectrum &mdash; a per-point i.i.d.
+                assumption would be a stronger (and less defensible) claim than this method
+                needs to make.</li>
+            <li>Refit D_b <strong>warm-started from ST0</strong> (<code>init_ST=ST0</code> on
+                <code>MCRALSManager.compute()</code> &mdash; see below), under the exact same
+                constraints (c_nonneg, st_nonneg, normalize_spectra, closure, references,
+                fix_references) the reference fit used.</li>
+            <li>Collect every replicate's ST/C, take pointwise percentiles (2.5%/97.5% for a
+                95% band) across replicates.</li>
+        </ol>
+
+        <h3>init_ST: the warm-start hook, and why it also disables reordering</h3>
+        <p><code>MCRALSManager.compute()</code> gained an <code>init_ST</code> parameter:
+        when given, it skips 'init' (svd/random), the sign-orientation fix-up, and reference-
+        row seeding entirely, and uses that array as the starting ST directly. This is
+        deliberately NOT exposed as a user-facing "initialization" option &mdash; it exists
+        for exactly one caller, this bootstrap.</p>
+        <p>It ALSO skips the end-of-fit "reorder components by explained variance" step that
+        every normal fit does. This is not an oversight-turned-workaround &mdash; it's
+        necessary for correctness. Without it, two bootstrap replicates whose two components'
+        explained variances happen to come out in a slightly different order (easily possible
+        when EVs are close and noise varies between replicates) would silently swap which
+        physical component occupies slot 0 vs. slot 1 &mdash; and averaging/percentile-ing slot 0
+        across replicates would then mix two DIFFERENT components' distributions together,
+        producing a nonsensical band. Confirmed directly with a test constructed so a plain
+        (non-warm-started) fit's own reordering would have flipped the slots: warm-started
+        fits keep <code>init_ST</code>'s own order (see
+        <code>tests/test_mcr_als_bootstrap.py::TestInitSTWarmStart::
+        test_warm_start_skips_reorder_by_explained_variance</code>).</p>
+        <p>A genuinely converged reference fit warm-starts back to itself in as few as 2
+        iterations (the ALS loop always runs at least 2 before it can compare consecutive
+        lack-of-fit values) with the same result to ~1e-12 &mdash; confirmed directly. An
+        UNDER-converged "reference" (one that merely exhausted max_iterations while still
+        slowly improving, rather than actually reaching tol) does NOT warm-start back to
+        itself, because it wasn't at a fixed point to begin with; this surfaced as a genuine
+        test-writing mistake during development (assuming a 200-iteration, tol=1e-8 run had
+        converged when it had not) before being caught and fixed with a properly converged
+        reference (tol=1e-10, ~900 iterations for that particular synthetic case) &mdash; worth
+        remembering before assuming any "warm start didn't reproduce the reference" report is
+        this feature's bug rather than an under-converged reference.</p>
+
+        <h3>A deliberate simplification: display-only band normalization</h3>
+        <p>The Concentrations tab's "Normalize to 100% per spectrum" toggle, when active,
+        normalizes the bootstrap band using the REFERENCE fit's own row sums, not each
+        individual bootstrap replicate's own row sum. Re-normalizing every one of the B
+        replicates independently would be more statistically rigorous, but adds real
+        complexity for what is a display-only band (it doesn't feed into any saved/exported
+        number) &mdash; this is a deliberate, documented simplification, not an oversight.</p>
+
+        <h3>Orchestration lives on the controller, not the dialog</h3>
+        <p>Unlike "Run N times, keep best" (whose trial loop and near-best consensus logic
+        live in the DIALOG, calling the controller's single-trial <code>compute_trial()</code>
+        repeatedly), the entire bootstrap loop &mdash; resampling, refitting, percentile
+        aggregation &mdash; lives in one method,
+        <code>MCRALSController.compute_bootstrap_uncertainty()</code>. The dialog's job is
+        just UI: prompt for a resample count, drive a <code>QProgressDialog</code> with
+        Cancel (via a <code>cancel_check</code> callback checked before each replicate, same
+        "plain sequential loop with real Cancel support" pattern as "Run N times, keep best" &mdash;
+        see the parallelization section above for why this stayed sequential), and redraw the
+        Pure Spectra / Concentrations tabs afterward. Putting the loop on the controller
+        (rather than duplicating it in the dialog, best-of-n-style) was a deliberate choice
+        here specifically because the loop's correctness (residual resampling, warm start,
+        percentile math) has real statistical content worth unit-testing directly without a
+        GUI in the way &mdash; see <code>tests/test_mcr_als_bootstrap.py</code>.</p>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">

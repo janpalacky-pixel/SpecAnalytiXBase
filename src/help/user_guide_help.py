@@ -1572,6 +1572,15 @@ def get_user_guide_help_content():
         keep best"</strong> at higher run counts. How much it helps
         depends on your data; NMF is unaffected (it has no equivalent
         step to speed up).</p>
+        <p><strong>Bootstrap Uncertainty&hellip;</strong> (next to "Run N
+        times, keep best") answers a different question from that
+        button: not "did I find the wrong local optimum" (that's what Run
+        N times checks) but "how much would THIS result change under a
+        different noise draw of my actual data." Run it after loading a
+        result you trust; it shades each pure spectrum and adds error
+        bars to the concentration plot with a 95% confidence band. See
+        the MCR-ALS help page's own "Bootstrap Uncertainty" section for
+        the full explanation.</p>
         <div class="warning"><strong>A good fit does not mean a correct answer.</strong>
         This is the single most important thing to understand about both MCR-ALS and NMF.
         Many different decompositions can reproduce your data equally well (&ldquo;rotational
