@@ -1798,6 +1798,176 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         percentile math) has real statistical content worth unit-testing directly without a
         GUI in the way &mdash; see <code>tests/test_mcr_als_bootstrap.py</code>.</p>
 
+        <h2 id="rgb-overlay-export">2D Map RGB Overlay Mode</h2>
+
+        <p><code>Map2DDialog</code>'s <b>RGB overlay</b> is an 8th Map Type radio button
+        (alongside Intensity/SVD/PCA/NMF/MCR-ALS/Map arithmetic/Cluster overlay) that composes
+        up to three already-computed component maps into one false-color composite, shown
+        inline in the main map canvas. It started as a standalone modal dialog
+        (<code>_RGBOverlayDialog</code>, reachable from an <b>Export ▾</b> menu item) and was
+        converted into a full mode with its own inline right-side panel (<code>_rgb_panel</code>)
+        specifically so it could reuse the dialog's existing ROI-selection and spectrum-inspection
+        machinery "as in other modes" rather than duplicating it inside a second dialog. The
+        standalone dialog and its menu item are gone; everything below describes the current,
+        only architecture. A few decisions worth recording for future maintenance:</p>
+
+        <p><b>Gated like any other decomposition-dependent control.</b>
+        <code>self._radio_rgb</code> starts disabled (<code>setEnabled(False)</code>, id 7 in
+        <code>self._radio_group</code>) and is flipped on by <code>_update_rgb_radio_enabled()</code>,
+        called right after every successful SVD/PCA/NMF/MCR-ALS compute (both the normal
+        <code>_compute_map()</code> path and the "Run N times, keep best" trial-result path).
+        Once enabled it stays enabled for the rest of the dialog's life &mdash;
+        <code>Map2DManager</code>'s per-kind caches are only ever replaced, never cleared back to
+        empty once populated, so there's no scenario where RGB overlay would need to become
+        unavailable again.</p>
+
+        <p><b>Any computed kind, per channel, independently.</b> Rather than requiring one active
+        decomposition (the single-component map view's own model, driven by the four radio
+        buttons and <code>_decomp_kind()</code>), each of the three channel boxes in
+        <code>_rgb_panel</code> (<code>_rgb_channel_widgets</code>, one dict of
+        enable/kind/comp widgets per channel) reads
+        <code>Map2DManager.get_component_coefficients(kind, index)</code> directly for whichever
+        kind that channel's own combo currently names (<code>_rgb_channel_array()</code>). This
+        works because <code>Map2DManager</code> already keeps SVD, PCA, NMF and MCR-ALS results in
+        separate, independently-populated caches (<code>_U</code>/<code>_s</code>,
+        <code>_pca_U</code>, <code>_nmf_manager</code>, <code>_mcr_manager</code> respectively)
+        that computing one kind does not clear for the others &mdash; verified directly
+        (<code>grep</code> for where each is reset to <code>None</code> turns up only
+        <code>__init__</code> and that kind's own failure path). So if the user has, say, run both
+        NMF and MCR-ALS for the same map dimensions, both are simultaneously available and mixable
+        across R/G/B (<code>_compose_rgb_overlay()</code>) &mdash; nothing here recomputes
+        anything; a channel with nothing computed for its selected kind simply leaves that
+        channel's Component combo empty (<code>_refresh_rgb_component_combo()</code>), and an
+        unchecked or empty channel contributes exactly zero, not a fallback component.</p>
+
+        <p><b>Fully live &mdash; no explicit first build, ever.</b> Unlike NMF/MCR-ALS,
+        composing an RGB overlay never requires an "Update Map" press: re-reading cached
+        coefficients and renormalizing is cheap, unlike a fit. Every panel control
+        (Enable/Source/Component per channel, and the percentile spinboxes) is wired to
+        <code>_on_rgb_panel_changed()</code>, which calls <code>_compute_rgb_overlay_map()</code>
+        unconditionally whenever <code>_radio_rgb.isChecked()</code> &mdash; including the very
+        first <b>Enable</b> checkbox toggle, while <code>self._rgb_overlay_array</code> is still
+        <code>None</code>. An earlier version of this method guarded on
+        <code>self._rgb_overlay_array is not None</code>, requiring one explicit "Compute
+        Map"/"Update Map" press before the panel would respond to anything &mdash; that guard was
+        removed because it silently blocked exactly the case a user hits first (checking
+        <b>Enable</b> on a fresh panel), leaving them looking at an unchanged placeholder with no
+        obvious next step. <code>_compute_map()</code> still dispatches to
+        <code>_compute_rgb_overlay_map()</code> when <b>Update Map</b> is pressed directly, so the
+        button keeps working, but nothing in this mode depends on it ever being pressed.</p>
+
+        <p><b>Auto-restore on mode entry.</b> <code>_on_mode_changed()</code>'s RGB branch calls
+        <code>_compute_rgb_overlay_map(quiet=True)</code> immediately on entering RGB overlay if
+        any channel is already enabled (typically: switching away and back), so a previously-built
+        composite reappears with no button press and none of the two informational/warning
+        <code>QMessageBox</code> popups that the same method shows on an explicit press
+        (<code>quiet=True</code> suppresses "Invalid Dimensions" and "Nothing to show"/"No data
+        for enabled channel(s)"; a genuine exception still raises <code>QMessageBox.critical</code>
+        unconditionally regardless of <code>quiet</code> &mdash; that dialog exists to surface a
+        real bug, not to explain an expected result to someone who just clicked a button). Before
+        attempting this the branch resets <code>self._rgb_overlay_array = None</code> and only
+        calls <code>_refresh_rgb_component_combo()</code> for a channel whose combo's item count no
+        longer matches its Source kind's real component count &mdash; refreshing every channel
+        unconditionally on every mode entry was an early bug caught during this feature's own
+        testing: it silently reset each channel's Component selection back to index 0 on every
+        switch, discarding whatever the user had actually picked.</p>
+
+        <p><b>SVD/PCA/NMF/MCR-ALS: redraw from cache on mode re-entry instead of refitting.</b>
+        <code>self._decomp_needs_refit</code> is a per-kind dict (<code>{'svd': False, 'pca':
+        False, 'nmf': False, 'mcr': False}</code>) tracking whether a kind's cached fit is stale
+        relative to its current settings. It is set <code>True</code> only by the things that
+        actually invalidate a fit &mdash; the "Configure {kind} range&hellip;" dialog's acceptance
+        handler, the NMF/MCR-ALS <b>Components to fit</b> spinner's change handler
+        (<code>_on_decomp_n_changed</code>), and <code>_on_reference_settings_changed</code> when
+        references change without auto-recompute &mdash; and cleared in <code>_compute_map()</code>'s
+        decomposition branch right after a successful fit. <code>_on_mode_changed()</code>'s
+        decomposition branch checks both that the kind has <code>n_components &gt; 0</code> and
+        that it isn't marked dirty; if so, <code>_redraw_cached_decomp_map(kind)</code> reshapes
+        <code>Map2DManager.get_component_coefficients(kind, 0)</code> straight from the cache
+        (the same read-only mechanism the RGB channels use) and redraws, skipping
+        <code>compute_svd_map()</code>/<code>compute_pca_map()</code>/<code>compute_nmf_map()</code>/
+        <code>compute_mcr_map()</code> entirely. Only when the dirty flag is set (or nothing has
+        been fitted yet for that kind) does the mode fall back to its usual "Press 'Update Map' to
+        compute&hellip;" placeholder. This deliberately does <i>not</i> extend to every setting
+        that could plausibly affect a fit &mdash; NMF's <b>Init.</b>/<b>Max iter.</b> and MCR-ALS's
+        <b>Max iter.</b>/<b>Non-neg. C</b>/<b>Non-neg. ST</b>/<b>Closure</b> controls currently mark
+        nothing dirty &mdash; a conscious scope decision matching the specific triggers named when
+        this was requested (range reconfiguration, component count, references), not an
+        oversight.</p>
+
+        <p><b>Hover-tooltip artists don't survive <code>ax.cla()</code> &mdash; reset the
+        reference, don't just hide it.</b> Found while testing the two features above, but the bug
+        itself is general, not RGB-specific: every full map redraw (<code>_MapCanvas.update_map()</code>,
+        <code>_draw_rgb_overlay_map()</code>, <code>_draw_cluster_map()</code>) calls
+        <code>self.ax.cla()</code>, which removes the existing hover-tooltip
+        <code>Annotation</code> (<code>self._tooltip</code>, created by <code>ax.annotate()</code>
+        in <code>_make_tooltip()</code>) from the axes' own artist list. The Python object survives
+        &mdash; <code>self._tooltip</code> is still a valid reference &mdash; but it is now
+        orphaned: no longer in <code>ax.texts</code>, and <code>.axes</code> no longer points at
+        the current axes. <code>enable_hover()</code>, called right after every redraw via
+        <code>_on_map_computed()</code>, only creates a fresh tooltip when
+        <code>self._tooltip is None</code>; otherwise it just calls
+        <code>self._tooltip.set_visible(False)</code> on whatever it already has &mdash; which, on
+        the second and every subsequent redraw, is that same orphaned object. Confirmed directly:
+        after a second redraw, <code>tooltip.get_visible()</code> still reports whatever was last
+        set (no exception, no visible symptom in code), but <code>tooltip in ax.texts</code> is
+        <code>False</code> and <code>tooltip.axes is ax</code> is <code>False</code> &mdash; it is
+        never actually drawn again no matter what <code>set_visible()</code> is called with. Fixed
+        by setting <code>self._tooltip = None</code> (or <code>self._map_canvas._tooltip = None</code>
+        from the dialog) immediately after each of those three <code>ax.cla()</code> calls, so
+        <code>enable_hover()</code>'s <code>is None</code> check is always true right after a
+        redraw and a fresh, correctly-attached tooltip gets created every time.</p>
+
+        <p><b>Percentile stretch is display/export-only.</b> One shared pair of spinboxes
+        (<code>_rgb_lo_pct_spin</code>/<code>_rgb_hi_pct_spin</code>) feeds all three channels, but
+        each enabled channel is independently rescaled to <code>[0, 1]</code> from <i>its own</i>
+        data's <code>[lo%, hi%]</code> percentile range (<code>_rgb_normalize_channel()</code>)
+        &mdash; same percentage, different absolute cutoff per channel, since each channel is
+        usually a different component with a different value range. This is purely for compositing
+        into the displayed/exported image, the same convention as the single map's manual colorbar
+        clipping (<code>_apply_clim</code>). It never writes back into the manager's cached arrays,
+        unlike <code>invert_component()</code> (see the single-component map view), which flips
+        <code>_U</code>/<code>_pca_U</code> in place &mdash; the wording here was tightened after a
+        user question conflated the two ("doesn't touch your fit results" needed to say explicitly
+        that it never mutates the underlying decomposition, the way Invert deliberately does).</p>
+
+        <p><b><code>_last_map_data</code> gets a grayscale proxy, not <code>None</code>.</b>
+        Dozens of existing methods across the file (ROI drawing/toggling, the hover tooltip,
+        colorbar clim, CSV export, click-to-inspect, "Clear all ROIs" redraw) all gate on
+        <code>self._last_map_data is not None</code> and assume a real, finite
+        <code>(n_rows, n_cols)</code> scalar array. Leaving it <code>None</code> in RGB mode would
+        have silently broken ROI tool activation and click-to-inspect, which the user specifically
+        wanted to keep working "as in other modes". Instead, <code>_compute_rgb_overlay_map()</code>
+        stores a synthetic scalar proxy in <code>_last_map_data</code>
+        (<code>rgb.mean(axis=2)</code>, a grayscale luma average) while the real
+        <code>(n_rows, n_cols, 3)</code> composite lives separately in
+        <code>self._rgb_overlay_array</code>. Consumers that would misuse the proxy meaningfully
+        are explicitly special-cased instead of left to operate on it silently: <code>_on_map_click</code>
+        checks <code>_radio_rgb.isChecked()</code> first and reports real
+        <code>R=.. G=.. B=..</code> values from <code>_rgb_overlay_array</code> rather than the
+        proxy's averaged scalar; <code>_export_map()</code> (CSV/Excel) and
+        <code>_show_roi_statistics()</code> (ROI comparison stats) both guard on
+        <code>_radio_rgb.isChecked()</code> and refuse with an explanatory message rather than
+        exporting or comparing the meaningless grayscale average &mdash; use the panel's own
+        <b>Export as PNG…</b> (<code>_export_rgb_overlay_png()</code>) instead, which composes and
+        writes the real RGB array.</p>
+
+        <p><b>Native resolution, no cmap/norm.</b> The composite is written at exactly
+        <code>n_rows &times; n_cols</code> — one image pixel per map pixel, matching
+        <code>_export_map()</code>'s own convention of exporting raw data rather than whatever
+        on-screen "Equal aspect ratio" stretching is active (equal aspect, and interpolation, only
+        affect <code>_draw_rgb_overlay_map()</code>'s on-screen preview canvas, never the exported
+        file). Because the array passed to <code>plt.imsave()</code> is already an
+        <code>(n_rows, n_cols, 3)</code> float array in <code>[0, 1]</code>, matplotlib writes it
+        as literal RGB and ignores <code>cmap</code>/<code>norm</code> entirely (those only apply
+        to scalar 2-D arrays) &mdash; no manual uint8 conversion needed, and no new dependency:
+        this uses matplotlib's own PNG writer, not Pillow, consistent with "matplotlib: all
+        plotting" already covering this codebase's plotting/export needs. For the same reason
+        <code>_draw_rgb_overlay_map()</code> never attaches a colorbar (unlike, say,
+        <code>_draw_cluster_map()</code>'s discrete tab10 colorbar) &mdash; the pixel colors here
+        are literal data, not a colormap-encoded scalar, so there's nothing for a colorbar to
+        show.</p>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">

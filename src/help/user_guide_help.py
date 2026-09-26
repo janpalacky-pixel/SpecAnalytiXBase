@@ -1675,7 +1675,7 @@ def get_user_guide_help_content():
         of the standalone <a href="#pca-scores">PCA Scores &amp; Loadings</a> tool.
         Requires selecting exactly Rows &times; Cols spectra (laid out
         row-by-row) &mdash; a MAT/WITec map import already carries its own
-        dimensions and fills these in automatically.</p>
+        dimensions and fills these in automatically. An <b>RGB overlay</b> mode (alongside Intensity/SVD/PCA/NMF/MCR-ALS/Cluster) combines up to three already-computed component maps (any mix of SVD/PCA/NMF/MCR-ALS) into R/G/B channels of one false-color composite, with its own panel for assigning channels and exporting the result as a PNG — a common way to show where several components co-occur spatially in a single picture.</p>
 
         <h3 id="2d-correlation">2D Correlation (2D-COS) <a href="help://two_d_correlation" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
 

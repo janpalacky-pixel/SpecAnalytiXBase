@@ -42,6 +42,8 @@ _SCREENSHOT_FILES = {
     "ROI_RECTANGLE":       "roi_drawn_rectangle.png",
     "ROI_COMPARISON":      "roi_comparison_stats.png",
     "ROI_VIEWER":          "roi_spectra_viewer.png",
+    "TYPE_RGB":            "map_type_rgb.png",
+    "RGB_OVERLAY_RESULT":  "rgb_overlay_result.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -178,8 +180,16 @@ Double-clicking or pressing OK applies the chosen pair immediately.</p>
 
 <p>Select a map type using the radio buttons. Switching between
 <b>Intensity metric</b>, <b>Map arithmetic</b>, and <b>Cluster overlay</b>
-redraws the map instantly. <b>SVD</b> requires pressing
-<b>Update Map</b> because SVD computation can be slow for large datasets.</p>
+redraws the map instantly. <b>SVD</b>, <b>PCA</b>, <b>NMF</b> and
+<b>MCR-ALS</b> redraw instantly too when you switch to (or back to) a kind
+that has already been fitted for the current settings — the existing fit
+is simply redrawn from cache, with no re-fit and no need to press
+<b>Update Map</b>. Fitting is only needed the first time a kind is used,
+or again after a setting that actually invalidates that fit — its
+spectral range, its component count (NMF/MCR-ALS), or its reference
+spectra — in which case <b>Update Map</b> is required, exactly as before.
+<b>RGB overlay</b> never needs <b>Update Map</b> at all: composing it from
+already-fitted components is cheap, so it always redraws live.</p>
 
 <h3>◉ Intensity metric</h3>
 <div class="cat">
@@ -247,7 +257,10 @@ maps the coefficient vector V<sub>k</sub> as pixel values.</p>
 
 <p>Configure the <b>SVD computation range</b> using the <b>Configure SVD range…</b>
 button — this restricts which part of the spectrum is used for the SVD.
-After changing the range, press <b>Update Map</b> to recompute.</p>
+After changing the range, press <b>Update Map</b> to recompute. Switching
+to a different Map Type and back to SVD does <i>not</i> require Update
+Map, as long as the range (or anything else that affects the fit) hasn't
+changed in between — the already-computed result simply reappears.</p>
 <p><b>Component selector:</b> browse components instantly after computing;
 no recomputation needed. The label mode (Explained var.%, σ, or Residual
 error) controls the text shown next to each component.</p>
@@ -428,7 +441,11 @@ component</b> dropdown and shows "Components changed — press 'Update Map'
 to refit" in red, so the dropdown's item count and EV%s are never left
 silently describing the old fit. (The two are deliberately worded
 differently, rather than both just saying "Component[s]", since one sets
-how many to fit and the other picks which already-fitted one to browse.)</p>
+how many to fit and the other picks which already-fitted one to browse.)
+Switching to a different Map Type and back to NMF or MCR-ALS does not
+require Update Map either, as long as Components to fit — and the range,
+and the reference spectra — haven't changed in between; the already-fitted
+result simply reappears.</p>
 
 <p>Configure the spectral range used for the fit with <b>Configure NMF
 range…</b> / <b>Configure MCR-ALS range…</b> — the same restrict-to-region
@@ -592,6 +609,100 @@ one mode does not affect any other mode.
 </div>
 </div>
 
+<h3>◉ RGB overlay</h3>
+<div class="cat">
+<p>Combines up to three already-computed component maps into a single
+false-color composite — assign one component to each of the Red, Green
+and Blue channels. This is a standard technique in hyperspectral/Raman
+mapping software for showing where several chemical components co-occur
+in one picture, instead of flipping between separate single-component
+maps.</p>
+
+<div class="note">
+<b>Grayed out until a decomposition is computed.</b> The <b>RGB overlay</b>
+radio button stays disabled until at least one SVD, PCA, NMF or MCR-ALS
+map has been computed for the current dimensions — there is nothing yet
+to combine. Compute any one of them first (any kind, any number of
+components), and the radio becomes selectable immediately, without
+needing to switch away and back.
+</div>
+
+<p>Selecting <b>RGB overlay</b> shows its own panel in the right-hand
+column, exactly like SVD or Cluster overlay get their own panel — three
+boxes labelled <b>Red</b>, <b>Green</b> and <b>Blue</b>, each with an
+<b>Enable</b> checkbox, a <b>Source</b> dropdown (SVD / PCA / NMF /
+MCR-ALS) and a <b>Component</b> dropdown. All three channels start
+disabled; enable the ones you want. A kind that hasn't actually been
+computed yet simply leaves its Component dropdown empty for that
+channel. Sources can be mixed freely — for example an NMF component in
+Red and an MCR-ALS component in Green — since each channel just reads
+whichever cache already has data, nothing is computed on the fly.</p>
+
+<div class="screenshot">
+    <img src="$TYPE_RGB" width="$TYPE_RGB_W" height="$TYPE_RGB_H" alt="Map Type panel with RGB overlay selected" />
+    <p class="caption">Map Type panel in RGB overlay mode: Red/Green/Blue channel boxes, each with its own Enable checkbox, Source and Component dropdowns.</p>
+</div>
+
+<p>Unlike SVD/PCA/NMF/MCR-ALS, <b>RGB overlay</b> never requires an
+explicit <b>Update Map</b> press, at any point — composing a composite
+from components that are already sitting in the decomposition cache is
+cheap, unlike a fresh fit. Switching to <b>RGB overlay</b> with at least
+one channel already enabled and configured (for example, switching back
+from another mode) displays the composite immediately. Checking a
+channel's <b>Enable</b> box for the very first time, changing its
+<b>Source</b> or <b>Component</b>, or changing the percentile stretch
+below all redraw the map live and immediately as well. The <b>Update
+Map</b> button is still there and works, but pressing it is never
+required in this mode.</p>
+
+<p>There is a single, shared <b>Low %</b> / <b>High %</b> setting
+(0% / 100% by default, meaning the plain min–max), not one per channel
+— but it is applied to each enabled channel's <i>own</i> values
+independently, so the actual cutoff numbers it produces are normally
+different for each channel. For example, if Red is an SVD component
+ranging roughly -0.3 to +0.5 and Green is an NMF component ranging 0 to
+12, the same "0% / 100%" setting means "use SVD's own min/max" for Red
+and "use NMF's own min/max" for Green — two different absolute cutoffs
+from one shared percentage.</p>
+
+<div class="note">
+<b>This stretch never changes your actual decomposition results.</b> It
+exists purely to squeeze each channel's real values into the 0–1 range
+the picture needs, and is recomputed fresh every time the map redraws —
+it is not saved anywhere. Switch to that component's own single-component
+map view, or export it to CSV, and you'll see the original, untouched
+values. This is different from the single-component map view's
+<b>Invert</b> button, which <i>does</i> permanently flip that component's
+sign in the underlying SVD/PCA data until inverted again — the contrast
+stretch here has no equivalent persistent effect.</div>
+
+<p>A disabled channel simply contributes nothing (pure black) to that
+channel — a red/green-only, or even single-channel, overlay is a normal
+result, not an error.</p>
+
+<p>Because ROI selection and pixel-click spectrum inspection work "as in
+other modes" here too, clicking a pixel shows its actual
+<b>R=.. G=.. B=..</b> values (display-scaled 0–1) instead of a generic
+scalar map value, and drawn ROIs still let you inspect or overlay the
+spectra inside them. The map's own toolbar also shows the same three
+values continuously as <code>[R, G, B]</code> in its top-right corner
+while the mouse moves, with no click needed — see "Coordinate &amp;
+value readout" further below in the Spectrum Panel section. Two
+things are disabled in this mode specifically,
+because they assume a single scalar per pixel: <b>ROI comparison
+statistics</b> (there's no single number to compare across regions) and
+<b>Export map (CSV/Excel)…</b> — use the panel's own <b>Export as
+PNG…</b> button instead, which saves the composite at native resolution
+(one image pixel per map pixel), independent of whatever on-screen
+<b>Equal aspect ratio</b> or <b>Interpolation</b> display option happens
+to be active.</p>
+
+<div class="screenshot">
+    <img src="$RGB_OVERLAY_RESULT" width="$RGB_OVERLAY_RESULT_W" height="$RGB_OVERLAY_RESULT_H" alt="RGB overlay composite map with a clicked pixel showing R/G/B values" />
+    <p class="caption">A finished RGB overlay composite. The status line below the map shows the clicked pixel's actual R=.. G=.. B=.. values, not a generic map value.</p>
+</div>
+</div>
+
 <hr>
 <h2>3 — Spectral Range Configuration</h2>
 
@@ -677,6 +788,22 @@ in this dialog), its spectrum label, and the map value at that position.</p>
     <img src="$HOVER_TOOLTIP" width="$HOVER_TOOLTIP_W" height="$HOVER_TOOLTIP_H" alt="Hover tooltip showing spectrum label and map value at the cursor position" />
     <p class="caption">Hovering over a pixel shows its Row/Col (1-based), spectrum label, and map value.</p>
 </div>
+
+<h3>Coordinate &amp; value readout (top-right, above the map)</h3>
+<p>Independently of the hover tooltip above, the map's own navigation
+toolbar shows a small live readout in its top-right corner while the
+mouse is over the plot: <code>(x, y) = &hellip;</code> gives the cursor's
+data coordinates, and the bracketed number(s) beneath it give the
+underlying image array's raw value at that exact pixel. For every
+scalar map type (Intensity, SVD, PCA, NMF, MCR-ALS, Cluster overlay, Map
+arithmetic) that's a single number; in <b>RGB overlay</b> mode it shows
+three numbers, <code>[R, G, B]</code> — the same display-scaled 0&ndash;1
+values the composite image is drawn from, in the same order as the
+<b>R=.. G=.. B=..</b> readout in the click-info status line beneath the
+map. This toolbar readout updates continuously as the mouse moves, with
+no click and no hover-dwell needed — matplotlib provides it automatically
+for any image and it is always available, independent of both the hover
+tooltip and the click-info line.</p>
 </div>
 
 <hr>

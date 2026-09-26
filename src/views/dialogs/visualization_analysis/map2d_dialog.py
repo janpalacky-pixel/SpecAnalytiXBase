@@ -35,6 +35,8 @@ Controls (top-to-bottom in the scroll area)
 Interactive click: clicking a pixel in the map shows that spectrum.
 """
 
+import traceback
+
 import numpy as np
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
@@ -356,6 +358,15 @@ class _MapCanvas(FigureCanvas):
 
         self.fig.subplots_adjust(left=0.08, right=0.85, top=0.93, bottom=0.08)
         self.ax.cla()
+        # ax.cla() removes the hover-tooltip annotation from the axes'
+        # artist list without notifying us — the Python object referenced
+        # by self._tooltip survives, but it is now orphaned (no longer in
+        # ax.texts, .axes no longer points at this ax) and will never be
+        # rendered again no matter how many times set_visible(True) is
+        # called on it. Reset the reference so enable_hover() (called
+        # right after every full redraw) recreates it fresh, attached to
+        # the axes that will actually be drawn.
+        self._tooltip = None
 
         aspect = 'equal' if equal_aspect else 'auto'
         self._im = self.ax.imshow(
@@ -584,6 +595,10 @@ class Map2DDialog(QDialog):
         'jet', 'rainbow', 'turbo', 'gray', 'bone',
     ]
     INTERPOLATIONS = ['nearest', 'bilinear', 'bicubic', 'lanczos', 'spline16']
+    # RGB overlay mode (see _build_rgb_panel / _compose_rgb_overlay)
+    _RGB_KIND_LABELS = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}
+    _RGB_CHANNEL_NAMES = ('Red', 'Green', 'Blue')
+    _RGB_CHANNEL_COLORS = ('#C62828', '#2E7D32', '#1565C0')
 
     def __init__(self, parent, controller, spectra):
         super().__init__(parent)
@@ -618,6 +633,25 @@ class Map2DDialog(QDialog):
 
         # Last computed map data (for re-render without recompute)
         self._last_map_data           = None
+        # RGB overlay mode: the full (n_rows, n_cols, 3) composed
+        # image (for the panel's "Export as PNG…" button and for
+        # showing real per-channel values on click) — kept separate
+        # from _last_map_data, which in RGB mode holds a grayscale
+        # mean-of-channels proxy purely so the generic map/ROI/hover
+        # machinery keeps working unchanged (see the developer guide).
+        self._rgb_overlay_array       = None
+        # Per-kind "the cached fit no longer matches the current
+        # settings" flag. Switching modes alone never sets this — only
+        # a change that would actually produce a different fit does
+        # (range reconfigured, NMF/MCR-ALS component count changed,
+        # references changed with auto-recompute off). _on_mode_changed
+        # uses this to decide whether re-entering a decomp mode can just
+        # redraw the already-cached component (cheap) or must show the
+        # "press Update Map" placeholder (a stale fit would otherwise
+        # display silently as if it were current). Cleared right after
+        # each successful fit in _compute_map.
+        self._decomp_needs_refit = {'svd': False, 'pca': False,
+                                     'nmf': False, 'mcr': False}
         # Which decomposition kind ('svd'/'pca') produced it, if any —
         # lets _export_map add the unit-normalized-coefficient note only
         # when it's actually relevant (not for intensity/arithmetic/cluster
@@ -1045,7 +1079,8 @@ class Map2DDialog(QDialog):
         lay = QVBoxLayout(grp)
 
         # ── Radio buttons ────────────────────────────────────────────
-        radio_row = QHBoxLayout()
+        radio_row1 = QHBoxLayout()
+        radio_row2 = QHBoxLayout()
         self._radio_intensity = QRadioButton("Intensity metric")
         self._radio_svd       = QRadioButton("SVD")
         self._radio_pca       = QRadioButton("PCA")
@@ -1053,7 +1088,17 @@ class Map2DDialog(QDialog):
         self._radio_mcr       = QRadioButton("MCR-ALS")
         self._radio_arith     = QRadioButton("Map arithmetic")
         self._radio_cluster   = QRadioButton("Cluster overlay")
+        self._radio_rgb       = QRadioButton("RGB overlay")
         self._radio_intensity.setChecked(True)
+        # Disabled until at least one of SVD/PCA/NMF/MCR-ALS has been
+        # computed at least once — RGB overlay has nothing to combine
+        # before then. Re-enabled in _update_rgb_radio_enabled(), called
+        # after every successful decomposition compute.
+        self._radio_rgb.setEnabled(False)
+        self._radio_rgb.setToolTip(
+            "Compute at least one SVD, PCA, NMF or MCR-ALS map first —\n"
+            "RGB overlay combines up to three of their component maps\n"
+            "into one false-color composite image.")
         self._radio_group = QButtonGroup(self)
         self._radio_group.addButton(self._radio_intensity, 0)
         self._radio_group.addButton(self._radio_svd,       1)
@@ -1062,15 +1107,18 @@ class Map2DDialog(QDialog):
         self._radio_group.addButton(self._radio_nmf,       4)
         self._radio_group.addButton(self._radio_mcr,       5)
         self._radio_group.addButton(self._radio_pca,       6)
-        radio_row.addWidget(self._radio_intensity)
-        radio_row.addWidget(self._radio_svd)
-        radio_row.addWidget(self._radio_pca)
-        radio_row.addWidget(self._radio_nmf)
-        radio_row.addWidget(self._radio_mcr)
-        radio_row.addWidget(self._radio_arith)
-        radio_row.addWidget(self._radio_cluster)
-        radio_row.addStretch()
-        radio_row.addWidget(self._make_info_button(
+        self._radio_group.addButton(self._radio_rgb,       7)
+        radio_row1.addWidget(self._radio_intensity)
+        radio_row1.addWidget(self._radio_svd)
+        radio_row1.addWidget(self._radio_pca)
+        radio_row1.addWidget(self._radio_nmf)
+        radio_row1.addStretch()
+        radio_row2.addWidget(self._radio_mcr)
+        radio_row2.addWidget(self._radio_arith)
+        radio_row2.addWidget(self._radio_cluster)
+        radio_row2.addWidget(self._radio_rgb)
+        radio_row2.addStretch()
+        radio_row2.addWidget(self._make_info_button(
             "About Map Type",
             "Intensity metric: colours each pixel by a band metric (integral, "
             "mean, peak, etc.) computed on that pixel's own spectrum.\n\n"
@@ -1083,8 +1131,13 @@ class Map2DDialog(QDialog):
             "Map arithmetic: combines two independently configured bands "
             "(A and B) pixel-wise — ratio, difference, sum or product.\n\n"
             "Cluster overlay: runs k-means directly on the map spectra and "
-            "colours each pixel by its cluster assignment."))
-        lay.addLayout(radio_row)
+            "colours each pixel by its cluster assignment.\n\n"
+            "RGB overlay: assign up to three already-computed SVD/PCA/NMF/"
+            "MCR-ALS component maps to the Red/Green/Blue channels of one "
+            "composite image — available once at least one of those has "
+            "been computed."))
+        lay.addLayout(radio_row1)
+        lay.addLayout(radio_row2)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
@@ -1514,6 +1567,93 @@ class Map2DDialog(QDialog):
         lay.addWidget(self._cluster_panel)
         self._cluster_panel.setVisible(False)
 
+        # ── RGB overlay sub-panel ─────────────────────────────────────
+        # Assign up to three already-computed component maps (any mix
+        # of SVD/PCA/NMF/MCR-ALS) to R/G/B and compose one false-color
+        # image. Unlike SVD/PCA/NMF/MCR-ALS's own sub-panel, this one
+        # doesn't drive a fit — it only reads whatever those four
+        # decompositions already have cached (see _compose_rgb_overlay).
+        self._rgb_panel = QWidget()
+        rgblay = QVBoxLayout(self._rgb_panel)
+        rgblay.setContentsMargins(0, 0, 0, 0)
+        rgblay.setSpacing(4)
+
+        self._rgb_channel_widgets = []  # one dict per R/G/B, in that order
+        for ch_idx, (name, color) in enumerate(
+                zip(self._RGB_CHANNEL_NAMES, self._RGB_CHANNEL_COLORS)):
+            box = QGroupBox(name)
+            box.setStyleSheet(
+                f"QGroupBox {{ font-weight: bold; color: {color}; }}")
+            blay = QVBoxLayout(box)
+            blay.setSpacing(3)
+
+            cb_enable = QCheckBox("Enable")
+            blay.addWidget(cb_enable)
+
+            row1 = QHBoxLayout()
+            row1.addWidget(QLabel("Source:"))
+            kind_combo = QComboBox()
+            for k in ('svd', 'pca', 'nmf', 'mcr'):
+                kind_combo.addItem(self._RGB_KIND_LABELS[k], k)
+            row1.addWidget(kind_combo, stretch=1)
+            blay.addLayout(row1)
+
+            row2 = QHBoxLayout()
+            row2.addWidget(QLabel("Component:"))
+            comp_combo = QComboBox()
+            row2.addWidget(comp_combo, stretch=1)
+            blay.addLayout(row2)
+
+            rgblay.addWidget(box)
+
+            self._rgb_channel_widgets.append({
+                'enable': cb_enable, 'kind': kind_combo, 'comp': comp_combo,
+            })
+            self._refresh_rgb_component_combo(ch_idx)
+
+            cb_enable.stateChanged.connect(self._on_rgb_panel_changed)
+            kind_combo.currentIndexChanged.connect(
+                lambda _i, c=ch_idx: self._on_rgb_channel_kind_changed(c))
+            comp_combo.currentIndexChanged.connect(self._on_rgb_panel_changed)
+
+        pct_row = QHBoxLayout()
+        pct_row.addWidget(QLabel("Low %:"))
+        self._rgb_lo_pct_spin = QDoubleSpinBox()
+        self._rgb_lo_pct_spin.setRange(0.0, 49.0)
+        self._rgb_lo_pct_spin.setValue(0.0)
+        self._rgb_lo_pct_spin.setDecimals(1)
+        self._rgb_lo_pct_spin.valueChanged.connect(self._on_rgb_panel_changed)
+        pct_row.addWidget(self._rgb_lo_pct_spin)
+        pct_row.addWidget(QLabel("High %:"))
+        self._rgb_hi_pct_spin = QDoubleSpinBox()
+        self._rgb_hi_pct_spin.setRange(51.0, 100.0)
+        self._rgb_hi_pct_spin.setValue(100.0)
+        self._rgb_hi_pct_spin.setDecimals(1)
+        self._rgb_hi_pct_spin.valueChanged.connect(self._on_rgb_panel_changed)
+        pct_row.addWidget(self._rgb_hi_pct_spin)
+        rgblay.addLayout(pct_row)
+        rgb_note = QLabel(
+            "This one % setting is shared by all channels, but is "
+            "computed from each channel's OWN values — so the actual "
+            "cutoffs usually differ per channel. Purely for this "
+            "preview/export; never changes your fit's real values. "
+            "0% / 100% = full min–max, no clipping.")
+        rgb_note.setWordWrap(True)
+        rgb_note.setStyleSheet("font-size:8pt; color:#555;")
+        rgblay.addWidget(rgb_note)
+
+        self._rgb_export_btn = QPushButton("Export as PNG…")
+        self._rgb_export_btn.setToolTip(
+            "Save the current composite at native resolution (one image\n"
+            "pixel per map pixel) — independent of the on-screen Equal\n"
+            "aspect / Colormap / Interpolation display options above,\n"
+            "which never affect the exported file.")
+        self._rgb_export_btn.clicked.connect(self._export_rgb_overlay_png)
+        rgblay.addWidget(self._rgb_export_btn)
+
+        lay.addWidget(self._rgb_panel)
+        self._rgb_panel.setVisible(False)
+
         return grp
 
     def _build_display_group(self):
@@ -1861,6 +2001,7 @@ class Map2DDialog(QDialog):
         is_arith   = self._radio_arith.isChecked()
         is_int     = self._radio_intensity.isChecked()
         is_cluster = self._radio_cluster.isChecked()
+        is_rgb     = self._radio_rgb.isChecked()
 
         # A reference pick armed in NMF/MCR-ALS mode doesn't carry meaning
         # in any other mode — disarm it so a leftover "click a pixel to
@@ -1886,8 +2027,8 @@ class Map2DDialog(QDialog):
         # Band A panel: visible for all modes except cluster/decomposition hides metric
         self._band_a_panel.setVisible(is_int or is_arith or is_decomp or is_cluster)
         # In arithmetic mode, _arith_panel has its own Band A button — hide the one in _band_a_panel
-        self._btn_configure_ranges.setVisible(not is_arith)
-        self._ranges_summary_label.setVisible(not is_arith)
+        self._btn_configure_ranges.setVisible(not is_arith and not is_rgb)
+        self._ranges_summary_label.setVisible(not is_arith and not is_rgb)
         self._intensity_panel.setVisible(False)
         self._svd_panel.setVisible(is_decomp)
         # Components-to-fit row only applies to NMF/MCR-ALS — SVD gets
@@ -1922,10 +2063,13 @@ class Map2DDialog(QDialog):
         self._btn_diagnostics.setVisible(is_svd)
         self._arith_panel.setVisible(is_arith)
         self._cluster_panel.setVisible(is_cluster)
+        self._rgb_panel.setVisible(is_rgb)
         self._update_ranges_summary()  # show the active mode's range
 
-        # Colorbar range controls only make sense for continuous maps
-        clim_visible = not is_cluster
+        # Colorbar range controls only make sense for continuous, single-
+        # scalar maps — not for cluster's discrete labels or RGB overlay's
+        # literal composite (no colormap/colorbar involved either way).
+        clim_visible = not is_cluster and not is_rgb
         self._clim_auto_cb.setVisible(clim_visible)
         self._clim_min_spin.setVisible(clim_visible)
         self._clim_max_spin.setVisible(clim_visible)
@@ -1960,21 +2104,34 @@ class Map2DDialog(QDialog):
         self._invalidate_map()
 
         if is_decomp:
-            # Decomposition modes: clear the spectrum panel — only show after Update Map
-            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
-            self._spectrum_title_label.setText(f"Press 'Update Map' to compute {kind_label}")
-            self._spectrum_canvas.ax.cla()
-            self._spectrum_canvas.draw_idle()
-            self._recon_n_user_set = False
-            self._recon_n_spin.blockSignals(True)
-            self._recon_n_spin.setMaximum(1)
-            self._recon_n_spin.setValue(1)
-            self._recon_n_spin.blockSignals(False)
-            # Undo any "Components changed — press Update Map" staleness
-            # left over from a previous visit to NMF/MCR-ALS mode.
-            self._component_combo.setEnabled(True)
-            self._decomp_status_label.setStyleSheet(
-                "font-size:8pt; color:#2E7D32;")
+            kind = self._decomp_kind()
+            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+            # Switching modes alone should never force an expensive
+            # re-fit: if this kind is already computed AND nothing that
+            # would invalidate that fit (range, component count,
+            # references — see _decomp_needs_refit) has changed since,
+            # just redraw it from the existing cache. Only fall back to
+            # the "press Update Map" placeholder when there's genuinely
+            # nothing valid to show yet.
+            restored = False
+            if (self.controller.get_n_components(kind) > 0
+                    and not self._decomp_needs_refit.get(kind, False)):
+                restored = self._redraw_cached_decomp_map(kind)
+            if not restored:
+                # Decomposition modes: clear the spectrum panel — only show after Update Map
+                self._spectrum_title_label.setText(f"Press 'Update Map' to compute {kind_label}")
+                self._spectrum_canvas.ax.cla()
+                self._spectrum_canvas.draw_idle()
+                self._recon_n_user_set = False
+                self._recon_n_spin.blockSignals(True)
+                self._recon_n_spin.setMaximum(1)
+                self._recon_n_spin.setValue(1)
+                self._recon_n_spin.blockSignals(False)
+                # Undo any "Components changed — press Update Map" staleness
+                # left over from a previous visit to NMF/MCR-ALS mode.
+                self._component_combo.setEnabled(True)
+                self._decomp_status_label.setStyleSheet(
+                    "font-size:8pt; color:#2E7D32;")
         elif is_int or is_arith or is_cluster:
             # Always recompute for fast modes when dims are valid —
             # regardless of whether a previous map existed (covers jumping from SVD)
@@ -1986,6 +2143,52 @@ class Map2DDialog(QDialog):
                 self._compute_map()
             else:
                 self._show_range_spectrum_in_panel()
+        elif is_rgb:
+            # Refresh every channel's Component list on entry — a kind
+            # computed while some OTHER mode was active (the only way
+            # to compute one, since RGB overlay doesn't fit anything
+            # itself) would otherwise leave that channel's combo empty
+            # until the user happened to touch its Source dropdown.
+            for _ch_idx in range(3):
+                # Only repopulate a channel whose Component combo is
+                # out of sync with its Source kind's real count (the
+                # empty-combo case this exists for). Repopulating
+                # unconditionally on every mode entry would blow away
+                # the user's actual selection each time they merely
+                # switch away and back — _refresh_rgb_component_combo
+                # always resets to Component 1, which is correct right
+                # after a genuine kind change but wrong here.
+                _w = self._rgb_channel_widgets[_ch_idx]
+                _kind = _w['kind'].currentData()
+                _real_n = self.controller.get_n_components(_kind) if _kind else 0
+                if _w['comp'].count() != _real_n:
+                    self._refresh_rgb_component_combo(_ch_idx)
+            self._act_export_map.setEnabled(False)
+            # Explicitly cleared rather than left at whatever it held
+            # before this mode switch — _invalidate_map() (called just
+            # above, for every mode) doesn't touch this attribute, so
+            # without resetting it here, a failed or skipped auto-build
+            # below would leave a stale array in place and the "nothing
+            # to show yet" check further down would wrongly think this
+            # switch already redrew something.
+            self._rgb_overlay_array = None
+            # Unlike SVD/NMF/MCR-ALS, composing this mode never redoes
+            # anyone else's fit — it only reads whatever those already
+            # computed, so there's no expensive-recompute reason to
+            # require an explicit button press here. If at least one
+            # channel is already configured from a previous visit,
+            # show it immediately (quiet — nothing typed yet, so no
+            # "nothing enabled" popup); otherwise fall back to the
+            # placeholder, since a fresh dialog's channels all start
+            # disabled and there's no reasonable default assignment to
+            # jump straight to.
+            if any(w['enable'].isChecked() for w in self._rgb_channel_widgets):
+                self._compute_rgb_overlay_map(quiet=True)
+            if self._rgb_overlay_array is None:
+                self._spectrum_title_label.setText(
+                    "Press 'Update Map' to build the RGB overlay")
+                self._spectrum_canvas.ax.cla()
+                self._spectrum_canvas.draw_idle()
 
     def _update_x_val_visibility(self):
         """Show/hide x-value spinboxes and configure buttons based on metric and mode."""
@@ -1993,15 +2196,19 @@ class Map2DDialog(QDialog):
         is_arith    = self._radio_arith.isChecked()
         is_decomp   = self._is_decomp_mode()
         is_cluster  = self._radio_cluster.isChecked()
+        is_rgb      = self._radio_rgb.isChecked()
 
-        # x-value row only for "Intensity at x" in non-decomposition/cluster modes
-        self._x_val_row.setVisible(is_x_metric and not is_decomp and not is_cluster)
+        # x-value row only for "Intensity at x" in non-decomposition/cluster/RGB modes
+        self._x_val_row.setVisible(
+            is_x_metric and not is_decomp and not is_cluster and not is_rgb)
         self._x_val_label.setText("x₁ (Band A):" if is_arith else "x:")
         self._x_val2_label.setVisible(is_arith and is_x_metric)
         self._x_val2_spin.setVisible(is_arith and is_x_metric)
 
-        # Configure band button: always shown in decomposition/cluster mode
-        show_configure = is_decomp or is_cluster or not is_x_metric
+        # Configure band button: always shown in decomposition/cluster mode,
+        # never for RGB overlay (it has no spectral range of its own — it
+        # only reads other modes' already-computed component maps)
+        show_configure = (is_decomp or is_cluster or not is_x_metric) and not is_rgb
         self._btn_configure_ranges.setVisible(show_configure)
         self._ranges_summary_label.setVisible(show_configure)
 
@@ -2259,6 +2466,9 @@ class Map2DDialog(QDialog):
         equal_aspect = self._equal_aspect_cb.isChecked()
 
         self._map_canvas.ax.cla()
+        # See the matching comment in _MapCanvas.update_map: cla()
+        # orphans the existing hover-tooltip annotation.
+        self._map_canvas._tooltip = None
         if self._map_canvas._cbar_ax is not None:
             try:
                 self._map_canvas._cbar_ax.remove()
@@ -2286,6 +2496,279 @@ class Map2DDialog(QDialog):
         self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
         self._map_canvas.fig.tight_layout()
         self._map_canvas.draw()
+
+    # ── RGB overlay mode ─────────────────────────────────────────────
+
+    def _update_rgb_radio_enabled(self):
+        """Call after every successful SVD/PCA/NMF/MCR-ALS compute:
+        RGB overlay becomes selectable once at least one of them has
+        at least one component. It's never disabled again afterward —
+        a kind's cache is only ever replaced, not cleared to empty
+        once populated (see Map2DManager)."""
+        available = [k for k in ('svd', 'pca', 'nmf', 'mcr')
+                     if self.controller.get_n_components(k) > 0]
+        if available and not self._radio_rgb.isEnabled():
+            self._radio_rgb.setEnabled(True)
+            self._radio_rgb.setToolTip(
+                "Assign up to three computed component maps to R/G/B.")
+
+    def _refresh_rgb_component_combo(self, ch_idx):
+        """Repopulate one RGB channel's Component dropdown for whichever
+        kind is currently selected in that channel's Source combo. A
+        kind with zero components (not computed yet) simply leaves the
+        combo empty — the channel then contributes black, same as a
+        disabled channel (see _rgb_channel_array)."""
+        widgets = self._rgb_channel_widgets[ch_idx]
+        kind = widgets['kind'].currentData()
+        n = self.controller.get_n_components(kind) if kind else 0
+        combo = widgets['comp']
+        combo.blockSignals(True)
+        combo.clear()
+        for i in range(n):
+            combo.addItem(f"Component {i + 1}")
+        combo.setCurrentIndex(0 if n else -1)
+        combo.blockSignals(False)
+
+    def _on_rgb_channel_kind_changed(self, ch_idx):
+        self._refresh_rgb_component_combo(ch_idx)
+        self._on_rgb_panel_changed()
+
+    def _on_rgb_panel_changed(self):
+        """Any RGB panel control changed (Enable checkbox, Source kind,
+        Component, or the Low%/High% stretch spinboxes) — recompute and
+        redraw immediately. Unlike SVD/PCA/NMF/MCR-ALS, composing an RGB
+        overlay from already-computed decompositions is cheap, so there
+        is no "first build requires the explicit button press" gate
+        here: even the very first Enable checkbox toggle (before
+        anything has ever been drawn, i.e. _rgb_overlay_array is still
+        None) should show the map right away, not silently wait for a
+        Compute Map press that the user was told they don't need."""
+        if not self._radio_rgb.isChecked():
+            return
+        self._compute_rgb_overlay_map()
+
+    def _rgb_channel_array(self, ch_idx, n_rows, n_cols):
+        """Return this channel's raw (n_rows, n_cols) map, or None if
+        disabled / nothing valid selected / shape mismatch (e.g. the
+        dimensions spinboxes changed since that kind was computed)."""
+        widgets = self._rgb_channel_widgets[ch_idx]
+        if not widgets['enable'].isChecked():
+            return None
+        kind = widgets['kind'].currentData()
+        comp_idx = widgets['comp'].currentIndex()
+        if kind is None or comp_idx < 0:
+            return None
+        coeffs = self.controller.get_component_coefficients(kind, comp_idx)
+        if coeffs is None:
+            return None
+        try:
+            return np.asarray(coeffs, dtype=float).reshape(n_rows, n_cols)
+        except ValueError:
+            return None
+
+    def _rgb_normalize_channel(self, arr, n_rows, n_cols):
+        """Percentile-stretch one channel's map to [0, 1] using the
+        shared Low%/High% setting, computed from THIS channel's own
+        values — same percentage, different absolute cutoff per
+        channel. Returns all-zero for a disabled/missing/all-NaN
+        channel, so a partially-configured overlay never raises."""
+        out = np.zeros((n_rows, n_cols), dtype=float)
+        if arr is None:
+            return out
+        finite = arr[np.isfinite(arr)]
+        if finite.size == 0:
+            return out
+        lo_pct = self._rgb_lo_pct_spin.value()
+        hi_pct = self._rgb_hi_pct_spin.value()
+        lo = float(np.percentile(finite, lo_pct))
+        hi = float(np.percentile(finite, hi_pct))
+        if hi <= lo:
+            hi = lo + 1e-12
+        out = (arr - lo) / (hi - lo)
+        out = np.nan_to_num(out, nan=0.0, posinf=1.0, neginf=0.0)
+        return np.clip(out, 0.0, 1.0)
+
+    def _compose_rgb_overlay(self, n_rows, n_cols):
+        rgb = np.zeros((n_rows, n_cols, 3), dtype=float)
+        for ch_idx in range(3):
+            rgb[:, :, ch_idx] = self._rgb_normalize_channel(
+                self._rgb_channel_array(ch_idx, n_rows, n_cols), n_rows, n_cols)
+        return rgb
+
+    def _rgb_channel_summary(self):
+        parts = []
+        for ch_idx, name in enumerate(self._RGB_CHANNEL_NAMES):
+            widgets = self._rgb_channel_widgets[ch_idx]
+            if not widgets['enable'].isChecked():
+                parts.append(f"{name[0]}: off")
+                continue
+            kind = widgets['kind'].currentData()
+            comp_idx = widgets['comp'].currentIndex()
+            kind_lbl = self._RGB_KIND_LABELS.get(kind, str(kind))
+            parts.append(f"{name[0]}: {kind_lbl} C{comp_idx + 1}")
+        return "  ".join(parts)
+
+    def _compute_rgb_overlay_map(self, quiet=False):
+        """'Compute Map' handler for RGB overlay mode — also re-invoked
+        live by _on_rgb_panel_changed after the first build, and
+        automatically by _on_mode_changed when re-entering RGB overlay
+        mode with at least one channel already configured (composing
+        from already-computed decompositions is cheap, unlike an
+        SVD/PCA/NMF/MCR-ALS refit, so there's no reason to require an
+        explicit button press the way those do). *quiet* suppresses the
+        two informational/warning popups below for that automatic path
+        — they exist to explain an unexpected result to someone who
+        just pressed a button, not to interrupt a silent mode switch
+        with a dialog before the user has done anything at all."""
+        n_rows = self._rows_spin.value()
+        n_cols = self._cols_spin.value()
+        if not self.controller.validate_dimensions(
+                self.n_spectra, n_rows, n_cols):
+            if not quiet:
+                QMessageBox.warning(
+                    self, "Invalid Dimensions",
+                    f"Rows × Cols must equal the number of spectra.\n"
+                    f"{n_rows} × {n_cols} = {n_rows * n_cols}  ≠  "
+                    f"{self.n_spectra}")
+            return
+        if not any(w['enable'].isChecked() for w in self._rgb_channel_widgets):
+            if not quiet:
+                QMessageBox.information(
+                    self, "Nothing to show",
+                    "Enable at least one of R / G / B in the RGB overlay "
+                    "panel first.")
+            return
+
+        # Everything from here on (including the "all enabled channels
+        # are empty" check just below) is wrapped in try/except: an
+        # uncaught exception raised from inside a Qt slot invoked by a
+        # real button click (as opposed to a direct call from a test
+        # script) is swallowed by PyQt's default handling in a running
+        # application — it prints a traceback to stderr/console
+        # (invisible if nothing is watching the terminal) and otherwise
+        # leaves the GUI exactly as it was, which looks indistinguishable
+        # from "the button did nothing". Surface it as an explicit error
+        # dialog instead, so a failure here is never silent.
+        try:
+            # An enabled channel with no usable data (empty Component
+            # combo, a kind that hasn't actually been computed, or a
+            # stale selection left over from before the map dimensions
+            # changed) contributes silent all-zero — see
+            # _rgb_channel_array. Composing anyway is correct for a
+            # deliberate red/green-only overlay, but if EVERY enabled
+            # channel is like this the result is a solid black image
+            # with no obvious explanation, which reads as "nothing
+            # happened". Catch that specific case here and say so,
+            # rather than drawing a blank composite silently.
+            empty_enabled = [
+                name for ch_idx, name in enumerate(self._RGB_CHANNEL_NAMES)
+                if self._rgb_channel_widgets[ch_idx]['enable'].isChecked()
+                and self._rgb_channel_array(ch_idx, n_rows, n_cols) is None
+            ]
+            enabled_count = sum(
+                1 for w in self._rgb_channel_widgets if w['enable'].isChecked())
+            if empty_enabled and len(empty_enabled) == enabled_count:
+                if not quiet:
+                    QMessageBox.warning(
+                        self, "No data for enabled channel(s)",
+                        "Enabled but showing nothing: " + ", ".join(empty_enabled) +
+                        ".\n\nEach channel's Source kind must actually have "
+                        "been computed (switch to that mode and press Update "
+                        "Map/Compute Map first), and its Component dropdown "
+                        "must have a component selected. This would otherwise "
+                        "silently compose an all-black image.")
+                return
+
+            rgb = self._compose_rgb_overlay(n_rows, n_cols)
+            self._rgb_overlay_array = rgb
+            # A real (n_rows, n_cols) scalar stand-in — the mean of the
+            # three displayed channels — so the generic map/ROI/hover
+            # machinery (which all key off _last_map_data being a real,
+            # finite 2-D array) keeps working unchanged. See the developer
+            # guide's RGB overlay section for why CSV export and ROI
+            # comparison stats are deliberately disabled rather than
+            # exposed against this proxy.
+            self._last_map_data = rgb.mean(axis=2)
+            self._last_map_kind = None
+
+            self._draw_rgb_overlay_map(
+                rgb,
+                title=f"RGB overlay: {self._rgb_channel_summary()}  "
+                      f"({n_rows} × {n_cols})")
+            self._show_range_spectrum_in_panel()
+            self._on_map_computed()
+            # Not applicable to a 3-channel composite — use the panel's
+            # own "Export as PNG…" button instead.
+            self._act_export_map.setEnabled(False)
+        except Exception as exc:
+            traceback.print_exc()
+            self._rgb_overlay_array = None
+            QMessageBox.critical(
+                self, "RGB overlay failed",
+                "Building the RGB overlay raised an error:\n\n"
+                f"{type(exc).__name__}: {exc}\n\n"
+                "Full details were printed to the console/terminal.")
+
+    def _draw_rgb_overlay_map(self, rgb, title="RGB overlay"):
+        """Render the composed R/G/B image. No colorbar — the pixel
+        colors ARE the data, not a colormap-encoded scalar, so unlike
+        every other mode's map there is nothing for a colorbar to
+        show."""
+        interp = self._interp_combo.currentText()
+        equal_aspect = self._equal_aspect_cb.isChecked()
+
+        self._map_canvas.ax.cla()
+        # See the matching comment in _MapCanvas.update_map: cla()
+        # orphans the existing hover-tooltip annotation, so drop the
+        # reference here too and let enable_hover() (called by
+        # _on_map_computed right after this method returns) recreate it
+        # attached to the freshly-cleared axes.
+        self._map_canvas._tooltip = None
+        if self._map_canvas._cbar_ax is not None:
+            try:
+                self._map_canvas._cbar_ax.remove()
+            except Exception:
+                pass
+            self._map_canvas._cbar_ax = None
+
+        im = self._map_canvas.ax.imshow(
+            rgb, origin='upper',
+            aspect='equal' if equal_aspect else 'auto',
+            interpolation=interp)
+        self._map_canvas._im = im
+
+        self._map_canvas.ax.set_title(title, fontsize=9)
+        self._map_canvas.ax.set_xlabel("Column index", fontsize=8)
+        self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
+        self._map_canvas.fig.tight_layout()
+        self._map_canvas.draw()
+
+    def _export_rgb_overlay_png(self):
+        if not any(w['enable'].isChecked() for w in self._rgb_channel_widgets):
+            QMessageBox.warning(
+                self, "Nothing to export",
+                "Enable at least one of R / G / B first.")
+            return
+        n_rows = self._rows_spin.value()
+        n_cols = self._cols_spin.value()
+        rgb = self._compose_rgb_overlay(n_rows, n_cols)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export RGB Overlay", "", "PNG image (*.png)")
+        if not path:
+            return
+        if not path.lower().endswith('.png'):
+            path += '.png'
+        try:
+            # RGB float array in [0, 1] — matplotlib writes it as-is,
+            # no cmap/norm involved (those only apply to scalar data);
+            # native n_rows × n_cols resolution, independent of
+            # whatever "Equal aspect" the on-screen preview is using.
+            plt.imsave(path, rgb, origin='upper')
+            QMessageBox.information(
+                self, "Export",
+                f"RGB overlay saved to:\n{path}\n\n{self._rgb_channel_summary()}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Error", str(exc))
 
     def _show_cluster_averages(self):
         """Show mean spectrum per cluster and offer export to main list."""
@@ -2427,6 +2910,7 @@ class Map2DDialog(QDialog):
                         # done automatically the way the fast metric
                         # modes' ranges are.
                         self._invalidate_map()
+                        self._decomp_needs_refit[self._decomp_kind()] = True
                         kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
                         self._spectrum_title_label.setText(
                             f"{kind_label} range changed — press 'Update Map' to recompute")
@@ -2610,6 +3094,9 @@ class Map2DDialog(QDialog):
         elif self._radio_cluster.isChecked():
             self._compute_cluster_map(n_rows, n_cols)
 
+        elif self._radio_rgb.isChecked():
+            self._compute_rgb_overlay_map()
+
         else:  # SVD / NMF / MCR-ALS mode
             kind = self._decomp_kind()
             comp_idx = max(0, self._component_combo.currentIndex())
@@ -2683,12 +3170,14 @@ class Map2DDialog(QDialog):
                 return
             self._last_map_data = map_data
             self._last_map_kind = kind if kind in ('svd', 'pca') else None
+            self._decomp_needs_refit[kind] = False
             self._ref_stale_warning_label.setVisible(False)
             if kind == 'svd':
                 self._svd_inverted.clear()
             elif kind == 'pca':
                 self._pca_inverted.clear()
             self._refresh_component_combo(keep_index=comp_idx)
+            self._update_rgb_radio_enabled()
             # Invert / Multi-map now also apply to PCA (same sign
             # ambiguity as SVD, unlike NMF/MCR-ALS's non-negativity
             # constraint — see _on_mode_changed, which already hides
@@ -2743,6 +3232,7 @@ class Map2DDialog(QDialog):
             return
         kind_label = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
         self._invalidate_map()
+        self._decomp_needs_refit[kind] = True
         self._component_combo.setEnabled(False)
         self._decomp_status_label.setStyleSheet(
             "font-size:8pt; color:#B71C1C; font-weight:bold;")
@@ -2942,6 +3432,7 @@ class Map2DDialog(QDialog):
         if self._ref_autorecompute_cb.isChecked():
             self._compute_map()
             return
+        self._decomp_needs_refit[self._decomp_kind()] = True
         self._ref_stale_warning_label.setText(
             "References changed — press ‘Update Map’ to apply.")
         self._ref_stale_warning_label.setVisible(True)
@@ -3074,6 +3565,7 @@ class Map2DDialog(QDialog):
         self._last_map_data = map_data
         self._ref_stale_warning_label.setVisible(False)
         self._refresh_component_combo(keep_index=comp_idx)
+        self._update_rgb_radio_enabled()
         ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[comp_idx]
                   if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
@@ -3139,6 +3631,56 @@ class Map2DDialog(QDialog):
         self._component_combo.blockSignals(False)
         self._component_combo.setEnabled(True)
         self._refresh_recon_n_spin()
+
+    def _redraw_cached_decomp_map(self, kind):
+        """Redraw component 1 of an ALREADY-fitted decomposition straight
+        from Map2DManager's cache (get_component_coefficients) — no
+        refit. Used by _on_mode_changed when switching back into a
+        decomp mode whose fit is still valid (already computed, and
+        nothing that would invalidate it has changed since — see
+        _decomp_needs_refit); mode switching alone should never trigger
+        an expensive re-fit. Returns True if it drew something, False
+        if there was nothing valid to show (the caller falls back to
+        the normal 'press Update Map' placeholder in that case)."""
+        n_rows = self._rows_spin.value()
+        n_cols = self._cols_spin.value()
+        if not self.controller.validate_dimensions(
+                self.n_spectra, n_rows, n_cols):
+            return False
+        self._refresh_component_combo(keep_index=0)
+        comp_idx = max(0, self._component_combo.currentIndex())
+        coeffs = self.controller.get_component_coefficients(kind, comp_idx)
+        if coeffs is None:
+            return False
+        try:
+            map_data = np.asarray(coeffs, dtype=float).reshape(n_rows, n_cols)
+        except ValueError:
+            return False
+
+        self._last_map_data = map_data
+        self._last_map_kind = kind if kind in ('svd', 'pca') else None
+        self._btn_invert.setEnabled(kind in ('svd', 'pca'))
+        self._btn_multi_map.setEnabled(kind in ('svd', 'pca'))
+        self._btn_diagnostics.setEnabled(kind == 'svd')
+        ev_arr = self.controller.get_component_explained_variance(kind)
+        ev     = (ev_arr[comp_idx]
+                  if ev_arr is not None and comp_idx < len(ev_arr)
+                  else 0.0)
+        kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        title  = (f"{kind_title} map – component {comp_idx + 1}  "
+                  f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
+        self._map_canvas.update_map(
+            map_data,
+            cmap=self._cmap_combo.currentText(),
+            interpolation=self._interp_combo.currentText(),
+            title=title,
+            equal_aspect=self._equal_aspect_cb.isChecked(),
+        )
+        self._last_clicked_pixel = None
+        self._update_subspectrum_in_panel(comp_idx)
+        self._update_decomp_status_label(kind)
+        self._on_map_computed()
+        return True
 
     def _refresh_recon_n_spin(self):
         """Keep the reconstruction spinbox's range in sync with how many
@@ -3326,11 +3868,12 @@ class Map2DDialog(QDialog):
 
     def _apply_clim(self):
         """Apply colorbar range — either auto (full range) or percentile clip.
-        Skipped for cluster maps which use a fixed discrete colormap."""
+        Skipped for cluster maps (fixed discrete colormap) and RGB overlay
+        (literal composite, no colormap/colorbar at all)."""
         if self._map_canvas._im is None or self._last_map_data is None:
             return
-        if self._radio_cluster.isChecked():
-            return  # cluster maps use fixed discrete norm, clim not applicable
+        if self._radio_cluster.isChecked() or self._radio_rgb.isChecked():
+            return
         valid = self._last_map_data[np.isfinite(self._last_map_data)]
         if valid.size == 0:
             return
@@ -3361,6 +3904,13 @@ class Map2DDialog(QDialog):
             k      = self._cluster_k_spin.value()
             map_data = self._last_cluster_labels.reshape(n_rows, n_cols)
             self._draw_cluster_map(map_data, k, n_rows, n_cols)
+        elif self._radio_rgb.isChecked() and self._rgb_overlay_array is not None:
+            # RGB overlay ignores Colormap (literal composite, no cmap
+            # applies) but Interpolation still does — redraw with it.
+            self._draw_rgb_overlay_map(
+                self._rgb_overlay_array,
+                title=f"RGB overlay: {self._rgb_channel_summary()}  "
+                      f"({self._rows_spin.value()} × {self._cols_spin.value()})")
         else:
             self._map_canvas.update_cmap_interp(
                 self._cmap_combo.currentText(),
@@ -3377,6 +3927,11 @@ class Map2DDialog(QDialog):
             k      = self._cluster_k_spin.value()
             map_data = self._last_cluster_labels.reshape(n_rows, n_cols)
             self._draw_cluster_map(map_data, k, n_rows, n_cols)
+        elif self._radio_rgb.isChecked() and self._rgb_overlay_array is not None:
+            self._draw_rgb_overlay_map(
+                self._rgb_overlay_array,
+                title=f"RGB overlay: {self._rgb_channel_summary()}  "
+                      f"({self._rows_spin.value()} × {self._cols_spin.value()})")
         else:
             self._map_canvas.update_cmap_interp(
                 self._cmap_combo.currentText(),
@@ -3612,9 +4167,15 @@ class Map2DDialog(QDialog):
         label = sp.get('label', f'Spectrum {sp_idx + 1}')
         map_val = self._last_map_data[row, col]
 
-        self._click_info_label.setText(
-            f"Row {row + 1}, Col {col + 1}  →  spectrum: {label}  "
-            f"(map value: {map_val:.5g})")
+        if self._radio_rgb.isChecked() and self._rgb_overlay_array is not None:
+            r_, g_, b_ = self._rgb_overlay_array[row, col]
+            self._click_info_label.setText(
+                f"Row {row + 1}, Col {col + 1}  →  spectrum: {label}  "
+                f"(R={r_:.3f} G={g_:.3f} B={b_:.3f}, display-scaled 0–1)")
+        else:
+            self._click_info_label.setText(
+                f"Row {row + 1}, Col {col + 1}  →  spectrum: {label}  "
+                f"(map value: {map_val:.5g})")
 
         if self._right_splitter.sizes()[1] == 0:
             return
@@ -3625,6 +4186,17 @@ class Map2DDialog(QDialog):
         if self._is_decomp_mode():
             comp_idx = max(0, self._component_combo.currentIndex())
             self._update_subspectrum_in_panel(comp_idx, clicked_sp=sp)
+        elif self._radio_rgb.isChecked():
+            pos = f"Row {row + 1}, Col {col + 1}"
+            self._spectrum_title_label.setText(
+                f"{label}  [{pos}]  [{self._rgb_channel_summary()}]")
+            self._spectrum_canvas.update_spectrum(
+                x, y,
+                title=f"{label}  ({pos})",
+                xlabel="Wavenumber / x",
+                ylabel="Intensity",
+                color='#1565C0',
+            )
         elif self._radio_cluster.isChecked():
             cluster_id = int(round(map_val))
             pos = f"Row {row + 1}, Col {col + 1}"
@@ -3816,6 +4388,9 @@ class Map2DDialog(QDialog):
         elif self._is_decomp_mode():
             kind_label  = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
             title_plot  = f"{kind_label} range preview: {label}"
+            panel_title = f"Click a pixel — showing: {label}"
+        elif self._radio_rgb.isChecked():
+            title_plot  = f"RGB overlay preview: {label}"
             panel_title = f"Click a pixel — showing: {label}"
         else:
             metric      = self._metric_combo.currentText()
@@ -4034,7 +4609,19 @@ class Map2DDialog(QDialog):
     # ── Feature 1: Export map ───────────────────────────────────────────
 
     def _export_map(self):
-        """Export the current map array as CSV or Excel."""
+        """Export the current map array as CSV or Excel. Not applicable
+        in RGB overlay mode (a 3-channel composite, not one scalar per
+        pixel) — use the RGB overlay panel's own "Export as PNG…"
+        button instead (this action is disabled while that mode is
+        active, but guard here too in case it's ever invoked another
+        way)."""
+        if self._radio_rgb.isChecked():
+            QMessageBox.information(
+                self, "Not applicable",
+                "RGB overlay is a 3-channel composite, not a single "
+                "map value per pixel — use the RGB overlay panel's own "
+                "\"Export as PNG…\" button instead.")
+            return
         if self._last_map_data is None:
             QMessageBox.information(self, "No map", "Compute a map first.")
             return
@@ -4094,7 +4681,6 @@ class Map2DDialog(QDialog):
             QMessageBox.information(self, "Export", f"Map saved to:\n{path}")
         except Exception as exc:
             QMessageBox.critical(self, "Export Error", str(exc))
-
     # ── Feature 2: ROI selection ────────────────────────────────────────
 
     def _update_roi_count(self):
@@ -4120,9 +4706,11 @@ class Map2DDialog(QDialog):
         n_regions = len(self._roi_regions)
         if n_regions == 0:
             self._act_add_roi.setText("Add ROI rectangle…")
-        # Stats available when ≥2 regions and a map exists
+        # Stats available when ≥2 regions and a map exists — not for RGB
+        # overlay, which has three channel values per pixel, not one.
         self._act_roi_stats.setEnabled(
-            n_regions >= 2 and self._last_map_data is not None)
+            n_regions >= 2 and self._last_map_data is not None
+            and not self._radio_rgb.isChecked())
 
     def _all_roi_labels(self):
         """Return deduplicated flat label list across all regions."""
@@ -4556,7 +5144,14 @@ class Map2DDialog(QDialog):
         # Reset tooltip — ax.cla() destroys the annotation artist
         self._map_canvas._tooltip = None
 
-        if self._last_map_data is not None:
+        if self._radio_rgb.isChecked() and self._rgb_overlay_array is not None:
+            # Literal composite — redraw via the same helper as everywhere
+            # else in RGB mode, not the generic scalar+cmap path below.
+            self._draw_rgb_overlay_map(
+                self._rgb_overlay_array,
+                title=f"RGB overlay: {self._rgb_channel_summary()}  "
+                      f"({self._rows_spin.value()} × {self._cols_spin.value()})")
+        elif self._last_map_data is not None:
             from mpl_toolkits.axes_grid1 import make_axes_locatable
             aspect = 'equal' if self._equal_aspect_cb.isChecked() else 'auto'
             self._map_canvas._im = self._map_canvas.ax.imshow(
@@ -4602,7 +5197,17 @@ class Map2DDialog(QDialog):
         self._update_roi_count()
 
     def _show_roi_statistics(self):
-        """Show a comparison table of map value statistics per ROI region."""
+        """Show a comparison table of map value statistics per ROI region.
+        Not available in RGB overlay mode (three channel values per
+        pixel, not one) — the action is disabled in that mode already,
+        but guard here too."""
+        if self._radio_rgb.isChecked():
+            QMessageBox.information(
+                self, "Not applicable",
+                "RGB overlay has three channel values per pixel, not one "
+                "map value — compare individual components via the "
+                "single-component map view instead.")
+            return
         if self._last_map_data is None or len(self._roi_regions) < 2:
             return
 
@@ -5187,4 +5792,3 @@ class _MultiMapDialog(QDialog):
         except Exception:
             pass
         super().closeEvent(event)
-
