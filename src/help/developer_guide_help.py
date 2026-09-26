@@ -1634,6 +1634,72 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         this out — the two managers don't share this code, so this optimization was
         MCR-ALS-only by necessity, not by oversight.</p>
 
+        <h2 id="best-of-n-parallelization-attempt">"Run N Times, Keep Best": Why It's Still a
+        Sequential Loop (Investigated, Not Skipped by Oversight)</h2>
+
+        <div class="rule">
+            <strong>Before parallelizing a loop of numpy/scipy calls, measure — don't assume
+            more workers means more speed. This codebase's own OpenBLAS is already
+            internally multi-threaded, so naive Python-level parallelism can easily make
+            things SLOWER by fighting itself for the same cores.</strong>
+        </div>
+
+        <p>Both <code>Map2DManager.compute_mcr_map()</code>/<code>compute_nmf_map()</code>
+        (n_runs &gt; 1) and the standalone MCR-ALS/NMF dialogs' own "Run N times, keep best"
+        button run every trial in a plain sequential <code>for</code> loop, on the main GUI
+        thread (the map dialog's version has no progress dialog at all — just a wait cursor,
+        by deliberate design; the standalone dialogs pump <code>QApplication.processEvents()</code>
+        between trials to keep a real, cancellable <code>QProgressDialog</code> responsive).
+        Each trial is fully independent (its own fresh manager instance, its own random
+        seed, no shared state) — an "embarrassingly parallel" shape — so parallelizing it
+        looks, on paper, like a bigger win than the per-column <code>nnls</code> shortcut
+        above. It was investigated directly, on a real 85&times;55 map, before deciding not
+        to build it (yet):</p>
+
+        <ol>
+            <li><strong>Plain <code>ThreadPoolExecutor</code> made it slower, not faster:</strong>
+                10.4s sequential &rarr; 15.2s with 2 threads &rarr; 18.1s with 4 threads, for 6
+                MCR-ALS trials. OpenBLAS here is already internally multi-threaded
+                (<code>OpenBLAS 0.3.29 ... MAX_THREADS=64</code>, no
+                <code>OPENBLAS_NUM_THREADS</code> cap set anywhere in this codebase) — running
+                several trials as Python threads at once just makes several already-
+                multi-threaded BLAS calls fight over the same physical cores. Python-level
+                threading is not a safe default speed-up for numpy-heavy code without capping
+                BLAS's own thread count first.</li>
+            <li><strong>Real multiprocessing, done carefully, only helped marginally on the
+                dev sandbox:</strong> with each worker's <code>OPENBLAS_NUM_THREADS</code> /
+                <code>OMP_NUM_THREADS</code> explicitly capped to 1 (to avoid repeating the
+                oversubscription problem above across processes instead of threads),
+                <code>ProcessPoolExecutor(max_workers=2)</code> measured 9.4s vs. a
+                10.3s BLAS-capped sequential baseline for the same 6 trials — roughly 10%,
+                not the ~2x you'd hope for from 2 cores. Process start-up and pickling the
+                whole spectra dataset to each worker ate a real chunk of the theoretical
+                gain at this trial count and data size. This was measured on a 2-core
+                sandbox; it was <em>not</em> measured on a real, likely-more-multicore
+                desktop, so don't treat "marginal" as the final word for every machine —
+                only for this one.</li>
+            <li><strong>A real blocker, found independently of the timing result:</strong>
+                this app is packaged with PyInstaller (<code>SpecAnalytiXBase.spec</code>),
+                and <code>main.py</code> does not call
+                <code>multiprocessing.freeze_support()</code>. Without it, spawning worker
+                processes from a frozen Windows <code>.exe</code> is a known way for each
+                worker to re-launch the whole GUI instead of just running its trial — this
+                needs to be added to <code>main.py</code>, right after its existing
+                <code>if __name__ == "__main__":</code> guard, and tested against an actual
+                frozen build, before any <code>ProcessPoolExecutor</code>/
+                <code>multiprocessing.Pool</code> use could ship safely.</li>
+        </ol>
+
+        <p>Given a measured ~10% gain (on this sandbox), an unmeasured payoff on real
+        hardware, and real added complexity (per-worker BLAS thread capping, the
+        <code>freeze_support()</code> fix, and redesigning the standalone dialogs' Cancel
+        button for a parallel loop instead of a sequential one it can just stop between
+        iterations of), this was deliberately <strong>not</strong> built. The decision:
+        keep "Run N times, keep best" sequential for now, and revisit parallelizing it only
+        as its own dedicated piece of work — profiled on a real, target machine first — if
+        a future feature (e.g. bootstrap resampling, which needs the same "refit many times
+        independently" shape) makes the sequential cost actually painful in practice.</p>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">
