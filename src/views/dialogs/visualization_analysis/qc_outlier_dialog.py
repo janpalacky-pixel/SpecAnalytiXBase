@@ -554,6 +554,28 @@ class QCOutlierDialog(QDialog):
     # Run
     # ------------------------------------------------------------------
     def _run_analysis(self):
+        # Cheap, purely local pre-check (mirrors QCOutlierManager.compute's
+        # own n < 5 guard verbatim) done BEFORE touching the cursor,
+        # QProgressDialog or the background QThread at all -- there is no
+        # reason to flash a progress dialog and override the cursor for a
+        # validation failure that's instant and needs neither. Skipping
+        # straight to a message box here also fixes a real symptom: with
+        # too few spectra the old code still spun up the worker thread and
+        # progress dialog for the few milliseconds it took to fail, and
+        # Windows would leave its own "app starting" busy cursor spinning
+        # on screen (separate from Qt's own override-cursor stack) because
+        # a native window was created and torn down again almost instantly
+        # -- so the "Could Not Run QC Check" warning correctly appeared,
+        # but with a spinning cursor stuck over it that had nothing to do
+        # with Qt's cursor override actually being left unrestored.
+        if len(self.spectra) < 5:
+            QMessageBox.warning(
+                self, 'Could Not Run QC Check',
+                "Need at least 5 spectra for meaningful PCA-based outlier "
+                "detection (fewer than that, there isn't enough of a "
+                "'batch' for anything to look unusual against).")
+            return
+
         n_components = None if self.auto_components_check.isChecked() else self.n_components_spin.value()
         variance_threshold = self.variance_spin.value() / 100.0
         alpha = _CONFIDENCE_OPTIONS[self.confidence_combo.currentIndex()][1]

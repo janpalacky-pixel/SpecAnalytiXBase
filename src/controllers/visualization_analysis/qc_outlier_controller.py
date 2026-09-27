@@ -35,15 +35,31 @@ class QCOutlierController:
         # revision_tracking.py's own docstring.
         self._last_selection_hash = None
 
-    def run_qc_outlier_analysis(self):
-        if not self.main_controller.selected_spectra:
+    def validate_selection(self, spectra):
+        """Cheap, purely local pre-check that there's a real "batch" to
+        check -- no spectra, or fewer than 5. Split out from
+        run_qc_outlier_analysis so the SAME check can be called by
+        MainController.run_visualization_analysis BEFORE it sets its
+        wait cursor, not just from inside here after it. Without this,
+        clicking QC / Outlier Detection with too few spectra selected hit
+        this warning while the caller's Qt.WaitCursor override was still
+        active -- the warning box itself was correct, but it appeared
+        with the spinning "busy" cursor still on screen over it, exactly
+        the bug run_visualization_analysis's own comment already
+        describes and fixed for a mismatched x-axis, just not for this
+        selection-count check too. Returns True if the selection is
+        usable, showing the appropriate warning and returning False
+        otherwise -- also called defensively at the top of
+        run_qc_outlier_analysis() itself, in case that is ever invoked
+        directly without going through the menu dispatch."""
+        if not spectra:
             QMessageBox.warning(
                 self.main_controller.view, "No Spectra Selected",
                 "Please select the batch of spectra to check."
             )
-            return
+            return False
 
-        if len(self.main_controller.selected_spectra) < 5:
+        if len(spectra) < 5:
             QMessageBox.warning(
                 self.main_controller.view, "Insufficient Spectra",
                 "Please select at least 5 spectra — QC/Outlier Detection "
@@ -51,6 +67,12 @@ class QCOutlierController:
                 "there needs to be a real 'batch' for anything to look "
                 "unusual against."
             )
+            return False
+
+        return True
+
+    def run_qc_outlier_analysis(self):
+        if not self.validate_selection(self.main_controller.selected_spectra):
             return
 
         # PCA is fitted on the whole stack of y_scale values at once (no

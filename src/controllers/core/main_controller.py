@@ -1349,6 +1349,19 @@ class MainController(QMainWindow):
             if not validate_common_x_axis(selected_spectra, self.view, raw):
                 return
 
+            # Same reasoning, same fix, for QC / Outlier Detection's own
+            # "need at least 5 spectra" check: that check used to live only
+            # inside QCOutlierController.run_qc_outlier_analysis(), which
+            # runs AFTER the wait cursor below is set -- so selecting fewer
+            # than 5 spectra showed the correct "Insufficient Spectra"
+            # warning with the spinning wait cursor still active over it.
+            # validate_selection() is the same check, callable from here
+            # before the cursor is ever touched.
+            if raw == "QC / Outlier Detection" and not \
+                    self.visualization_analysis_controller.qc_outlier_controller.validate_selection(
+                        selected_spectra):
+                return
+
             QApplication.setOverrideCursor(Qt.WaitCursor)
             QApplication.processEvents()
             try:

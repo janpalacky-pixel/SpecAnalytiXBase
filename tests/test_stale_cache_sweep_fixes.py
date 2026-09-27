@@ -323,3 +323,49 @@ def test_peak_fitting_keeps_fit_results_when_revision_unchanged():
     ctrl.filter_stale_settings(dict(cached))
     out = ctrl.filter_stale_settings(dict(cached))
     assert out.get('fit_results') == cached['fit_results']
+
+
+# --------------------------------------------------------------------- #
+# 5. Peak Fitting -- a real bug the user hit right after the fix above:
+#    fitting peaks, checking an output option (so handle_peak_fitting's
+#    own apply_operation() commits and bumps revision), then closing
+#    and reopening wiped the very fit_results just saved -- the fit's
+#    OWN commit was being mistaken for an unrelated operation that ran
+#    on the spectrum meanwhile. _note_own_commit() is what
+#    handle_peak_fitting() calls right after its own apply_operation()
+#    to fix this; tested directly here since driving the real
+#    handle_peak_fitting() needs a full spectra/operations-manager setup
+#    well beyond this file's fakes.
+# --------------------------------------------------------------------- #
+
+def test_peak_fitting_note_own_commit_prevents_self_invalidation():
+    from src.controllers.data_analysis.peak_fitting_controller import (
+        PeakFittingController)
+
+    mc = _FakeMainController(revision=1)
+    ctrl = PeakFittingController(mc)
+    cached = {
+        'fit_results': [{'center': 5.0, 'amplitude': 1.0}],
+        'output_options': {'add_fit': True},
+    }
+
+    # Dialog opens for the first time -- no prior revision, conservative strip.
+    ctrl.filter_stale_settings(dict(cached))
+
+    # User fits, checks "add fit", closes: handle_peak_fitting's own
+    # apply_operation() bumps revision (simulated directly here)...
+    mc.operations_controller.operations_manager.revision = 2
+    # ...then calls _note_own_commit() right after, exactly as
+    # handle_peak_fitting() now does.
+    ctrl._note_own_commit()
+
+    # Reopening now must NOT see that as a stale-triggering change --
+    # this is the actual bug: without _note_own_commit, this call would
+    # wipe fit_results even though nothing but our own commit happened.
+    out = ctrl.filter_stale_settings(dict(cached))
+    assert out.get('fit_results') == cached['fit_results']
+
+    # A genuinely later, unrelated operation must still be caught.
+    mc.operations_controller.operations_manager.revision = 3
+    out2 = ctrl.filter_stale_settings(dict(cached))
+    assert 'fit_results' not in out2

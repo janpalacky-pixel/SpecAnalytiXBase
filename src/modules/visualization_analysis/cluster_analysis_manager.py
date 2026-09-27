@@ -38,6 +38,11 @@ class ClusterAnalysisManager:
         # Silhouette analysis results
         self.silhouette_avg_score = None
         self.silhouette_sample_scores = None
+
+        # Human-readable reason the last compute_clustering() call
+        # returned False, for the dialog to show instead of a generic
+        # "Clustering failed" -- see compute_clustering's own use of this.
+        self.last_error = None
         
 
     def compute_clustering(self, spectra, method='kmeans', n_clusters=3, progress_callback=None, **kwargs):
@@ -72,6 +77,25 @@ class ClusterAnalysisManager:
         
         if not spectra:
             logger.debug("DEBUG: No spectra provided for clustering")
+            self.last_error = "No spectra selected."
+            return False
+
+        self.last_error = None
+
+        # Real case a user hit in practice: asking for more clusters than
+        # there are spectra to put in them (e.g. 3 clusters for 2 selected
+        # spectra) is mathematically impossible and sklearn correctly
+        # refuses it -- but that refusal used to be swallowed by the
+        # generic except block below and reported to the user as a bare
+        # "Clustering failed", with the actual reason only visible in the
+        # log file. Check it up front instead, with a message that says
+        # what to actually do about it.
+        if method in ('kmeans', 'hierarchical') and n_clusters is not None                 and n_clusters > len(spectra):
+            msg = (f"Can't create {n_clusters} clusters from only "
+                   f"{len(spectra)} selected spectra -- select at least "
+                   f"{n_clusters} spectra, or lower the number of clusters.")
+            logger.debug(f"DEBUG: {msg}")
+            self.last_error = msg
             return False
 
         total_steps = 4
@@ -193,6 +217,7 @@ class ClusterAnalysisManager:
         except Exception as e:
             logger.error(f"ERROR: Clustering failed: {e}")
             logger.exception("Traceback:")
+            self.last_error = str(e)
             return False
 
     def compute_silhouette_analysis(self):

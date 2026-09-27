@@ -1306,7 +1306,8 @@ class SOMDialog(QDialog):
                 self._has_run_once = True
                 self._stale_warning_label.setVisible(False)
             else:
-                QMessageBox.warning(self, "Error", "SOM training failed.")
+                detail = getattr(self.controller.manager, 'last_error', None)
+                QMessageBox.warning(self, "SOM Training Failed", detail or "SOM training failed.")
         finally:
             self._som_progress.close()
             self.run_btn.setEnabled(True)

@@ -90,6 +90,11 @@ class SOMManager:
         self.u_matrix = None           # (rows, cols) — mean distance to neighbouring nodes
         self.hit_map = None            # (rows, cols) int — spectra count per node
         self.quantization_error = None
+        self.last_error = None         # human-readable reason the last compute_som() call
+                                        # returned False -- same pattern as
+                                        # ClusterAnalysisManager.last_error, so the dialog
+                                        # can show something more useful than a bare
+                                        # "SOM training failed."
 
     # ------------------------------------------------------------------ #
     # Training                                                            #
@@ -139,8 +144,11 @@ class SOMManager:
         Returns:
             bool: True if training was successful.
         """
+        self.last_error = None
         if not spectra:
-            logger.debug("DEBUG: No spectra provided for SOM analysis")
+            msg = "No spectra selected."
+            logger.debug(f"DEBUG: {msg}")
+            self.last_error = msg
             return False
 
         train_mode = 'feature' if train_mode == 'feature' else 'shape'
@@ -158,7 +166,11 @@ class SOMManager:
 
             if train_mode == 'feature':
                 if not feature_defs:
-                    logger.error("SOM (feature mode): no feature definitions supplied.")
+                    msg = ("No band/feature definitions supplied for feature-mode "
+                           "SOM -- add at least one feature under Feature Mode "
+                           "before running.")
+                    logger.error(f"SOM (feature mode): {msg}")
+                    self.last_error = msg
                     return False
 
                 columns = []
@@ -178,12 +190,12 @@ class SOMManager:
 
                 self.data_matrix = np.array(columns, dtype=float).T  # (n_samples, n_features)
                 if not np.isfinite(self.data_matrix).all():
-                    logger.error(
-                        "SOM (feature mode): one or more features could not be computed "
-                        "for every spectrum (missing/invalid value) — check that every "
-                        "feature's range or x-position actually falls inside all selected "
-                        "spectra."
-                    )
+                    msg = ("One or more features could not be computed for every "
+                           "selected spectrum (missing/invalid value) -- check that "
+                           "every feature's range or x-position actually falls "
+                           "inside all selected spectra.")
+                    logger.error(f"SOM (feature mode): {msg}")
+                    self.last_error = msg
                     return False
 
                 self.feature_defs = feature_defs
@@ -204,11 +216,10 @@ class SOMManager:
                 first_x = x_scales[0]
                 for i, x in enumerate(x_scales):
                     if not axes_match(first_x, x):
-                        logger.error(
-                            "SOM analysis: %s",
-                            describe_axis_mismatch(spectra[0], spectra[i], 'SOM analysis')
-                            .replace('\n', ' ')
-                        )
+                        msg = describe_axis_mismatch(
+                            spectra[0], spectra[i], 'SOM analysis').replace('\n', ' ')
+                        logger.error("SOM analysis: %s", msg)
+                        self.last_error = msg
                         return False
 
                 self.x_axis = first_x
@@ -259,6 +270,7 @@ class SOMManager:
         except Exception as e:
             logger.error(f"SOM computation failed: {e}")
             logger.exception("Traceback:")
+            self.last_error = str(e)
             return False
 
     @staticmethod

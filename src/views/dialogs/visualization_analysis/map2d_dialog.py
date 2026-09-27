@@ -1016,9 +1016,34 @@ class Map2DDialog(QDialog):
         right_col_layout.addWidget(btn_bar)
 
         self._outer_splitter.addWidget(right_col)
-        self._outer_splitter.setSizes([750, 430])
+        self._outer_splitter.setSizes([720, 480])
 
         root.addWidget(self._outer_splitter)
+
+    def showEvent(self, event):
+        """The user found a real bug here: right after opening this
+        dialog (not maximized), the outer splitter's handle wouldn't
+        drag any further right at all -- it only became fully
+        draggable once the window was maximized. Root cause: setSizes()
+        above runs during _build_ui(), before this dialog has ever been
+        shown or laid out for real -- at that point Qt doesn't yet know
+        the true, final minimum width of everything inside right_col
+        (the button bar's five buttons/menus in particular), so the
+        splitter's internal drag-range cache is built from a rough,
+        possibly-too-tight estimate. Maximizing forces a real resize,
+        which makes Qt recompute that cache against the fully laid-out
+        widget tree -- fixing the symptom by accident. Reapplying
+        setSizes() here, one event-loop tick after the first real show
+        (QTimer.singleShot(0, ...) so it runs after Qt's own post-show
+        layout pass), forces that same recomputation immediately,
+        without needing the user to maximize first. Also widened the
+        starting split from 430px to 480px on the control column, which
+        was sitting very close to its own true minimum width (the
+        button bar's five items leave little slack at 430px) -- giving
+        real breathing room to drag in either direction from the start.
+        """
+        super().showEvent(event)
+        QTimer.singleShot(0, lambda: self._outer_splitter.setSizes([720, 480]))
 
     # ── group builders ──────────────────────────────────────────────────
 

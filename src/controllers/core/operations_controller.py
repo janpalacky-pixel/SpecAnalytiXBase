@@ -1338,17 +1338,39 @@ class OperationsController:
             last_settings = pfc.filter_stale_settings(last_settings)
 
             dialog = pfc.show_dialog(selected_spectra[0], current_settings=last_settings)
-    
-            if dialog.exec_() == QDialog.Accepted:
-                results = dialog.get_results()
-    
-                if results and results.get('initial_peaks'):
-                    sanitized_results = self._sanitize_fit_results(results)
-    
+
+            result = dialog.exec_()
+
+            # Always read back and remember what's in the dialog on
+            # close -- same "no OK/Cancel distinction" rule every other
+            # persistent-Manager dialog in this app already follows
+            # (BaselineCorrectionController.show_dialog's own "Always
+            # store corrections on close", SpikeRemovalController, ...).
+            # Real bug found in practice: this used to sit entirely
+            # inside "if dialog.exec_() == QDialog.Accepted:", so closing
+            # the dialog any other way (the window's own X button, or a
+            # Cancel button that calls reject()) saved nothing at all --
+            # reopening on the same spectrum showed a blank peak list,
+            # even though every other dialog in this app remembers your
+            # in-progress work regardless of how you closed it. OK vs.
+            # Cancel/X should only decide whether the fit's OUTPUT
+            # SPECTRA get created below, never whether the peaks/fit
+            # picked so far are remembered for next time.
+            results = dialog.get_results()
+
+            if results and results.get('initial_peaks'):
+                sanitized_results = self._sanitize_fit_results(results)
+
+                if sanitized_results.get('fit_results'):
+                    self.current_parameters[operation] = sanitized_results.copy()
+                    self.last_op_settings["Peak Fitting"] = sanitized_results.copy()
+                    self.last_selection_hash = current_selection_hash
+                else:
+                    self.current_parameters.pop(operation, None)
+                    self.last_op_settings.pop("Peak Fitting", None)
+
+                if result == QDialog.Accepted:
                     if sanitized_results.get('fit_results'):
-                        self.current_parameters[operation] = sanitized_results.copy()
-                        self.last_op_settings["Peak Fitting"] = sanitized_results.copy()
-                        self.last_selection_hash = current_selection_hash
                         # Actually execute the fit — save it to metadata and
                         # create any new spectra the output-option
                         # checkboxes (add_fit / add_residual / add_peaks)
@@ -1368,11 +1390,9 @@ class OperationsController:
                             self.controller.view, "No Fit",
                             "No valid fit results were generated. Nothing to apply."
                         )
-                        self.current_parameters.pop(operation, None)
-                        self.last_op_settings.pop("Peak Fitting", None)
-                else:
-                    self.current_parameters.pop(operation, None)
-                    self.last_op_settings.pop("Peak Fitting", None)
+            else:
+                self.current_parameters.pop(operation, None)
+                self.last_op_settings.pop("Peak Fitting", None)
 
         elif operation == "Melting Curve Analysis":
             # Unlike Peak Fitting (exactly one source spectrum), a melting

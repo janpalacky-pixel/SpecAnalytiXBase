@@ -1780,7 +1780,15 @@ class ClusterAnalysisDialog(QDialog):
                 # Enable interactive features
                 self.canvas.set_interactive_mode(self.interactive_checkbox.isChecked())
             else:
-                QMessageBox.warning(self, "Error", "Clustering failed")
+                # ClusterAnalysisManager.compute_clustering sets
+                # last_error to a specific, actionable reason when it
+                # returns False without raising (e.g. more clusters
+                # requested than spectra selected) -- fall back to the
+                # old generic text only if it didn't (shouldn't normally
+                # happen, but last_error being unset is not itself worth
+                # crashing over).
+                detail = getattr(self.controller.manager, 'last_error', None)
+                QMessageBox.warning(self, "Clustering Failed", detail or "Clustering failed.")
         finally:
             from PyQt5.QtWidgets import QApplication
             self._cluster_progress.close()

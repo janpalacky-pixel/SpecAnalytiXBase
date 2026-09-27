@@ -79,6 +79,28 @@ class PeakFittingController:
             current_settings.pop('fit_results', None)
         return current_settings
 
+    def _note_own_commit(self):
+        """Resync _last_seen_revision to whatever apply_operation() (in
+        handle_peak_fitting, called just before this) just bumped
+        IncrementalOperationsManager.revision to.
+
+        Real bug found in practice, fixed here: filter_stale_settings()
+        only runs once, when the dialog is about to OPEN -- it has no
+        way to know that closing THIS dialog (with an output option
+        checked, so handle_peak_fitting() actually commits a new
+        operation) is about to bump revision too. Without this resync,
+        the very next time Peak Fitting reopened, filter_stale_settings
+        saw "revision changed since last time" and stripped the
+        fit_results it had just saved into last_op_settings -- mistaking
+        this fit's own commit for an unrelated operation that ran on the
+        spectrum meanwhile (the case filter_stale_settings genuinely
+        needs to catch). Calling this right after our own commit keeps
+        that distinction correct: an operation that runs AFTER this
+        still bumps revision again and is still caught next time; this
+        one, already accounted for, is not."""
+        _, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+
     # ------------------------------------------------------------------ #
     # Commit — moved here from OperationsController.handle_peak_fitting,  #
     # behaviorally unchanged EXCEPT for the setSelected() fix noted in    #
@@ -321,6 +343,11 @@ class PeakFittingController:
             affected_spectra_for_history,
             new_state_spectra=output_spectra
         )
+
+        # apply_operation() above just bumped
+        # IncrementalOperationsManager.revision -- resync our own
+        # bookkeeping to it right now (see _note_own_commit's docstring).
+        self._note_own_commit()
 
         # --- 4. Update UI --- batch selection via the shared, already-fixed
         # helper — see class docstring above for the bug this replaced.
