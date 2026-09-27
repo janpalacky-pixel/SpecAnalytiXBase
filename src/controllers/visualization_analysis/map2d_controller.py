@@ -4,6 +4,7 @@ from src.modules.visualization_analysis.map2d_manager import Map2DManager
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -20,6 +21,10 @@ class Map2DController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager = Map2DManager()
+        # See show_dialog()'s use of this -- the operations manager's
+        # revision at the point this controller last trusted self.manager's
+        # cached fit as still matching the current spectra.
+        self._last_seen_revision = None
 
     # ------------------------------------------------------------------ #
     # Public API used by the dialog                                        #
@@ -167,6 +172,22 @@ class Map2DController:
     def invert_component(self, kind, component_index):
         return self.manager.invert_component(kind, component_index)
 
+    def compute_bootstrap_uncertainty(self, kind, **kwargs):
+        """Delegate to manager; see Map2DManager.compute_bootstrap_uncertainty
+        for the full parameter list (differs by kind -- NMF vs. MCR-ALS
+        settings)."""
+        return self.manager.compute_bootstrap_uncertainty(kind, **kwargs)
+
+    def get_bootstrap_result(self, kind):
+        return self.manager.get_bootstrap_result(kind)
+
+    def get_component_subspectrum_band(self, kind, component_index):
+        return self.manager.get_component_subspectrum_band(kind, component_index)
+
+    def get_component_uncertainty_map(self, kind, component_index, n_rows, n_cols):
+        return self.manager.get_component_uncertainty_map(
+            kind, component_index, n_rows, n_cols)
+
     # ------------------------------------------------------------------ #
     # Dialog launcher (called by VisualizationAnalysisController)         #
     # ------------------------------------------------------------------ #
@@ -306,6 +327,33 @@ class Map2DController:
                 "Please select spectra before opening the 2D Map tool.",
             )
             return
+
+        # Bug found in practice: self.manager is kept alive for this
+        # controller's whole lifetime (constructed once in __init__, not
+        # per dialog open) so a plain close-and-reopen can redraw its
+        # last map without refitting -- but that same persistence let a
+        # STALE NMF/MCR-ALS/SVD/PCA map survive a close, an operation
+        # that changed the underlying spectra (e.g. a SNIP baseline
+        # correction), and a reopen: the new Map2DDialog's own
+        # _decomp_needs_refit starts out all-False, so it had no way to
+        # know this reused manager's cached fit no longer matched
+        # anything -- it redrew it immediately, with no staleness
+        # warning, and only "Update Map" produced the correct result.
+        #
+        # First fix here just called self.manager.reset() unconditionally
+        # on every open -- correct, but that throws away a perfectly
+        # good cached map every time the dialog is closed and reopened
+        # with NOTHING having changed, which is its own real cost on a
+        # large map. IncrementalOperationsManager.revision (see its own
+        # docstring) is the general fix: it only bumps when the spectra
+        # this dialog would be looking at have actually changed since
+        # (a new operation applied, history navigation to a different
+        # state, or new spectra imported) -- so compare against it and
+        # reset only when it moved.
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
 
         from src.views.dialogs.visualization_analysis.map2d_dialog import Map2DDialog
 

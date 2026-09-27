@@ -5,6 +5,7 @@ from src.modules.visualization_analysis.nmf_manager import NMFManager
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import validate_common_x_axis
 from src.modules.utils.correction_history import append_correction_history
+from src.modules.utils.revision_tracking import revision_changed
 logger = get_logger(__name__)
 
 
@@ -23,6 +24,10 @@ class NMFController:
         self.controller = main_controller
         self.manager = NMFManager()
         self.dialog = None
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below, so a reopen only forgets the last fit if an
+        # operation actually ran meanwhile — see revision_tracking.py.
+        self._last_seen_revision = None
 
     def compute(self, spectra, n_components, init='nndsvda', max_iter=500, random_state=42,
                 references=None, fix_references=False):
@@ -126,6 +131,7 @@ class NMFController:
 
         H_samples, W_samples = [], []
         n_failed = 0
+        first_failure_reason = None
         for b in range(n_resamples):
             if cancel_check is not None and cancel_check():
                 break
@@ -147,10 +153,22 @@ class NMFController:
                 W_samples.append(trial_mgr.W)
             else:
                 n_failed += 1
+                # Bug found in practice: every failed replicate's own
+                # last_error (e.g. a shape mismatch, a non-overlapping
+                # range) used to be thrown away the moment ok=False --
+                # the dialog and the log both ended up with nothing but
+                # "All N bootstrap resamples failed to fit.", with no way
+                # to tell why even a single one failed. Keep the FIRST
+                # one (later ones are typically the same root cause
+                # repeating) and fold it into ref.last_error below.
+                if first_failure_reason is None:
+                    first_failure_reason = trial_mgr.last_error
 
         if not H_samples:
             ref.last_error = (
-                f"All {n_resamples} bootstrap resamples failed to fit.")
+                f"All {n_resamples} bootstrap resamples failed to fit."
+                + (f"\n\nFirst failure: {first_failure_reason}"
+                   if first_failure_reason else ""))
             return None
 
         H_arr = np.array(H_samples)   # (B_ok, k, n_wl)
@@ -314,7 +332,10 @@ class NMFController:
                                       getattr(self.controller, 'view', None),
                                       'NMF'):
             return
-        self.manager.reset()
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
         last = self.controller.operations_controller.last_op_settings.get("NMF", {})
 
         from src.views.dialogs.visualization_analysis.nmf_dialog import NMFDialog

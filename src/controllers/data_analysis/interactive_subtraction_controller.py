@@ -5,6 +5,7 @@ from src.modules.data_analysis.interactive_subtraction_manager import Interactiv
 from src.modules.utils.spectra_validation import validate_common_x_axis
 from src.modules.utils.progress_utils import notify_progress
 from src.modules.utils.spectrum_identity import spectrum_key
+from src.modules.utils.revision_tracking import revision_changed
 import numpy as np
 
 
@@ -13,6 +14,13 @@ class InteractiveSubtractionController:
         self.controller = main_controller
         self.manager = InteractiveSubtractionManager()
         self._last_selection_hash = None
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below -- _check_and_clear_on_selection_change only
+        # catches a DIFFERENT selection being made; it has no way to know
+        # that some OTHER operation (SNIP Baseline, say) changed the very
+        # data a stored factor was picked against, for spectra that are
+        # still selected. See revision_tracking.py.
+        self._last_seen_revision = None
 
     @property
     def oc(self):
@@ -237,6 +245,14 @@ class InteractiveSubtractionController:
 
         # Clear factors if selection changed since last open
         self._check_and_clear_on_selection_change(selected_spectra)
+
+        # Clear factors if any operation ran meanwhile, even for the SAME
+        # selection -- a factor picked for a (minuend, subtrahend) pair no
+        # longer means anything once either spectrum's own data changed.
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.stored_factors = {}
 
         # Prune settings left behind by spectra that no longer exist —
         # otherwise a newly imported spectrum that happens to reuse an old

@@ -353,7 +353,11 @@ def get_interactive_subtraction_help_content():
             <li>Closing and reopening the dialog for the same spectra restores all
                 previously stored factors automatically.</li>
             <li>Changing the main-window selection and switching back does <em>not</em>
-                lose stored factors &mdash; they persist for the duration of the session.</li>
+                lose stored factors &mdash; they persist for the duration of the session,
+                unless a different operation (e.g. a baseline correction) is applied to one
+                of those spectra in the meantime &mdash; the stored factor for that pair is
+                then cleared automatically, since it was picked against data that no longer
+                exists.</li>
             <li>Renaming a minuend or subtrahend spectrum between storing a factor and
                 applying it does not disconnect the stored factor from it &mdash; it's
                 still found and shown under the spectrum's current name.</li>

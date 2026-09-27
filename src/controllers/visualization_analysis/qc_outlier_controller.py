@@ -2,6 +2,7 @@
 
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.qc_outlier_manager import QCOutlierManager
+from src.modules.utils.revision_tracking import revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 
@@ -17,6 +18,15 @@ class QCOutlierController:
         self.main_controller = main_controller
         self.manager = QCOutlierManager()
         self.dialog = None
+        # Compared against IncrementalOperationsManager.revision in
+        # run_qc_outlier_analysis() below, so a reopen only forgets the
+        # last result if an operation actually ran meanwhile -- see
+        # revision_tracking.py. QCOutlierController previously never
+        # reset self.manager at all, so a stale PCA/outlier result from a
+        # completely different, previous selection could still be read
+        # before this dialog's first computation for the new selection
+        # finished -- the same "never forget" bug 2D Map originally had.
+        self._last_seen_revision = None
 
     def run_qc_outlier_analysis(self):
         if not self.main_controller.selected_spectra:
@@ -42,6 +52,11 @@ class QCOutlierController:
         if not validate_common_x_axis(self.main_controller.selected_spectra,
                                        self.main_controller.view, 'QC / Outlier Detection'):
             return
+
+        should_reset, self._last_seen_revision = revision_changed(
+            self.main_controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
 
         from src.views.dialogs.visualization_analysis.qc_outlier_dialog import QCOutlierDialog
         self.dialog = QCOutlierDialog(

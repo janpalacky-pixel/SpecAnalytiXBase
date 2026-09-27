@@ -7,6 +7,7 @@ from src.modules.data_analysis.spike_removal_manager import SpikeRemovalManager
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.progress_utils import notify_progress
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,12 @@ class SpikeRemovalController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager    = SpikeRemovalManager()
+        # Compared against IncrementalOperationsManager.revision in
+        # show_interactive_dialog() below, so a reopen only forgets a
+        # spectrum's picked/detected spikes if an operation actually
+        # changed that spectrum's data meanwhile -- see
+        # revision_tracking.py.
+        self._last_seen_revision = None
 
     @property
     def oc(self):
@@ -260,6 +267,20 @@ class SpikeRemovalController:
         # label would inherit stale, unrelated spike markings (see
         # SpikeRemovalManager.prune_to_current_spectra docstring).
         self.manager.prune_to_current_spectra(self.controller.original_spectra)
+
+        # If any operation ran since this dialog was last open (a
+        # different spectrum's baseline correction, SNIP, an undo/redo,
+        # ...), the spikes previously detected/picked for THESE spectra
+        # may no longer correspond to their current data -- same
+        # reasoning as BaselineCorrectionController.show_dialog. Only
+        # clear the spectra actually being shown here, not the whole
+        # manager (see _sync_manager's own comment on why a scoped clear
+        # matters).
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            for s in spectra:
+                self.manager.reset_for_spectrum(self.manager._key_for(s))
 
         # Resolve the manager's unique_id keys back to each spectrum's
         # CURRENT label for the dialog, and restrict to spectra actually

@@ -3,6 +3,7 @@
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.cluster_analysis_dialog import ClusterAnalysisDialog
 from src.modules.visualization_analysis.cluster_analysis_manager import ClusterAnalysisManager
+from src.modules.utils.revision_tracking import revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 class ClusterAnalysisController:
@@ -11,6 +12,10 @@ class ClusterAnalysisController:
     def __init__(self, main_controller):
         self.main_controller = main_controller
         self.manager = ClusterAnalysisManager()
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below, so a reopen only forgets the last result if an
+        # operation actually ran meanwhile -- see revision_tracking.py.
+        self._last_seen_revision = None
         self.dialog = None
     
     def run_cluster_analysis(self):
@@ -57,7 +62,10 @@ class ClusterAnalysisController:
         # completely unrelated) set of spectra could still be displayed
         # (e.g. switching straight to PCA 3D) before Run Clustering is
         # ever clicked for this selection.
-        self.manager.reset()
+        should_reset, self._last_seen_revision = revision_changed(
+            self.main_controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
 
         # Create and show dialog
         self.dialog = ClusterAnalysisDialog(

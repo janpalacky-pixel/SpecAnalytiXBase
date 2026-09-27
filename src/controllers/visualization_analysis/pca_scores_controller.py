@@ -3,6 +3,7 @@
 import numpy as np
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.pca_scores_manager import PcaScoresManager
+from src.modules.utils.revision_tracking import revision_changed
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import validate_common_x_axis
 logger = get_logger(__name__)
@@ -17,6 +18,10 @@ class PcaScoresController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager = PcaScoresManager()
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below, so a reopen only forgets the last result if an
+        # operation actually ran meanwhile -- see revision_tracking.py.
+        self._last_seen_revision = None
         self.dialog = None
 
     def compute_svd_analysis(self, spectra, n_components, mean_center=True):
@@ -122,7 +127,10 @@ class PcaScoresController:
         # this, a stale result from a previous, unrelated selection could
         # still be read before the first SVD computation for this
         # selection finishes.
-        self.manager.reset()
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
 
         # Only reuse the last shown settings if this dialog was last opened
         # for this exact selection — ported verbatim from

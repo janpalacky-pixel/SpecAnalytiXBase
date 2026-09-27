@@ -496,6 +496,34 @@ pixel in the map, so this can take noticeably longer than a single
 <b>Update Map</b> press on a large map; there's a wait cursor but no
 live progress or cancel button while it runs.</p>
 
+<p><b>Bootstrap Uncertainty…</b> answers a different question from
+either of those: not "did I find the wrong local optimum" (that's
+what "Run N times, keep best…" checks) but "how much would THIS
+already-loaded result change under a different noise draw of the
+same data" — the same Bootstrap Uncertainty feature as the standalone
+NMF Analysis / MCR-ALS tools, run here against the map's own fit. It
+requires a fit already loaded and up to date (press <b>Update Map</b>
+/ <b>Run N times, keep best…</b> first if a setting changed since);
+choose how many resamples to run (30 is a reasonable default) and it
+refits around that exact result — a slower operation than "Run N
+times", since it does the same number of full-map refits, so it shows
+a live, cancellable progress dialog. Two places show the result:
+<b>Show bootstrap confidence band on component plot</b> shades the
+component's own spectral-shape overlay in the spectrum panel below
+(see section 5) exactly like the standalone tools' Components tab, and
+<b>Show as uncertainty map (band width per pixel)</b> — enabled only
+once a bootstrap has actually been run — swaps the map above from the
+component's score/concentration itself to the WIDTH of its confidence
+band at each pixel: bright means that pixel's value is noise-sensitive,
+dark means it's solid. See the
+<a href="help://nmf#bootstrap-uncertainty">NMF help page</a> or the
+<a href="help://mcr_als#bootstrap-uncertainty">MCR-ALS help page</a>'s
+own Bootstrap Uncertainty sections for the full, plain-language
+explanation of the method (identical here — only the display differs),
+and the
+<a href="help://developer_guide#nmf-bootstrap-uncertainty">Developer
+Guide</a> for the technical mechanism.</p>
+
 <div class="note">
 <b>Reference spectra (optional)</b> anchors a component slot to a known
 component spectrum — the most effective way to remove NMF/MCR-ALS's

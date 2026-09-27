@@ -693,6 +693,169 @@ if (operation in self.current_parameters and
         the baseline behaviour, rather than reaching for retroactive rewriting again
         as the default.</p>
 
+        <h3 id="revision-counter">Reopening a Dialog: "Remember Unless Something
+        Changed" (<code>revision</code> and <code>revision_tracking.py</code>)</h3>
+        <p>Several controllers keep <strong>one persistent Manager instance alive
+        for the controller's own lifetime</strong>, reused every time its dialog is
+        closed and reopened, rather than creating a fresh Manager per dialog session
+        &mdash; <code>Map2DController</code>, <code>BaselineCorrectionController</code>,
+        <code>NMFController</code>, <code>MCRALSController</code>,
+        <code>ClusterAnalysisController</code>, <code>PcaScoresController</code>,
+        <code>SOMController</code>, <code>TwoDCorrelationController</code>,
+        <code>QCOutlierController</code>, <code>InteractiveSubtractionController</code>,
+        <code>SpikeRemovalController</code>, and others. That Manager may be holding a
+        previous fit, previously picked baseline points, previously detected spikes, or
+        a previously stored subtraction factor &mdash; real, potentially expensive-to-
+        reproduce work the user did last time this dialog was open.</p>
+        <p>Naively, there are two wrong ways to handle that on the next reopen:</p>
+        <ul>
+            <li><strong>Never reset.</strong> Reopen the dialog after running a
+                completely unrelated operation (SNIP Baseline on a different tab, say)
+                and it silently shows a fit/selection computed from spectra that no
+                longer look like that &mdash; a real, shipped bug on
+                <code>Map2DManager</code> before this existed (see its own
+                <code>reset()</code> docstring).</li>
+            <li><strong>Always reset.</strong> <code>NMFController</code>/
+                <code>MCRALSController</code>'s <code>show_dialog()</code> used to call
+                <code>self.manager.reset()</code> unconditionally on every open &mdash;
+                correct, but it throws away a perfectly good, possibly slow-to-recompute
+                result every single time the dialog is reopened, even when literally
+                nothing happened in between.</li>
+        </ul>
+        <p>The right behavior is in between: keep the Manager's state across a reopen
+        <em>unless</em> an operation actually ran, or history navigation moved to a
+        different point, or new spectra were imported, since the dialog was last open.
+        <code>IncrementalOperationsManager.revision</code> is a plain integer, incremented
+        by:</p>
+        <ul>
+            <li><code>apply_operation()</code> &mdash; every committed operation,
+                <strong>except</strong> <code>'Rename'</code> (see below).</li>
+            <li><code>set_active_operation()</code> &mdash; any undo/redo navigation to a
+                <em>different</em> index than the one already active.</li>
+            <li><code>add_spectra_to_original()</code> &mdash; only when spectra were
+                actually newly added (a no-op call, e.g. re-importing something already
+                present, does not bump it).</li>
+        </ul>
+        <div class="tip">
+            It is a plain monotonic counter, <strong>not</strong> a state identifier.
+            Jumping <em>back</em> to a history index a dialog had already cached results
+            for still bumps it to a new, higher number &mdash; it does not restore that
+            index's earlier value. "Equal" only ever means "provably nothing happened
+            since"; it never means "we're back to a state I've cached before". That is
+            the right tradeoff for every current caller (each just wants "always re-check
+            on any navigation"), and it keeps the implementation simple. A future caller
+            that specifically wants "restore my cache for this exact history state even
+            across undo/redo" needs a real per-state identifier instead, not an
+            assumption about this counter.
+        </div>
+        <div class="info">
+            <strong>Rename is the deliberate exception.</strong> A committed rename goes
+            through <code>apply_operation('Rename', ...)</code> exactly like any other
+            operation (see <a href="#history-internals">above</a>) &mdash; but it never
+            touches a spectrum's actual <code>x_scale</code>/<code>y_scale</code>, only
+            its label. Every cache this counter protects is already keyed by
+            <code>metadata['unique_id']</code> rather than by label specifically so it
+            survives a rename (<code>BaselineManager._key_for</code>,
+            <code>SpikeRemovalManager._key_for</code>,
+            <code>InteractiveSubtractionManager._key_for</code>, ... &mdash; see
+            <a href="#identity">The Golden Rule: Spectrum Identity</a>). Bumping
+            <code>revision</code> for a Rename would throw all of that away for no
+            reason, on every single rename &mdash; <code>apply_operation()</code>
+            explicitly skips the bump when <code>operation_type == 'Rename'</code>.
+            Plain spectrum deletion/removal isn't routed through
+            <code>apply_operation()</code> at all &mdash; no Operations History entry is
+            created for it &mdash; so it never bumps this either, for the same reason.
+        </div>
+        <p><code>src/modules/utils/revision_tracking.py</code> is the one shared helper
+        every one of these controllers uses, rather than each hand-rolling the same
+        comparison:</p>
+        <div class="scheme">
+from src.modules.utils.revision_tracking import revision_changed
+
+class SomeController:
+    def __init__(self, main_controller):
+        self.controller = main_controller
+        self.manager = SomeManager()
+        self._last_seen_revision = None   # nothing trusted yet
+
+    def show_dialog(self, ...):
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()   # or a scoped, per-spectrum clear -- see below
+        ...
+        </div>
+        <p><code>revision_changed(main_controller, last_seen_revision)</code> returns
+        <code>(should_reset, current_revision)</code>: <code>should_reset</code> is
+        <code>True</code> when the current revision differs from what was last seen,
+        <strong>or</strong> when the current revision can't even be determined (no
+        <code>operations_controller</code> reachable yet, say) &mdash; when in doubt,
+        forget rather than risk showing stale computed/picked state. The caller always
+        stores <code>current_revision</code> as its new <code>_last_seen_revision</code>
+        regardless of <code>should_reset</code>, so the very next comparison is against
+        whatever was actually current this time.</p>
+        <p>Not every controller resets its Manager wholesale. Some Managers mix
+        long-lived <em>settings</em> (correction mode, default thresholds, ...) with
+        genuinely stale-prone <em>computed/picked results</em> (a fit, baseline points,
+        detected spikes) in the same instance &mdash; for those, clear only the
+        computed/picked part, following the same idea as
+        <code>BaselineManager.clear_baseline(key)</code>:</p>
+        <table>
+            <tr><th>Controller</th><th>What a revision change clears</th></tr>
+            <tr><td><code>Map2DController</code>, <code>NMFController</code>,
+                <code>MCRALSController</code>, <code>ClusterAnalysisController</code>,
+                <code>PcaScoresController</code>, <code>SOMController</code>,
+                <code>TwoDCorrelationController</code>, <code>QCOutlierController</code></td>
+                <td>The whole Manager, via its own <code>reset()</code> &mdash; these
+                Managers hold nothing but one fit/result, so a full reset is the whole
+                job.</td></tr>
+            <tr><td><code>BaselineCorrectionController</code></td>
+                <td>Only the affected spectra's own baseline points, via
+                <code>self.manager.clear_baseline(key)</code> per spectrum &mdash; other
+                spectra's points, and the Manager's own settings, are untouched.</td></tr>
+            <tr><td><code>InteractiveSubtractionController</code></td>
+                <td>Only <code>self.manager.stored_factors</code> &mdash;
+                <code>file_subtrahends</code> (spectra loaded from an external file) are
+                untouched, since they don't depend on the main spectrum list's data at
+                all.</td></tr>
+            <tr><td><code>SpikeRemovalController</code></td>
+                <td>Only the currently-shown spectra's own entries, via
+                <code>self.manager.reset_for_spectrum(key)</code> per spectrum &mdash;
+                mirrors <code>_sync_manager</code>'s own reasoning for why a scoped clear
+                matters (a global reset would erase an unrelated, still-valid
+                spectrum's markings too).</td></tr>
+        </table>
+        <div class="info">
+            <strong>This is a different mechanism from the selection-hash guard
+            above.</strong> <a href="#settings-cache">Remembering Dialog Settings</a>
+            governs whether cached <em>settings</em> (the values shown in the dialog's
+            own controls) are restored, keyed by whether the <em>selection</em> changed.
+            <code>revision</code> governs whether cached <em>results</em> (a fit,
+            picked/detected points, a stored factor) are kept, keyed by whether any
+            <em>operation</em> ran. A dialog can use either, both, or neither &mdash;
+            <code>NMFController</code> uses both (<code>last_op_settings</code> for its
+            controls, <code>revision</code> for the Manager's fit); most of the "always
+            reset"/"never reset" Manager-holding controllers only needed the latter.
+            Selection changing alone, with no operation applied, does not bump
+            <code>revision</code> at all &mdash; whether that's actually safe depends on
+            the dialog: NMF/MCR-ALS/PCA Scores/2D Correlation always recompute fresh from
+            the current selection the moment they're shown (see their own
+            <code>_initial_run_pending</code>/<code>showEvent</code>), so a selection
+            change is reflected correctly regardless; Cluster Analysis/SOM/QC Outlier
+            show a blank "press Run" state until the user acts, for the same reason;
+            Manual Baseline/Interactive Subtraction/Spike Removal look up each
+            spectrum's own stored state by its own identity, so a different selection
+            just shows whatever is (or isn't) stored for <em>those</em> spectra,
+            correctly, either way.
+        </div>
+        <p>Adding a new controller with this same "one persistent Manager across dialog
+        reopens" shape? Wire it into <code>revision_tracking.py</code> the same way
+        rather than reaching for either extreme again &mdash; and if the Manager mixes
+        settings with computed/picked results, clear only the latter, scoped to the
+        spectra actually affected, the same way <code>BaselineCorrectionController</code>/
+        <code>InteractiveSubtractionController</code>/<code>SpikeRemovalController</code>
+        do above.</p>
+
         <!-- ═══════════════════════════════════════════════════════════
              SNAPSHOT FILE SAVE/LOAD PIPELINE
              ═══════════════════════════════════════════════════════════ -->
@@ -2609,6 +2772,12 @@ def _natural_sort_key(cls, label):
                 it whenever the dialog opens — otherwise entries for deleted spectra
                 accumulate forever and become available for a re-imported spectrum
                 to silently inherit.</li>
+            <li>If the Controller keeps one persistent Manager instance alive across
+                dialog close/reopen (rather than a fresh one per dialog session), wire
+                it into the <a href="#revision-counter"><code>revision_tracking.py</code></a>
+                helper — don't hand-write "always reset" (throws away good state for no
+                reason) or "never reset" (shows a stale fit/selection after an unrelated
+                operation runs) again.</li>
             <li>Build the Dialog with its own <strong>Apply</strong> /
                 <strong>Add as New</strong> buttons and a <code>commit_callback</code>
                 parameter — follow the established pattern, not the older two-step

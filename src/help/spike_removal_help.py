@@ -117,7 +117,10 @@ def get_spike_removal_help_content():
                 name is already taken).</li>
             <li><b>Close</b> closes the dialog without applying anything to the main window's
                 spectra. Whatever spikes were marked are still remembered the next time you
-                reopen it for the same spectra.</li>
+                reopen it for the same spectra &mdash; unless a different operation (e.g. a
+                baseline correction) is applied to one of those spectra in the meantime, in
+                which case its marks are cleared automatically, since they no longer describe
+                the spectrum's current data.</li>
         </ul>
         <p>There is no separate Run step in the main window for this operation — Apply and
         Add as New commit immediately, with their own confirmation message shown right in the

@@ -3,6 +3,7 @@
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.som_dialog import SOMDialog
 from src.modules.visualization_analysis.som_manager import SOMManager
+from src.modules.utils.revision_tracking import revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 
@@ -24,6 +25,10 @@ class SOMController:
     def __init__(self, main_controller):
         self.main_controller = main_controller
         self.manager = SOMManager()
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below, so a reopen only forgets the last result if an
+        # operation actually ran meanwhile -- see revision_tracking.py.
+        self._last_seen_revision = None
         self.dialog = None
 
     def run_som_analysis(self):
@@ -61,7 +66,10 @@ class SOMController:
         # Clear any previous results before opening a fresh dialog — without
         # this, a stale map trained on a previous, unrelated selection could
         # still be displayed before Run SOM is ever clicked for this one.
-        self.manager.reset()
+        should_reset, self._last_seen_revision = revision_changed(
+            self.main_controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
 
         self.dialog = SOMDialog(
             parent=self.main_controller.view,

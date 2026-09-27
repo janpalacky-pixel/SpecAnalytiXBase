@@ -7,6 +7,7 @@ from src.views.dialogs.data_analysis.baseline_correction_dialog import BaselineC
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.progress_utils import notify_progress
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -20,6 +21,10 @@ class BaselineCorrectionController:
         self.dialog             = None
         self.stored_corrections = {}
         self.operation_applied  = False
+        # See show_dialog()'s use of this -- the operations manager's
+        # revision at the point picked baseline points were last known
+        # to still match the current spectra.
+        self._last_seen_revision = None
 
         # Reset baselines when new data is imported
         if hasattr(main_controller, 'import_controller'):
@@ -296,6 +301,27 @@ class BaselineCorrectionController:
             for sp in selected_spectra:
                 self.manager.clear_baseline(self.manager._key_for(sp))
             self.operation_applied = False
+
+        # Bug found in practice (reported for Map2D, but the exact same
+        # shape here): self.manager is kept alive for this controller's
+        # whole lifetime, so a plain close-and-reopen of this dialog
+        # correctly remembers picked baseline points -- but that's also
+        # true after a DIFFERENT operation (SNIP Baseline, say) changed
+        # the very spectra those points were picked on. The check just
+        # above only catches THIS controller's own commit (operation_
+        # applied is set only by commit_manual_baseline below); it has
+        # no way to know some other operation ran meanwhile. Compare
+        # against IncrementalOperationsManager.revision (see its own
+        # docstring) the same way Map2DController.show_dialog now does:
+        # unchanged since this dialog was last open -> keep the points;
+        # moved -> they were picked against a spectrum shape that no
+        # longer exists, so drop them rather than show them overlaid on
+        # different data with no warning.
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            for sp in selected_spectra:
+                self.manager.clear_baseline(self.manager._key_for(sp))
 
         # Load points from "Use These Points" feature if available
         self._load_stored_points(selected_spectra)

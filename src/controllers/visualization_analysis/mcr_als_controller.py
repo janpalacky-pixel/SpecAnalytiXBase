@@ -2,6 +2,7 @@
 
 import numpy as np
 from src.modules.visualization_analysis.mcr_als_manager import MCRALSManager
+from src.modules.utils.revision_tracking import revision_changed
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import validate_common_x_axis
 from src.modules.utils.correction_history import append_correction_history
@@ -20,6 +21,10 @@ class MCRALSController:
         self.controller = main_controller
         self.manager = MCRALSManager()
         self.dialog = None
+        # Compared against IncrementalOperationsManager.revision in
+        # show_dialog() below, so a reopen only forgets the last fit if an
+        # operation actually ran meanwhile — see revision_tracking.py.
+        self._last_seen_revision = None
 
     def compute(self, spectra, n_components, init='svd', max_iterations=100,
                 tol=0.01, c_nonneg=True, st_nonneg=True, normalize_spectra=True,
@@ -125,6 +130,7 @@ class MCRALSController:
 
         ST_samples, C_samples = [], []
         n_failed = 0
+        first_failure_reason = None
         for b in range(n_resamples):
             if cancel_check is not None and cancel_check():
                 break
@@ -149,10 +155,18 @@ class MCRALSController:
                 C_samples.append(trial_mgr.C)
             else:
                 n_failed += 1
+                # Same bug fixed in NMFController.compute_bootstrap_uncertainty:
+                # each failed replicate's own last_error was discarded the
+                # moment ok=False, leaving no way to tell why even one
+                # resample failed. Keep the first one.
+                if first_failure_reason is None:
+                    first_failure_reason = trial_mgr.last_error
 
         if not ST_samples:
             ref.last_error = (
-                f"All {n_resamples} bootstrap resamples failed to fit.")
+                f"All {n_resamples} bootstrap resamples failed to fit."
+                + (f"\n\nFirst failure: {first_failure_reason}"
+                   if first_failure_reason else ""))
             return None
 
         ST_arr = np.array(ST_samples)   # (B_ok, k, n_wl)
@@ -307,7 +321,10 @@ class MCRALSController:
                                       getattr(self.controller, 'view', None),
                                       'MCR-ALS'):
             return
-        self.manager.reset()
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
         last = self.controller.operations_controller.last_op_settings.get("MCR-ALS", {})
 
         from src.views.dialogs.visualization_analysis.mcr_als_dialog import MCRALSDialog

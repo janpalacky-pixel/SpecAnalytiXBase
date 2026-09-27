@@ -79,6 +79,27 @@ class Map2DManager:
         self._nmf_run_info = None
         self._mcr_run_info = None
 
+    def reset(self):
+        """Clear every previous result — same purpose and same fix as
+        NMFManager.reset()/MCRALSManager.reset(): Map2DController, like
+        NMFController/MCRALSController, keeps ONE Map2DManager alive for
+        the controller's whole lifetime rather than making a fresh one
+        per dialog open (so a plain close-and-reopen with nothing
+        changed can redraw its last map without refitting). Without an
+        explicit reset() call at dialog-open time, that same persistence
+        becomes a bug: closing the 2D Map dialog, running an operation
+        that changes the underlying spectra (e.g. a SNIP baseline
+        correction), and reopening it left the OLD NMF/MCR-ALS/SVD/PCA
+        map fully drawn and marked "current" -- self._decomp_needs_refit
+        is a fresh, all-False dict on every new Map2DDialog instance, so
+        the dialog had no way to know its freshly-constructed manager
+        (this one, reused from the controller) was actually fit on
+        different data. See Map2DController.show_dialog, which now calls
+        this before constructing each new dialog -- confirmed in
+        practice: without it, "Update Map" was required to notice the
+        mismatch even though nothing on screen indicated staleness."""
+        self.__init__()
+
     # ------------------------------------------------------------------ #
     # Dimension validation                                                 #
     # ------------------------------------------------------------------ #
@@ -1200,3 +1221,131 @@ class Map2DManager:
         if kind == 'mcr':
             return self._mcr_run_info
         return None
+
+    # ------------------------------------------------------------------ #
+    # Bootstrap Uncertainty (NMF / MCR-ALS only)                          #
+    # ------------------------------------------------------------------ #
+    #
+    # Delegated to NMFController.compute_bootstrap_uncertainty /
+    # MCRALSController.compute_bootstrap_uncertainty against this map's
+    # own persisted self._nmf_manager / self._mcr_manager -- same reuse
+    # policy compute_nmf_map/compute_mcr_map already follow (the fit
+    # itself lives in NMFManager/MCRALSManager; nothing about the
+    # residual-bootstrap statistics is reimplemented here). A throwaway
+    # controller instance is used purely to reach that method -- passing
+    # main_controller=None is safe because neither compute_trial() nor
+    # compute_bootstrap_uncertainty() touch self.controller.
+    #
+    # No separate staleness-clearing is needed here the way the standalone
+    # NMF/MCR-ALS dialogs needed it (see NMFManager.compute()'s
+    # "self.bootstrap_result = None" fix): compute_nmf_map/compute_mcr_map
+    # always build a brand-new NMFManager()/MCRALSManager() and replace
+    # self._nmf_manager/_mcr_manager wholesale, so a stale bootstrap_result
+    # from a previous fit can never survive onto the manager object a
+    # later map recomputation leaves in place.
+
+    def compute_bootstrap_uncertainty(self, kind, n_components, n_resamples,
+                                       confidence_level, random_state=None,
+                                       init=None, max_iter=None,
+                                       max_iterations=None, tol=0.01,
+                                       c_nonneg=True, st_nonneg=True,
+                                       normalize_spectra=True, closure=False,
+                                       references=None, fix_references=False,
+                                       progress_callback=None,
+                                       cancel_check=None):
+        """Residual bootstrap, warm-started from the last successful
+        compute_nmf_map()/compute_mcr_map() fit for *kind*. Every keyword
+        argument must match the settings that fit was actually computed
+        with (mirrors NMFController/MCRALSController's own
+        compute_bootstrap_uncertainty requirement). init/max_iter are
+        NMF-only; max_iterations/tol/c_nonneg/st_nonneg/normalize_spectra/
+        closure are MCR-ALS-only -- pass only the ones relevant to *kind*.
+
+        Returns the same dict compute_bootstrap_uncertainty() on the
+        underlying controller returns (H_lower/H_upper/W_lower/W_upper for
+        NMF, ST_lower/ST_upper/C_lower/C_upper for MCR-ALS, plus
+        n_resamples_used/n_failed/confidence_level), or None if *kind*
+        has no fit loaded yet or every replicate's refit failed. On
+        success, also stored on the underlying manager's own
+        .bootstrap_result, exactly like the standalone tools -- see
+        get_bootstrap_result().
+        """
+        if kind == 'nmf':
+            mgr = self._nmf_manager
+            if mgr is None:
+                return None
+            from src.controllers.visualization_analysis.nmf_controller import NMFController
+            ctrl = NMFController(None)
+            return ctrl.compute_bootstrap_uncertainty(
+                mgr, n_components=n_components, init=init, max_iter=max_iter,
+                n_resamples=n_resamples, confidence_level=confidence_level,
+                random_state=random_state, references=references,
+                fix_references=fix_references,
+                progress_callback=progress_callback, cancel_check=cancel_check)
+        if kind == 'mcr':
+            mgr = self._mcr_manager
+            if mgr is None:
+                return None
+            from src.controllers.visualization_analysis.mcr_als_controller import MCRALSController
+            ctrl = MCRALSController(None)
+            return ctrl.compute_bootstrap_uncertainty(
+                mgr, n_components=n_components, max_iterations=max_iterations,
+                tol=tol, c_nonneg=c_nonneg, st_nonneg=st_nonneg,
+                normalize_spectra=normalize_spectra, closure=closure,
+                n_resamples=n_resamples, confidence_level=confidence_level,
+                random_state=random_state, references=references,
+                fix_references=fix_references,
+                progress_callback=progress_callback, cancel_check=cancel_check)
+        raise ValueError(f"Bootstrap Uncertainty not supported for kind={kind!r}")
+
+    def get_bootstrap_result(self, kind):
+        """Raw bootstrap_result dict from the last
+        compute_bootstrap_uncertainty() call for *kind*, or None if none
+        has been run yet (or *kind* isn't 'nmf'/'mcr')."""
+        mgr = self._nmf_manager if kind == 'nmf' else (
+            self._mcr_manager if kind == 'mcr' else None)
+        return None if mgr is None else getattr(mgr, 'bootstrap_result', None)
+
+    def get_component_subspectrum_band(self, kind, component_index):
+        """(lower, upper) arrays for one component's own spectral-shape
+        band -- H_lower/H_upper[component_index, :] for NMF,
+        ST_lower/ST_upper for MCR-ALS -- the same quantity
+        get_component_subspectrum() returns the point estimate for.
+        Returns (None, None) if no bootstrap has been run for *kind*."""
+        br = self.get_bootstrap_result(kind)
+        if br is None:
+            return None, None
+        if kind == 'nmf':
+            ci = max(0, min(component_index, br['H_lower'].shape[0] - 1))
+            return br['H_lower'][ci, :], br['H_upper'][ci, :]
+        if kind == 'mcr':
+            ci = max(0, min(component_index, br['ST_lower'].shape[0] - 1))
+            return br['ST_lower'][ci, :], br['ST_upper'][ci, :]
+        return None, None
+
+    def get_component_uncertainty_map(self, kind, component_index,
+                                       n_rows, n_cols):
+        """(n_rows, n_cols) array of the bootstrap confidence band's WIDTH
+        (upper - lower) for one component's per-pixel score/concentration
+        -- the same W/C column compute_nmf_map()/compute_mcr_map() reshape
+        for the point-estimate map, but from the bootstrap's W_upper-
+        W_lower / C_upper-C_lower instead. A wide value at a pixel means
+        that pixel's score is noise-sensitive; it says nothing about the
+        map's absolute scale, only its uncertainty. Returns None if no
+        bootstrap has been run for *kind*, or its stored arrays don't
+        have n_rows*n_cols entries (e.g. the map grid changed since the
+        bootstrap was run)."""
+        br = self.get_bootstrap_result(kind)
+        if br is None:
+            return None
+        if kind == 'nmf':
+            lo, hi = br['W_lower'], br['W_upper']
+        elif kind == 'mcr':
+            lo, hi = br['C_lower'], br['C_upper']
+        else:
+            return None
+        ci = max(0, min(component_index, lo.shape[1] - 1))
+        width = hi[:, ci] - lo[:, ci]
+        if width.size != n_rows * n_cols:
+            return None
+        return width.reshape(n_rows, n_cols)

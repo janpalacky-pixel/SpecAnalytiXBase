@@ -29,6 +29,51 @@ class IncrementalOperationsManager(QObject):
         # actually "current". Updated in apply_operation(), read back in
         # OperationsController.jump_to_operation_state().
         self.original_state_selected_labels = []
+
+        # A single, monotonically-increasing counter, bumped every time
+        # the ACTUAL spectra content a dialog would be looking at
+        # changes -- a new operation applied (apply_operation), history
+        # navigation landing on a different state (set_active_operation),
+        # or new spectra being imported (add_spectra_to_original).
+        #
+        # Exists so a dialog whose controller keeps ONE persistent
+        # manager alive across close/reopen (Map2DController,
+        # BaselineCorrectionController, NMFController, ... -- see each
+        # one's own __init__) can tell "nothing happened since I was
+        # last open, it's safe to restore what I had" apart from
+        # "something changed underneath me while I was closed, my
+        # cached state/results no longer describe these spectra and
+        # must be dropped" -- without this, a controller had only two
+        # bad choices: never forget (a stale NMF/MCR-ALS map, or stale
+        # manual-baseline points from before a SNIP correction, silently
+        # shown as current -- see Map2DManager.reset()'s docstring for
+        # the concrete bug), or always forget (NMFController/
+        # MCRALSController's show_dialog() today -- correct, but throws
+        # away a perfectly good remembered state on every single
+        # reopen, even when literally nothing changed).
+        #
+        # A caller records this value (e.g. self._last_seen_revision)
+        # when it last trusted its own cached state, and compares it
+        # against self.operations_manager.revision the next time its
+        # dialog opens: equal -> restore, different -> reset. It is a
+        # plain monotonic counter, NOT a state identifier -- jumping to
+        # a history state (undo/redo) always bumps it to a new number
+        # too, even if you land back on an index you'd visited before,
+        # so "equal" only ever means "provably nothing happened since",
+        # never "we're back to a state I've cached before". That's the
+        # right tradeoff for every current caller (each just resets its
+        # own cache on any change), and keeps this simple; if a future
+        # caller ever wants "restore my cache for this exact history
+        # state even across undo/redo", that needs a real per-state
+        # identifier instead of this counter, not an assumption about it.
+        #
+        # Deliberately NOT bumped by: a Rename commit (see
+        # apply_operation()'s own exception for it -- labels aren't
+        # data), or a plain spectrum deletion/removal (never routed
+        # through apply_operation() at all -- no Operations History
+        # entry is created for it). Both leave every other spectrum's
+        # own identity-keyed cached state exactly as valid as it was.
+        self.revision = 0
         
     def add_spectra_to_original(self, new_spectra):
         """
@@ -85,6 +130,8 @@ class IncrementalOperationsManager(QObject):
             logger.debug("New import_batches count: %d", len(self.import_batches))
         
         logger.debug("Added %d new spectra to original_spectra", added_count)
+        if added_count:
+            self.revision += 1
         
     def _deep_copy_spectra(self, spectra):
         """Create a proper deep copy of a list of spectra.
@@ -118,7 +165,8 @@ class IncrementalOperationsManager(QObject):
         # Reset state
         self.operations_chain = []
         self.active_operation_index = -1
-        
+        self.revision += 1
+
         # Store a deep copy of the original spectra
         self.original_spectra = self._deep_copy_spectra(spectra)
         
@@ -181,7 +229,22 @@ class IncrementalOperationsManager(QObject):
         
         self.operations_chain.append(operation_record)
         self.active_operation_index = len(self.operations_chain) - 1
-    
+
+        # Rename is the one operation type recorded here that never
+        # touches any spectrum's actual measured data (x_scale/y_scale)
+        # -- it only changes labels. Every cache this counter protects
+        # (manual baseline points, NMF/MCR-ALS fits, stored subtraction
+        # factors, detected spikes, ...) is already keyed by unique_id
+        # rather than by label specifically so it survives a rename (see
+        # e.g. BaselineManager._key_for, SpikeRemovalManager._key_for,
+        # InteractiveSubtractionManager._key_for) -- bumping revision for
+        # a Rename would throw all of that cached state away for no
+        # reason every single time, which is exactly the "always forget"
+        # problem this counter exists to avoid. Every other operation
+        # type recorded here does change data, so it still bumps.
+        if operation_type != 'Rename':
+            self.revision += 1
+
         return True
     
     def get_current_spectra(self):
@@ -265,7 +328,16 @@ class IncrementalOperationsManager(QObject):
         """
         if index < -1 or index >= len(self.operations_chain):
             return None
-        
+
+        # Landing on a different state changes what a dialog would see
+        # just as much as a brand-new operation does (see self.revision's
+        # own docstring in __init__) -- bump only when the index is
+        # actually moving, so re-selecting the state already active
+        # (e.g. re-clicking the current row in Operations History) isn't
+        # treated as a change.
+        if index != self.active_operation_index:
+            self.revision += 1
+
         # Update active operation index
         self.active_operation_index = index
         

@@ -62,6 +62,15 @@ from src.views.dialogs.visualization_analysis.roi_spectra_dialogs import (
 
 logger = get_logger(__name__)
 
+# Same 95% default as the standalone NMF Analysis / MCR-ALS tools'
+# own Bootstrap Uncertainty (_BOOTSTRAP_CONFIDENCE_LEVEL in
+# nmf_dialog.py / mcr_als_dialog.py) -- kept as its own module-level
+# constant here rather than importing theirs, since this dialog
+# already keeps its NMF/MCR-ALS map logic independent of those
+# dialogs' UI (only the underlying Manager/Controller classes are
+# shared -- see Map2DManager.compute_bootstrap_uncertainty).
+_MAP_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
+
 
 def _disable_wheel_scrolling(root):
     """Make every spinbox/combobox/slider under root ignore mouse-wheel
@@ -1402,6 +1411,7 @@ class Map2DDialog(QDialog):
         svlay.addLayout(btn_row2)
 
         # ── NMF/MCR-ALS only: robustness re-run + fit status ──────────
+        decomp_btn_row = QHBoxLayout()
         self._btn_decomp_run_n = QPushButton("Run N times, keep best…")
         self._btn_decomp_run_n.setToolTip(
             "Like Update Map below, this (re)computes the map — but\n"
@@ -1414,15 +1424,66 @@ class Map2DDialog(QDialog):
             "deterministic; may take a while on a large map since every\n"
             "run refits every pixel.")
         self._btn_decomp_run_n.setVisible(False)
-        svlay.addWidget(self._btn_decomp_run_n)
+        decomp_btn_row.addWidget(self._btn_decomp_run_n)
+
+        self._btn_run_bootstrap_map = QPushButton("Bootstrap Uncertainty…")
+        self._btn_run_bootstrap_map.setToolTip(
+            "Quantifies how much the CURRENTLY LOADED result would\n"
+            "wobble under a different noise draw of the same data — a\n"
+            "different question from \"Run N times, keep best…\" above\n"
+            "(which instead checks for the wrong local optimum /\n"
+            "rotational ambiguity). Same residual bootstrap, warm-\n"
+            "started from this exact result, as the standalone NMF\n"
+            "Analysis / MCR-ALS tools' own Bootstrap Uncertainty button\n"
+            "— see their help pages for the full explanation.\n"
+            "Requires a fit already loaded and up to date (press\n"
+            "\"Update Map\" / \"Run N times, keep best…\" first if\n"
+            "settings changed since).")
+        self._btn_run_bootstrap_map.setVisible(False)
+        decomp_btn_row.addWidget(self._btn_run_bootstrap_map)
+        svlay.addLayout(decomp_btn_row)
+
         self._decomp_run_n_caption = QLabel(
-            "Slower, more thorough alternative to Update Map below — "
-            "tries several random starts and keeps the most consistent "
-            "result.")
+            "\"Run N times\": slower, more thorough alternative to Update "
+            "Map below — tries several random starts and keeps the most "
+            "consistent result.  \"Bootstrap Uncertainty\": quantifies how "
+            "much the currently loaded result would wobble under different "
+            "noise, once loaded.")
         self._decomp_run_n_caption.setWordWrap(True)
         self._decomp_run_n_caption.setStyleSheet("font-size:8pt; color:#555;")
         self._decomp_run_n_caption.setVisible(False)
         svlay.addWidget(self._decomp_run_n_caption)
+
+        bootstrap_cb_row = QHBoxLayout()
+        self._show_bootstrap_band_cb = QCheckBox(
+            "Show bootstrap confidence band on component plot")
+        self._show_bootstrap_band_cb.setChecked(True)
+        self._show_bootstrap_band_cb.setToolTip(
+            "Shades the component's own spectral-shape overlay (on the\n"
+            "clicked-pixel spectrum panel below) with its bootstrap\n"
+            "confidence band. Has no visible effect until Bootstrap\n"
+            "Uncertainty has actually been run.")
+        self._show_bootstrap_band_cb.setVisible(False)
+        bootstrap_cb_row.addWidget(self._show_bootstrap_band_cb)
+
+        self._show_uncertainty_map_cb = QCheckBox(
+            "Show as uncertainty map (band width per pixel)")
+        self._show_uncertainty_map_cb.setEnabled(False)
+        self._show_uncertainty_map_cb.setToolTip(
+            "Replaces the map above with the WIDTH of the bootstrap\n"
+            "confidence band at each pixel, instead of the component's\n"
+            "score/concentration itself — bright = noise-sensitive\n"
+            "there, dark = solid. Enabled once Bootstrap Uncertainty\n"
+            "has been run for the currently loaded fit.")
+        self._show_uncertainty_map_cb.setVisible(False)
+        bootstrap_cb_row.addWidget(self._show_uncertainty_map_cb)
+        svlay.addLayout(bootstrap_cb_row)
+
+        self._bootstrap_status_label = QLabel("")
+        self._bootstrap_status_label.setStyleSheet("font-size:8pt; color:#2E7D32;")
+        self._bootstrap_status_label.setWordWrap(True)
+        self._bootstrap_status_label.setVisible(False)
+        svlay.addWidget(self._bootstrap_status_label)
 
         self._decomp_status_label = QLabel("")
         self._decomp_status_label.setStyleSheet("font-size:8pt; color:#2E7D32;")
@@ -1904,6 +1965,9 @@ class Map2DDialog(QDialog):
         self._btn_multi_map.clicked.connect(self._show_multi_map)
         self._btn_diagnostics.clicked.connect(self._show_diagnostics)
         self._btn_decomp_run_n.clicked.connect(self._run_decomp_best_of_n)
+        self._btn_run_bootstrap_map.clicked.connect(self._prompt_and_run_bootstrap_map)
+        self._show_bootstrap_band_cb.stateChanged.connect(self._draw_twin_subspectrum)
+        self._show_uncertainty_map_cb.stateChanged.connect(self._on_show_uncertainty_map_changed)
         self._decomp_n_spin.valueChanged.connect(self._on_decomp_n_changed)
         self._ref_fix_cb.toggled.connect(self._on_reference_settings_changed)
         # NMF's Init./Max iter., and MCR-ALS's Max iter./Non-neg. C/
@@ -2100,6 +2164,9 @@ class Map2DDialog(QDialog):
         self._btn_decomp_run_n.setVisible(is_nmf or is_mcr)
         self._decomp_run_n_caption.setVisible(is_nmf or is_mcr)
         self._decomp_status_label.setVisible(is_nmf or is_mcr)
+        self._btn_run_bootstrap_map.setVisible(is_nmf or is_mcr)
+        self._show_bootstrap_band_cb.setVisible(is_nmf or is_mcr)
+        self._show_uncertainty_map_cb.setVisible(is_nmf or is_mcr)
         self._ref_grp.setVisible(is_nmf or is_mcr)
         if is_nmf or is_mcr:
             self._rebuild_reference_rows()
@@ -2348,12 +2415,37 @@ class Map2DDialog(QDialog):
         changed (see _on_dims_changed, the one place that DOES need to
         clear them). Callers of this method include a plain mode switch
         (SVD → NMF, Intensity → RGB overlay, ...), which is exactly the
-        case ROI regions should survive."""
+        case ROI regions should survive.
+
+        Also resets "Show as uncertainty map" -- bug found in practice:
+        without this, changing a fit setting (component count, Init./Max
+        iter., ...) while that checkbox was checked left the OLD
+        bootstrap band-width heatmap fully drawn on screen, right
+        alongside the red "Settings changed" warning, since nothing
+        else ever re-checks staleness once that checkbox's own redraw
+        path (_on_show_uncertainty_map_changed) has already run. Every
+        staleness trigger in this dialog funnels through this one
+        method, so resetting it here (rather than in each of those
+        callers separately) closes all of them at once. Unchecking
+        rather than leaving it checked-but-stale also means the
+        checkbox's own redraw path is never re-entered here: with
+        self._last_map_data already cleared to None just above,
+        _on_show_uncertainty_map_changed's "unchecked" branch is a
+        no-op, so the black "Settings changed" placeholder this method
+        just drew is left alone."""
         self._last_map_data = None
         self._last_map_kind = None
         self._map_canvas.disable_hover()
         self._map_canvas._draw_stale()
         self._ref_stale_warning_label.setVisible(False)
+        show_umap_cb = getattr(self, '_show_uncertainty_map_cb', None)
+        if show_umap_cb is not None:
+            if show_umap_cb.isChecked():
+                show_umap_cb.setChecked(False)
+            show_umap_cb.setEnabled(False)
+        bootstrap_label = getattr(self, '_bootstrap_status_label', None)
+        if bootstrap_label is not None:
+            bootstrap_label.setVisible(False)
 
     # ── Dimensions ──────────────────────────────────────────────────────
 
@@ -2623,13 +2715,24 @@ class Map2DDialog(QDialog):
     def _rgb_channel_array(self, ch_idx, n_rows, n_cols):
         """Return this channel's raw (n_rows, n_cols) map, or None if
         disabled / nothing valid selected / shape mismatch (e.g. the
-        dimensions spinboxes changed since that kind was computed)."""
+        dimensions spinboxes changed since that kind was computed).
+
+        Bug found in practice (same family as _on_component_changed's):
+        the RGB overlay's per-channel "Source kind" picks whichever
+        decomposition (SVD/PCA/NMF/MCR-ALS) is asked for, independent
+        of which mode's radio button is currently active -- so a kind
+        that went stale while some OTHER mode was on screen (a range or
+        fit-setting change nobody re-fit yet) was still read straight
+        from its persisted manager here, with no staleness check at
+        all, silently compositing a channel from an outdated fit."""
         widgets = self._rgb_channel_widgets[ch_idx]
         if not widgets['enable'].isChecked():
             return None
         kind = widgets['kind'].currentData()
         comp_idx = widgets['comp'].currentIndex()
         if kind is None or comp_idx < 0:
+            return None
+        if self._decomp_needs_refit.get(kind, False):
             return None
         coeffs = self.controller.get_component_coefficients(kind, comp_idx)
         if coeffs is None:
@@ -2985,6 +3088,16 @@ class Map2DDialog(QDialog):
                         # modes' ranges are.
                         self._invalidate_map()
                         self._decomp_needs_refit[self._decomp_kind()] = True
+                        # Same disabling _on_decomp_n_changed/
+                        # _on_fit_settings_changed already do -- this
+                        # used to be the one staleness-setter that
+                        # skipped it, which is exactly what let
+                        # _on_component_changed redraw the OLD map (see
+                        # its own docstring). Kept even though that
+                        # method now guards itself directly, so the
+                        # combo's own enabled-state doesn't keep lying
+                        # about whether it's safe to touch.
+                        self._component_combo.setEnabled(False)
                         kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
                         self._spectrum_title_label.setText(
                             f"{kind_label} range changed — press 'Update Map' to recompute")
@@ -3283,6 +3396,7 @@ class Map2DDialog(QDialog):
             self._last_clicked_pixel = None
             self._update_subspectrum_in_panel(comp_idx)
             self._update_decomp_status_label(kind)
+            self._sync_uncertainty_map_toggle(kind)
             self._on_map_computed()
 
         self._map_canvas.setFocus()
@@ -3303,6 +3417,17 @@ class Map2DDialog(QDialog):
         from cache ONLY while nothing invalidating has changed, and
         otherwise asks for 'Update Map' instead of silently keeping
         (and mislabeling) the old fit.
+
+        Bug found in practice (same shape as the one Bootstrap
+        Uncertainty's "Show as uncertainty map" checkbox had): this
+        handler updated the spectrum panel's TITLE to the red warning
+        but never actually cleared the plot underneath, unlike
+        _on_decomp_n_changed's identical case just below -- so the old
+        component's dashed twin-axis overlay, and its shaded bootstrap
+        confidence band if "Show bootstrap confidence band on component
+        plot" was checked, stayed fully drawn and unlabeled-as-stale
+        right under a title that said otherwise. Now clears the same
+        way _on_decomp_n_changed already does.
         """
         if self._decomp_kind() != kind:
             # Widgets for the other kind are hidden while it isn't
@@ -3320,6 +3445,10 @@ class Map2DDialog(QDialog):
         self._decomp_status_label.setVisible(True)
         self._spectrum_title_label.setText(
             f"{kind_label} fit settings changed \u2014 press 'Update Map' to refit")
+        self._spectrum_canvas.ax.cla()
+        self._spectrum_canvas.draw_idle()
+        self._clear_twin_axis()
+        self._clear_reconstructed_overlay()
 
     def _on_decomp_n_changed(self, *_):
         """'Components' spinner (how many to fit next) changed.
@@ -3596,6 +3725,201 @@ class Map2DDialog(QDialog):
                 parts.append(f"best of {n_runs} runs")
         self._decomp_status_label.setText("  |  ".join(parts))
 
+    # ── NMF/MCR-ALS: Bootstrap Uncertainty ──────────────────────────────
+
+    def _prompt_and_run_bootstrap_map(self):
+        """Ask how many bootstrap resamples to run, mirroring
+        NMFDialog._prompt_and_run_bootstrap / MCRALSDialog's identical
+        pattern almost exactly. Requires an already-loaded, successful,
+        non-stale fit for the active kind -- this refits AROUND that
+        specific result to measure its noise sensitivity, it does not
+        produce a new fit from scratch the way Update Map / Run N times
+        do."""
+        kind = self._decomp_kind()
+        if kind not in ('nmf', 'mcr'):
+            return
+        if self.controller.get_component_lof(kind) is None:
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Compute a map ("Update Map", or "Run N times, keep '
+                'best…") first \u2014 Bootstrap Uncertainty refits around '
+                'whatever result is currently loaded; it does not '
+                'produce a new one on its own.')
+            return
+        # Same bug class fixed in the standalone NMF/MCR-ALS dialogs
+        # (see nmf_manager.py/mcr_als_manager.py's bootstrap_result reset
+        # and nmf_dialog.py/mcr_als_dialog.py's _prompt_and_run_bootstrap):
+        # a setting changed without re-running (_decomp_needs_refit) must
+        # not be silently bootstrapped as if it still matched the loaded
+        # fit.
+        if self._decomp_needs_refit.get(kind, False):
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Settings have changed since the last run \u2014 press '
+                '"Update Map" (or "Run N times, keep best…") first so '
+                'the loaded result matches the current settings, then '
+                'run Bootstrap Uncertainty around that.')
+            return
+        from PyQt5.QtWidgets import QInputDialog
+        n_resamples, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of bootstrap resamples:',
+            value=getattr(self, '_last_n_bootstrap_map', 30), min=5, max=500)
+        if not ok:
+            return
+        self._last_n_bootstrap_map = n_resamples
+        self._run_bootstrap_uncertainty_map(kind, n_resamples)
+
+    def _run_bootstrap_uncertainty_map(self, kind, n_resamples):
+        """Residual bootstrap, warm-started from the map's own converged
+        fit for *kind* -- see Map2DManager.compute_bootstrap_uncertainty
+        for the actual method (delegated straight to NMFController /
+        MCRALSController.compute_bootstrap_uncertainty against this
+        map's own persisted manager). Deliberately a plain sequential
+        loop with a real, cancellable QProgressDialog, mirroring the
+        standalone NMF/MCR-ALS dialogs' _run_bootstrap_uncertainty --
+        unlike _run_decomp_best_of_n's simpler wait-cursor-only pattern,
+        a bootstrap run refits *n_resamples* times over, easily the
+        slowest single action available in this dialog, so cancel
+        support earns its keep here."""
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
+
+        refs, fix_refs = self._reference_settings()
+        kwargs = dict(
+            n_components=self._decomp_n_spin.value(),
+            n_resamples=n_resamples,
+            confidence_level=_MAP_BOOTSTRAP_CONFIDENCE_LEVEL,
+            random_state=None,
+            references=refs, fix_references=fix_refs,
+        )
+        if kind == 'nmf':
+            kwargs.update(init=self._nmf_init_combo.currentText(),
+                          max_iter=self._nmf_maxiter_spin.value())
+        else:
+            kwargs.update(max_iterations=self._mcr_maxiter_spin.value(),
+                          tol=0.01,
+                          c_nonneg=self._mcr_c_nonneg_cb.isChecked(),
+                          st_nonneg=self._mcr_st_nonneg_cb.isChecked(),
+                          normalize_spectra=True,
+                          closure=self._mcr_closure_cb.isChecked())
+
+        progress = QProgressDialog(
+            f'Bootstrap resample 1 of {n_resamples}\u2026', 'Cancel', 0,
+            n_resamples, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle('2D Map')
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def _on_progress(b, n_total):
+            progress.setLabelText(f'Bootstrap resample {b + 1} of {n_total}\u2026')
+            progress.setValue(b)
+            QApplication.processEvents()
+
+        try:
+            result = self.controller.compute_bootstrap_uncertainty(
+                kind, progress_callback=_on_progress,
+                cancel_check=progress.wasCanceled, **kwargs)
+            progress.setValue(n_resamples)
+
+            if result is None:
+                err = self.controller.get_last_decomp_error(kind)
+                QMessageBox.warning(
+                    self, 'Bootstrap Uncertainty',
+                    err or 'All bootstrap resamples failed.')
+                self._bootstrap_status_label.setText(
+                    '\u26a0  Bootstrap uncertainty failed \u2014 see message above.')
+                self._bootstrap_status_label.setStyleSheet(
+                    'font-size:8pt; color:#C62828;')
+                self._bootstrap_status_label.setVisible(True)
+                return
+
+            pct = int(round(_MAP_BOOTSTRAP_CONFIDENCE_LEVEL * 100))
+            msg = (f'Bootstrap uncertainty: {pct}% confidence band from '
+                   f'{result["n_resamples_used"]}/'
+                   f'{result["n_resamples_requested"]} resamples')
+            if result['n_failed']:
+                msg += f' ({result["n_failed"]} refit failed and were skipped)'
+            self._bootstrap_status_label.setText(msg)
+            self._bootstrap_status_label.setStyleSheet(
+                'font-size:8pt; color:#2E7D32;')
+            self._bootstrap_status_label.setVisible(True)
+            self._draw_twin_subspectrum()
+            self._sync_uncertainty_map_toggle(kind)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def _sync_uncertainty_map_toggle(self, kind):
+        """Enable/reset "Show as uncertainty map" to match whether a
+        bootstrap result currently exists for *kind* -- called after
+        every map redraw (fresh fit, best-of-n, component switch, or a
+        cached mode-switch redraw) so the toggle never claims to show an
+        uncertainty view for a fit it doesn't actually match. If it was
+        already checked and a matching result still exists (e.g. the
+        user just switched which component is being browsed), redraws
+        it for the new component instead of silently reverting to the
+        point-estimate map without saying so."""
+        has_bootstrap = (kind in ('nmf', 'mcr')
+                         and self.controller.get_bootstrap_result(kind) is not None)
+        self._show_uncertainty_map_cb.setEnabled(has_bootstrap)
+        if not has_bootstrap:
+            self._bootstrap_status_label.setVisible(False)
+            if self._show_uncertainty_map_cb.isChecked():
+                self._show_uncertainty_map_cb.blockSignals(True)
+                self._show_uncertainty_map_cb.setChecked(False)
+                self._show_uncertainty_map_cb.blockSignals(False)
+        elif self._show_uncertainty_map_cb.isChecked():
+            self._on_show_uncertainty_map_changed()
+
+    def _on_show_uncertainty_map_changed(self):
+        """Swap the map canvas between the point-estimate map
+        (self._last_map_data) and the bootstrap band-WIDTH map for the
+        active component (Map2DManager.get_component_uncertainty_map) --
+        a heatmap of how noise-sensitive each pixel's score/
+        concentration is, not a second measurement of anything new."""
+        kind = self._decomp_kind()
+        if kind not in ('nmf', 'mcr'):
+            return
+        comp_idx = max(0, self._component_combo.currentIndex())
+        n_rows = self._rows_spin.value()
+        n_cols = self._cols_spin.value()
+        kind_title = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+
+        if self._show_uncertainty_map_cb.isChecked():
+            umap = self.controller.get_component_uncertainty_map(
+                kind, comp_idx, n_rows, n_cols)
+            if umap is None:
+                self._show_uncertainty_map_cb.blockSignals(True)
+                self._show_uncertainty_map_cb.setChecked(False)
+                self._show_uncertainty_map_cb.blockSignals(False)
+                return
+            title = (f"{kind_title} component {comp_idx + 1} \u2014 bootstrap "
+                     f"uncertainty (95% CI width)  ({n_rows} \u00d7 {n_cols})")
+            self._map_canvas.update_map(
+                umap,
+                cmap=self._cmap_combo.currentText(),
+                interpolation=self._interp_combo.currentText(),
+                title=title,
+                equal_aspect=self._equal_aspect_cb.isChecked(),
+            )
+        elif self._last_map_data is not None:
+            ev_arr = self.controller.get_component_explained_variance(kind)
+            ev     = (ev_arr[comp_idx]
+                      if ev_arr is not None and comp_idx < len(ev_arr)
+                      else 0.0)
+            title  = (f"{kind_title} map \u2013 component {comp_idx + 1}  "
+                      f"(EV={ev:.2f}%)  ({n_rows} \u00d7 {n_cols})")
+            self._map_canvas.update_map(
+                self._last_map_data,
+                cmap=self._cmap_combo.currentText(),
+                interpolation=self._interp_combo.currentText(),
+                title=title,
+                equal_aspect=self._equal_aspect_cb.isChecked(),
+            )
+
     def _run_decomp_best_of_n(self):
         """Run the active NMF/MCR-ALS fit several times with different
         random seeds and keep whichever run best represents the near-best
@@ -3669,6 +3993,17 @@ class Map2DDialog(QDialog):
             return
 
         self._last_map_data = map_data
+        # Bug found in practice: unlike _compute_map's decomp branch
+        # (which clears this right after its own successful fit), this
+        # method never did -- so choosing "Run N times, keep best"
+        # instead of "Update Map" right after changing a setting left
+        # _decomp_needs_refit[kind] stuck True even though the result
+        # now on screen is a completely fresh, current fit. Harmless by
+        # itself (it only makes things OVER-cautious, never wrong), but
+        # it wrongly blocked Bootstrap Uncertainty/the multi-map window/
+        # SVD diagnostics with a "press Update Map first" message for a
+        # fit that was, in fact, already up to date.
+        self._decomp_needs_refit[kind] = False
         self._ref_stale_warning_label.setVisible(False)
         self._refresh_component_combo(keep_index=comp_idx)
         self._update_rgb_radio_enabled()
@@ -3692,13 +4027,33 @@ class Map2DDialog(QDialog):
         self._last_clicked_pixel = None
         self._update_subspectrum_in_panel(comp_idx)
         self._update_decomp_status_label(kind)
+        self._sync_uncertainty_map_toggle(kind)
         self._on_map_computed()
         self._map_canvas.setFocus()
 
     # ── SVD component combo ─────────────────────────────────────────────
 
     def _refresh_component_combo(self, keep_index=0):
-        """Repopulate the component dropdown after computing the active decomposition."""
+        """Repopulate the component dropdown after computing the active
+        decomposition.
+
+        Bug found in practice: this is also reached from
+        _refresh_component_combo_labels (the EV% <-> sigma label
+        selector), which fires while the Map Type radio and everything
+        else stays exactly as it was -- including a fit marked stale.
+        Rebuilding the dropdown's items always re-read the CURRENT
+        (possibly stale) manager's component count/EV values -- not
+        wrong to show (it's the same cached fit every other stale-aware
+        widget is refusing to act on, not different data), but this
+        method's unconditional setEnabled(True) at the end used to
+        re-enable the Component combo even while
+        _decomp_needs_refit[kind] was True, undoing whichever staleness
+        setter had just disabled it (_on_decomp_n_changed/
+        _on_fit_settings_changed/_configure_ranges_inner). _on_component_
+        changed's own guard means selecting a component through it while
+        stale is a safe no-op either way, but the widget shouldn't LOOK
+        interactive when it isn't. Kept disabled here too whenever this
+        kind is stale."""
         kind = self._decomp_kind()
         if kind is None:
             return
@@ -3735,7 +4090,7 @@ class Map2DDialog(QDialog):
         idx = min(keep_index, max(0, n - 1))
         self._component_combo.setCurrentIndex(idx)
         self._component_combo.blockSignals(False)
-        self._component_combo.setEnabled(True)
+        self._component_combo.setEnabled(not self._decomp_needs_refit.get(kind, False))
         self._refresh_recon_n_spin()
 
     def _redraw_cached_decomp_map(self, kind):
@@ -3785,6 +4140,7 @@ class Map2DDialog(QDialog):
         self._last_clicked_pixel = None
         self._update_subspectrum_in_panel(comp_idx)
         self._update_decomp_status_label(kind)
+        self._sync_uncertainty_map_toggle(kind)
         self._on_map_computed()
         return True
 
@@ -3824,9 +4180,36 @@ class Map2DDialog(QDialog):
         self._refresh_component_combo(keep_index=max(0, current))
 
     def _on_component_changed(self, index):
-        """Switch displayed component without recomputing the fit."""
+        """Switch displayed component without recomputing the fit.
+
+        Bug found in practice, and the most serious of this whole
+        family: unlike _draw_twin_subspectrum/_update_subspectrum_in_
+        panel/_draw_reconstructed_overlay (all guarded against
+        _decomp_needs_refit directly, because they're each reachable
+        through a checkbox/spinbox that stays enabled while stale),
+        this method redraws the MAP CANVAS itself -- not just a
+        spectrum-panel overlay -- and had no guard of its own at all.
+        It happened to be safe only because _on_decomp_n_changed and
+        _on_fit_settings_changed both disable self._component_combo
+        while stale, so a direct click couldn't reach it. But
+        _configure_ranges_inner (changing the spectral range for
+        SVD/PCA/NMF/MCR-ALS) sets _decomp_needs_refit too and does NOT
+        disable the combo -- so switching which component to browse
+        right after changing the range silently redrew the OLD map
+        (self.controller.get_component_coefficients(kind, index) reads
+        straight from the persisted per-kind manager, which a range
+        change never touches until 'Update Map' is pressed), overwriting
+        the correct black "stale" placeholder _invalidate_map() had just
+        drawn, with no warning at all. Guarding here directly -- the same
+        defense-in-depth already applied to the other three -- means
+        this is safe regardless of which caller does or doesn't disable
+        the combo, rather than depending on every future staleness
+        trigger remembering to do so.
+        """
         kind = self._decomp_kind()
         if kind is None or index < 0 or self.controller.get_n_components(kind) == 0:
+            return
+        if self._decomp_needs_refit.get(kind, False):
             return
         coeffs = self.controller.get_component_coefficients(kind, index)
         if coeffs is None:
@@ -3856,6 +4239,7 @@ class Map2DDialog(QDialog):
             title=title,
             equal_aspect=self._equal_aspect_cb.isChecked(),
         )
+        self._sync_uncertainty_map_toggle(kind)
 
         # If a pixel was clicked, refresh using its spectrum; otherwise show reference.
         if self._last_clicked_pixel is not None:
@@ -3904,10 +4288,20 @@ class Map2DDialog(QDialog):
                 self._update_subspectrum_in_panel(index)
 
     def _show_diagnostics(self):
-        """Open SVDDiagnosticsDialog reused from svd_analysis_dialog."""
+        """Open SVDDiagnosticsDialog reused from svd_analysis_dialog.
+
+        Same staleness gap fixed in _show_multi_map just above (this
+        button is also enabled purely by kind == 'svd', regardless of
+        _decomp_needs_refit)."""
         if self.controller.get_n_svd_components() == 0:
             QMessageBox.information(self, "No SVD",
                                     "Compute an SVD map first.")
+            return
+        if self._decomp_needs_refit.get('svd', False):
+            QMessageBox.information(
+                self, "No SVD",
+                "Settings have changed since the last run — press "
+                "'Update Map' first so this shows the current fit.")
             return
         try:
             from src.views.dialogs.visualization_analysis.svd_analysis_dialog \
@@ -3924,7 +4318,15 @@ class Map2DDialog(QDialog):
     def _show_multi_map(self):
         """Open the multi-component map grid window — works for SVD or
         PCA (whichever is active); the button is hidden for NMF/MCR-ALS
-        (see _on_mode_changed)."""
+        (see _on_mode_changed).
+
+        Bug found in practice (same family as _on_component_changed's
+        and the RGB overlay's): this button stays enabled purely based
+        on kind in ('svd', 'pca') (see _on_mode_changed/_compute_map),
+        with no staleness check -- so a range change (which sets
+        _decomp_needs_refit for SVD/PCA too, see _configure_ranges_inner)
+        left it clickable, opening a grid of every component's map read
+        straight from the stale, pre-range-change fit."""
         kind = self._decomp_kind()
         if kind not in ('svd', 'pca'):
             return
@@ -3932,6 +4334,13 @@ class Map2DDialog(QDialog):
             kind_label = {'svd': 'SVD', 'pca': 'PCA'}[kind]
             QMessageBox.information(self, f"No {kind_label}",
                                     f"Compute a {kind_label} map first.")
+            return
+        if self._decomp_needs_refit.get(kind, False):
+            kind_label = {'svd': 'SVD', 'pca': 'PCA'}[kind]
+            QMessageBox.information(
+                self, f"No {kind_label}",
+                "Settings have changed since the last run — press "
+                "'Update Map' first so this shows the current fit.")
             return
         n_rows = self._rows_spin.value()
         n_cols = self._cols_spin.value()
@@ -4360,6 +4769,21 @@ class Map2DDialog(QDialog):
         Works for any decomposition kind (SVD, NMF, MCR-ALS): each has its
         own get_component_subspectrum(kind, idx) via the unified accessor,
         so there's nothing SVD-specific left here.
+
+        For NMF/MCR-ALS, if a Bootstrap Uncertainty result already exists
+        for the active fit and "Show bootstrap confidence band on
+        component plot" is checked, also shades this twin curve with its
+        bootstrap band (get_component_subspectrum_band) -- the same
+        quantity nmf_dialog.py/mcr_als_dialog.py shade on their own
+        Components tab, just drawn on the twin axis here instead of a
+        dedicated one.
+
+        Also guards against staleness directly (same reasoning as
+        _update_subspectrum_in_panel's own guard): this method is wired
+        straight to "Show bootstrap confidence band on component plot"'s
+        checkbox, a SEPARATE entry point that bypasses
+        _update_subspectrum_in_panel entirely, so that method's guard
+        alone would not have covered this one.
         """
         kind = self._decomp_kind()
         if kind is None:
@@ -4367,6 +4791,8 @@ class Map2DDialog(QDialog):
             return
         if not self._show_svd_cb.isChecked():
             self._clear_twin_axis()
+            return
+        if self._decomp_needs_refit.get(kind, False):
             return
         comp_idx = self._component_combo.currentIndex()
         sx, sy = self.controller.get_component_subspectrum(kind, comp_idx)
@@ -4382,8 +4808,13 @@ class Map2DDialog(QDialog):
                 pass
             self._spectrum_canvas._twin_ax = None
         twin = ax.twinx()
+        if kind in ('nmf', 'mcr') and self._show_bootstrap_band_cb.isChecked():
+            lo, hi = self.controller.get_component_subspectrum_band(kind, comp_idx)
+            if lo is not None and hi is not None and len(lo) == len(sx):
+                twin.fill_between(sx, lo, hi, color='#E65100', alpha=0.18,
+                                   linewidth=0, zorder=1)
         twin.plot(sx, sy, color='#E65100', linewidth=0.9,
-                  linestyle='--', alpha=0.8)
+                  linestyle='--', alpha=0.8, zorder=2)
         twin.set_ylabel("Component amplitude", fontsize=7, color='#E65100')
         twin.tick_params(axis='y', labelcolor='#E65100', labelsize=6)
         self._spectrum_canvas._twin_ax = twin
@@ -4435,12 +4866,28 @@ class Map2DDialog(QDialog):
         overlay, which previews spectrum 0) — a reconstruction claims to
         approximate a specific pixel's spectrum, and showing one with no
         Row/Col shown for it looked like a stale/wrong result.
+
+        Bug found in practice (same hole as _draw_twin_subspectrum's,
+        fixed the same way): this is a THIRD separate entry point
+        (alongside the checkbox and _update_subspectrum_in_panel) that
+        redraws straight from the current fit data with no staleness
+        check of its own -- self._recon_n_spin's valueChanged
+        (_on_recon_n_spin_changed) calls straight into this method, so
+        after a settings change nudging that spinbox redrew the OLD
+        reconstruction line right under the "Settings changed" warning,
+        exactly like the twin-axis overlay did before its own fix. Same
+        guard, same reasoning: _update_subspectrum_in_panel's own guard
+        doesn't cover this because this method has its own direct
+        callers that bypass it entirely.
         """
         kind = self._decomp_kind()
         if kind is None or self._last_clicked_pixel is None:
             self._clear_reconstructed_overlay()
             return
         if not self._show_reconstructed_cb.isChecked():
+            self._clear_reconstructed_overlay()
+            return
+        if self._decomp_needs_refit.get(kind, False):
             self._clear_reconstructed_overlay()
             return
         n_cols = self._cols_spin.value()
@@ -4639,12 +5086,34 @@ class Map2DDialog(QDialog):
         """Show spectrum in lower-right panel for SVD/NMF/MCR-ALS mode.
 
         clicked_sp : spectrum dict to display (defaults to self.spectra[0])
+
+        Bug found in practice (same root cause as _on_fit_settings_changed's
+        missing clear, and the uncertainty-map checkbox's missing reset --
+        see _invalidate_map): _on_svd_display_changed (the "Full spectrum"
+        checkbox) calls straight into this method with no staleness check
+        of its own, and this method reads the CURRENT component data
+        (get_component_subspectrum) regardless of whether a setting has
+        changed since the last fit -- so toggling "Full spectrum" (or any
+        future caller of this method) after a settings change silently
+        redrew the full old spectrum + old twin overlay right underneath
+        the still-correct "Settings changed" warning above it, exactly
+        undoing _on_decomp_n_changed's/_on_fit_settings_changed's
+        ax.cla()/_clear_twin_axis() call. The standalone NMF/MCR-ALS
+        dialogs never had this hole because THEIR redraw functions
+        (_refresh_components/_refresh_scores) each check staleness at
+        their own top before drawing anything real -- this mirrors that
+        same defense-in-depth pattern here, in the one shared method
+        every "redraw the spectrum panel for NMF/MCR-ALS" path funnels
+        through, rather than patching each caller separately (there may
+        be callers not yet audited for this).
         """
         if self._right_splitter.sizes()[1] == 0 or not self.spectra:
             return
 
         kind = self._decomp_kind()
         if kind is None:
+            return
+        if self._decomp_needs_refit.get(kind, False):
             return
 
         sp     = clicked_sp if clicked_sp is not None else self.spectra[0]

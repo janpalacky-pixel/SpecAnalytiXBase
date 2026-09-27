@@ -451,3 +451,57 @@ def test_invert_component_before_compute_returns_false():
     mgr = Map2DManager()
     assert mgr.invert_component('svd', 0) is False
     assert mgr.invert_component('pca', 0) is False
+
+
+# ---------------------------------------------------------------------------
+# reset() -- bug found in practice: Map2DController keeps ONE Map2DManager
+# alive for its whole lifetime (built once, not per dialog open), so a
+# plain close-and-reopen of the 2D Map dialog with nothing changed could
+# redraw its last map without refitting. But with no reset() call at
+# dialog-open time, that same persistence let a STALE map survive a close,
+# an operation that changed the underlying spectra (e.g. a SNIP baseline
+# correction), and a reopen: the new dialog's own staleness tracking
+# starts out all-False, so it had no way to know this reused manager's
+# cached fit no longer matched anything -- it silently redrew the old
+# result as if current. Map2DController.show_dialog now calls
+# manager.reset() before constructing each new dialog, the same fix
+# NMFController.show_dialog/MCRALSController.show_dialog already apply
+# for their own persistent managers.
+# ---------------------------------------------------------------------------
+
+def test_reset_clears_every_decomposition_kind(map_fixture):
+    spectra, x, n_rows, n_cols, *_ = map_fixture
+    mgr = Map2DManager()
+    _compute_all(mgr, spectra, n_rows, n_cols)
+    for kind in ALL_KINDS:
+        assert mgr.get_n_components(kind) > 0
+
+    mgr.reset()
+
+    for kind in ALL_KINDS:
+        assert mgr.get_n_components(kind) == 0
+    assert mgr.map_data is None
+    assert mgr.n_rows is None
+    assert mgr.n_cols is None
+
+
+def test_reset_clears_bootstrap_result_too():
+    """Same reset(), checked against the bootstrap-specific accessors
+    that a stale map would otherwise keep answering from (see
+    test_map2d_bootstrap.py)."""
+    spectra, x, n_rows, n_cols = (
+        __import__('tests.test_map2d_bootstrap', fromlist=['_make_map_spectra'])
+        ._make_map_spectra())
+    mgr = Map2DManager()
+    mgr.compute_nmf_map(spectra, n_rows, n_cols, n_components=2,
+                        component_index=0, max_iter=300, random_state=0)
+    result = mgr.compute_bootstrap_uncertainty(
+        'nmf', n_components=2, n_resamples=5, confidence_level=0.95,
+        init='nndsvda', max_iter=200, random_state=0)
+    assert result is not None
+    assert mgr.get_bootstrap_result('nmf') is not None
+
+    mgr.reset()
+
+    assert mgr.get_bootstrap_result('nmf') is None
+    assert mgr.get_n_components('nmf') == 0
