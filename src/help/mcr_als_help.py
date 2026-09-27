@@ -475,7 +475,7 @@ def get_mcr_als_help_content():
     </div>
 
     <hr>
-    <h2>Bootstrap Uncertainty</h2>
+    <h2 id="bootstrap-uncertainty">Bootstrap Uncertainty</h2>
     <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (next to "Run N
     times, keep best" in the settings panel) answers a different
     question from that button. Both exist because a single MCR-ALS
@@ -491,19 +491,31 @@ def get_mcr_als_help_content():
         <li><strong>Bootstrap Uncertainty</strong> guards against
             over-trusting one specific, already-chosen result just
             because it happens to fit THIS particular noisy dataset
-            well. It re-fits many times on synthetic variations of your
-            data built from its own residual noise, keeping the same
-            starting point every time (see the Developer Guide if you
-            want the full mechanism) — so it measures pure measurement-
-            noise sensitivity, deliberately excluding the
-            rotational-ambiguity question Run N times already answers.</li>
+            well. In plain terms: it repeatedly asks "if I'd measured
+            this same sample again and gotten a slightly different
+            noise pattern, would I still get roughly this same answer?"
+            — by building many synthetic versions of your data from the
+            <em>residual</em> (the small leftover mismatch between the
+            fit and your real measurement — essentially the noise the
+            model didn't explain), shuffling that leftover noise around
+            differently each time, and re-fitting each version starting
+            from the same point (see the
+            <a href="help://developer_guide#mcr-als-bootstrap-uncertainty">Developer
+            Guide</a> if you want the full mechanism). Because every
+            re-fit starts from the same place, it measures pure
+            measurement-noise sensitivity, deliberately excluding the
+            rotational-ambiguity question Run N times already
+            answers.</li>
     </ul>
     <p>Click it after loading a result you trust (from Run MCR-ALS or Run
     N times, keep best) — it does not produce a new fit on its own, it
     quantifies the ONE you already have. Choose how many resamples to
     run (more = a smoother, more reliable band estimate, at
     proportionally more compute time — 30 is a reasonable default). The
-    result is a 95% confidence band, shown as shaded regions around each
+    result is a 95% confidence band — in practice, a range wide enough
+    that, if you'd measured this sample many times over with different
+    noise, about 95% of those measurements would have landed inside it
+    — shown as shaded regions around each
     pure spectrum on the Pure Spectra tab, and as error bars on the
     Concentrations tab's <span class="fm">Lines</span> and
     <span class="fm">Grouped bars</span> views (not

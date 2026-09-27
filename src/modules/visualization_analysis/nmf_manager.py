@@ -35,6 +35,11 @@ class NMFManager:
                                             # (see compute()) — doesn't
                                             # necessarily sum to 100%
         self.offset       = 0.0    # constant subtracted before fitting (see compute())
+        self.X_nn         = None   # (n_spectra x n_wl) -- the aligned, clipped
+                                    # data matrix this fit was run on; kept for
+                                    # compute_bootstrap_uncertainty() (see
+                                    # MCRALSManager.D for the identical idea)
+        self.bootstrap_result = None   # set by compute_bootstrap_uncertainty()
         self.reference_components = []    # component slots anchored to known spectra
         self.references_fixed = False     # whether those slots were held constant
         self.x_range_mismatch_warning = None   # set by compute() if spectra have differing x-ranges
@@ -52,7 +57,8 @@ class NMFManager:
     def compute(self, spectra: list, n_components: int,
                 init: str = 'nndsvda', max_iter: int = 500,
                 random_state: int = 42,
-                references: dict = None, fix_references: bool = False) -> bool:
+                references: dict = None, fix_references: bool = False,
+                init_H: np.ndarray = None) -> bool:
         """
         Run NMF on the selected spectra.
 
@@ -60,9 +66,60 @@ class NMFManager:
         ----------
         spectra      : list of spectrum dicts
         n_components : number of NMF components
-        init         : NMF initialisation ('nndsvda', 'random', 'nndsvd')
+        init         : NMF initialisation ('nndsvda', 'random', 'nndsvd').
+            Ignored when init_H is given (see below).
         max_iter     : maximum iterations
         random_state : random seed (used only for init='random')
+        init_H : optional (n_components, n_wl) array. When given, this
+            EXACT array is used as the starting components guess -- 'init'
+            and the normal ref_rows/residual seeding logic are all skipped
+            entirely, since init_H is trusted to already be a valid,
+            converged starting point (typically another NMFManager's own
+            self.H from a prior successful compute() call). This is a warm
+            start, not a new initial guess: it exists so
+            compute_bootstrap_uncertainty() (see
+            NMFController.compute_bootstrap_uncertainty) can refit the SAME
+            dataset-with-resampled-noise from THIS exact solution, keeping
+            every bootstrap replicate in the same solution basin/component
+            identity instead of reintroducing rotational ambiguity on every
+            resample -- see MCRALSManager.compute()'s identical init_ST for
+            the same reasoning, and the Developer Guide's "NMF Bootstrap
+            Uncertainty" section for the full method.
+
+            Whenever init_H is given, the fit ALWAYS runs through
+            _fit_with_references() (the hand-written multiplicative-update
+            loop), even when there are no reference spectra at all --
+            scikit-learn's NMF has no supported way to warm-start from an
+            arbitrary, externally-chosen H, so a warm-started replicate
+            can't go through the same code path a reference-free cold fit
+            used. This is safe in the sense that matters here -- it never
+            drifts to a DIFFERENT point/rotation than the one it started
+            from, because any genuine local minimum of the Frobenius NMF
+            objective is *also* a fixed point of the Lee & Seung
+            multiplicative-update rule (both search for stationary points
+            of the same objective under the same non-negativity
+            constraints). It does NOT, however, guarantee the warm fit
+            finishes in only a couple of iterations when the reference
+            came from scikit-learn's own solver: scikit-learn's default
+            convergence tolerance (tol=1e-4, not exposed through this
+            method) is measurably looser than the MU loop's own
+            convergence check, so a warm start from an sklearn-cold-fitted
+            reference will typically keep visibly improving reconstruction
+            error for many further iterations, converging toward a nearby,
+            NON-rotated, tighter optimum rather than reproducing the
+            reference numerically -- confirmed empirically (see
+            tests/test_nmf_bootstrap.py::TestInitHWarmStart, both the
+            same-algorithm case that DOES stabilize in a couple of
+            iterations, and the realistic sklearn-cold-start case that
+            doesn't but still stays in the same basin/component identity).
+
+            Also skips the end-of-fit reorder-by-explained-variance step
+            below, for the same reason MCRALSManager.compute()'s init_ST
+            does -- a warm-started refit should keep the slot order it
+            started from, not re-sort itself independently each time.
+            Raises no exception on a shape mismatch; returns False with
+            self.last_error set instead, consistent with every other
+            validation failure in this method.
 
         Returns True on success.
         """
@@ -245,6 +302,21 @@ class NMFManager:
         # points to MCR-ALS with ST non-negativity off.
         self.offset = 0.0
         X_nn = np.clip(X, 0, None)
+        # Kept for later reuse by compute_bootstrap_uncertainty() -- the
+        # exact aligned, clipped data matrix this fit was run on, needed to
+        # build its residuals. Not used anywhere else in compute() itself.
+        self.X_nn = X_nn
+
+        if init_H is not None:
+            init_H_arr = np.asarray(init_H, dtype=float)
+            if init_H_arr.shape != (n_components, X_nn.shape[1]):
+                self.last_error = (
+                    f"Bootstrap warm-start shape mismatch: expected "
+                    f"({n_components}, {X_nn.shape[1]}), got {tuple(init_H_arr.shape)}."
+                )
+                return False
+        else:
+            init_H_arr = None
 
         # --- Reference (known pure-spectrum) anchoring -----------------------
         # references: {component_index: (x_array, y_array)} of KNOWN component
@@ -272,7 +344,20 @@ class NMFManager:
         self.references_fixed = bool(fix_references and ref_rows)
 
         try:
-            if ref_rows:
+            if init_H_arr is not None:
+                # Bootstrap warm start (see compute()'s init_H docstring) --
+                # always routed through the hand-written MU loop, whether or
+                # not this fit actually uses reference spectra (ref_rows may
+                # be empty here; _fit_with_references handles that fine,
+                # since fixed_idx/free_idx are then just [] / all).
+                self.W, self.H, self.iterations_used, self.converged = \
+                    self._fit_with_references(X_nn, n_components, ref_rows,
+                                              bool(fix_references), init,
+                                              max_iter, random_state,
+                                              init_H=init_H_arr)
+                self.reconstruction_error = float(
+                    np.linalg.norm(X_nn - self.W @ self.H))
+            elif ref_rows:
                 # Reference-anchored NMF: plain multiplicative updates (the
                 # standard NMF algorithm) with the referenced rows of H held
                 # constant when fix_references is on. sklearn's NMF can't hold
@@ -353,11 +438,23 @@ class NMFManager:
         # known reference spectra, reordering would move their reference out
         # of the slot they assigned it to — keep the fit's slot order so
         # "Component 2 = my known spectrum" stays true.
-        if not self.reference_components:
+        if not self.reference_components and init_H_arr is None:
             order = np.argsort(-self.explained_variance)
             self.explained_variance = self.explained_variance[order]
             self.W = self.W[:, order]
             self.H = self.H[order, :]
+
+        # A successful fit means self.W/self.H just changed (new component
+        # count, new data, new settings, or a warm-started bootstrap
+        # replicate) -- any bootstrap_result computed for the PREVIOUS
+        # W/H no longer corresponds to what's loaded now (different
+        # shape, or just a different underlying solution) and must not
+        # be redrawn against it. Bug found in practice: without this,
+        # re-running "Run NMF"/"Run N times, keep best" after a
+        # Bootstrap Uncertainty call left the OLD band silently attached
+        # to the manager, producing a mismatched/ghosted-looking overlay
+        # (or an index error) on the NEXT redraw.
+        self.bootstrap_result = None
 
         logger.info("NMFManager: %d components, reconstruction error=%.4g",
                     n_components, self.reconstruction_error)
@@ -368,7 +465,8 @@ class NMFManager:
     # ------------------------------------------------------------------ #
 
     @staticmethod
-    def _fit_with_references(X, k, ref_rows, fix, init, max_iter, random_state):
+    def _fit_with_references(X, k, ref_rows, fix, init, max_iter, random_state,
+                              init_H=None):
         """Lee & Seung multiplicative-update NMF (Frobenius), with the option
         to hold specific rows of H fixed at known reference spectra.
 
@@ -379,27 +477,42 @@ class NMFManager:
         so a free component can't start out collinear with a reference and be
         driven to zero. sklearn's NMF cannot hold individual rows fixed, which
         is why the (standard) update loop is written out here.
+
+        init_H : optional (k, n_wl) warm start (see NMFManager.compute()'s
+            init_H docstring — this is how NMF bootstrap-uncertainty
+            replicates are refit). When given, H starts from it directly
+            instead of from the ref_rows/residual-seeding logic below, and
+            (if fix) the fixed reference rows are re-imposed on top of it,
+            so a warm-started replicate can't drift a "should stay fixed"
+            row away from its reference spectrum.
         """
         rng = np.random.RandomState(random_state)
         eps = 1e-10
         m, n = X.shape
 
-        H = np.zeros((k, n))
         fixed_idx = sorted(ref_rows.keys())
         free_idx = [j for j in range(k) if j not in ref_rows]
-        for j, row in ref_rows.items():
-            H[j] = row
-        if free_idx:
-            # Residual after the references explain what they can — seed the
-            # free rows from the structure they DON'T explain.
-            Hf = np.array([ref_rows[j] for j in fixed_idx])
-            Wf = np.clip(X @ np.linalg.pinv(Hf), 0, None)
-            R = np.clip(X - Wf @ Hf, 0, None)
-            for j in free_idx:
-                seed = R.mean(axis=0) if R.any() else X.mean(axis=0)
-                seed = seed * (1.0 + 0.1 * rng.rand(n))
-                nrm = np.linalg.norm(seed)
-                H[j] = seed / nrm if nrm > 0 else rng.rand(n)
+
+        if init_H is not None:
+            H = np.asarray(init_H, dtype=float).copy()
+            if fix:
+                for j, row in ref_rows.items():
+                    H[j] = row
+        else:
+            H = np.zeros((k, n))
+            for j, row in ref_rows.items():
+                H[j] = row
+            if free_idx:
+                # Residual after the references explain what they can — seed
+                # the free rows from the structure they DON'T explain.
+                Hf = np.array([ref_rows[j] for j in fixed_idx])
+                Wf = np.clip(X @ np.linalg.pinv(Hf), 0, None)
+                R = np.clip(X - Wf @ Hf, 0, None)
+                for j in free_idx:
+                    seed = R.mean(axis=0) if R.any() else X.mean(axis=0)
+                    seed = seed * (1.0 + 0.1 * rng.rand(n))
+                    nrm = np.linalg.norm(seed)
+                    H[j] = seed / nrm if nrm > 0 else rng.rand(n)
         H = np.clip(H, eps, None)
         W = np.clip(X @ np.linalg.pinv(H), eps, None)
 

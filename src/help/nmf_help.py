@@ -352,6 +352,15 @@ def get_nmf_help_content():
                 clicking Run NMF repeatedly by hand. The status line then
                 reports how many runs landed within 10% of the best and how
                 strongly the near-best runs agree with each other.</td></tr>
+        <tr><td><strong>Bootstrap Uncertainty&hellip;</strong></td>
+            <td>Available once a fit is loaded (from Run NMF or Run N
+                times). A DIFFERENT kind of check from Run N times, keep
+                best: it measures how much the currently loaded result
+                would wobble under a different noise draw of your actual
+                data, rather than the risk of having found the wrong local
+                optimum. See the dedicated "Bootstrap Uncertainty" section
+                below for the full explanation and how to read the
+                resulting shaded bands/error bars.</td></tr>
         <tr><td><strong>Max iterations</strong></td>
             <td>Maximum multiplicative update steps. Increase if the status
                 line reports "did not converge".</td></tr>
@@ -432,6 +441,70 @@ def get_nmf_help_content():
     <div class="screenshot">
         <img src="$CONCENTRATIONS_TAB" width="${CONCENTRATIONS_TAB_W}" height="${CONCENTRATIONS_TAB_H}" alt="Concentrations tab: grouped bars, stacked bars, or lines showing each component's abundance per spectrum" />
         <p class="caption">The Concentrations tab: each component's abundance in every spectrum (columns of W).</p>
+    </div>
+
+    <hr>
+    <h2 id="bootstrap-uncertainty">Bootstrap Uncertainty</h2>
+    <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (next to "Run N
+    times, keep best" in the settings panel) answers a different
+    question from that button — same idea as MCR-ALS's own Bootstrap
+    Uncertainty feature. Both exist because a single NMF result can be
+    wrong for two UNRELATED reasons, and conflating them leads to false
+    confidence:</p>
+    <ul>
+        <li><strong>Run N times, keep best</strong> guards against
+            landing in the wrong local optimum, or a solution that fits
+            equally well but is chemically wrong (rotational ambiguity —
+            see the warning on the Concentrations/Components tabs).
+            It re-fits from different random starting points on the SAME
+            data.</li>
+        <li><strong>Bootstrap Uncertainty</strong> guards against
+            over-trusting one specific, already-chosen result just
+            because it happens to fit THIS particular noisy dataset
+            well. In plain terms: it repeatedly asks "if I'd measured
+            this same sample again and gotten a slightly different
+            noise pattern, would I still get roughly this same answer?"
+            — by building many synthetic versions of your data from the
+            <em>residual</em> (the small leftover mismatch between the
+            fit and your real measurement — essentially the noise the
+            model didn't explain), shuffling that leftover noise around
+            differently each time, and re-fitting each version starting
+            from the same point (see the
+            <a href="help://developer_guide#nmf-bootstrap-uncertainty">Developer
+            Guide</a> if you want the full mechanism). Because every
+            re-fit starts from the same place, it measures pure
+            measurement-noise sensitivity, deliberately excluding the
+            rotational-ambiguity question Run N times already
+            answers.</li>
+    </ul>
+    <p>Click it after loading a result you trust (from Run NMF or Run N
+    times, keep best) — it does not produce a new fit on its own, it
+    quantifies the ONE you already have. Choose how many resamples to
+    run (more = a smoother, more reliable band estimate, at
+    proportionally more compute time — 30 is a reasonable default). The
+    result is a 95% confidence band — in practice, a range wide enough
+    that, if you'd measured this sample many times over with different
+    noise, about 95% of those measurements would have landed inside it
+    — shown as shaded regions around each
+    component on the Components tab, and as error bars on the
+    Concentrations tab's <span class="fm">Lines</span> and
+    <span class="fm">Grouped bars</span> views (not
+    <span class="fm">Stacked bars</span> — a stacked segment doesn't have
+    a single well-defined position to put an error bar on). Both are
+    controlled by their own "Show bootstrap confidence band" checkbox, so
+    you can hide them without re-running anything.</p>
+    <div class="note">
+        <strong>Reading the band:</strong> a WIDE band at a given
+        wavelength/spectrum means that region of the fit is genuinely
+        sensitive to the noise in your data — small changes in the
+        measurement could have shifted that value substantially. A
+        NARROW band means that part of the result is well-determined by
+        your data regardless of its particular noise realization. Neither
+        tells you whether the components themselves are the chemically
+        correct ones — that's still the rotational-ambiguity question Run
+        N times, keep best (and reference spectra, if you have them) are
+        for. The two checks are complementary, not substitutes for each
+        other.
     </div>
 
     <hr>

@@ -152,6 +152,37 @@ class TestInitSTWarmStart:
         assert mgr.compute(spectra, n_components=2)
         assert mgr.bootstrap_result is None   # plain compute() never sets it
 
+    def test_bootstrap_result_cleared_by_a_subsequent_fresh_fit(self):
+        """Real bug found in practice: the dialog reuses ONE manager
+        instance across repeated "Run MCR-ALS" clicks (MCRALSController.
+        manager is created once, not recreated per click). If a stale
+        bootstrap_result from an earlier fit survived a later, unrelated
+        compute() call on the SAME manager, the Pure Spectra/
+        Concentrations tabs would redraw the new curves together with a
+        confidence band computed for a DIFFERENT (possibly differently-
+        shaped) fit -- either a visibly mismatched/ghosted overlay, or an
+        IndexError if the component count changed. compute() must clear
+        bootstrap_result on every fresh successful fit."""
+        spectra, _, _, _ = _synthetic_mixture()
+        mgr = MCRALSManager()
+        assert mgr.compute(spectra, n_components=2)
+
+        ctrl = MCRALSController(DummyController())
+        ctrl.manager = mgr
+        result = ctrl.compute_bootstrap_uncertainty(
+            mgr, n_components=2, max_iterations=100, tol=0.01,
+            c_nonneg=True, st_nonneg=True, normalize_spectra=True,
+            closure=False, n_resamples=5, confidence_level=0.95,
+            random_state=0)
+        assert result is not None
+        assert mgr.bootstrap_result is result
+
+        # Re-run the SAME manager with a different component count --
+        # exactly the "change settings, don't re-run before bootstrapping,
+        # then run again" sequence that surfaced this bug.
+        assert mgr.compute(spectra, n_components=3)
+        assert mgr.bootstrap_result is None
+
 
 # ── MCRALSController.compute_bootstrap_uncertainty() ────────────────────
 

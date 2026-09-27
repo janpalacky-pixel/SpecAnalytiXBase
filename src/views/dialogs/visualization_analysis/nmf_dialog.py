@@ -61,6 +61,11 @@ _COLORS = [
     '#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf',
 ]
 
+# "Bootstrap Uncertainty..." always reports a 95% band -- same reasoning
+# (and same named constant, rather than a literal 0.95) as MCR-ALS's own
+# _BOOTSTRAP_CONFIDENCE_LEVEL in mcr_als_dialog.py.
+_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
+
 
 class NMFDialog(QDialog):
 
@@ -252,6 +257,17 @@ class NMFDialog(QDialog):
         self._comp_normalize_cb.stateChanged.connect(self._refresh_components)
         gl.addWidget(self._comp_normalize_cb)
 
+        self._comp_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._comp_show_bootstrap_cb.setChecked(True)
+        self._comp_show_bootstrap_cb.setToolTip(
+            'Shades each component with its bootstrap confidence band (see\n'
+            '"Bootstrap Uncertainty…" below) once one has been computed for\n'
+            'the currently loaded fit. Has no visible effect until then —\n'
+            'this is a display toggle, not what triggers the computation.'
+        )
+        self._comp_show_bootstrap_cb.stateChanged.connect(self._refresh_components)
+        gl.addWidget(self._comp_show_bootstrap_cb)
+
         self.run_btn = QPushButton('▶  Run NMF')
         self.run_btn.setStyleSheet(
             'QPushButton { background-color:#1976D2; color:white; '
@@ -272,6 +288,20 @@ class NMFDialog(QDialog):
         )
         self._run_best_btn.clicked.connect(self._run_nmf_best_of_n)
         gl.addWidget(self._run_best_btn)
+
+        self._run_bootstrap_btn = QPushButton('Bootstrap Uncertainty…')
+        self._run_bootstrap_btn.setToolTip(
+            'Estimates how sensitive the CURRENTLY LOADED fit’s components\n'
+            'and concentrations are to the actual noise in your data — a\n'
+            'residual bootstrap, warm-started from this exact result, so it\n'
+            'measures noise sensitivity specifically, not the separate\n'
+            'rotational-ambiguity risk "Run N times, keep best" already\n'
+            'checks (see Help for the distinction). Run NMF (or "Run N\n'
+            'times, keep best") first — this refits around whatever result\n'
+            'is currently loaded.'
+        )
+        self._run_bootstrap_btn.clicked.connect(self._prompt_and_run_bootstrap)
+        gl.addWidget(self._run_bootstrap_btn)
 
         self._status_label = QLabel('')
         self._status_label.setStyleSheet('font-size:8pt; color:#555;')
@@ -378,6 +408,20 @@ class NMFDialog(QDialog):
         )
         self._scores_normalize_cb.stateChanged.connect(self._refresh_scores)
         cl2.addWidget(self._scores_normalize_cb)
+
+        self._scores_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._scores_show_bootstrap_cb.setChecked(True)
+        self._scores_show_bootstrap_cb.setToolTip(
+            'Adds error bars from the bootstrap confidence band (see\n'
+            '"Bootstrap Uncertainty…" on the left) once one has been\n'
+            'computed for the currently loaded fit. Only drawn for the\n'
+            '"Lines" and "Grouped bars" plot types — a stacked bar’s\n'
+            'segments do not have a single well-defined position to anchor\n'
+            'an error bar to. Has no visible effect until a bootstrap has\n'
+            'been run.'
+        )
+        self._scores_show_bootstrap_cb.stateChanged.connect(self._refresh_scores)
+        cl2.addWidget(self._scores_show_bootstrap_cb)
 
         rot_row = QHBoxLayout()
         rot_row.addWidget(QLabel('Label rotation:'))
@@ -1425,6 +1469,123 @@ class NMFDialog(QDialog):
     def _set_nmf_controls_enabled(self, enabled):
         self.run_btn.setEnabled(enabled)
         self._run_best_btn.setEnabled(enabled)
+        self._run_bootstrap_btn.setEnabled(enabled)
+
+    def _prompt_and_run_bootstrap(self):
+        """Ask how many bootstrap resamples to run, mirroring "Run N
+        times, keep best"'s identical prompt pattern (and
+        MCRALSDialog._prompt_and_run_bootstrap almost exactly). Requires
+        an already-loaded, successful fit (self._mgr.H/.W/.X_nn all set)
+        -- this refits AROUND that specific result to measure its noise
+        sensitivity, it does not produce a new fit from scratch the way
+        Run/Run-N-times do."""
+        if getattr(self, '_nmf_running', False):
+            return
+        if self._mgr is None or self._mgr.H is None or self._mgr.X_nn is None:
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Run NMF (or "Run N times, keep best") first —\n'
+                'Bootstrap Uncertainty refits around whatever result is\n'
+                'currently loaded; it doesn’t produce a new one on its own.')
+            return
+        # self._mgr can still hold a perfectly valid PRIOR fit while a
+        # setting has since been changed without re-running (the red
+        # "Settings changed" state) -- refitting around that stale result
+        # would silently bootstrap the wrong thing, and _refresh_components/
+        # _refresh_scores would then just show the stale placeholder
+        # instead of the (successfully computed!) band, since
+        # _results_stale is still True. Bug found in practice: confirm the
+        # loaded result actually matches current settings before
+        # refitting around it.
+        if getattr(self, '_results_stale', False):
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Settings have changed since the last run — press "Run\n'
+                'NMF" (or "Run N times, keep best") first so the loaded\n'
+                'result matches the current settings, then run Bootstrap\n'
+                'Uncertainty around that.')
+            return
+        from PyQt5.QtWidgets import QInputDialog
+        n_resamples, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of bootstrap resamples:',
+            value=getattr(self, '_last_n_bootstrap', 30), min=5, max=500)
+        if not ok:
+            return
+        self._last_n_bootstrap = n_resamples   # remembered and pre-filled next time
+        self._run_bootstrap_uncertainty(n_resamples)
+
+    def _run_bootstrap_uncertainty(self, n_resamples):
+        """Residual bootstrap, warm-started from self._mgr's own
+        converged fit -- see NMFController.compute_bootstrap_uncertainty
+        for the actual method, and the Developer Guide's "NMF Bootstrap
+        Uncertainty" section for the full reasoning (including why every
+        replicate is refit through the hand-written multiplicative-update
+        loop regardless of which algorithm the reference fit itself used).
+        Deliberately a plain sequential loop with a real, cancellable
+        QProgressDialog -- the SAME pattern "Run N times, keep best" uses,
+        mirroring MCRALSDialog._run_bootstrap_uncertainty."""
+        if getattr(self, '_nmf_running', False):
+            return
+        self._nmf_running = True
+        self._set_nmf_controls_enabled(False)
+
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
+        n    = self._n_spin.value()
+        init = self._init_combo.currentText()
+        itr  = self._iter_spin.value()
+        refs, fix_refs = self._reference_settings()
+
+        progress = QProgressDialog(
+            f'Bootstrap resample 1 of {n_resamples}…', 'Cancel', 0, n_resamples, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle('NMF')
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def _on_progress(b, n_total):
+            progress.setLabelText(f'Bootstrap resample {b + 1} of {n_total}…')
+            progress.setValue(b)
+            QApplication.processEvents()
+
+        try:
+            result = self.controller.compute_bootstrap_uncertainty(
+                self._mgr, n_components=self._mgr.n_components,
+                init=init, max_iter=itr,
+                n_resamples=n_resamples,
+                confidence_level=_BOOTSTRAP_CONFIDENCE_LEVEL,
+                random_state=None,
+                references=refs, fix_references=fix_refs,
+                progress_callback=_on_progress,
+                cancel_check=progress.wasCanceled)
+            progress.setValue(n_resamples)
+
+            if result is None:
+                QMessageBox.warning(
+                    self, 'Bootstrap Uncertainty',
+                    self._mgr.last_error or 'All bootstrap resamples failed.')
+                self._status_label.setText(
+                    '⚠  Bootstrap uncertainty failed — see message above.')
+                self._status_label.setStyleSheet('font-size:8pt; color:#C62828;')
+                return
+
+            pct = int(round(_BOOTSTRAP_CONFIDENCE_LEVEL * 100))
+            msg = (f'Bootstrap uncertainty: {pct}% confidence band from '
+                   f'{result["n_resamples_used"]}/{result["n_resamples_requested"]} '
+                   f'resamples')
+            if result['n_failed']:
+                msg += f' ({result["n_failed"]} refit failed and were skipped)'
+            self._status_label.setText(msg)
+            self._status_label.setStyleSheet('font-size:8pt; color:#2E7D32;')
+            self._refresh_components()
+            self._refresh_scores()
+        finally:
+            self._set_nmf_controls_enabled(True)
+            self._nmf_running = False
+            QApplication.restoreOverrideCursor()
 
     def _on_nmf_computed(self, has_neg, n):
         try:
@@ -1659,10 +1820,29 @@ class NMFDialog(QDialog):
         offset_step = (max(np.max(np.abs(c)) for c in curves) * 1.1 if n > 1 else 0.0) \
             if use_offset else 0.0
 
+        # Bootstrap confidence band (see "Bootstrap Uncertainty..." and
+        # NMFController.compute_bootstrap_uncertainty): drawn BEHIND each
+        # component's own curve, in the SAME already-offset/normalized
+        # display units the curve itself uses, so the shading visually
+        # lines up with what's actually plotted rather than the raw H
+        # scale. Mirrors MCRALSDialog._refresh_spectra's band exactly.
+        br = self._mgr.bootstrap_result
+        show_band = br is not None and self._comp_show_bootstrap_cb.isChecked()
+
         for k in range(n):
             color = _COLORS[k % len(_COLORS)]
             ev    = self._mgr.explained_variance[k]
-            ax.plot(x, curves[k] + k * offset_step, color=color, lw=1.2,
+            if show_band:
+                lower_k = br['H_lower'][k]
+                upper_k = br['H_upper'][k]
+                if use_normalize:
+                    peak = np.max(np.abs(H[k]))
+                    if peak > 0:
+                        lower_k = lower_k / peak
+                        upper_k = upper_k / peak
+                ax.fill_between(x, lower_k + k * offset_step, upper_k + k * offset_step,
+                                color=color, alpha=0.20, linewidth=0, zorder=1)
+            ax.plot(x, curves[k] + k * offset_step, color=color, lw=1.2, zorder=2,
                     label=f'NMF {k+1}  ({ev:.1f} %)')
             if use_offset:
                 ax.axhline(k * offset_step, color=color, lw=0.4, ls=':', alpha=0.5)
@@ -1677,7 +1857,11 @@ class NMFDialog(QDialog):
         if use_offset:
             ylabel += ' (offset)'
         ax.set_ylabel(ylabel, fontsize=10)
-        ax.set_title(f'NMF spectral components ({n} components)', fontsize=11)
+        title = f'NMF spectral components ({n} components)'
+        if show_band:
+            pct = int(round(br['confidence_level'] * 100))
+            title += f'  — shaded: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+        ax.set_title(title, fontsize=11)
         ax.legend(fontsize=8, loc='best', framealpha=0.7)
         ax.grid(True, linestyle='--', alpha=0.35)
         self._comp_canvas.draw_tight()
@@ -1802,11 +1986,37 @@ class NMFDialog(QDialog):
             plot_type = self._scores_plot_type_combo.currentText()
             x = np.arange(n_spec)
 
+            # Bootstrap confidence band (see "Bootstrap Uncertainty..."):
+            # drawn as error bars, in the SAME normalized-or-not units the
+            # bars/lines above use. Only for Lines and Grouped bars -- a
+            # stacked bar's segments don't have a single well-defined
+            # position to anchor an error bar to, so it's deliberately
+            # skipped there rather than drawn somewhere misleading.
+            #
+            # Note the normalization here reuses the REFERENCE fit's own
+            # row sums (computed above), not each bootstrap replicate's
+            # own row sum -- the same intentional display-only
+            # simplification as MCRALSDialog._refresh_concentrations; see
+            # the Developer Guide for the full caveat.
+            br = self._mgr.bootstrap_result
+            show_band = (br is not None and self._scores_show_bootstrap_cb.isChecked()
+                        and plot_type in ('Lines', 'Grouped bars'))
+            if show_band:
+                W_lo, W_hi = br['W_lower'], br['W_upper']
+                if self._scores_normalize_cb.isChecked():
+                    W_lo = 100.0 * W_lo / row_sums
+                    W_hi = 100.0 * W_hi / row_sums
+
             if plot_type == 'Lines':
                 for k in range(n_comp):
                     color = _COLORS[k % len(_COLORS)]
                     ev = self._mgr.explained_variance[k]
-                    ax.plot(x, W[:, k], 'o-', color=color, ms=3, lw=1.2,
+                    if show_band:
+                        yerr_lo = np.clip(W[:, k] - W_lo[:, k], 0, None)
+                        yerr_hi = np.clip(W_hi[:, k] - W[:, k], 0, None)
+                        ax.errorbar(x, W[:, k], yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor=color, alpha=0.5, capsize=2, zorder=1)
+                    ax.plot(x, W[:, k], 'o-', color=color, ms=3, lw=1.2, zorder=2,
                             label=f'NMF {k+1}  ({ev:.1f} %)')
                 tick_positions = x
             elif plot_type == 'Stacked bars':
@@ -1823,8 +2033,14 @@ class NMFDialog(QDialog):
                 for k in range(n_comp):
                     color = _COLORS[k % len(_COLORS)]
                     ev    = self._mgr.explained_variance[k]
-                    ax.bar(x + k * bar_w, W[:, k], width=bar_w, color=color,
+                    bar_x = x + k * bar_w
+                    ax.bar(bar_x, W[:, k], width=bar_w, color=color,
                            alpha=0.75, label=f'NMF {k+1}  ({ev:.1f} %)')
+                    if show_band:
+                        yerr_lo = np.clip(W[:, k] - W_lo[:, k], 0, None)
+                        yerr_hi = np.clip(W_hi[:, k] - W[:, k], 0, None)
+                        ax.errorbar(bar_x, W[:, k], yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor='#333333', alpha=0.6, capsize=2, zorder=3)
                 tick_positions = x + bar_w * (n_comp - 1) / 2
 
             if self._gt is not None:
@@ -1849,7 +2065,11 @@ class NMFDialog(QDialog):
                                     ha=ha, fontsize=label_fontsize)
 
             ax.set_ylabel(y_label, fontsize=10)
-            ax.set_title(f'NMF concentration profiles  ({n_spec} spectra)', fontsize=11)
+            title = f'NMF concentration profiles  ({n_spec} spectra)'
+            if show_band:
+                pct = int(round(br['confidence_level'] * 100))
+                title += f'  — error bars: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+            ax.set_title(title, fontsize=11)
             ax.legend(fontsize=8, loc='best', framealpha=0.7)
             ax.grid(True, axis='y', linestyle='--', alpha=0.35)
             self._scores_canvas.draw_tight()

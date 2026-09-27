@@ -1797,6 +1797,95 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         here specifically because the loop's correctness (residual resampling, warm start,
         percentile math) has real statistical content worth unit-testing directly without a
         GUI in the way &mdash; see <code>tests/test_mcr_als_bootstrap.py</code>.</p>
+        <p><strong>See also:</strong> the MCR-ALS help page's own
+        <a href="help://mcr_als#bootstrap-uncertainty">Bootstrap Uncertainty section</a> for
+        the user-facing explanation this technical section backs up, and the User Guide's
+        MCR-ALS entry for the short version.</p>
+
+        <h2 id="nmf-bootstrap-uncertainty">NMF Bootstrap Uncertainty: the Same Method,
+        One Genuinely New Wrinkle</h2>
+
+        <p>NMF's own <strong>"Bootstrap Uncertainty&hellip;"</strong>
+        (<code>NMFController.compute_bootstrap_uncertainty()</code>) is the direct port of
+        the MCR-ALS feature described just above &mdash; same residual-row resampling, same
+        warm-started refit from the reference's own converged result
+        (<code>init_H</code> on <code>NMFManager.compute()</code>, mirroring
+        <code>init_ST</code>), same skip of the end-of-fit reorder-by-explained-variance
+        step, same display-only band-normalization simplification, same
+        controller-owns-the-loop/dialog-is-just-UI split. Rather than repeat all of that,
+        this section only covers what's genuinely different for NMF.</p>
+
+        <h3>The one real difference: NMF has two fitting algorithms, MCR-ALS has one</h3>
+        <p>MCR-ALS always fits via alternating NNLS, whatever the caller asked for &mdash;
+        the reference fit and every bootstrap replicate go through the exact same code.
+        NMF does not: a cold fit with no reference spectra goes through scikit-learn's own
+        <code>NMF</code> class, while a fit anchored to reference spectra (or, now, a
+        warm-started bootstrap replicate) goes through <code>NMFManager.
+        _fit_with_references()</code>, a hand-written Lee &amp; Seung multiplicative-update
+        (MU) loop &mdash; written out by hand specifically because scikit-learn's NMF cannot
+        hold individual rows of H fixed, which reference-anchoring needs. <code>init_H</code>
+        is only usable by that hand-written loop (scikit-learn has no supported way to
+        warm-start from an arbitrary externally-chosen H), so every bootstrap replicate
+        ALWAYS goes through <code>_fit_with_references()</code>, regardless of whether the
+        reference itself came from scikit-learn or not.</p>
+        <p>Is that safe? Yes, for the thing that actually matters here (component identity
+        staying put, not rotating between replicates): any genuine local minimum of the
+        Frobenius NMF objective is <em>also</em> a fixed point of the Lee &amp; Seung MU
+        update rule, since both are just alternative iterative schemes for finding
+        stationary points of the same objective under the same non-negativity constraints.
+        A replicate warm-started from a real local minimum can only refine toward it (or a
+        point immediately next to it), never jump to some unrelated rotation.</p>
+        <p>Is it as FAST as MCR-ALS's warm start, which stabilizes back to the reference in
+        as few as 2 iterations? Only sometimes &mdash; and this was a genuine surprise
+        during development, worth recording so it doesn't get mistaken for a bug later.
+        Warm-starting the MU loop from a reference that was ITSELF fit through the MU loop
+        (e.g. via a trivial, non-fixed reference spectrum) reproduces that reference in 2
+        iterations, atol&nbsp;&asymp;&nbsp;1e-4 &mdash; exactly like MCR-ALS. But warm-starting from a
+        REAL scikit-learn cold fit (the common case: no reference spectra at all) typically
+        does NOT stabilize quickly. Confirmed directly on a synthetic test mixture:
+        scikit-learn's default convergence tolerance (<code>tol=1e-4</code>, not exposed
+        through <code>NMFManager.compute()</code>) let it call itself "converged" at a
+        reconstruction error of ~0.0068, while tightening that same tolerance to 1e-6/1e-8/
+        1e-10 kept driving the SAME fit's reconstruction error down by orders of magnitude
+        further (0.0068 &rarr; 0.000068 &rarr; 0.0000007 &rarr; ...), at what is still the
+        same fixed point &mdash; scikit-learn was simply stopping early relative to how
+        precisely the MU loop's own convergence check (a tighter, ~1e-6 relative-change
+        threshold) demands. A bootstrap replicate warm-started from such an
+        under-converged reference has real further downhill progress available and will
+        use up to its whole <code>max_iter</code> budget doing it, landing at a MORE
+        precise, but still non-rotated, nearby optimum. See
+        <code>tests/test_nmf_bootstrap.py::TestInitHWarmStart</code> for both cases side by
+        side: <code>test_warm_start_from_own_converged_result_is_stable</code> (same
+        algorithm throughout, near-instant) and
+        <code>test_warm_start_from_sklearn_cold_fit_stays_in_same_basin</code> (the
+        realistic case &mdash; asserts the two guarantees that actually hold there:
+        reconstruction error never gets WORSE than the reference it started from, since
+        plain multiplicative updates are monotonically non-increasing by construction, and
+        every replicate stays strongly correlated with, i.e. not rotated away from, the
+        reference's own components).</p>
+        <p>Practical upshot: this is not a correctness problem &mdash; the shipped
+        end-to-end tests (<code>TestComputeBootstrapUncertainty</code>) confirm real
+        bootstrap runs still preserve component identity across replicates and produce
+        sane, monotonic-bounded bands. But does the width of the reported band actually
+        depend on how far each replicate got to converge, given all this? Checked directly
+        (not just assumed) by computing the same bootstrap band at several
+        <code>max_iter</code> budgets on two independent synthetic mixtures: from the
+        app's own default (500) up to 10&times; that (5000), the mean band width barely
+        moved (well under 1% relative change) &mdash; the SPREAD across replicates, which is
+        what the band actually measures, stabilizes early even while each replicate's own
+        absolute reconstruction error keeps slowly improving underneath it. Dropping well
+        BELOW the default, to 150, did measurably narrow the concentration (W) band by
+        about 9% in one of the two checks (the component/H band barely moved, under 1%,
+        even there) &mdash; so an unusually tight iteration budget can make the reported
+        uncertainty look a little smaller than it really is, though the effect was modest
+        and only showed up once iterations were cut well below what the app already uses
+        by default. No evidence this is a problem at the app's normal settings; worth
+        knowing about rather than assuming away if <code>max_iter</code> is ever driven
+        very low for other reasons.</p>
+        <p><strong>See also:</strong> the NMF help page's own
+        <a href="help://nmf#bootstrap-uncertainty">Bootstrap Uncertainty section</a> for the
+        user-facing explanation this technical section backs up, and the User Guide's NMF
+        entry for the short version.</p>
 
         <h2 id="rgb-overlay-export">2D Map RGB Overlay Mode</h2>
 

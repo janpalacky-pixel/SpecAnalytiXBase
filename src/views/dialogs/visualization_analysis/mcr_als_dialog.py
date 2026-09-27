@@ -1518,6 +1518,23 @@ class MCRALSDialog(QDialog):
                 'Bootstrap Uncertainty refits around whatever result is\n'
                 'currently loaded; it doesn\u2019t produce a new one on its own.')
             return
+        # self._mgr can still hold a perfectly valid PRIOR fit while a
+        # setting has since been changed without re-running (the red
+        # "Settings changed" state) -- refitting around that stale result
+        # would silently bootstrap the wrong thing, and _refresh_spectra/
+        # _refresh_concentrations would then just show the stale
+        # placeholder instead of the (successfully computed!) band,
+        # since _results_stale is still True. Bug found in practice:
+        # confirm the loaded result actually matches current settings
+        # before refitting around it.
+        if getattr(self, '_results_stale', False):
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Settings have changed since the last run \u2014 press "Run\n'
+                'MCR-ALS" (or "Run N times, keep best") first so the loaded\n'
+                'result matches the current settings, then run Bootstrap\n'
+                'Uncertainty around that.')
+            return
         from PyQt5.QtWidgets import QInputDialog
         n_resamples, ok = QInputDialog.getInt(
             self, 'Bootstrap Uncertainty',

@@ -613,6 +613,19 @@ class MCRALSManager:
             self.C = self.C[:, order]
             self.ST = self.ST[order, :]
 
+        # A successful fit means self.C/self.ST just changed (new component
+        # count, new data, new settings, or a warm-started bootstrap
+        # replicate) -- any bootstrap_result computed for the PREVIOUS
+        # C/ST no longer corresponds to what's loaded now (different
+        # shape, or just a different underlying solution) and must not
+        # be redrawn against it. Bug found in practice (via the NMF port
+        # of this feature, which shares the same pattern): without this,
+        # re-running "Run MCR-ALS"/"Run N times, keep best" after a
+        # Bootstrap Uncertainty call left the OLD band silently attached
+        # to the manager, producing a mismatched/ghosted-looking overlay
+        # (or an index error) on the NEXT redraw.
+        self.bootstrap_result = None
+
         logger.info("MCRALSManager: %d components, LOF=%.4g%%, %d iterations, converged=%s",
                     n_components, self.lof, iterations_used, converged)
         return True
