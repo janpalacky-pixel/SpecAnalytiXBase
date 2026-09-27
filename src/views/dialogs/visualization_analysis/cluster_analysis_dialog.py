@@ -1750,7 +1750,21 @@ class ClusterAnalysisDialog(QDialog):
     def _on_clustering_computed(self):
         try:
             if self._cluster_worker.error is not None:
-                from PyQt5.QtWidgets import QMessageBox
+                # QMessageBox is already imported at module level (top of
+                # this file) -- this used to re-import it locally right
+                # here, which makes Python treat the name as LOCAL to the
+                # whole function (an assignment anywhere in a function body
+                # does that, even one that only runs on some branches).
+                # Real bug found in practice: when clustering finishes
+                # without raising but still reports success=False (e.g.
+                # ClusterAnalysisManager.compute_clustering caught an
+                # internal error and returned False rather than raising),
+                # this branch is skipped entirely, so the local import
+                # never runs -- and the `else: QMessageBox.warning(...)`
+                # below then crashes with "UnboundLocalError: cannot
+                # access local variable 'QMessageBox'" instead of showing
+                # the "Clustering failed" message, leaving the progress
+                # dialog/run button in a stuck state.
                 QMessageBox.critical(self, "Clustering Error", str(self._cluster_worker.error))
                 return
 

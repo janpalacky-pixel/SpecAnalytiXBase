@@ -6,6 +6,7 @@ from src.modules.data_analysis.peak_fitting_manager import PeakFittingManager
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.correction_history import append_correction_history
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,7 @@ class PeakFittingController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager = PeakFittingManager()
+        self._last_seen_revision = None
 
     @property
     def oc(self):
@@ -46,6 +48,36 @@ class PeakFittingController:
         commit logic still needs — same pattern as every other extracted
         controller's oc property this session."""
         return self.controller.operations_controller
+
+    def filter_stale_settings(self, current_settings):
+        """Called by OperationsController right before constructing the
+        Peak Fitting dialog, on the settings dict it's about to pass in
+        as current_settings.
+
+        Bug found in practice: OperationsController's settings cache
+        (last_op_settings["Peak Fitting"]) is keyed only by whether the
+        selected SPECTRUM is the same as last time (label-based
+        _get_selection_hash) -- it has no idea whether that spectrum's
+        own y-data changed since (e.g. a baseline correction or
+        smoothing operation ran on it in between two Peak Fitting
+        sessions). But this settings dict isn't just parameters here --
+        it carries the previous session's actual COMPUTED fit_results,
+        and PeakFittingDialog.load_settings() restores them and
+        immediately redraws that old fit curve on open
+        (update_plot_with_fit_results()), with no re-fit and no warning,
+        as if it were still a valid fit of the spectrum now shown. Strip
+        exactly the computed/picked key -- not initial_peaks (just x/color
+        guesses, harmless to keep) or output_options/amplitude_constraint/
+        add_via_click (genuine settings) -- whenever an operation ran
+        since we last trusted it. Same pattern as
+        SVDBackgroundController.filter_stale_settings and
+        XAxisAlignmentController.show_dialog's revision check."""
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset and current_settings:
+            current_settings = dict(current_settings)
+            current_settings.pop('fit_results', None)
+        return current_settings
 
     # ------------------------------------------------------------------ #
     # Commit — moved here from OperationsController.handle_peak_fitting,  #

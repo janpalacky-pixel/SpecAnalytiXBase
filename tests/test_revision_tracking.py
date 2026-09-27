@@ -74,3 +74,81 @@ def test_revision_changed_true_when_current_revision_unavailable():
     should_reset, current = revision_changed(mc, last_seen_revision=None)
     assert should_reset is True
     assert current is None
+
+
+# --------------------------------------------------------------------- #
+# selection_hash / selection_or_revision_changed -- for controllers whose
+# Manager caches ONE result computed from the WHOLE selection at once
+# (Cluster Analysis, SOM, QC/Outlier), read directly by the dialog with
+# no per-spectrum scoping. revision_changed alone is not enough here:
+# switching to a different, unrelated selection does not bump revision
+# at all (no operation ran), so a stale result from the OLD selection
+# would still pass an unchanged-revision check. Bug found in practice
+# while re-checking this mechanism against the actual dialogs.
+# --------------------------------------------------------------------- #
+
+from src.modules.utils.revision_tracking import (
+    selection_hash,
+    selection_or_revision_changed,
+)
+
+
+def _spec(label, uid=None):
+    return {'label': label, 'metadata': {'unique_id': uid or f'uid-{label}'}}
+
+
+def test_selection_hash_same_set_same_hash_regardless_of_order():
+    a = [_spec('x'), _spec('y')]
+    b = [_spec('y'), _spec('x')]
+    assert selection_hash(a) == selection_hash(b)
+
+
+def test_selection_hash_different_set_different_hash():
+    a = [_spec('x'), _spec('y')]
+    b = [_spec('x'), _spec('z')]
+    assert selection_hash(a) != selection_hash(b)
+
+
+def test_selection_hash_empty_is_none():
+    assert selection_hash([]) is None
+    assert selection_hash(None) is None
+
+
+def test_selection_or_revision_changed_resets_on_selection_change_alone():
+    """The actual bug: revision unchanged (no operation ran), but the
+    selection is a completely different, unrelated set of spectra --
+    must still report should_reset=True."""
+    mc = _FakeMainController(revision=5)
+    spectra_a = [_spec('a'), _spec('b')]
+    spectra_b = [_spec('c'), _spec('d')]
+
+    should_reset, hash_a, rev = selection_or_revision_changed(
+        mc, spectra_a, last_selection_hash=None, last_seen_revision=None)
+    assert should_reset is True   # first call, nothing trusted yet
+
+    should_reset, hash_b, rev = selection_or_revision_changed(
+        mc, spectra_b, last_selection_hash=hash_a, last_seen_revision=rev)
+    assert should_reset is True   # different selection, same revision
+
+
+def test_selection_or_revision_changed_keeps_state_when_neither_changed():
+    mc = _FakeMainController(revision=5)
+    spectra = [_spec('a'), _spec('b')]
+
+    _, h, r = selection_or_revision_changed(
+        mc, spectra, last_selection_hash=None, last_seen_revision=None)
+    should_reset, h2, r2 = selection_or_revision_changed(
+        mc, spectra, last_selection_hash=h, last_seen_revision=r)
+    assert should_reset is False
+
+
+def test_selection_or_revision_changed_resets_on_revision_change_alone():
+    mc = _FakeMainController(revision=1)
+    spectra = [_spec('a'), _spec('b')]
+
+    _, h, r = selection_or_revision_changed(
+        mc, spectra, last_selection_hash=None, last_seen_revision=None)
+    mc.operations_controller.operations_manager.revision = 2   # an operation ran
+    should_reset, h2, r2 = selection_or_revision_changed(
+        mc, spectra, last_selection_hash=h, last_seen_revision=r)
+    assert should_reset is True

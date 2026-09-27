@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.som_dialog import SOMDialog
 from src.modules.visualization_analysis.som_manager import SOMManager
-from src.modules.utils.revision_tracking import revision_changed
+from src.modules.utils.revision_tracking import selection_or_revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 
@@ -29,6 +29,13 @@ class SOMController:
         # show_dialog() below, so a reopen only forgets the last result if an
         # operation actually ran meanwhile -- see revision_tracking.py.
         self._last_seen_revision = None
+        # SOM's hit_map/trained network are computed from the WHOLE
+        # selection at once and read directly by the dialog (e.g.
+        # switching straight to Component Plane before Run SOM is ever
+        # clicked), so a plain, unrelated selection change needs to
+        # reset this too, not just an operation running -- see
+        # revision_tracking.py's own docstring.
+        self._last_selection_hash = None
         self.dialog = None
 
     def run_som_analysis(self):
@@ -66,8 +73,10 @@ class SOMController:
         # Clear any previous results before opening a fresh dialog — without
         # this, a stale map trained on a previous, unrelated selection could
         # still be displayed before Run SOM is ever clicked for this one.
-        should_reset, self._last_seen_revision = revision_changed(
-            self.main_controller, self._last_seen_revision)
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.main_controller, self.main_controller.selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
         if should_reset:
             self.manager.reset()
 

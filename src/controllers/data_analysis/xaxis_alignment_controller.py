@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.xaxis_alignment_manager import XAxisAlignmentManager
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -22,6 +23,18 @@ class XAxisAlignmentController:
         self.controller = main_controller
         self.manager = XAxisAlignmentManager()
         self._last_settings = {}   # persists full settings dict including cache
+        # Revision seen as of the last time the preview cache
+        # (_cached_aligned/_cached_hash) was shown as valid. The
+        # dialog's own _compute_settings_hash() only covers the
+        # alignment PARAMETERS (reference/max_shift/interp/x_range) --
+        # it has no way to notice that the selected spectra's own
+        # Y-data changed (e.g. a baseline correction or SG-smoothing
+        # ran on them) since the preview was computed, even though
+        # the selection identity and parameters are unchanged. Strip
+        # the preview-only cache keys below whenever an operation ran
+        # since we last trusted it -- same pattern/bug as
+        # SVDBackgroundController.filter_stale_settings().
+        self._last_seen_revision = None
         # Labels of any spectra skipped on the most recent
         # apply_alignment_to_spectra() call (too few points to align) — see
         # that method. Exposed so the commit path can warn the user, rather
@@ -255,13 +268,16 @@ class XAxisAlignmentController:
         # preview cache, and so a re-imported spectrum that happens to reuse
         # an old label can't be mistaken for the spectrum that cache belongs to.
         current_keys = [self.manager._key_for(s) for s in selected_spectra]
-        if (self._last_settings and
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if (self._last_settings and not should_reset and
                 self._last_settings.get('_cached_keys') == current_keys):
             current_settings = dict(self._last_settings)
         else:
-            # Different selection — carry over computation params but drop
-            # the preview cache (it was computed for a different set of
-            # spectra and would mislead here).
+            # Different selection, OR an operation ran since the preview
+            # was cached (should_reset) — carry over computation params but
+            # drop the preview cache; either way it was computed against
+            # spectra data that no longer matches what's selected now.
             base = self._last_settings or {}
 
             # reference_spectrum_index is a POSITION in the selection list,

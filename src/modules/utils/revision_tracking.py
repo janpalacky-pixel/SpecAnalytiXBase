@@ -26,7 +26,12 @@ docstring) — comparing it against the value seen last time this dialog was
 shown is sufficient to tell "did anything change" apart from "nothing
 changed".
 
-Usage, in a controller that holds a persistent `self.manager`:
+Usage, in a controller whose Manager caches state keyed PER SPECTRUM by
+stable identity (BaselineManager's baseline points, SpikeRemovalManager's
+detected spikes, InteractiveSubtractionManager's stored factors, ...) —
+revision alone is enough, since each spectrum's own entry is only ever
+looked up under its own key regardless of what else happens to be
+selected:
 
     def __init__(self, main_controller):
         self.controller = main_controller
@@ -36,6 +41,35 @@ Usage, in a controller that holds a persistent `self.manager`:
     def show_dialog(self, ...):
         should_reset, self._last_seen_revision = revision_changed(
             self.controller, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()   # or a scoped, per-spectrum clear
+        ...
+
+A DIFFERENT situation, and a real bug found in practice: a controller
+whose Manager caches ONE result computed from the WHOLE selection at
+once (Cluster Analysis's cluster_labels, SOM's hit_map, QC/Outlier's t2,
+...), where the dialog reads that cached result directly — gated only on
+"is it None", with no way to tell whether it was computed from the
+CURRENT selection or a completely different, unrelated one — the moment
+the user does anything that reads it (e.g. switching the visualization
+mode combo) BEFORE ever clicking Run/Compute for this session. Revision
+alone does not protect this: selecting a different, unrelated set of
+spectra does not bump revision at all (no operation ran), so a stale
+result from the OLD selection would still be shown. These controllers
+need `selection_or_revision_changed` instead, which also resets on a
+plain selection change:
+
+    def __init__(self, main_controller):
+        self.controller = main_controller
+        self.manager = SomeManager()
+        self._last_seen_revision = None
+        self._last_selection_hash = None
+
+    def show_dialog(self, selected_spectra, ...):
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.controller, selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
         if should_reset:
             self.manager.reset()
         ...
@@ -67,3 +101,35 @@ def revision_changed(main_controller, last_seen_revision):
     should_reset = (current_revision is None or
                     current_revision != last_seen_revision)
     return should_reset, current_revision
+
+
+def selection_hash(spectra):
+    """Order-independent identity hash of a set of spectra, for
+    detecting whether "the selection" is the same set as last time --
+    see spectrum_identity.spectrum_key for what identifies one spectrum.
+    None for an empty/falsy selection, distinguishable from any real
+    selection's hash."""
+    if not spectra:
+        return None
+    from src.modules.utils.spectrum_identity import spectrum_key
+    return ','.join(sorted(spectrum_key(s) for s in spectra))
+
+
+def selection_or_revision_changed(main_controller, selected_spectra,
+                                  last_selection_hash, last_seen_revision):
+    """Like revision_changed, but ALSO resets when the selection itself
+    changed -- for a controller whose Manager caches one result computed
+    from the whole current selection at once, read directly by the
+    dialog with no per-spectrum scoping to fall back on (see this
+    module's docstring for the concrete bug this fixes).
+
+    Returns (should_reset, current_selection_hash, current_revision) --
+    the caller stores both of the latter as its new
+    `_last_selection_hash`/`_last_seen_revision` regardless of
+    should_reset.
+    """
+    current_hash = selection_hash(selected_spectra)
+    revision_should_reset, current_revision = revision_changed(
+        main_controller, last_seen_revision)
+    should_reset = revision_should_reset or current_hash != last_selection_hash
+    return should_reset, current_hash, current_revision

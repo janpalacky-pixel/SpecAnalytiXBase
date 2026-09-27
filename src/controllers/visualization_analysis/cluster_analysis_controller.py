@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.cluster_analysis_dialog import ClusterAnalysisDialog
 from src.modules.visualization_analysis.cluster_analysis_manager import ClusterAnalysisManager
-from src.modules.utils.revision_tracking import revision_changed
+from src.modules.utils.revision_tracking import selection_or_revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 class ClusterAnalysisController:
@@ -12,10 +12,16 @@ class ClusterAnalysisController:
     def __init__(self, main_controller):
         self.main_controller = main_controller
         self.manager = ClusterAnalysisManager()
-        # Compared against IncrementalOperationsManager.revision in
-        # show_dialog() below, so a reopen only forgets the last result if an
-        # operation actually ran meanwhile -- see revision_tracking.py.
+        # Compared against IncrementalOperationsManager.revision AND the
+        # current selection in run_cluster_analysis() below -- unlike a
+        # per-spectrum-keyed cache, cluster_labels is computed from the
+        # WHOLE selection at once and read directly by the dialog (e.g.
+        # switching straight to PCA 3D before Run Clustering is ever
+        # clicked), so a plain, unrelated selection change needs to reset
+        # this too, not just an operation running -- see
+        # revision_tracking.py's own docstring for the concrete bug.
         self._last_seen_revision = None
+        self._last_selection_hash = None
         self.dialog = None
     
     def run_cluster_analysis(self):
@@ -62,8 +68,10 @@ class ClusterAnalysisController:
         # completely unrelated) set of spectra could still be displayed
         # (e.g. switching straight to PCA 3D) before Run Clustering is
         # ever clicked for this selection.
-        should_reset, self._last_seen_revision = revision_changed(
-            self.main_controller, self._last_seen_revision)
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.main_controller, self.main_controller.selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
         if should_reset:
             self.manager.reset()
 

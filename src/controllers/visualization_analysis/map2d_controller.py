@@ -4,7 +4,7 @@ from src.modules.visualization_analysis.map2d_manager import Map2DManager
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
-from src.modules.utils.revision_tracking import revision_changed
+from src.modules.utils.revision_tracking import selection_or_revision_changed
 
 logger = get_logger(__name__)
 
@@ -25,6 +25,15 @@ class Map2DController:
         # revision at the point this controller last trusted self.manager's
         # cached fit as still matching the current spectra.
         self._last_seen_revision = None
+        # Bug found in practice, same class as Cluster/SOM/QC-Outlier (see
+        # selection_or_revision_changed's own docstring): revision alone
+        # doesn't move on a plain selection change (no operation ran), so
+        # picking a completely different, unrelated set of spectra and
+        # reopening this dialog would still pass the old
+        # revision_changed() check and redraw the PREVIOUS selection's
+        # cached SVD/PCA/NMF/MCR-ALS map as if it belonged to the new one.
+        # Track the selection identity too so either kind of change resets.
+        self._last_selection_hash = None
 
     # ------------------------------------------------------------------ #
     # Public API used by the dialog                                        #
@@ -350,8 +359,10 @@ class Map2DController:
         # (a new operation applied, history navigation to a different
         # state, or new spectra imported) -- so compare against it and
         # reset only when it moved.
-        should_reset, self._last_seen_revision = revision_changed(
-            self.controller, self._last_seen_revision)
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.controller, selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
         if should_reset:
             self.manager.reset()
 

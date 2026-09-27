@@ -676,6 +676,14 @@ class OperationsController:
             if not hasattr(self.controller, 'svd_background_controller'):
                 from src.controllers.data_analysis.svd_background_controller import SVDBackgroundController
                 self.controller.svd_background_controller = SVDBackgroundController(self.controller)
+            # Strip baseline_corrections/inverted_subspectra from
+            # current_settings if an operation ran meanwhile, even for
+            # this SAME selection -- see
+            # SVDBackgroundController.filter_stale_settings's own
+            # docstring for the bug this fixes (picks silently restored
+            # onto a freshly, but differently, computed SVD).
+            current_settings = self.controller.svd_background_controller.filter_stale_settings(
+                current_settings)
             try:
                 dialog = SVDBackgroundDialog(
                     self.controller.view,
@@ -1321,6 +1329,13 @@ class OperationsController:
                     PeakFittingController)
                 self.controller.peak_fitting_controller = PeakFittingController(self.controller)
             pfc = self.controller.peak_fitting_controller
+
+            # Strip a stale cached fit_results if an operation ran on this
+            # same spectrum meanwhile, even though it's still the same
+            # selection -- see PeakFittingController.filter_stale_settings's
+            # own docstring for the bug this fixes (an old fit curve
+            # silently redrawn over freshly, but differently, processed data).
+            last_settings = pfc.filter_stale_settings(last_settings)
 
             dialog = pfc.show_dialog(selected_spectra[0], current_settings=last_settings)
     

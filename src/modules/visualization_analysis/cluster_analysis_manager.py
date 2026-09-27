@@ -221,7 +221,21 @@ class ClusterAnalysisManager:
             valid_data = self.scaled_data[valid_mask]
             unique_valid_labels = np.unique(valid_labels)
             
-            if len(unique_valid_labels) < 2:
+            # sklearn's silhouette_samples requires 2 <= n_labels <=
+            # n_samples - 1 -- not just "at least 2". Bug found in
+            # practice: with few enough non-noise points, DBSCAN can end
+            # up with every one of them in its own cluster (n_labels ==
+            # n_valid_points), which passed this "< 2" check but then
+            # raised ValueError inside silhouette_samples ("Number of
+            # labels is N. Valid values are 2 to n_samples - 1") --
+            # caught by compute_clustering's outer try/except, which
+            # logged it and returned False for the whole clustering run
+            # instead of just skipping this diagnostic. Silhouette score
+            # is optional/diagnostic; the actual cluster labels are still
+            # valid and useful even when there are too few points per
+            # cluster to score them meaningfully, so skip gracefully
+            # instead of failing the whole run.
+            if len(unique_valid_labels) < 2 or len(unique_valid_labels) > len(valid_labels) - 1:
                 logger.debug("DEBUG: Insufficient clusters for silhouette analysis (DBSCAN)")
                 self.silhouette_avg_score = None
                 self.silhouette_sample_scores = None
@@ -246,7 +260,15 @@ class ClusterAnalysisManager:
             self.silhouette_sample_scores[valid_mask] = sample_scores_valid
             
         else:
-            if len(unique_labels) < 2:
+            # Same upper-bound bug as the DBSCAN branch above: K-Means/
+            # Hierarchical with n_clusters set equal to (or, degenerate
+            # cases aside, close to) the number of selected spectra can
+            # leave every point in its own cluster -- e.g. 3 clusters
+            # requested for 3 selected spectra. That passed this "< 2"
+            # check but crashed inside silhouette_samples, which requires
+            # 2 <= n_labels <= n_samples - 1, taking down the whole
+            # clustering run instead of just skipping this diagnostic.
+            if len(unique_labels) < 2 or len(unique_labels) > len(self.cluster_labels) - 1:
                 logger.debug("DEBUG: Insufficient clusters for silhouette analysis")
                 self.silhouette_avg_score = None
                 self.silhouette_sample_scores = None

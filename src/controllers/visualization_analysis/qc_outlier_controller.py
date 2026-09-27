@@ -2,7 +2,7 @@
 
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.qc_outlier_manager import QCOutlierManager
-from src.modules.utils.revision_tracking import revision_changed
+from src.modules.utils.revision_tracking import selection_or_revision_changed
 from src.modules.utils.spectra_validation import validate_common_x_axis
 
 
@@ -27,6 +27,13 @@ class QCOutlierController:
         # before this dialog's first computation for the new selection
         # finished -- the same "never forget" bug 2D Map originally had.
         self._last_seen_revision = None
+        # QC/Outlier's PCA/t2/Q results are computed from the WHOLE
+        # selection at once and read directly by the dialog (e.g.
+        # switching tabs before anything is (re-)computed for THIS
+        # selection), so a plain, unrelated selection change needs to
+        # reset this too, not just an operation running -- see
+        # revision_tracking.py's own docstring.
+        self._last_selection_hash = None
 
     def run_qc_outlier_analysis(self):
         if not self.main_controller.selected_spectra:
@@ -53,8 +60,10 @@ class QCOutlierController:
                                        self.main_controller.view, 'QC / Outlier Detection'):
             return
 
-        should_reset, self._last_seen_revision = revision_changed(
-            self.main_controller, self._last_seen_revision)
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.main_controller, self.main_controller.selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
         if should_reset:
             self.manager.reset()
 

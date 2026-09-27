@@ -206,3 +206,38 @@ def test_qc_outlier_controller_resets_only_when_revision_changed():
     mc.operations_controller.operations_manager.revision = 1
     ctrl.run_qc_outlier_analysis()   # an operation ran -> forgets
     assert len(reset_calls) == 2
+
+
+def test_qc_outlier_controller_resets_on_selection_change_alone():
+    """QCOutlierManager.t2/q etc. are computed from the WHOLE selection
+    at once and read directly by the dialog with no per-spectrum
+    scoping (unlike Baseline/SpikeRemoval/InteractiveSubtraction) --
+    switching to a different, unrelated selection with NO operation
+    applied must still reset, or a stale result from the old selection
+    could be shown before anything is (re-)computed for the new one."""
+    from src.controllers.visualization_analysis.qc_outlier_controller import QCOutlierController
+
+    _install_fake_dialog(
+        'src.views.dialogs.visualization_analysis.qc_outlier_dialog', 'QCOutlierDialog')
+
+    mc = _FakeMainController(revision=0)
+    mc.selected_spectra = [_spectrum(f's{i}', [1, 2, 3]) for i in range(5)]
+    ctrl = QCOutlierController(mc)
+
+    reset_calls = []
+    orig_reset = ctrl.manager.reset
+    ctrl.manager.reset = lambda: (reset_calls.append(1), orig_reset())
+
+    ctrl.run_qc_outlier_analysis()
+    assert len(reset_calls) == 1
+
+    # switch to a totally different, unrelated selection -- revision is
+    # STILL 0 (no operation ran), but this must still reset
+    mc.selected_spectra = [_spectrum(f't{i}', [4, 5, 6]) for i in range(5)]
+    ctrl.run_qc_outlier_analysis()
+    assert len(reset_calls) == 2
+
+    # reopening for that SAME new selection, still nothing changed ->
+    # remembers again
+    ctrl.run_qc_outlier_analysis()
+    assert len(reset_calls) == 2

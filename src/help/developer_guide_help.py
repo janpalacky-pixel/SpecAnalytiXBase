@@ -801,7 +801,7 @@ class SomeController:
         computed/picked part, following the same idea as
         <code>BaselineManager.clear_baseline(key)</code>:</p>
         <table>
-            <tr><th>Controller</th><th>What a revision change clears</th></tr>
+            <tr><th>Controller</th><th>What a reset clears</th></tr>
             <tr><td><code>Map2DController</code>, <code>NMFController</code>,
                 <code>MCRALSController</code>, <code>ClusterAnalysisController</code>,
                 <code>PcaScoresController</code>, <code>SOMController</code>,
@@ -825,28 +825,94 @@ class SomeController:
                 matters (a global reset would erase an unrelated, still-valid
                 spectrum's markings too).</td></tr>
         </table>
+        <div class="danger">
+            <strong>Selection changing alone, with no operation applied, does NOT bump
+            <code>revision</code> at all</strong> &mdash; and whether that's actually
+            safe on its own depends entirely on how the dialog reads the Manager's
+            cached result, which turned out NOT to be uniform. Three different
+            situations, found by actually re-checking each dialog rather than assuming
+            they were all the same shape:
+            <ul>
+                <li><strong>Always recomputes on open &mdash; safe regardless.</strong>
+                    NMF, MCR-ALS, PCA/SVD Scores &amp; Loadings, and 2D Correlation all
+                    unconditionally trigger a fresh compute the moment they're shown
+                    (see each one's own <code>_initial_run_pending</code>/
+                    <code>_initial_compute_pending</code> + <code>showEvent</code>),
+                    reading only a dialog-LOCAL buffer (<code>self._mgr</code>, starting
+                    <code>None</code> every construction) until that finishes. A
+                    selection change is reflected correctly no matter what
+                    <code>self.controller.manager</code> itself still holds.</li>
+                <li><strong>Keyed per spectrum &mdash; safe regardless.</strong> Manual
+                    Baseline, Interactive Subtraction, and Spike Removal look up each
+                    spectrum's own stored state by its own identity key, so a different
+                    selection just shows whatever is (or isn't) stored for
+                    <em>those</em> spectra, correctly, either way &mdash; nothing about
+                    an unrelated spectrum's entry can leak in.</li>
+                <li><strong>Computed from the whole selection, read directly &mdash;
+                    genuinely unsafe, and a real bug found this way.</strong> Cluster
+                    Analysis, SOM, and QC/Outlier Detection all start with a blank
+                    "press Run" plot on open, which briefly LOOKED like the same safety
+                    as the first case above &mdash; but that blank state is only ever
+                    drawn once at construction. Every later redraw (switching the
+                    visualization-mode combo, a tab, ...) calls straight into e.g.
+                    <code>ClusterAnalysisCanvas.plot_clusters()</code>, which checks only
+                    <code>self.cluster_controller.manager.cluster_labels is None</code>
+                    &mdash; not whether that result was ever computed for the CURRENT
+                    selection. Switch to a different, unrelated selection, open the
+                    dialog, and change the visualization mode BEFORE ever clicking Run
+                    for this selection: with only a revision check, the OLD selection's
+                    stale <code>cluster_labels</code>/<code>hit_map</code>/<code>t2</code>
+                    is still sitting on the Manager (no operation ran, so
+                    <code>revision</code> never moved) and gets drawn as if it were
+                    current. This is exactly the scenario the ORIGINAL unconditional
+                    <code>self.manager.reset()</code> was protecting against (see its own
+                    removed comment: "switching straight to PCA 3D... before Run
+                    Clustering is ever clicked") &mdash; a plain revision check
+                    reintroduces it for the "different selection, no operation" case.
+                </li>
+            </ul>
+        </div>
+        <p>For that third case, use <code>selection_or_revision_changed</code> instead
+        of <code>revision_changed</code> &mdash; same idea, but it ALSO resets when the
+        selection itself changed (via <code>selection_hash</code>, an order-independent
+        hash of the selected spectra's own identity keys):</p>
+        <div class="scheme">
+from src.modules.utils.revision_tracking import selection_or_revision_changed
+
+class SomeController:
+    def __init__(self, main_controller):
+        self.controller = main_controller
+        self.manager = SomeManager()
+        self._last_seen_revision = None
+        self._last_selection_hash = None
+
+    def show_dialog(self, selected_spectra, ...):
+        should_reset, self._last_selection_hash, self._last_seen_revision = \
+            selection_or_revision_changed(
+                self.controller, selected_spectra,
+                self._last_selection_hash, self._last_seen_revision)
+        if should_reset:
+            self.manager.reset()
+        ...
+        </div>
+        <p>Used by <code>ClusterAnalysisController</code>, <code>SOMController</code>, and
+        <code>QCOutlierController</code>. When adding a new controller with this same
+        "one Manager, one result computed from the whole selection, read directly by the
+        dialog" shape, use this combined check from the start &mdash; not
+        <code>revision_changed</code> alone.</p>
         <div class="info">
             <strong>This is a different mechanism from the selection-hash guard
             above.</strong> <a href="#settings-cache">Remembering Dialog Settings</a>
             governs whether cached <em>settings</em> (the values shown in the dialog's
-            own controls) are restored, keyed by whether the <em>selection</em> changed.
-            <code>revision</code> governs whether cached <em>results</em> (a fit,
-            picked/detected points, a stored factor) are kept, keyed by whether any
-            <em>operation</em> ran. A dialog can use either, both, or neither &mdash;
-            <code>NMFController</code> uses both (<code>last_op_settings</code> for its
-            controls, <code>revision</code> for the Manager's fit); most of the "always
-            reset"/"never reset" Manager-holding controllers only needed the latter.
-            Selection changing alone, with no operation applied, does not bump
-            <code>revision</code> at all &mdash; whether that's actually safe depends on
-            the dialog: NMF/MCR-ALS/PCA Scores/2D Correlation always recompute fresh from
-            the current selection the moment they're shown (see their own
-            <code>_initial_run_pending</code>/<code>showEvent</code>), so a selection
-            change is reflected correctly regardless; Cluster Analysis/SOM/QC Outlier
-            show a blank "press Run" state until the user acts, for the same reason;
-            Manual Baseline/Interactive Subtraction/Spike Removal look up each
-            spectrum's own stored state by its own identity, so a different selection
-            just shows whatever is (or isn't) stored for <em>those</em> spectra,
-            correctly, either way.
+            own controls) are restored, keyed by whether the <em>selection</em> changed
+            &mdash; a single hash shared globally across every operation on
+            <code>OperationsController</code>. <code>revision</code> (and
+            <code>selection_or_revision_changed</code>'s own selection-hash half, which
+            is a separate, PER-CONTROLLER hash, not that shared one) governs whether
+            cached <em>results</em> (a fit, picked/detected points, a stored factor) are
+            kept. A dialog can use either, both, or neither &mdash; <code>NMFController</code>
+            uses both (<code>last_op_settings</code> for its controls, <code>revision</code>
+            for the Manager's fit).
         </div>
         <p>Adding a new controller with this same "one persistent Manager across dialog
         reopens" shape? Wire it into <code>revision_tracking.py</code> the same way
@@ -855,6 +921,61 @@ class SomeController:
         spectra actually affected, the same way <code>BaselineCorrectionController</code>/
         <code>InteractiveSubtractionController</code>/<code>SpikeRemovalController</code>
         do above.</p>
+
+        <div class="danger">
+            <strong>A fourth case, found on a full sweep of every operation and
+            analysis/visualization tool</strong> (looking specifically for this bug
+            class everywhere, not just re-checking the three above): a dialog's own
+            settings-cache entry (<a href="#settings-cache">Remembering Dialog
+            Settings</a>) is not always JUST settings &mdash; sometimes it also carries
+            a previous session's COMPUTED result, and the dialog restores that result
+            directly on open with no re-check against <code>revision</code> at all,
+            because that settings cache was only ever designed to guard against a
+            <em>different selection</em>, never against the <em>same selection's data
+            having changed since</em>. Three confirmed instances, all fixed the same
+            way &mdash; strip exactly the computed/picked keys from the settings dict
+            when <code>revision_changed</code> says an operation ran, keep the genuine
+            settings:
+            <ul>
+                <li><code>SVDBackgroundController.filter_stale_settings()</code> &mdash;
+                    <code>SVDBackgroundManager.compute_svd_from_spectra()</code> already
+                    clears its own <code>baseline_corrections</code>/
+                    <code>inverted_subspectra</code> on every fresh computation, but the
+                    dialog was restoring those exact keys right back from the settings
+                    cache, silently undoing that self-clear.</li>
+                <li><code>PeakFittingController.filter_stale_settings()</code> &mdash;
+                    <code>PeakFittingDialog.load_settings()</code> restores a cached
+                    <code>fit_results</code> and immediately redraws that old fit curve
+                    on open with no re-fit, over whatever the spectrum's data now is.
+                </li>
+                <li><code>XAxisAlignmentController.show_dialog()</code> &mdash; its own
+                    preview cache (<code>_cached_aligned</code>/<code>_cached_hash</code>)
+                    is invalidated only by a change in alignment PARAMETERS
+                    (<code>_compute_settings_hash()</code> covers only
+                    <code>reference_spectrum_index</code>/<code>max_shift</code>/
+                    <code>interpolation_method</code>/<code>x_range</code>), never by the
+                    selected spectra's own data changing; fixed by checking
+                    <code>revision_changed</code> alongside the existing
+                    <code>_cached_keys</code> selection check, dropping just the two
+                    preview keys when it fires.</li>
+            </ul>
+            <code>Map2DController.show_dialog()</code> had the OTHER bug from this same
+            sweep &mdash; the third case above (selection-change-alone), not this
+            fourth one &mdash; and was fixed the same way as Cluster/SOM/QC-Outlier, by
+            switching it from <code>revision_changed</code> to
+            <code>selection_or_revision_changed</code>.
+        </div>
+        <div class="tip">
+            <strong>What to check for a new controller that restores ANY dict from a
+            cache on dialog-open</strong> (whether that's the shared settings-cache
+            above, or a controller's own separate cache like X-axis Alignment's): does
+            every key in that dict represent something the user TYPED/PICKED as a
+            parameter (safe to restore regardless of what happened to the data since),
+            or does any key represent something COMPUTED FROM the spectra's data (only
+            safe to restore if that data provably hasn't changed since &mdash; i.e.
+            <code>revision_changed</code> says no)? Mixing the two in one cache/dict is
+            exactly how all three bugs above happened.
+        </div>
 
         <!-- ═══════════════════════════════════════════════════════════
              SNAPSHOT FILE SAVE/LOAD PIPELINE

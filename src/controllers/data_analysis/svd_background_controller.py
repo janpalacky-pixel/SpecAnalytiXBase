@@ -7,6 +7,7 @@ from src.modules.data_analysis.svd_background_manager import SVDBackgroundManage
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.correction_history import append_correction_history
+from src.modules.utils.revision_tracking import revision_changed
 
 logger = get_logger(__name__)
 
@@ -17,6 +18,37 @@ class SVDBackgroundController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager = SVDBackgroundManager()
+        # Compared against IncrementalOperationsManager.revision in
+        # filter_stale_settings() below -- see revision_tracking.py.
+        self._last_seen_revision = None
+
+    def filter_stale_settings(self, current_settings):
+        """Called by OperationsController right before constructing
+        SVDBackgroundDialog, on the settings dict it's about to pass in
+        as current_settings. Bug found in practice: compute_svd_from_
+        spectra() already clears the manager's OWN baseline_corrections/
+        inverted_subspectra on every fresh SVD computation (see that
+        method) -- but SVDBackgroundDialog._restore_settings() /
+        load_current_settings() immediately restores them right back
+        from THIS settings dict, which is cached by OperationsController
+        keyed only by selection (see 'Remembering Dialog Settings' in the
+        Developer Guide), not by whether an operation changed the
+        selected spectra's own data since. Same selection, but a
+        different operation (e.g. SNIP Baseline) ran in between two SVD
+        Background sessions: the manager's own self-clearing gets
+        silently undone by this restoration, and baseline points picked
+        against the OLD subspectra shape reappear on the freshly (and
+        differently) computed one. Strip exactly the picked/computed
+        keys -- not correction_mode/max_components/selected_subspectra,
+        which are genuine settings, not stale-prone results -- whenever
+        an operation ran since this controller last trusted them."""
+        should_reset, self._last_seen_revision = revision_changed(
+            self.controller, self._last_seen_revision)
+        if should_reset and current_settings:
+            current_settings = dict(current_settings)
+            current_settings.pop('baseline_corrections', None)
+            current_settings.pop('inverted_subspectra', None)
+        return current_settings
 
     @property
     def oc(self):
