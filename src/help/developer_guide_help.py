@@ -977,6 +977,191 @@ class SomeController:
             exactly how all three bugs above happened.
         </div>
 
+        <h3 id="staleness-reference">Staleness Reference: Every Dialog With a
+        Persistent Manager, Classified</h3>
+        <p>The sections above explain the mechanisms one at a time as each bug was
+        found. This is the consolidated version &mdash; every dialog that keeps
+        <em>anything</em> alive across a close/reopen, sorted into the six shapes
+        that actually occur in this codebase, with the guard each one needs and why.
+        It grew out of a full manual sweep of every processing operation and
+        analysis/visualization tool (prompted by a user bug report and then extended
+        proactively), and is kept here as a lasting reference rather than only in
+        that sweep's own notes &mdash; consult it before copying "the nearest
+        existing controller" for a new one, since the nearest one by menu location is
+        not always the nearest one by shape.</p>
+        <table>
+            <tr><th>Tool / dialog</th><th>Guard mechanism</th><th>What's actually protected</th></tr>
+
+            <tr><td colspan="3"><strong>I. Whole-selection result, read directly by
+                the dialog</strong> &mdash; the Manager caches ONE result computed
+                from the entire current selection at once; the dialog's canvas reads
+                it straight off the Manager with no per-spectrum fallback. Unsafe on
+                either a plain selection change (no operation ran, so
+                <code>revision</code> never moves) or an unrelated operation (revision
+                moves, but selection is unchanged) &mdash; needs
+                <code>selection_or_revision_changed</code>, not
+                <code>revision_changed</code> alone.</td></tr>
+            <tr><td>Cluster Analysis</td><td><code>ClusterAnalysisController</code></td>
+                <td><code>cluster_labels</code> / silhouette scores</td></tr>
+            <tr><td>SOM</td><td><code>SOMController</code></td>
+                <td><code>hit_map</code> / node weights</td></tr>
+            <tr><td>QC / Outlier Detection</td><td><code>QCOutlierController</code></td>
+                <td>PCA model, <code>t2</code> / <code>q</code> scores</td></tr>
+            <tr><td>2D Map</td><td><code>Map2DController</code></td>
+                <td>SVD/PCA/NMF/MCR-ALS decomposition map</td></tr>
+
+            <tr><td colspan="3"><strong>II. Settings cache that also happens to carry
+                a computed result</strong> &mdash; the SAME dict that stores genuine
+                typed/picked settings (keyed only on selection identity, via
+                <a href="#settings-cache">the selection-hash guard</a>) also carries a
+                previous session's COMPUTED output, restored and redrawn on open with
+                no re-check. <code>revision_changed</code> alone is enough here
+                (selection changes are already handled by the selection-hash guard);
+                the fix is a dedicated <code>filter_stale_settings()</code> that strips
+                only the computed key(s), never the genuine settings.</td></tr>
+            <tr><td>SVD Background Correction</td>
+                <td><code>SVDBackgroundController.filter_stale_settings()</code></td>
+                <td><code>baseline_corrections</code> / <code>inverted_subspectra</code></td></tr>
+            <tr><td>X-axis Alignment</td>
+                <td><code>XAxisAlignmentController.show_dialog()</code> revision check</td>
+                <td><code>_cached_aligned</code> / <code>_cached_hash</code> preview</td></tr>
+            <tr><td>Peak Fitting</td>
+                <td><code>PeakFittingController.filter_stale_settings()</code></td>
+                <td><code>fit_results</code> (curve + fitted parameters)</td></tr>
+
+            <tr><td colspan="3"><strong>III. Per-spectrum-keyed Manager state</strong>
+                &mdash; state is stored under each spectrum's own identity key (see
+                <a href="#identity">The Golden Rule</a>), so a plain selection change is
+                safe by construction: an unrelated spectrum's entry can never leak in.
+                Still needs <code>revision_changed</code> to clear a SPECIFIC
+                spectrum's own entry when an operation ran on it &mdash; but the reset
+                is scoped to the affected spectra, not the whole Manager.</td></tr>
+            <tr><td>Manual Baseline Correction</td>
+                <td><code>BaselineCorrectionController</code>, scoped
+                <code>clear_baseline(key)</code></td>
+                <td>Picked baseline points, per spectrum</td></tr>
+            <tr><td>Spike Removal</td>
+                <td><code>SpikeRemovalController</code>, scoped
+                <code>reset_for_spectrum(key)</code></td>
+                <td>Manually added/rejected spikes, per spectrum &mdash; NOT automatic
+                detection itself, which reruns fresh regardless (see danger box
+                below)</td></tr>
+            <tr><td>Interactive Subtraction</td>
+                <td><code>InteractiveSubtractionController</code>, scoped to
+                <code>stored_factors</code></td>
+                <td>A committed (minuend, subtrahend) factor, per pair &mdash; only
+                once <code>Update</code> is clicked (see danger box below)</td></tr>
+
+            <tr><td colspan="3"><strong>IV. Settings only &mdash; nothing computed to
+                protect</strong> &mdash; the dialog never caches a result at all, only
+                the values you last typed or picked. There is nothing for
+                <code>revision</code> to guard here; the shared selection-hash guard
+                (<a href="#settings-cache">above</a>) is sufficient on its own, and
+                restoring these regardless of what happened to the data since is
+                exactly the right behavior, not a gap.</td></tr>
+            <tr><td colspan="2">Data Range &middot; Normalization &middot;
+                SG-Smoothing &middot; Automated Baseline &middot; SNIP Baseline
+                &middot; Resolution Enhancement &middot; CD Unit Conversion &middot;
+                X-axis Unit Conversion &middot; Mean-Center Spectra (Dataset) &middot;
+                Cosmic Ray Removal &middot; Combine Spectra &middot; FFT Denoising
+                &middot; Band Ratio &middot; Reference Matching</td>
+                <td>Typed parameters / chosen mode only</td></tr>
+
+            <tr><td colspan="3"><strong>V. Self-validating content fingerprint</strong>
+                &mdash; instead of asking the shared revision counter "did ANYTHING
+                happen", the Manager hashes the actual data it computed from and
+                compares that hash fresh on every open. More precise than
+                <code>revision_changed</code> (an operation on a completely unrelated
+                spectrum can never invalidate this one's cache) and needs no
+                integration with the shared counter at all &mdash; the reference
+                design for any future Manager that wants this level of precision.</td></tr>
+            <tr><td>Melting Curve Analysis</td>
+                <td><code>_compute_spectra_fingerprint()</code> /
+                <code>_try_fast_restore_from_cache()</code> &mdash; an md5 over each
+                spectrum's own label + <code>x_scale</code> + <code>y_scale</code> bytes</td>
+                <td>Extracted curve + fit, only if every contributing spectrum's own
+                data hashes the same as when it was built</td></tr>
+
+            <tr><td colspan="3"><strong>VI. Always recomputes fresh &mdash; nothing
+                persists across opens</strong> &mdash; the dialog reads only a
+                dialog-LOCAL buffer that starts at <code>None</code> on every
+                construction, and unconditionally triggers a new compute the moment
+                it's shown. Trivially safe regardless of selection or revision, because
+                there is no cache to go stale.</td></tr>
+            <tr><td colspan="2">NMF &middot; MCR-ALS &middot; PCA Scores &amp; Loadings
+                &middot; SVD Analysis &middot; 2D Correlation &middot; PLS / PLS-DA
+                &middot; Kinetics Fitting &middot; Isosbestic Point Detection</td>
+                <td>Nothing &mdash; fresh compute every open</td></tr>
+        </table>
+        <div class="tip">
+            <strong>Picking a category for a new controller:</strong> does it cache a
+            result computed from data, or only values the user typed/picked? Typed
+            values only &rarr; IV, no revision involvement needed. A computed result:
+            does the Manager key that result by each spectrum's own identity, or by
+            the whole selection at once? Per-spectrum &rarr; III. Whole-selection,
+            read directly by the dialog with no per-spectrum fallback &rarr; I. Want
+            precision an integer counter can't give (immune to an unrelated
+            spectrum's operation) &rarr; V, at the cost of hashing the data yourself.
+            Cheapest of all, if recomputing is fast enough not to matter &rarr; VI.
+            Category II is not a fresh choice &mdash; it is what happens when a
+            controller ALREADY has a typed-settings cache (IV) and a computed result
+            gets folded into the same dict without anyone noticing; avoid it going
+            forward by keeping computed results out of the settings dict entirely, in
+            a separate cache guarded by category I, III, or V instead.
+        </div>
+        <div class="danger">
+            <strong>A separate concern from the six categories above, found in the
+            same sweep, on Peak Fitting specifically:</strong> WHEN a dialog saves
+            into its cache matters as much as WHAT it saves. Most dialogs in
+            categories I&ndash;III above save on <em>any</em> close &mdash; the
+            window's own X button, a Cancel button, anything &mdash; never only on an
+            explicit OK/Apply (<code>BaselineCorrectionController.show_dialog()</code>'s
+            own comment: "Always store corrections on close &mdash; no OK/Cancel
+            distinction"). Interactive Subtraction is a deliberate exception to that
+            convention, not a bug &mdash; see the note just below this box. Peak
+            Fitting used a different, OK/Cancel dialog convention
+            and only ever saved its settings-cache entry inside
+            <code>if dialog.exec_() == QDialog.Accepted:</code> &mdash; closing any
+            other way saved nothing at all, silently, so the very next open showed a
+            blank peak list even though nothing was actually wrong with the
+            revision-tracking fix above. Fixed by decoupling the two concerns
+            entirely: reading back and saving <code>dialog.get_results()</code> now
+            happens unconditionally after <code>dialog.exec_()</code> returns, and
+            <code>QDialog.Accepted</code> only still gates the separate, genuinely
+            OK-only step of committing new output spectra
+            (<code>handle_peak_fitting()</code>). A second, subtler bug came from that
+            same commit step: <code>handle_peak_fitting()</code>'s own
+            <code>apply_operation()</code> call bumps
+            <code>IncrementalOperationsManager.revision</code> &mdash; the exact
+            counter category II's own <code>filter_stale_settings()</code> uses to
+            detect "an unrelated operation ran since this was cached" &mdash; so
+            fitting peaks with an output option checked was mistaking its OWN commit
+            for external staleness, wiping the very <code>fit_results</code> it had
+            just saved. Fixed by having <code>PeakFittingController</code> resync its
+            own <code>_last_seen_revision</code> right after its own commit, so a
+            LATER, genuinely unrelated operation still invalidates the cache
+            correctly, but this one's own commit does not invalidate itself.
+        </div>
+
+        <div class="tip">
+            <strong>Interactive Subtraction's own exception to "save on any close":
+            </strong> unlike Manual Baseline Correction and Spike Removal, picking a
+            subtraction factor and simply closing the dialog saves nothing &mdash;
+            <code>InteractiveSubtractionController.show_dialog()</code>'s own comment
+            is explicit that "closing this dialog does not undo anything already
+            committed via Update &mdash; it only dismisses the window". A factor only
+            reaches <code>self.manager.stored_factors</code>, and so survives a
+            reopen, once the dialog's own <code>Update</code> button is clicked (its
+            <code>factors_updated</code> signal is only ever emitted from there, or
+            from removing an already-stored factor). This is a deliberate design, not
+            an oversight: it lets you try several candidate factors against the same
+            pair without committing any of them, and &mdash; because each
+            (minuend, subtrahend) pair is stored under its own key &mdash; commit a
+            <em>different</em> factor for each of several minuend/subtrahend pairs in
+            one session, each via its own Update click, before ever touching Close.
+        </div>
+
+
         <!-- ═══════════════════════════════════════════════════════════
              SNAPSHOT FILE SAVE/LOAD PIPELINE
              ═══════════════════════════════════════════════════════════ -->
