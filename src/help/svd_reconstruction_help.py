@@ -237,6 +237,9 @@ def get_svd_reconstruction_help_content():
             real signal (singular values plot, residual errors plot, cumulative variance).</li>
         <li>Browse individual subspectra with ◀ / ▶ / Jump to inspect them visually.</li>
         <li>Invert any component whose sign is arbitrary from SVD.</li>
+        <li>Once you trust a result, optionally run <strong>Bootstrap
+            Uncertainty&hellip;</strong> to see how sensitive it is to the actual
+            noise in your data &mdash; see the dedicated section below.</li>
         <li>Tick subspectra in the list to display multiple components simultaneously.</li>
         <li>Use the reconstruction pipeline (separate from this dialog) to rebuild spectra
             from selected components.</li>
@@ -267,11 +270,13 @@ def get_svd_reconstruction_help_content():
 
     <div class="cat">
         <h3>SVD settings</h3>
-        <p>Currently just the <strong>Mean-center spectra before SVD</strong>
-        checkbox (unchecked by default) — see Mathematical foundation above
-        for what it does and why it defaults off here. Sits above View SVD
-        Components since it's a decomposition-wide setting, not a
-        display/navigation one.</p>
+        <p><strong>Mean-center spectra before SVD</strong> checkbox (unchecked
+        by default) — see Mathematical foundation above for what it does and
+        why it defaults off here. Sits above View SVD Components since it's a
+        decomposition-wide setting, not a display/navigation one.</p>
+        <p><strong>Bootstrap Uncertainty&hellip;</strong> and
+        <strong>Show bootstrap confidence band</strong> — see the dedicated
+        <a href="#bootstrap-uncertainty">Bootstrap Uncertainty</a> section below.</p>
     </div>
 
     <div class="cat">
@@ -416,6 +421,69 @@ def get_svd_reconstruction_help_content():
 
         <p>Two <strong>Quick export CSV</strong> buttons at the bottom let you save either all
         metrics to a single file or only the data currently visible in the plot.</p>
+    </div>
+
+    <hr>
+    <h2 id="bootstrap-uncertainty">Bootstrap Uncertainty</h2>
+    <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (in SVD settings) answers a
+    different question than picking how many components to keep. Same idea as NMF's
+    and MCR-ALS's own Bootstrap Uncertainty feature: it repeatedly asks "if I'd
+    measured this same sample again and gotten a slightly different noise pattern,
+    would this subspectrum and its coefficients still come out roughly the same?" &mdash;
+    by building many synthetic versions of your data from the <em>residual</em> (the
+    small leftover mismatch between the reconstruction and your real measurement),
+    shuffling that leftover noise around differently each time, and re-running the SVD
+    on each version (see the
+    <a href="help://developer_guide#svd-pca-bootstrap-uncertainty">Developer Guide</a>
+    if you want the full mechanism).</p>
+    <p>Click it after a decomposition has run &mdash; it does not produce a new
+    decomposition on its own, it quantifies the ONE already loaded. Two things get
+    asked, in order:</p>
+    <ul>
+        <li><strong>How many leading components count as "signal"?</strong> Unlike NMF
+            or MCR-ALS, this dialog keeps every component SVD produces &mdash; there is
+            no separate "keep N components" step the way Reconstruction has. Bootstrap
+            Uncertainty needs to know where to draw that line itself, purely to decide
+            what counts as noise to resample. It suggests a default (the fewest leading
+            components whose cumulative explained variance reaches 95%), but you can
+            type a different number &mdash; whatever you'd otherwise pick on the
+            Diagnostics tab (singular value kink, IND minimum, residual error elbow) is
+            a reasonable choice here too.</li>
+        <li><strong>How many resamples to run</strong> &mdash; more gives a smoother, more
+            reliable band estimate at proportionally more compute time; 30 is a
+            reasonable default.</li>
+    </ul>
+    <p>The result is a 95% confidence band, shown as a shaded region behind each
+    subspectrum and as error bars on its coefficient plot, in every plot layout this
+    dialog offers (Row/Column, Combined/Separate subspectra, Combined/Separate
+    coefficients) &mdash; controlled by the <strong>Show bootstrap confidence band</strong>
+    checkbox, so you can hide it without re-running anything.</p>
+    <div class="note">
+        <strong>Sign, and why it matters here specifically:</strong> a bare SVD has no
+        constraint pinning down a component's sign &mdash; a component and its exact
+        negation reconstruct the data identically, which is exactly why the
+        <strong>Invert</strong> button exists. Left uncorrected, that same ambiguity
+        would make a bootstrap band balloon out to cover both a component's curve and
+        its mirror image on any replicate that happened to come out flipped. Every
+        replicate is checked against the loaded result's own sign and flipped back into
+        agreement before it's folded into the band, so what you see reflects genuine
+        noise sensitivity, not sign flips.
+    </div>
+    <div class="note">
+        <strong>Inverting after running Bootstrap Uncertainty:</strong> flipping a
+        component by hand with <strong>Invert</strong> changes which sign is now "the
+        loaded result," so the existing band (aligned to the OLD sign) no longer applies
+        and is cleared automatically &mdash; run Bootstrap Uncertainty again if you want
+        an updated band for the newly inverted component.
+    </div>
+    <div class="note">
+        <strong>Reading the band:</strong> a WIDE band at a given wavelength or spectrum
+        means that region is genuinely sensitive to the noise in your data &mdash; small
+        changes in the measurement could have shifted that value substantially. A
+        NARROW band means that part of the result is well-determined by your data
+        regardless of its particular noise realization. It says nothing about how many
+        components you SHOULD keep &mdash; that's still the question the Diagnostics tab
+        (and How many components to keep, below) answers.
     </div>
 
     <hr>
@@ -564,6 +632,8 @@ def get_svd_reconstruction_help_content():
             <td>Correct dominant subspectra → reconstruct with Only corrected</td></tr>
         <tr><td>Export singular values / residual errors quickly</td>
             <td>Diagnostics tab → CSV export buttons</td></tr>
+        <tr><td>Check how noise-sensitive a subspectrum/coefficient is</td>
+            <td>Bootstrap Uncertainty… (SVD settings)</td></tr>
     </table>
 
     <hr>

@@ -393,6 +393,8 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
                                           # True = use manager.parameter_values when available/valid
         self.use_label_axis = False      # True = use manager.spectrum_labels (main-window order)
                                           # as the coefficient plots' x-axis tick labels
+        self.show_bootstrap_band = True  # see set_show_bootstrap_band -- whether to draw the
+                                          # Bootstrap Uncertainty band/error-bars, when one exists
         self.get_shorten_enabled = None  # optional zero-arg callable -> bool, set by the dialog
                                           # to this dialog's OWN "Shorten names" checkbox (see
                                           # SVDAnalysisDialog.create_canvas_panel). This canvas has
@@ -431,6 +433,15 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
         self.value_display_mode = mode
         self.plot_selected_subspectra()        
         
+    def set_show_bootstrap_band(self, show):
+        """Toggle drawing the Bootstrap Uncertainty band/error-bars (see
+        _plot_single_subspectrum / _plot_combined_subspectra /
+        _plot_single_coefficient / _plot_combined_coefficients -- every
+        plot-mode combination in plot_selected_subspectra composes from
+        just these four, so toggling it here covers all of them)."""
+        self.show_bootstrap_band = show
+        self.plot_selected_subspectra()
+
     def set_plot_appearance(self, organization, subspectra_mode, coefficients_mode):
         """Set plot appearance options."""
         self.plot_organization = organization
@@ -569,15 +580,36 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
         self.fig.tight_layout(pad=1.5, h_pad=2.0, w_pad=1.5)
         self.draw()
 
+    def _get_bootstrap_result(self):
+        """The reference manager's Bootstrap Uncertainty result, or
+        None if there isn't one or the toggle is off -- every one of
+        the four leaf plotting methods below (the ones every plot-mode
+        combination in plot_selected_subspectra composes from) reads
+        this instead of touching self.svd_controller.manager directly."""
+        if not self.show_bootstrap_band or self.svd_controller is None:
+            return None
+        return getattr(self.svd_controller.manager, 'bootstrap_result', None)
+
     def _plot_combined_subspectra(self, ax, colors):
         """Plot all selected subspectra in a single plot."""
+        br = self._get_bootstrap_result()
         for i, idx in enumerate(self.selected_subspectra):
             x, y = self.svd_controller.get_subspectrum_data(idx)
             if x is not None and y is not None:
                 label = self._get_subspectrum_label(idx, short=True)
-                ax.plot(x, y, color=colors[i], linewidth=1.5, label=label)
+                # Bootstrap confidence band -- drawn BEHIND the curve,
+                # same reasoning as NMFDialog._refresh_components (see
+                # the Developer Guide\u2019s bootstrap section).
+                if br is not None and idx < br["U_lower"].shape[1]:
+                    ax.fill_between(x, br["U_lower"][:, idx], br["U_upper"][:, idx],
+                                    color=colors[i], alpha=0.20, linewidth=0, zorder=1)
+                ax.plot(x, y, color=colors[i], linewidth=1.5, zorder=2, label=label)
         
-        ax.set_title("Combined Subspectra")
+        title = "Combined Subspectra"
+        if br is not None:
+            pct = int(round(br["confidence_level"] * 100))
+            title += f'  \u2014 shaded: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+        ax.set_title(title)
         ax.set_xlabel('Wavenumber')
         ax.set_ylabel('Intensity')
         ax.grid(True, alpha=0.3)
@@ -698,7 +730,11 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
         x, y = self.svd_controller.get_subspectrum_data(idx)
         
         if x is not None and y is not None:
-            ax.plot(x, y, color=color, linewidth=1)
+            br = self._get_bootstrap_result()
+            if br is not None and idx < br['U_lower'].shape[1]:
+                ax.fill_between(x, br['U_lower'][:, idx], br['U_upper'][:, idx],
+                                color=color, alpha=0.20, linewidth=0, zorder=1)
+            ax.plot(x, y, color=color, linewidth=1, zorder=2)
             
             if small_plot:
                 ax.set_title(self._get_subspectrum_label(idx, short=True), fontsize=10)
@@ -789,6 +825,18 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
             x_positions, xlabel, order, tick_labels = self._get_coefficient_xaxis(len(coefficients))
             coefficients = np.asarray(coefficients)[order]
 
+            # Bootstrap confidence band, as per-point error bars -- same
+            # reordering as the coefficients themselves above, so each
+            # bar/marker lines up with its own uncertainty.
+            br = self._get_bootstrap_result()
+            if br is not None and idx < br['Vt_lower'].shape[0]:
+                lo = np.asarray(br['Vt_lower'][idx, :])[order]
+                hi = np.asarray(br['Vt_upper'][idx, :])[order]
+                yerr_lo = np.clip(coefficients - lo, 0, None)
+                yerr_hi = np.clip(hi - coefficients, 0, None)
+                ax.errorbar(x_positions, coefficients, yerr=[yerr_lo, yerr_hi],
+                            fmt='none', ecolor=color, alpha=0.5, capsize=2, zorder=1)
+
             if self.coefficient_plot_type == 'bar':
                 ax.bar(x_positions, coefficients, width=self._bar_width(x_positions), alpha=0.7, color=color)
             else:
@@ -805,31 +853,53 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
     def _plot_combined_coefficients(self, ax, colors):
         """Plot combined coefficients for all selected subspectra."""
         all_coefficients = []
+        all_idx = []
         legend_labels = []
         
         for i, idx in enumerate(self.selected_subspectra):
             coefficients = self.svd_controller.get_coefficients(idx)
             if coefficients is not None:
                 all_coefficients.append(coefficients)
+                all_idx.append(idx)
                 legend_labels.append(self._get_coefficient_label(idx))
         
         if all_coefficients:
             x_positions, xlabel, order, tick_labels = self._get_coefficient_xaxis(len(all_coefficients[0]))
             all_coefficients = [np.asarray(c)[order] for c in all_coefficients]
+            br = self._get_bootstrap_result()
             
             if self.coefficient_plot_type == 'bar':
                 base_width = self._bar_width(x_positions)
                 width = base_width / len(all_coefficients)
                 for i, coeffs in enumerate(all_coefficients):
                     offset = (i - len(all_coefficients)/2 + 0.5) * width
-                    ax.bar(np.asarray(x_positions) + offset, coeffs, width, 
+                    bar_x = np.asarray(x_positions) + offset
+                    ax.bar(bar_x, coeffs, width, 
                            alpha=0.7, color=colors[i], label=legend_labels[i])
+                    if br is not None and all_idx[i] < br['Vt_lower'].shape[0]:
+                        lo = np.asarray(br['Vt_lower'][all_idx[i], :])[order]
+                        hi = np.asarray(br['Vt_upper'][all_idx[i], :])[order]
+                        yerr_lo = np.clip(coeffs - lo, 0, None)
+                        yerr_hi = np.clip(hi - coeffs, 0, None)
+                        ax.errorbar(bar_x, coeffs, yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor='#333333', alpha=0.6, capsize=2, zorder=3)
             else:
                 for i, coeffs in enumerate(all_coefficients):
+                    if br is not None and all_idx[i] < br['Vt_lower'].shape[0]:
+                        lo = np.asarray(br['Vt_lower'][all_idx[i], :])[order]
+                        hi = np.asarray(br['Vt_upper'][all_idx[i], :])[order]
+                        yerr_lo = np.clip(coeffs - lo, 0, None)
+                        yerr_hi = np.clip(hi - coeffs, 0, None)
+                        ax.errorbar(x_positions, coeffs, yerr=[yerr_lo, yerr_hi], fmt='none',
+                                    ecolor=colors[i], alpha=0.5, capsize=2, zorder=1)
                     ax.plot(x_positions, coeffs, 'o-', alpha=0.7, 
-                            color=colors[i], label=legend_labels[i], markersize=4)
+                            color=colors[i], label=legend_labels[i], markersize=4, zorder=2)
             
-            ax.set_title("Coefficients")
+            title = "Coefficients"
+            if br is not None:
+                pct = int(round(br['confidence_level'] * 100))
+                title += f'  \u2014 bars: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+            ax.set_title(title)
             ax.set_xlabel(xlabel)
             ax.set_ylabel('Coefficient Value')
             if tick_labels is not None:
@@ -1829,6 +1899,8 @@ class SVDAnalysisDialog(QDialog):
         super().__init__(parent)
         self.controller = controller
         self.spectra = spectra
+        self._last_n_bootstrap = 30       # remembered resample count, pre-filled next time
+        self._last_n_bootstrap_components = 0  # 0 = not yet set; use suggest_bootstrap_n_components()
         
         self.setWindowTitle("SVD Analysis")
         self.setModal(True)
@@ -1942,6 +2014,31 @@ class SVDAnalysisDialog(QDialog):
         # it rather than letting PyQt pass it straight through.
         self.mean_center_cb.stateChanged.connect(lambda _checked: self.initialize_svd())
         svd_settings_layout.addWidget(self.mean_center_cb)
+        self.run_bootstrap_btn = QPushButton('Bootstrap Uncertainty\u2026')
+        self.run_bootstrap_btn.setToolTip(
+            'Estimates how sensitive the CURRENTLY LOADED SVD\u2019s subspectra\n'
+            'and coefficients are to the actual noise in your data \u2014 a residual\n'
+            'bootstrap around this exact result. Every replicate is sign-aligned\n'
+            'back to this result first (the same ambiguity the Invert button\n'
+            'exists to fix by hand), so the band reflects noise sensitivity\n'
+            'only, not sign flips. Runs automatically around whichever SVD is\n'
+            'currently loaded above.'
+        )
+        self.run_bootstrap_btn.setEnabled(False)
+        self.run_bootstrap_btn.clicked.connect(self._prompt_and_run_bootstrap)
+        svd_settings_layout.addWidget(self.run_bootstrap_btn)
+        self.show_bootstrap_band_cb = QCheckBox('Show bootstrap confidence band')
+        self.show_bootstrap_band_cb.setChecked(True)
+        self.show_bootstrap_band_cb.setToolTip(
+            'Shaded bands (subspectra) and error bars (coefficients) from\n'
+            'Bootstrap Uncertainty. Only shown once it has been run.'
+        )
+        self.show_bootstrap_band_cb.stateChanged.connect(self._on_show_bootstrap_band_changed)
+        svd_settings_layout.addWidget(self.show_bootstrap_band_cb)
+        self._bootstrap_status_label = QLabel('')
+        self._bootstrap_status_label.setStyleSheet('font-size:8pt; color:#555;')
+        self._bootstrap_status_label.setWordWrap(True)
+        svd_settings_layout.addWidget(self._bootstrap_status_label)
         layout.addWidget(svd_settings_group)
 
         # ── 1. View SVD Components ─────────────────────────────────────
@@ -2765,7 +2862,7 @@ class SVDAnalysisDialog(QDialog):
         if getattr(self, '_svd_running', False):
             return  # already computing — ignore a second trigger outright
         self._svd_running = True
-        self.mean_center_cb.setEnabled(False)
+        self._set_svd_controls_enabled(False)
 
         from PyQt5.QtWidgets import QProgressDialog, QApplication
         from PyQt5.QtGui import QCursor
@@ -2813,6 +2910,8 @@ class SVDAnalysisDialog(QDialog):
             self.invert_btn.setEnabled(True)
             self.select_all_btn.setEnabled(True)
             self.unselect_all_btn.setEnabled(True)
+            self.run_bootstrap_btn.setEnabled(True)
+            self._bootstrap_status_label.setText('')
             self.diagnostics_panel.refresh()
             # singular_values_btn, residual_errors_btn, both_plots_btn removed — now in Diagnostics tab
             self.save_options_btn.setEnabled(True)
@@ -2847,7 +2946,136 @@ class SVDAnalysisDialog(QDialog):
             self._svd_progress.close()
             QApplication.restoreOverrideCursor()
             self._svd_running = False
-            self.mean_center_cb.setEnabled(True)
+            self._set_svd_controls_enabled(True)
+
+    def _set_svd_controls_enabled(self, enabled):
+        """Shared enable/disable for everything that starts a background
+        computation on self.controller.manager -- recomputing the SVD and
+        running Bootstrap Uncertainty must not be allowed to overlap,
+        since both replace/reset the same manager state. Mirrors
+        PcaScoresDialog._set_pca_controls_enabled / NMFDialog's own
+        _set_nmf_controls_enabled."""
+        self.mean_center_cb.setEnabled(enabled)
+        self.run_bootstrap_btn.setEnabled(enabled)
+
+    def _on_show_bootstrap_band_changed(self, _checked):
+        if hasattr(self, 'canvas'):
+            self.canvas.set_show_bootstrap_band(self.show_bootstrap_band_cb.isChecked())
+
+    def _prompt_and_run_bootstrap(self):
+        """Ask how many of the already-computed leading components count
+        as "signal" (pre-filled from suggest_bootstrap_n_components), then
+        how many bootstrap resamples to run -- mirrors NMFDialog/
+        PcaScoresDialog._prompt_and_run_bootstrap, plus this one extra
+        step. That extra step exists only here: unlike NMF/MCR-ALS/PCA
+        Scores & Loadings (which all fix "how many components are
+        signal" at compute time), this manager keeps the FULL-RANK SVD
+        with no truncation, so Bootstrap Uncertainty needs to be told
+        separately how many of those already-computed components to
+        treat as signal when building the residual -- see
+        SVDAnalysisController.compute_bootstrap_uncertainty's own
+        docstring for the full reasoning. Requires an already-computed
+        SVD (self.controller.manager.U/.s/.Vt/.data_matrix all set) --
+        this refits AROUND that specific result, it does not produce a
+        new one on its own."""
+        if getattr(self, '_svd_running', False):
+            return
+        manager = self.controller.manager if self.controller else None
+        if manager is None or manager.U is None or manager.data_matrix is None:
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Compute an SVD first \u2014 Bootstrap Uncertainty refits\n'
+                'around whatever result is currently loaded above; it\n'
+                'doesn\u2019t produce one on its own.')
+            return
+        max_components = manager.U.shape[1]
+        default_components = self._last_n_bootstrap_components or self.controller.suggest_bootstrap_n_components()
+        default_components = max(1, min(default_components, max_components))
+
+        from PyQt5.QtWidgets import QInputDialog
+        n_components, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of leading components to treat as "signal"\n'
+            f'(the rest define the noise to resample; 1\u2013{max_components}):',
+            value=default_components, min=1, max=max_components)
+        if not ok:
+            return
+        self._last_n_bootstrap_components = n_components
+
+        n_resamples, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of bootstrap resamples:',
+            value=self._last_n_bootstrap, min=5, max=500)
+        if not ok:
+            return
+        self._last_n_bootstrap = n_resamples   # remembered and pre-filled next time
+
+        self._run_bootstrap_uncertainty(n_components, n_resamples)
+
+    def _run_bootstrap_uncertainty(self, n_components, n_resamples):
+        """Residual bootstrap around self.controller.manager's own
+        decomposition, with every replicate sign-aligned back to it --
+        see SVDAnalysisController.compute_bootstrap_uncertainty for the
+        method itself, and the Developer Guide's "SVD Analysis / PCA
+        Bootstrap Uncertainty" section for the full reasoning.
+        Deliberately a plain sequential loop with a real, cancellable
+        QProgressDialog, the same pattern NMFDialog/PcaScoresDialog's own
+        _run_bootstrap_uncertainty uses."""
+        if getattr(self, '_svd_running', False):
+            return
+        self._svd_running = True
+        self._set_svd_controls_enabled(False)
+
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
+
+        manager = self.controller.manager
+
+        progress = QProgressDialog(
+            f'Bootstrap resample 1 of {n_resamples}\u2026', 'Cancel', 0, n_resamples, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle('SVD Analysis')
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def _on_progress(b, n_total):
+            progress.setLabelText(f'Bootstrap resample {b + 1} of {n_total}\u2026')
+            progress.setValue(b)
+            QApplication.processEvents()
+
+        try:
+            result = self.controller.compute_bootstrap_uncertainty(
+                manager, n_components=n_components, n_resamples=n_resamples,
+                confidence_level=0.95, random_state=None,
+                progress_callback=_on_progress,
+                cancel_check=progress.wasCanceled)
+            progress.setValue(n_resamples)
+
+            if result is None:
+                QMessageBox.warning(
+                    self, 'Bootstrap Uncertainty',
+                    manager.last_error or 'All bootstrap resamples failed.')
+                self._bootstrap_status_label.setText(
+                    '\u26a0  Bootstrap uncertainty failed \u2014 see message above.')
+                self._bootstrap_status_label.setStyleSheet('font-size:8pt; color:#C62828;')
+                return
+
+            pct = int(round(result['confidence_level'] * 100))
+            msg = (f'Bootstrap uncertainty: {pct}% confidence band from '
+                   f'{result["n_resamples_used"]}/{result["n_resamples_requested"]} '
+                   f'resamples ({n_components} signal component'
+                   f'{"s" if n_components != 1 else ""})')
+            if result['n_failed']:
+                msg += f' ({result["n_failed"]} refit failed and were skipped)'
+            self._bootstrap_status_label.setText(msg)
+            self._bootstrap_status_label.setStyleSheet('font-size:8pt; color:#2E7D32;')
+            self.canvas.plot_selected_subspectra()
+        finally:
+            self._set_svd_controls_enabled(True)
+            self._svd_running = False
+            QApplication.restoreOverrideCursor()
 
     def populate_subspectra_list(self, n_components):
         """Populate the subspectra selection list."""
@@ -2947,6 +3175,12 @@ class SVDAnalysisDialog(QDialog):
             QMessageBox.warning(self, "Invalid Selection", "No valid subspectrum selected for inversion.")
             return
         
+        # Captured BEFORE invert_subspectrum() runs -- it resets
+        # manager.bootstrap_result to None as a side effect, so this is
+        # the only chance to tell whether there was actually a band to
+        # clear (see the status-label update below).
+        had_bootstrap_result = self.controller.manager.bootstrap_result is not None
+
         success = self.controller.manager.invert_subspectrum(current_index)
         
         if success:
@@ -2957,6 +3191,19 @@ class SVDAnalysisDialog(QDialog):
             
             # DO NOT update the spinbox - preserve current multi-plot view
             # Only navigation buttons (Previous/Next/Jump to) should change the spinbox
+            
+            # invert_subspectrum() just reset manager.bootstrap_result to None
+            # (its old band was aligned to the OLD sign) -- the plot above
+            # already stops drawing it, but this status label still held the
+            # success text from whenever Bootstrap Uncertainty last ran, which
+            # kept describing a band that no longer exists. Only touch it when
+            # there actually WAS a band to clear -- otherwise leave whatever
+            # (blank, or an unrelated failure message) was already there.
+            if had_bootstrap_result:
+                self._bootstrap_status_label.setText(
+                    'Bootstrap confidence band cleared by Invert -- run Bootstrap '
+                    'Uncertainty\u2026 again if you want an updated one.')
+                self._bootstrap_status_label.setStyleSheet('font-size:8pt; color:#777;')
             
             logger.debug(f"DEBUG: Inverted subspectrum {current_index + 1}")
         else:

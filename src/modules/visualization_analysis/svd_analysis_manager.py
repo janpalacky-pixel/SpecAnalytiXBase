@@ -26,6 +26,21 @@ class SVDAnalysisManager:
         self.parameter_label = None
         self.mean_spectrum = None      # per-wavelength mean subtracted before SVD, or None
         self.mean_centered = False     # whether the last compute used mean-centering
+        self.data_matrix = None        # (n_wl x n_spectra) the EXACT matrix that was
+                                        # decomposed (post mean-centering, pre-SVD) --
+                                        # kept for later reuse by
+                                        # compute_bootstrap_uncertainty() (see
+                                        # NMFManager.X_nn / MCRALSManager.D for the
+                                        # identical idea). Since this manager keeps the
+                                        # FULL-RANK decomposition (no n_components
+                                        # truncation, unlike PcaScoresManager), this is
+                                        # what lets bootstrap treat any user-chosen
+                                        # n_components as the "signal" rank without
+                                        # needing to re-run SVD from spectra.
+        self.bootstrap_result = None   # set by SVDAnalysisController.
+                                        # compute_bootstrap_uncertainty()
+        self.last_error = None         # specific reason if compute_svd_from_spectra()
+                                        # or compute_bootstrap_uncertainty() fails
 
     def compute_svd_from_spectra(self, spectra, mean_center=False):
         """
@@ -84,6 +99,11 @@ class SVDAnalysisManager:
             else:
                 self.mean_spectrum = None
 
+            # Kept for compute_bootstrap_uncertainty() -- the EXACT matrix
+            # about to be decomposed (see this manager's own
+            # self.data_matrix docstring in __init__).
+            self.data_matrix = data_matrix
+
             # Compute SVD using standard numpy approach
             logger.debug("DEBUG: Running numpy SVD...")
             self.U, self.s, self.Vt = np.linalg.svd(data_matrix, full_matrices=False)
@@ -103,7 +123,16 @@ class SVDAnalysisManager:
             # apply after a fresh computation.
             self.parameter_values = None
             self.parameter_label = None
-            
+
+            # A successful fit means self.U/s/Vt just changed (new spectra
+            # or mean-centering setting) -- any bootstrap_result computed
+            # for the PREVIOUS decomposition no longer corresponds to
+            # what's loaded now and must not be redrawn against it. Same
+            # bug class NMFManager.compute() guards against -- see its own
+            # comment there.
+            self.bootstrap_result = None
+            self.last_error = None
+
             logger.info("DEBUG: SVD computation successful")
             return True
             
@@ -134,7 +163,15 @@ class SVDAnalysisManager:
         # Invert the subspectrum and coefficients
         self.U[:, subspectrum_index] *= -1
         self.Vt[subspectrum_index, :] *= -1
-        
+
+        # A manually-flipped component invalidates any existing bootstrap
+        # band computed against the OLD orientation (the band's U_lower/
+        # U_upper etc. were sign-aligned to that orientation) -- clear
+        # rather than risk drawing a band upside-down relative to the
+        # curve it's supposed to be shading. Re-running Bootstrap
+        # Uncertainty afterward aligns against the new orientation fine.
+        self.bootstrap_result = None
+
         logger.debug(f"DEBUG: Inverted subspectrum {subspectrum_index}, currently inverted: {self.inverted_subspectra}")
         return True
 

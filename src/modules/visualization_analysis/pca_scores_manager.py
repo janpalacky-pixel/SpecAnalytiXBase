@@ -30,6 +30,13 @@ class PcaScoresManager:
         self.last_error = None     # specific reason if compute_svd() returns False
         self.mean_spectrum = None  # per-wavelength mean subtracted before SVD, or None
         self.mean_centered = False  # whether the last compute used mean-centering
+        self.data_matrix = None    # (n_wl x n_spectra) the EXACT matrix that was
+                                    # decomposed (post mean-centering, pre-SVD, pre-
+                                    # n_components truncation) -- see
+                                    # SVDAnalysisManager.data_matrix for the identical
+                                    # idea; kept for compute_bootstrap_uncertainty()
+        self.bootstrap_result = None   # set by PcaScoresController.
+                                        # compute_bootstrap_uncertainty()
 
     def reset(self):
         """Clear all previous results — same purpose as
@@ -96,6 +103,15 @@ class PcaScoresManager:
             self.spectrum_labels = [spectrum['label'] for spectrum in spectra]
             self.mean_spectrum = mgr.mean_spectrum
             self.mean_centered = mgr.mean_centered
+            self.data_matrix = mgr.data_matrix
+
+            # A successful fit means self.U/s/Vt just changed (new
+            # spectra, component count, or mean-centering setting) -- any
+            # bootstrap_result computed for the PREVIOUS U/s/Vt no longer
+            # corresponds to what's loaded now and must not be redrawn
+            # against it. Same bug class NMFManager.compute() guards
+            # against -- see its own comment there.
+            self.bootstrap_result = None
 
             # SVD's rank is capped by min(n_wavelengths, n_spectra) — with
             # few spectra selected, the actual decomposition can have fewer

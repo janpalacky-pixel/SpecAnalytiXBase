@@ -53,6 +53,113 @@ class PcaScoresController:
     def hotelling_t2(self, pc_indices):
         return self.manager.hotelling_t2(pc_indices)
 
+    def compute_bootstrap_uncertainty(self, reference_manager, n_resamples,
+                                       confidence_level, random_state=None,
+                                       progress_callback=None,
+                                       cancel_check=None):
+        """Residual bootstrap for this dialog's own loadings (U) and
+        scores (Vt). Direct port of SVDAnalysisController's identically-
+        named method (see its docstring for the full method and the sign-
+        ambiguity reasoning -- exactly the same issue applies here, for
+        the same underlying reason: PCA/SVD's component sign is only
+        defined up to +/-1). Simpler than that version in exactly one way:
+        this manager already fixes "how many components are signal" at
+        compute time (self.manager.compute_svd's own n_components,
+        reference_manager.U.shape[1]) rather than needing it as a separate
+        bootstrap-time choice, so there is no equivalent of
+        SVDAnalysisController.suggest_bootstrap_n_components() to call
+        first -- one fewer prompt than SVD Analysis's own version, exactly
+        the "PCA Scores & Loadings is the easy one" case.
+
+        reference_manager must already hold a successful fit (.U/.s/.Vt/
+        .data_matrix all set, i.e. self.manager right after
+        compute_svd() returned True). progress_callback(b, n_resamples),
+        if given, is called before each replicate; cancel_check(), if
+        given, is checked before each replicate and stops early when it
+        returns True.
+
+        Returns a dict with U_lower/U_upper/Vt_lower/Vt_upper (pointwise
+        percentile bounds), U_samples/Vt_samples (raw, sign-aligned
+        per-replicate arrays), n_resamples_requested/n_resamples_used/
+        n_failed, and confidence_level -- or None if reference_manager
+        isn't fitted yet, or every replicate failed. On success, also
+        stored on reference_manager.bootstrap_result.
+        """
+        ref = reference_manager
+        if ref.U is None or ref.s is None or ref.Vt is None or ref.data_matrix is None:
+            ref.last_error = (
+                "Run PCA / SVD successfully before requesting bootstrap "
+                "uncertainty.")
+            return None
+
+        n_components = ref.U.shape[1]
+        X0 = ref.data_matrix           # (n_wl x n_spectra), full (untruncated)
+        U0, s0, Vt0 = ref.U, ref.s, ref.Vt
+        n_spectra = X0.shape[1]
+
+        recon = U0 @ np.diag(s0) @ Vt0
+        residuals = X0 - recon
+        rng = np.random.RandomState(random_state)
+
+        U_samples, Vt_samples = [], []
+        n_failed = 0
+        first_failure_reason = None
+        for b in range(n_resamples):
+            if cancel_check is not None and cancel_check():
+                break
+            if progress_callback is not None:
+                progress_callback(b, n_resamples)
+            col_idx = rng.randint(0, n_spectra, size=n_spectra)
+            X_b = recon + residuals[:, col_idx]
+            try:
+                U_b, s_b, Vt_b = np.linalg.svd(X_b, full_matrices=False)
+                U_b = U_b[:, :n_components].copy()
+                Vt_b = Vt_b[:n_components, :].copy()
+
+                # Sign alignment -- see SVDAnalysisController.
+                # compute_bootstrap_uncertainty's docstring for the full
+                # reasoning. Tested against U0 (n_wl-length, less noisy
+                # than Vt0's n_spectra-length row); U and Vt for a given
+                # component always flip together.
+                for j in range(n_components):
+                    if np.dot(U_b[:, j], U0[:, j]) < 0:
+                        U_b[:, j] *= -1
+                        Vt_b[j, :] *= -1
+
+                U_samples.append(U_b)
+                Vt_samples.append(Vt_b)
+            except np.linalg.LinAlgError as e:
+                n_failed += 1
+                if first_failure_reason is None:
+                    first_failure_reason = str(e)
+
+        if not U_samples:
+            ref.last_error = (
+                f"All {n_resamples} bootstrap resamples failed to fit."
+                + (f"\n\nFirst failure: {first_failure_reason}"
+                   if first_failure_reason else ""))
+            return None
+
+        U_arr = np.array(U_samples)
+        Vt_arr = np.array(Vt_samples)
+        alpha = 1.0 - confidence_level
+        lo_pct, hi_pct = 100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)
+        result = {
+            'U_lower': np.percentile(U_arr, lo_pct, axis=0),
+            'U_upper': np.percentile(U_arr, hi_pct, axis=0),
+            'Vt_lower': np.percentile(Vt_arr, lo_pct, axis=0),
+            'Vt_upper': np.percentile(Vt_arr, hi_pct, axis=0),
+            'U_samples': U_arr,
+            'Vt_samples': Vt_arr,
+            'n_resamples_requested': n_resamples,
+            'n_resamples_used': len(U_samples),
+            'n_failed': n_failed,
+            'confidence_level': confidence_level,
+        }
+        ref.bootstrap_result = result
+        ref.last_error = None
+        return result
+
     def get_metric_values(self, metric_name):
         return self.manager.get_metric_values(metric_name)
 

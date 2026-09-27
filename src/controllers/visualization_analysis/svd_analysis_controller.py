@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/svd_analysis_controller.py
 
+import numpy as np
 from src.modules.visualization_analysis.svd_analysis_manager import SVDAnalysisManager
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.utils.app_logger import get_logger
@@ -118,7 +119,175 @@ class SVDAnalysisController:
             bool: True if inversion was successful
         """
         return self.manager.invert_subspectrum(subspectrum_index)
-    
+
+    def suggest_bootstrap_n_components(self, target_cumulative_variance=95.0):
+        """Suggest a default "how many components are signal" cutoff for
+        the Bootstrap Uncertainty prompt below: the fewest leading
+        components whose cumulative explained_variance reaches
+        target_cumulative_variance percent, clamped to at least 1 and at
+        most the total number of components available. Purely a UI
+        convenience (a reasonable pre-filled value, not a statistical
+        requirement) -- the user can always type a different number.
+
+        Returns:
+            int, or 0 if no SVD has been computed yet.
+        """
+        ev = self.manager.explained_variance
+        if ev is None or len(ev) == 0:
+            return 0
+        cumulative = np.cumsum(ev)
+        over = np.nonzero(cumulative >= target_cumulative_variance)[0]
+        n = int(over[0]) + 1 if len(over) else len(ev)
+        return max(1, min(n, len(ev)))
+
+    def compute_bootstrap_uncertainty(self, reference_manager, n_components,
+                                       n_resamples, confidence_level,
+                                       random_state=None,
+                                       progress_callback=None,
+                                       cancel_check=None):
+        """Residual bootstrap for SVD's own subspectra (U) and coefficients
+        (Vt) -- the same method NMFController/MCRALSController use (see the
+        Developer Guide's "SVD Analysis / PCA Bootstrap Uncertainty"
+        section for the full reasoning), with the one thing genuinely
+        different for a plain SVD: sign. NMF and MCR-ALS pin sign down
+        structurally (non-negativity), but a bare SVD has no such
+        constraint -- np.linalg.svd is free to return EITHER sign for any
+        given component's U column/Vt row (a component and its exact
+        negation reconstruct the data identically), and a resampled
+        replicate has no reason to land on the same sign as the reference
+        by chance. Left uncorrected, this would make the bootstrap band
+        for a component that happens to flip sign on some replicates
+        balloon out to cover both the reference's curve AND its mirror
+        image -- meaningless. Every replicate below is explicitly
+        sign-aligned to the reference (see the aligning step in the loop)
+        before being folded into the percentile band -- this is the direct
+        analogue of the user-facing "invert" feature (self.manager.
+        invert_subspectrum / self.manager.inverted_subspectra) that already
+        exists precisely because SVD components have this same sign
+        ambiguity; bootstrap alignment and manual "invert" are two
+        instances of the identical underlying problem.
+
+        Unlike NMF/MCR-ALS, this needs no warm-started refit and no
+        iterative solver at all -- SVD is an exact, deterministic
+        decomposition (no local optima to drift into), so every replicate
+        is just a fresh plain np.linalg.svd call. This is the sense in
+        which SVD's bootstrap really is simpler to implement than NMF's or
+        MCR-ALS's: no compute_trial(), no init/max_iter, no "does the warm
+        start actually converge back" question -- only the sign check.
+
+        reference_manager must already hold a successful full-rank
+        decomposition (.U/.s/.Vt/.data_matrix all set, i.e. self.manager
+        right after compute_svd_from_spectra() returned True).
+        n_components: how many of the reference's already-computed leading
+        components to treat as "signal" -- the reconstruction from just
+        these is what defines the residual that gets resampled (see
+        suggest_bootstrap_n_components() for a reasonable default). Unlike
+        NMF/MCR-ALS, this is NOT the parameter the original decomposition
+        was run with (this manager always computes the full rank) -- it
+        only decides where bootstrap draws the signal/noise line, and can
+        be changed and re-run without recomputing the SVD itself.
+        progress_callback(b, n_resamples), if given, is called before each
+        replicate; cancel_check(), if given, is checked before each
+        replicate and stops early (partial results from however many
+        replicates completed are still used) when it returns True.
+
+        Returns a dict with U_lower/U_upper/Vt_lower/Vt_upper (pointwise
+        percentile bounds, shaped like U[:, :n_components]/
+        Vt[:n_components, :]), U_samples/Vt_samples (the raw, already
+        sign-aligned per-replicate arrays), n_components,
+        n_resamples_requested/n_resamples_used/n_failed, and
+        confidence_level -- or None if reference_manager isn't decomposed
+        yet, n_components is out of range, or every replicate failed. On
+        success, also stored on reference_manager.bootstrap_result.
+        """
+        ref = reference_manager
+        if ref.U is None or ref.s is None or ref.Vt is None or ref.data_matrix is None:
+            ref.last_error = (
+                "Run SVD analysis successfully before requesting bootstrap "
+                "uncertainty.")
+            return None
+
+        max_components = ref.U.shape[1]
+        if n_components < 1 or n_components > max_components:
+            ref.last_error = (
+                f"Number of signal components must be between 1 and "
+                f"{max_components}.")
+            return None
+
+        X0 = ref.data_matrix                          # (n_wl x n_spectra)
+        U0 = ref.U[:, :n_components]                   # (n_wl x k)
+        s0 = ref.s[:n_components]
+        Vt0 = ref.Vt[:n_components, :]                 # (k x n_spectra)
+        n_spectra = X0.shape[1]
+
+        recon = U0 @ np.diag(s0) @ Vt0
+        residuals = X0 - recon
+        rng = np.random.RandomState(random_state)
+
+        U_samples, Vt_samples = [], []
+        n_failed = 0
+        first_failure_reason = None
+        for b in range(n_resamples):
+            if cancel_check is not None and cancel_check():
+                break
+            if progress_callback is not None:
+                progress_callback(b, n_resamples)
+            col_idx = rng.randint(0, n_spectra, size=n_spectra)
+            X_b = recon + residuals[:, col_idx]
+            try:
+                U_b, s_b, Vt_b = np.linalg.svd(X_b, full_matrices=False)
+                U_b = U_b[:, :n_components].copy()
+                Vt_b = Vt_b[:n_components, :].copy()
+
+                # Sign alignment (see this method's own docstring): SVD
+                # gives no guarantee a resampled replicate's component j
+                # comes out the same sign as the reference's. Test against
+                # U0 (the full n_wl-length column) rather than Vt0 (only
+                # n_spectra long) -- more samples means a less noisy sign
+                # decision, particularly with few spectra selected. U and
+                # Vt for a given component always flip together (their
+                # product is what must stay invariant), so both get
+                # flipped here, never just one.
+                for j in range(n_components):
+                    if np.dot(U_b[:, j], U0[:, j]) < 0:
+                        U_b[:, j] *= -1
+                        Vt_b[j, :] *= -1
+
+                U_samples.append(U_b)
+                Vt_samples.append(Vt_b)
+            except np.linalg.LinAlgError as e:
+                n_failed += 1
+                if first_failure_reason is None:
+                    first_failure_reason = str(e)
+
+        if not U_samples:
+            ref.last_error = (
+                f"All {n_resamples} bootstrap resamples failed to fit."
+                + (f"\n\nFirst failure: {first_failure_reason}"
+                   if first_failure_reason else ""))
+            return None
+
+        U_arr = np.array(U_samples)     # (B_ok, n_wl, k)
+        Vt_arr = np.array(Vt_samples)   # (B_ok, k, n_spectra)
+        alpha = 1.0 - confidence_level
+        lo_pct, hi_pct = 100.0 * alpha / 2.0, 100.0 * (1.0 - alpha / 2.0)
+        result = {
+            'U_lower': np.percentile(U_arr, lo_pct, axis=0),
+            'U_upper': np.percentile(U_arr, hi_pct, axis=0),
+            'Vt_lower': np.percentile(Vt_arr, lo_pct, axis=0),
+            'Vt_upper': np.percentile(Vt_arr, hi_pct, axis=0),
+            'U_samples': U_arr,
+            'Vt_samples': Vt_arr,
+            'n_components': n_components,
+            'n_resamples_requested': n_resamples,
+            'n_resamples_used': len(U_samples),
+            'n_failed': n_failed,
+            'confidence_level': confidence_level,
+        }
+        ref.bootstrap_result = result
+        ref.last_error = None
+        return result
+
     def get_analysis_summary(self):
         """
         Get a summary of the current SVD analysis.

@@ -189,7 +189,9 @@ def get_pca_scores_help_content():
     immediately on its own — it changes the whole decomposition, not just
     how many components are kept, so there's no "stale until you click
     Recompute" state to leave you looking at results from the setting
-    you just changed away from.</p>
+    you just changed away from. The same group also has
+    <strong>Bootstrap Uncertainty&hellip;</strong> — see the dedicated
+    <a href="#bootstrap-uncertainty">Bootstrap Uncertainty</a> section below.</p>
 
     <div class="screenshot">
         <img src="$SVD_SETTINGS" width="$SVD_SETTINGS_W" height="$SVD_SETTINGS_H" alt="SVD settings group with Mean-center checkbox, Max components spinbox, and Recompute SVD button" />
@@ -264,6 +266,9 @@ def get_pca_scores_help_content():
             outlier-detection statistic — see below.</li>
         <li><strong>Show labels:</strong> annotates each point with the last
             20 characters of the spectrum label.</li>
+        <li><strong>Show bootstrap confidence band:</strong> error bars on both
+            axes from Bootstrap Uncertainty (see below) — 2D only, and only once
+            it has been run.</li>
     </ul>
 
     <div class="screenshot">
@@ -324,6 +329,10 @@ def get_pca_scores_help_content():
             individually) or Shift+click (select a range) — click the small
             <strong>?</strong> button next to the component list for a quick
             reminder.</li>
+        <li><strong>Show bootstrap confidence band:</strong> a shaded band
+            behind each selected loading from Bootstrap Uncertainty (see
+            below), drawn in the same offset units as the curve itself —
+            only shown once it has been run.</li>
     </ul>
 
     <div class="screenshot">
@@ -500,6 +509,60 @@ def get_pca_scores_help_content():
     compare directly against another tool's output &mdash; multiply each
     exported PCk column by its matching value in the Variance sheet's
     Singular_values column.
+    </div>
+
+    <hr>
+    <h2 id="bootstrap-uncertainty">Bootstrap Uncertainty</h2>
+    <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (in SVD settings) answers a
+    different question than choosing how many components to keep. Same idea as
+    NMF's and MCR-ALS's own Bootstrap Uncertainty feature, and the direct
+    counterpart of SVD Analysis's own version of it: it repeatedly asks "if I'd
+    measured this same sample again and gotten a slightly different noise
+    pattern, would these scores and loadings still come out roughly the same?"
+    &mdash; by building many synthetic versions of your data from the
+    <em>residual</em> (the small leftover mismatch between the reconstruction
+    and your real measurement), shuffling that leftover noise around
+    differently each time, and re-running the SVD on each version (see the
+    <a href="help://developer_guide#svd-pca-bootstrap-uncertainty">Developer
+    Guide</a> if you want the full mechanism).</p>
+    <p>Click it after a decomposition has run &mdash; it does not produce a new
+    decomposition on its own, it quantifies the ONE already loaded. Unlike SVD
+    Analysis's version, there is nothing extra to choose here: this dialog
+    already fixes how many components count as "signal" the moment you set
+    <strong>Max components</strong> and compute, so Bootstrap Uncertainty
+    automatically covers exactly those &mdash; you're only asked how many
+    resamples to run (more gives a smoother, more reliable band estimate at
+    proportionally more compute time; 30 is a reasonable default).</p>
+    <p>The result is a 95% confidence band: a shaded region behind each
+    selected loading, and per-spectrum error bars on the 2D Scores scatter
+    (both axes at once, since a scatter point has no single direction to
+    measure it along) &mdash; not drawn on the 3D Scores view, which has no
+    single well-defined line or point to anchor an error bar to without being
+    misleading. Each is controlled by its own <strong>Show bootstrap
+    confidence band</strong> checkbox, so you can hide either one without
+    re-running anything.</p>
+    <div class="note">
+        <strong>Sign, and why it matters here specifically:</strong> a bare
+        SVD has no constraint pinning down a component's sign &mdash; a
+        component and its exact negation reconstruct the data identically.
+        Left uncorrected, that ambiguity would make a bootstrap band balloon
+        out to cover both a component's own values and their mirror image on
+        any replicate that happened to come out flipped. Every replicate is
+        checked against the loaded result's own sign and flipped back into
+        agreement before it's folded into the band, so what you see reflects
+        genuine noise sensitivity, not sign flips. This is the same reasoning
+        behind SVD Analysis's own <strong>Invert</strong> button &mdash; both
+        exist because of the identical underlying ambiguity.
+    </div>
+    <div class="note">
+        <strong>Reading the band:</strong> a WIDE band at a given wavenumber
+        (Loadings) or for a given spectrum (Scores) means that value is
+        genuinely sensitive to the noise in your data &mdash; small changes in
+        the measurement could have shifted it substantially. A NARROW band
+        means that part of the result is well-determined by your data
+        regardless of its particular noise realization. It says nothing about
+        how many components you SHOULD keep, or whether a cluster you see in
+        the Scores plot is real &mdash; those are separate questions.
     </div>
 
     <hr>

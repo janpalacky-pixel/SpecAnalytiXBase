@@ -1475,6 +1475,17 @@ def get_user_guide_help_content():
             <li><strong>Save:</strong> export subspectra, coefficients, and
                 diagnostics to Excel or text/CSV.</li>
         </ul>
+        <p><strong>Bootstrap Uncertainty&hellip;</strong> (in SVD settings)
+        answers a different question from picking how many components to keep:
+        not "how many components are real signal" but "how much would THIS
+        subspectrum and its coefficients change under a different noise draw of
+        my actual data." Run it after a decomposition you trust; it shades each
+        subspectrum and adds error bars to its coefficient plot, in every plot
+        layout this dialog offers, with a 95% confidence band. Every replicate
+        is sign-aligned to the loaded result first &mdash; the same ambiguity
+        <strong>Invert</strong> exists to fix by hand &mdash; so the band reflects
+        noise sensitivity only, not sign flips. See the SVD Analysis help page's
+        own "Bootstrap Uncertainty" section for the full explanation.</p>
         <div class="tip"><strong>SVD Analysis vs. PCA Scores &amp; Loadings:</strong>
         both use the same underlying decomposition, for different questions. Use
         <strong>this dialog</strong> for component-by-component inspection ("what does
@@ -1500,6 +1511,17 @@ def get_user_guide_help_content():
                 cumulative curve, or the minimum of Malinowski IND, indicates the optimal
                 number of components.</li>
         </ul>
+        <p><strong>Bootstrap Uncertainty&hellip;</strong> (in SVD settings), the
+        direct counterpart of SVD Analysis's own version above: "how much would
+        these scores and loadings change under a different noise draw of my
+        actual data." Run it after a decomposition you trust; it shades each
+        selected loading and adds per-spectrum error bars to the 2D scores
+        scatter, with a 95% confidence band (not drawn in 3D, which has no single
+        point to anchor an error bar to). Unlike SVD Analysis, there is nothing
+        extra to choose here &mdash; this dialog already fixes how many
+        components count as signal at compute time. See the PCA Scores &amp;
+        Loadings help page's own "Bootstrap Uncertainty" section for the full
+        explanation.</p>
         <div class="tip">Pre-process spectra (baseline correction + normalisation)
         before PCA. Without baseline correction, PC1 will be dominated by the
         fluorescence background. For component-by-component inspection and

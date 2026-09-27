@@ -28,6 +28,13 @@ class SVDBackgroundManager:
         self.explained_variance = None
         self.mean_spectrum = None      # per-wavelength mean subtracted before SVD, or None
         self.mean_centered = False     # whether the last compute used mean-centering
+        self.data_matrix = None        # (n_wl x n_spectra) the EXACT matrix that was
+                                        # decomposed (post mean-centering, pre-SVD) --
+                                        # kept for later reuse by PcaScoresController.
+                                        # compute_bootstrap_uncertainty (see
+                                        # SVDAnalysisManager.data_matrix for the
+                                        # identical idea). Not read by anything in
+                                        # THIS manager's own baseline-correction use.
 
     def set_selected_subspectra(self, selected_indices):
         """Set which subspectra are selected for reconstruction."""
@@ -157,6 +164,10 @@ class SVDBackgroundManager:
                 data_matrix = data_matrix - self.mean_spectrum[:, np.newaxis]
             else:
                 self.mean_spectrum = None
+
+            # Kept for PcaScoresController.compute_bootstrap_uncertainty
+            # -- the EXACT matrix about to be decomposed.
+            self.data_matrix = data_matrix
 
             # Compute SVD using standard numpy approach
             logger.debug("DEBUG: Running numpy SVD...")

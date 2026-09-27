@@ -54,6 +54,10 @@ _COLORS = [
     '#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf',
 ]
 
+# Confidence level used for Bootstrap Uncertainty -- same convention as
+# NMFDialog/MCRALSDialog's own _BOOTSTRAP_CONFIDENCE_LEVEL.
+_BOOTSTRAP_CONFIDENCE_LEVEL = 0.95
+
 
 class PcaScoresDialog(QDialog):
 
@@ -374,6 +378,7 @@ class PcaScoresDialog(QDialog):
         self._scores_cbar_ax = None
         self._scores_colorbar = None
         self._scores_3d_orig_pos = None
+        self._last_n_bootstrap = 30   # remembered resample count, pre-filled next time
 
         self._build_ui()
         self._restore_settings()
@@ -571,6 +576,19 @@ class PcaScoresDialog(QDialog):
         self._recompute_btn = QPushButton('Recompute SVD')
         self._recompute_btn.clicked.connect(self._compute_svd)
         sg.addWidget(self._recompute_btn)
+        self._run_bootstrap_btn = QPushButton('Bootstrap Uncertainty…')
+        self._run_bootstrap_btn.setToolTip(
+            'Estimates how sensitive the CURRENTLY LOADED SVD’s loadings\n'
+            'and scores are to the actual noise in your data — a residual\n'
+            'bootstrap around this exact result. Every replicate is\n'
+            'sign-aligned back to this result first (the same ambiguity\n'
+            'the axis Invert controls in SVD Analysis exist to fix by\n'
+            'hand), so the band reflects noise sensitivity only, not\n'
+            'sign flips. Runs automatically around whichever SVD is\n'
+            'currently loaded above.'
+        )
+        self._run_bootstrap_btn.clicked.connect(self._prompt_and_run_bootstrap)
+        sg.addWidget(self._run_bootstrap_btn)
         layout.addWidget(svd_grp)
 
         # Metric display — always visible (not tied to whichever tab is
@@ -688,6 +706,15 @@ class PcaScoresDialog(QDialog):
         self._show_labels_cb.setChecked(False)
         self._show_labels_cb.stateChanged.connect(self._refresh_scores)
         sg2.addWidget(self._show_labels_cb)
+        self._scores_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._scores_show_bootstrap_cb.setChecked(True)
+        self._scores_show_bootstrap_cb.setToolTip(
+            'Error bars from Bootstrap Uncertainty (2D scatter only —\n'
+            'a 3D scatter has no single well-defined line to draw them\n'
+            'along). Only shown once Bootstrap Uncertainty has been run.'
+        )
+        self._scores_show_bootstrap_cb.stateChanged.connect(self._refresh_scores)
+        sg2.addWidget(self._scores_show_bootstrap_cb)
 
         layout.addWidget(scores_grp)
 
@@ -711,6 +738,15 @@ class PcaScoresDialog(QDialog):
         self._load_offset_cb.setChecked(True)
         self._load_offset_cb.stateChanged.connect(self._refresh_loadings)
         lg.addWidget(self._load_offset_cb)
+        self._load_show_bootstrap_cb = QCheckBox('Show bootstrap confidence band')
+        self._load_show_bootstrap_cb.setChecked(True)
+        self._load_show_bootstrap_cb.setToolTip(
+            'Shaded band from Bootstrap Uncertainty, drawn behind each\n'
+            'selected loading in the same offset units the curve itself\n'
+            'uses. Only shown once Bootstrap Uncertainty has been run.'
+        )
+        self._load_show_bootstrap_cb.stateChanged.connect(self._refresh_loadings)
+        lg.addWidget(self._load_show_bootstrap_cb)
         layout.addWidget(load_grp, 1)
         # Scores tab is active by default (index 0) — hide the Loadings
         # settings until the user actually switches to that tab.
@@ -888,7 +924,7 @@ class PcaScoresDialog(QDialog):
         if getattr(self, '_pca_svd_running', False):
             return  # already running — ignore a second trigger outright
         self._pca_svd_running = True
-        self._recompute_btn.setEnabled(False)
+        self._set_pca_controls_enabled(False)
 
         from PyQt5.QtWidgets import QProgressDialog, QApplication
         from PyQt5.QtGui import QCursor
@@ -990,9 +1026,115 @@ class PcaScoresDialog(QDialog):
             self._refresh_all()
         finally:
             self._pca_progress.close()
-            self._recompute_btn.setEnabled(True)
+            self._set_pca_controls_enabled(True)
             self._pca_svd_running = False
             from PyQt5.QtWidgets import QApplication
+            QApplication.restoreOverrideCursor()
+
+    def _set_pca_controls_enabled(self, enabled):
+        """Shared enable/disable for everything that starts a background
+        computation on self.controller.manager -- recomputing the SVD and
+        running Bootstrap Uncertainty must not be allowed to overlap,
+        since both replace/reset the same manager state. Mirrors
+        NMFDialog._set_nmf_controls_enabled."""
+        self._recompute_btn.setEnabled(enabled)
+        self._n_comp_spin.setEnabled(enabled)
+        self._mean_center_cb.setEnabled(enabled)
+        self._run_bootstrap_btn.setEnabled(enabled)
+
+    def _prompt_and_run_bootstrap(self):
+        """Ask how many bootstrap resamples to run, mirroring
+        NMFDialog._prompt_and_run_bootstrap. Requires an already-computed
+        SVD (self._U/self._Vt and the manager's own data_matrix all set)
+        -- this refits AROUND that specific result to measure its noise
+        sensitivity, it does not produce a new SVD on its own. Unlike
+        SVDAnalysisDialog's version, there is no separate signal/noise
+        n_components choice to make here: this manager already fixed how
+        many components count as signal at compute time (the "Max
+        components" spinbox above), so PcaScoresController.
+        compute_bootstrap_uncertainty always covers exactly those."""
+        if getattr(self, '_pca_svd_running', False):
+            return
+        manager = self.controller.manager
+        if (self._U is None or self._Vt is None
+                or manager is None or manager.data_matrix is None):
+            QMessageBox.information(
+                self, 'Bootstrap Uncertainty',
+                'Compute an SVD first — Bootstrap Uncertainty refits\n'
+                'around whatever result is currently loaded above; it\n'
+                'doesn\u2019t produce one on its own.')
+            return
+        from PyQt5.QtWidgets import QInputDialog
+        n_resamples, ok = QInputDialog.getInt(
+            self, 'Bootstrap Uncertainty',
+            'Number of bootstrap resamples:',
+            value=self._last_n_bootstrap, min=5, max=500)
+        if not ok:
+            return
+        self._last_n_bootstrap = n_resamples   # remembered and pre-filled next time
+        self._run_bootstrap_uncertainty(n_resamples)
+
+    def _run_bootstrap_uncertainty(self, n_resamples):
+        """Residual bootstrap around self.controller.manager's own
+        decomposition, with every replicate sign-aligned back to it --
+        see PcaScoresController.compute_bootstrap_uncertainty for the
+        method itself, and the Developer Guide's "SVD Analysis / PCA
+        Bootstrap Uncertainty" section for the full reasoning (the sign
+        ambiguity it corrects for is the same one SVD Analysis's own
+        Invert controls exist to fix by hand). Deliberately a plain
+        sequential loop with a real, cancellable QProgressDialog, the
+        same pattern NMFDialog._run_bootstrap_uncertainty uses."""
+        if getattr(self, '_pca_svd_running', False):
+            return
+        self._pca_svd_running = True
+        self._set_pca_controls_enabled(False)
+
+        from PyQt5.QtWidgets import QProgressDialog, QApplication
+        from PyQt5.QtGui import QCursor
+        QApplication.setOverrideCursor(QCursor(Qt.ArrowCursor))
+
+        manager = self.controller.manager
+
+        progress = QProgressDialog(
+            f'Bootstrap resample 1 of {n_resamples}\u2026', 'Cancel', 0, n_resamples, self)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setWindowTitle('PCA / SVD')
+        progress.setMinimumDuration(0)
+        progress.show()
+        QApplication.processEvents()
+
+        def _on_progress(b, n_total):
+            progress.setLabelText(f'Bootstrap resample {b + 1} of {n_total}\u2026')
+            progress.setValue(b)
+            QApplication.processEvents()
+
+        try:
+            result = self.controller.compute_bootstrap_uncertainty(
+                manager, n_resamples=n_resamples,
+                confidence_level=_BOOTSTRAP_CONFIDENCE_LEVEL,
+                random_state=None,
+                progress_callback=_on_progress,
+                cancel_check=progress.wasCanceled)
+            progress.setValue(n_resamples)
+
+            if result is None:
+                QMessageBox.warning(
+                    self, 'Bootstrap Uncertainty',
+                    manager.last_error or 'All bootstrap resamples failed.')
+                return
+
+            pct = int(round(_BOOTSTRAP_CONFIDENCE_LEVEL * 100))
+            msg = (f'Bootstrap uncertainty: {pct}% confidence band from '
+                   f'{result["n_resamples_used"]}/{result["n_resamples_requested"]} '
+                   f'resamples')
+            if result['n_failed']:
+                msg += f' ({result["n_failed"]} refit failed and were skipped)'
+            QMessageBox.information(self, 'Bootstrap Uncertainty', msg)
+            self._refresh_scores()
+            self._refresh_loadings()
+        finally:
+            self._set_pca_controls_enabled(True)
+            self._pca_svd_running = False
             QApplication.restoreOverrideCursor()
 
     def _refresh_all(self):
@@ -1141,6 +1283,19 @@ class PcaScoresDialog(QDialog):
         else:
             pc_z = None
 
+        # Bootstrap confidence band (see "Bootstrap Uncertainty..." above
+        # and PcaScoresController.compute_bootstrap_uncertainty): drawn as
+        # per-spectrum error bars on both axes, behind the scatter points.
+        # 2D only -- a 3D scatter has no single well-defined line to draw
+        # an error bar along, so it's deliberately skipped there rather
+        # than drawn somewhere misleading (same reasoning NMFDialog uses
+        # to skip Stacked bars).
+        br = self.controller.manager.bootstrap_result
+        show_band = (not is_3d and br is not None
+                     and self._scores_show_bootstrap_cb.isChecked()
+                     and pc_x < br['Vt_lower'].shape[0]
+                     and pc_y < br['Vt_lower'].shape[0])
+
         # Colour by
         color_by = self._color_combo.currentText()
         cmap, c_values, c_label = None, None, None
@@ -1154,6 +1309,14 @@ class PcaScoresDialog(QDialog):
             pc_c = int(color_by.replace('PC', '')) - 1
             if pc_c < n:
                 cmap, c_values, c_label = 'coolwarm', self._Vt[pc_c, :], f'Score on {color_by}'
+
+        if show_band:
+            x_lo = np.clip(xs - br['Vt_lower'][pc_x, :], 0, None)
+            x_hi = np.clip(br['Vt_upper'][pc_x, :] - xs, 0, None)
+            y_lo = np.clip(ys - br['Vt_lower'][pc_y, :], 0, None)
+            y_hi = np.clip(br['Vt_upper'][pc_y, :] - ys, 0, None)
+            ax.errorbar(xs, ys, xerr=[x_lo, x_hi], yerr=[y_lo, y_hi],
+                        fmt='none', ecolor='#999999', alpha=0.5, capsize=2, zorder=1)
 
         if c_values is not None:
             if is_3d:
@@ -1212,16 +1375,29 @@ class PcaScoresDialog(QDialog):
             # first means the lines just extend across that fixed range
             # instead of expanding it; if the data doesn't naturally pass
             # near zero, the lines simply won't be visible, which is fine.
-            x_min, x_max = float(xs.min()), float(xs.max())
-            y_min, y_max = float(ys.min()), float(ys.max())
+            if show_band:
+                # Widen the fixed range to the error bars too, not just
+                # the point estimates -- otherwise a band can be clipped
+                # right at the axes edge, which looks like a rendering
+                # bug rather than the actual (wider) uncertainty.
+                x_min = float(min(xs.min(), (xs - x_lo).min()))
+                x_max = float(max(xs.max(), (xs + x_hi).max()))
+                y_min = float(min(ys.min(), (ys - y_lo).min()))
+                y_max = float(max(ys.max(), (ys + y_hi).max()))
+            else:
+                x_min, x_max = float(xs.min()), float(xs.max())
+                y_min, y_max = float(ys.min()), float(ys.max())
             x_pad = (x_max - x_min) * 0.05 or 0.01
             y_pad = (y_max - y_min) * 0.05 or 0.01
             ax.set_xlim(x_min - x_pad, x_max + x_pad)
             ax.set_ylim(y_min - y_pad, y_max + y_pad)
             ax.axhline(0, color='#999', lw=0.6, ls='--')
             ax.axvline(0, color='#999', lw=0.6, ls='--')
-            ax.set_title(f'Scores: PC{pc_x+1} vs PC{pc_y+1}  '
-                         f'({n_spec} spectra)', fontsize=11)
+            title = f'Scores: PC{pc_x+1} vs PC{pc_y+1}  ({n_spec} spectra)'
+            if show_band:
+                pct = int(round(br['confidence_level'] * 100))
+                title += f'  — bars: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+            ax.set_title(title, fontsize=11)
             ax.grid(True, linestyle='--', alpha=0.35)
             self._scores_canvas.draw_tight()
 
@@ -1246,12 +1422,25 @@ class PcaScoresDialog(QDialog):
             max_amp = max(float(np.ptp(self._U[:, r])) for r in sel_rows)
             offset_step = max_amp * 1.1
 
+        # Bootstrap confidence band (see "Bootstrap Uncertainty..." above
+        # and PcaScoresController.compute_bootstrap_uncertainty): drawn
+        # BEHIND each loading's own curve, in the same offset units the
+        # curve itself uses -- mirrors NMFDialog._refresh_components's
+        # band exactly.
+        br = self.controller.manager.bootstrap_result
+        show_band = (br is not None and self._load_show_bootstrap_cb.isChecked()
+                     and br['U_lower'].shape[1] > max(sel_rows))
+
         for k, r in enumerate(sel_rows):
             loading = self._U[:, r]
             offset  = k * offset_step
             color   = _COLORS[r % len(_COLORS)]
+            if show_band:
+                ax.fill_between(self._x_axis, br['U_lower'][:, r] + offset,
+                                br['U_upper'][:, r] + offset,
+                                color=color, alpha=0.20, linewidth=0, zorder=1)
             ax.plot(self._x_axis, loading + offset, color=color,
-                    lw=1.0, label=f'PC{r+1}  ({self._pc_axis_label(r)})')
+                    lw=1.0, zorder=2, label=f'PC{r+1}  ({self._pc_axis_label(r)})')
             if self._load_offset_cb.isChecked():
                 ax.axhline(offset, color=color, lw=0.4, ls=':', alpha=0.5)
 
@@ -1259,7 +1448,11 @@ class PcaScoresDialog(QDialog):
         ax.set_xlabel('x', fontsize=10)
         ax.set_ylabel('Loading' + (' (offset)' if self._load_offset_cb.isChecked()
                                     else ''), fontsize=10)
-        ax.set_title('Loadings (spectral components)', fontsize=11)
+        title = 'Loadings (spectral components)'
+        if show_band:
+            pct = int(round(br['confidence_level'] * 100))
+            title += f'  — shaded: {pct}% bootstrap CI (n={br["n_resamples_used"]})'
+        ax.set_title(title, fontsize=11)
         ax.legend(fontsize=8, loc='best', framealpha=0.7)
         ax.grid(True, linestyle='--', alpha=0.35)
         self._loadings_canvas.draw_tight()

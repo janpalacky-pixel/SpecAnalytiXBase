@@ -2356,6 +2356,137 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         user-facing explanation this technical section backs up, and the User Guide's NMF
         entry for the short version.</p>
 
+        <h2 id="svd-pca-bootstrap-uncertainty">SVD Analysis / PCA Bootstrap
+        Uncertainty: the Same Method, Minus the Non-negativity Constraint,
+        Plus a Sign Problem</h2>
+
+        <p>SVD Analysis and PCA / SVD Scores &amp; Loadings both got their own
+        <strong>"Bootstrap Uncertainty&hellip;"</strong>
+        (<code>SVDAnalysisController.compute_bootstrap_uncertainty()</code> and
+        <code>PcaScoresController.compute_bootstrap_uncertainty()</code>), the same
+        residual-bootstrap method described above for MCR-ALS and NMF: fit once, take the
+        residual (data minus reconstruction), resample that residual with replacement,
+        rebuild synthetic data from it, refit, and collect percentile bounds across
+        replicates. What is genuinely different here is worth its own section rather than
+        a footnote on the NMF one.</p>
+
+        <h3>No warm start, no iterative solver &mdash; and that is the easy part</h3>
+        <p>NMF and MCR-ALS both need a warm-started refit for every replicate, because both
+        solve their fit with an iterative algorithm that can, in principle, land in a
+        different local optimum than the reference did. SVD has none of that: it is an
+        exact, deterministic decomposition. Every bootstrap replicate here is just a plain
+        <code>np.linalg.svd()</code> call on the resampled data &mdash; no
+        <code>compute_trial()</code>, no <code>init</code>/<code>max_iter</code>, no
+        question of whether a warm start actually converges back to the same basin. This
+        is the sense in which SVD's bootstrap really is simpler to implement, as
+        anticipated before writing it.</p>
+
+        <h3>The one genuinely new problem: sign</h3>
+        <p>NMF and MCR-ALS both pin down each component's sign structurally, through their
+        non-negativity constraint. A bare SVD has no such constraint:
+        <code>np.linalg.svd()</code> is free to return either sign for any given
+        component's <code>U</code> column and matching <code>Vt</code> row, and a component
+        together with its exact negation reconstruct the data identically. There is no
+        reason a resampled replicate lands on the same sign as the reference by chance.
+        Left alone, this would make the bootstrap band for any component that flips sign on
+        some replicates balloon out to cover both the reference's curve and its mirror
+        image &mdash; not a real measure of anything.</p>
+        <p>Both controllers fix this the same way: every replicate's <code>U</code> column
+        (and its matching <code>Vt</code> row) is compared to the reference's own column via
+        a dot product, and flipped if the dot product is negative, before being folded into
+        the percentile band. This is the direct algorithmic analogue of the user-facing
+        <strong>Invert</strong> button in SVD Analysis
+        (<code>SVDAnalysisManager.invert_subspectrum()</code> /
+        <code>inverted_subspectra</code>) &mdash; that button exists precisely because SVD
+        components have this same sign ambiguity, and a user occasionally needs to flip one
+        by hand when a band that should read as positive comes out pointing down. Manual
+        invert and bootstrap sign-alignment are two instances of the identical underlying
+        problem, solved the same way: pick a reference direction, flip anything that
+        disagrees with it.</p>
+        <p>One consequence worth being explicit about: inverting a subspectrum by hand
+        AFTER running Bootstrap Uncertainty invalidates the existing band's orientation (the
+        band was aligned to the OLD sign), so
+        <code>SVDAnalysisManager.invert_subspectrum()</code> resets
+        <code>bootstrap_result</code> to <code>None</code> when it flips a component &mdash;
+        the same staleness discipline every other successful compute already follows (see
+        the consolidated staleness table above), just triggered by a different action than
+        usual.</p>
+
+        <h3>The one structural asymmetry between the two dialogs</h3>
+        <p><code>SVDAnalysisManager</code> keeps the FULL-RANK decomposition &mdash; it never
+        truncates to some fixed number of components the way NMF, MCR-ALS, and PCA Scores
+        &amp; Loadings all do. That means its Bootstrap Uncertainty needs one extra piece of
+        information the other three don't: how many of the already-computed leading
+        components to treat as "signal" when building the residual to resample (the
+        <code>n_components</code> parameter on
+        <code>SVDAnalysisController.compute_bootstrap_uncertainty()</code>). The dialog
+        prompts for this explicitly, pre-filled by
+        <code>suggest_bootstrap_n_components()</code> &mdash; a plain convenience default
+        (fewest leading components whose cumulative explained variance reaches 95%), not a
+        statistical requirement.</p>
+        <p><code>PcaScoresManager</code> has no such extra step, because it already fixes
+        "how many components are signal" at compute time &mdash; the same
+        <code>n_components</code> the "Max components" spinbox sets when the SVD itself is
+        computed (via the shared <code>SVDBackgroundManager</code>). Its
+        <code>compute_bootstrap_uncertainty()</code> just uses
+        <code>reference_manager.U.shape[1]</code> directly; there is no separate choice to
+        make and nothing extra to prompt for. This is exactly the asymmetry anticipated
+        before writing either one, and confirmed once both were actually built: PCA Scores
+        &amp; Loadings really is the simpler of the two to wire up.</p>
+
+        <h3>Data matrix storage and orientation</h3>
+        <p>Both managers store <code>data_matrix</code>: the exact matrix that was actually
+        decomposed (after mean-centering, if that was requested, and before the SVD call
+        itself) &mdash; the same pattern <code>NMFManager.X_nn</code> and
+        <code>MCRALSManager.D</code> already use, so bootstrap does not need to rebuild or
+        re-derive anything the compute step already had. The one thing to keep straight when
+        reading this code next to NMF's: <code>data_matrix</code> here is
+        <code>(n_wavelengths &times; n_spectra)</code> &mdash; columns are spectra &mdash; the
+        TRANSPOSE of NMF's <code>(n_spectra &times; n_wavelengths)</code> convention.
+        Residual resampling therefore resamples COLUMNS (the spectra dimension) with
+        replacement, not rows.</p>
+
+        <h3>UI wiring: one canvas funnels six plot modes through four functions</h3>
+        <p><code>SVDAnalysisDialog</code>'s canvas
+        (<code>InteractiveSVDAnalysisCanvas</code>) supports six combinations of
+        combined/separate subspectra crossed with combined/separate/no coefficients, plus
+        row/column layout. Adding band-drawing to every one of those six dispatch methods
+        separately would have meant six near-duplicate changes. It didn't need six, because
+        all six dispatch methods (<code>plot_selected_subspectra()</code>'s
+        <code>_plot_combined_subspectra_separate_coefficients()</code>,
+        <code>_plot_separate_subspectra_only()</code>, and so on) already compose from just
+        four leaf methods: <code>_plot_combined_subspectra()</code>,
+        <code>_plot_single_subspectrum()</code> (both read <code>U_lower</code>/<code>
+        U_upper</code> and draw a shaded band behind the curve, the same way
+        <code>NMFDialog._refresh_components()</code> does), and
+        <code>_plot_single_coefficient()</code> / <code>_plot_combined_coefficients()</code>
+        (both read <code>Vt_lower</code>/<code>Vt_upper</code> and draw error bars, reusing
+        whatever x-axis reordering &mdash; spectrum order, parameter values, or spectrum
+        labels &mdash; that coefficient plot already applies to the coefficients themselves,
+        via <code>_get_coefficient_xaxis()</code>'s own <code>order</code> array). Adding the
+        band/error-bar logic to just those four covers every one of the six modes, and a
+        <code>_get_bootstrap_result()</code> helper (checks the dialog's own "Show bootstrap
+        confidence band" checkbox and returns <code>None</code> if a component index isn't
+        covered by whatever <code>n_components</code> the bootstrap was last run with) keeps
+        each of the four from repeating the same guard.</p>
+        <p><code>PcaScoresDialog</code> needed the same idea applied to its own, simpler
+        single-plot-per-tab structure: <code>_refresh_loadings()</code> draws a shaded
+        <code>fill_between</code> band behind each selected loading (same as NMF), while
+        <code>_refresh_scores()</code> draws per-spectrum error bars on BOTH axes of the 2D
+        scatter (<code>ax.errorbar(..., xerr=..., yerr=...)</code>) &mdash; a scatter has no
+        single index-ordered line to hang one-directional error bars off of the way NMF's
+        concentration plot does, so both directions get one. The 3D scores view
+        deliberately skips the band entirely, for the same reason NMF skips it for Stacked
+        bars: no single well-defined point to anchor an error bar to that wouldn't be
+        misleading.</p>
+
+        <p><strong>Tests:</strong> <code>tests/test_svd_analysis_bootstrap.py</code> and
+        <code>tests/test_pca_scores_bootstrap.py</code> cover the manager/controller layer
+        for both dialogs &mdash; data_matrix bookkeeping, bootstrap_result staleness on a
+        fresh fit, end-to-end shapes and band sanity, sign alignment, progress/cancel
+        behavior, and (for SVD Analysis specifically)
+        <code>suggest_bootstrap_n_components()</code>'s own logic.</p>
+
         <h2 id="rgb-overlay-export">2D Map RGB Overlay Mode</h2>
 
         <p><code>Map2DDialog</code>'s <b>RGB overlay</b> is an 8th Map Type radio button
