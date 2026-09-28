@@ -98,6 +98,12 @@ class MeltingCurveManager:
 
     def __init__(self):
         self.sigmoid_shapes = SIGMOID_SHAPES
+        # Set by normalize_melting_curve() whenever it returns None because
+        # the baseline fit itself failed (as opposed to the empty-mask
+        # case, which has no extra detail to report) -- read by
+        # MeltingCurveDialog.perform_normalization() to show a specific
+        # warning instead of the generic "widen the ranges" one.
+        self.last_normalization_error = None
 
     # ------------------------------------------------------------------ #
     # 1. Curve extraction from a series of spectra                        #
@@ -285,11 +291,38 @@ class MeltingCurveManager:
         low_mask = (x >= min(low_range)) & (x <= max(low_range))
         high_mask = (x >= min(high_range)) & (x <= max(high_range))
 
+        self.last_normalization_error = None
+
         if not np.any(low_mask) or not np.any(high_mask):
             return None
 
-        coeffs_low = np.polyfit(x[low_mask], y[low_mask], deg=order)
-        coeffs_high = np.polyfit(x[high_mask], y[high_mask], deg=order)
+        try:
+            coeffs_low = np.polyfit(x[low_mask], y[low_mask], deg=order)
+            coeffs_high = np.polyfit(x[high_mask], y[high_mask], deg=order)
+        except (np.linalg.LinAlgError, ValueError) as exc:
+            # Degenerate baseline-region data (e.g. too few distinct
+            # temperatures, or all-identical signal in a window) can make
+            # the underlying least-squares fit unsolvable -- reported by
+            # a user who fed this tool's own exported curve/normalized-
+            # curve outputs back in as source spectra. That is not a
+            # bug in the fit itself, just data this method fundamentally
+            # can't baseline-fit, so it's reported the same way as the
+            # empty-mask case just above (return None) rather than left
+            # to propagate as an unhandled exception -- see
+            # last_normalization_error for why, specifically.
+            logger.warning(
+                "normalize_melting_curve: baseline fit failed (%s)", exc,
+                exc_info=True)
+            self.last_normalization_error = (
+                "Could not fit the Low-T / High-T baseline regions -- the "
+                "data inside one or both selected ranges is too degenerate "
+                "for a reliable fit (e.g. too few distinct temperatures, or "
+                "an all-identical signal). This can happen when the "
+                "selected spectra aren't actually a melting-curve series "
+                "(for example, re-analyzing this tool's own previously "
+                "exported curve/normalized-curve outputs)."
+            )
+            return None
 
         return self._normalize_from_coeffs(x, y, coeffs_low, coeffs_high,
                                            instability_frac=instability_frac)

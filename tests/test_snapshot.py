@@ -2268,3 +2268,156 @@ class TestSaveControllerCompressionLevel:
 
         _, kwargs = controller.save_manager.save_snapshot.call_args
         assert kwargs.get('compression_level') is None
+
+
+# ---------------------------------------------------------------------------
+# Melting Curve Analysis "Saved Fits" -- unlike every other dialog's
+# in-memory "last settings" cache (deliberately never snapshotted, see
+# GUI Test Guide.md), Saved Fits holds content the user explicitly chose
+# to keep via "Save Current Fit", so it's included in the snapshot too.
+# ---------------------------------------------------------------------------
+
+class TestMeltingCurveSavedFitsBuildState:
+    def test_included_when_present_and_non_empty(self):
+        mgr = SaveManager()
+        controller = _FakeMainController(original_spectra=_make_spectra(2))
+        fit_entry = {
+            'curve': {'x_temperature': [10.0, 20.0], 'y_raw': np.array([0.1, 0.2])},
+            'fit_result': {'params': np.array([1.0, 2.0])},
+        }
+        controller.melting_curve_controller = SimpleNamespace(
+            saved_fits={'Run 1': fit_entry})
+
+        state = mgr._build_state(controller)
+
+        assert state['melting_curve_saved_fits'] == {'Run 1': fit_entry}
+
+    def test_omitted_when_no_melting_curve_controller(self):
+        mgr = SaveManager()
+        controller = _FakeMainController(original_spectra=_make_spectra(2))
+        # No melting_curve_controller attribute at all -- the common case,
+        # since it's only lazily created the first time the dialog opens.
+
+        state = mgr._build_state(controller)
+
+        assert 'melting_curve_saved_fits' not in state
+
+    def test_omitted_when_saved_fits_is_empty(self):
+        mgr = SaveManager()
+        controller = _FakeMainController(original_spectra=_make_spectra(2))
+        controller.melting_curve_controller = SimpleNamespace(saved_fits={})
+
+        state = mgr._build_state(controller)
+
+        assert 'melting_curve_saved_fits' not in state
+
+
+class TestMeltingCurveSavedFitsLoadSnapshot:
+    def _write_state_with_saved_fits(self, tmp_snapx, mgr, saved_fits):
+        spectra = _make_spectra(2)
+        state = {
+            'timestamp': '2026-05-21T10:00:00',
+            'original_spectra': spectra,
+            'selected_spectra': spectra[:1],
+            'selected_indices': [0],
+            'plot_settings': {
+                'plot_type': 'Overlay plot',
+                'use_automatic_line_colors': True,
+                'use_default_points': False,
+                'x_scale': 'linear',
+                'y_scale': 'linear',
+                'grid_settings': {'rows': 1, 'columns': 1},
+                'spectra_ordering': 'Alphabetical',
+                'reverse_order': False,
+            },
+            'link_axes': {
+                'link_x': False, 'link_y': False,
+                'link_x_direction': 'all', 'link_y_direction': 'all',
+            },
+            'melting_curve_saved_fits': saved_fits,
+        }
+        text = mgr._to_json(state)
+        with open(tmp_snapx, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+    def test_restores_onto_existing_controller_in_place(self, tmp_snapx):
+        mgr = SaveManager()
+        saved_fits = {
+            'Run 1': {'fit_result': {'params': np.array([1.0, 2.0])}},
+        }
+        self._write_state_with_saved_fits(tmp_snapx, mgr, saved_fits)
+
+        controller = _FakeMainController(plot_type='Overlay plot')
+        existing_dict = {'Old Run': {'stale': True}}
+        controller.melting_curve_controller = SimpleNamespace(saved_fits=existing_dict)
+
+        mgr.load_snapshot(controller, tmp_snapx)
+
+        # Restored IN PLACE (same dict object) -- an already-open dialog
+        # holds this exact object by reference (see
+        # MeltingCurveController.show_dialog), so a reassignment would
+        # leave that dialog pointed at stale data.
+        assert controller.melting_curve_controller.saved_fits is existing_dict
+        assert set(existing_dict.keys()) == {'Run 1'}
+        np.testing.assert_allclose(
+            existing_dict['Run 1']['fit_result']['params'], [1.0, 2.0])
+
+    def test_creates_melting_curve_controller_when_missing(self, tmp_snapx):
+        mgr = SaveManager()
+        saved_fits = {'Run 1': {'fit_result': {'params': np.array([3.0])}}}
+        self._write_state_with_saved_fits(tmp_snapx, mgr, saved_fits)
+
+        controller = _FakeMainController(plot_type='Overlay plot')
+        assert not hasattr(controller, 'melting_curve_controller')
+
+        mgr.load_snapshot(controller, tmp_snapx)
+
+        assert hasattr(controller, 'melting_curve_controller')
+        assert set(controller.melting_curve_controller.saved_fits.keys()) == {'Run 1'}
+
+    def test_no_key_in_file_leaves_existing_saved_fits_untouched(self, tmp_snapx):
+        # A snapshot saved before this feature existed (or one where Saved
+        # Fits was simply empty) has no 'melting_curve_saved_fits' key at
+        # all -- loading it must not wipe out whatever's already open.
+        mgr = SaveManager()
+        spectra = _make_spectra(2)
+        state = {
+            'timestamp': '2026-05-21T10:00:00',
+            'original_spectra': spectra,
+            'selected_spectra': spectra[:1],
+            'selected_indices': [0],
+            'plot_settings': {
+                'plot_type': 'Overlay plot', 'use_automatic_line_colors': True,
+                'use_default_points': False, 'x_scale': 'linear', 'y_scale': 'linear',
+                'grid_settings': {'rows': 1, 'columns': 1},
+                'spectra_ordering': 'Alphabetical', 'reverse_order': False,
+            },
+            'link_axes': {'link_x': False, 'link_y': False,
+                          'link_x_direction': 'all', 'link_y_direction': 'all'},
+        }
+        text = mgr._to_json(state)
+        with open(tmp_snapx, 'w', encoding='utf-8') as f:
+            f.write(text)
+
+        controller = _FakeMainController(plot_type='Overlay plot')
+        existing_dict = {'Kept': {'value': 1}}
+        controller.melting_curve_controller = SimpleNamespace(saved_fits=existing_dict)
+
+        mgr.load_snapshot(controller, tmp_snapx)
+
+        assert controller.melting_curve_controller.saved_fits == {'Kept': {'value': 1}}
+
+    def test_a_failure_restoring_saved_fits_does_not_abort_the_rest_of_the_load(self, tmp_snapx):
+        mgr = SaveManager()
+        saved_fits = {'Run 1': {'fit_result': {}}}
+        self._write_state_with_saved_fits(tmp_snapx, mgr, saved_fits)
+
+        controller = _FakeMainController(plot_type='Overlay plot')
+        # saved_fits that doesn't support .clear()/.update() -- forces the
+        # try/except in _restore_melting_curve_saved_fits to actually
+        # catch something, same defensive spirit as _restore_operations.
+        controller.melting_curve_controller = SimpleNamespace(saved_fits=None)
+
+        mgr.load_snapshot(controller, tmp_snapx)  # must not raise
+
+        assert controller.plot_spectra_calls == 1

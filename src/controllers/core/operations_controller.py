@@ -1434,24 +1434,34 @@ class OperationsController:
 
             dialog = mcc.show_dialog(selected_spectra, current_settings=last_settings)
 
-            if dialog.exec_() == QDialog.Accepted:
-                results = dialog.get_results()
+            # Read back get_results() regardless of Accepted/Rejected --
+            # it just reflects whatever is currently on screen (e.g. a
+            # re-fit with a changed n_components), so a Cancel or the
+            # window's own close button must still remember it for next
+            # time, exactly like every other dialog in the app. Only the
+            # actual commit (creating new spectra from the checked Output
+            # Options, and recording history) stays gated on Accepted --
+            # same split applied to Band Ratio earlier in this session.
+            result = dialog.exec_()
+            results = dialog.get_results()
 
-                if results and results.get('curve'):
-                    self.current_parameters[operation] = results.copy()
-                    self.last_op_settings["Melting Curve Analysis"] = results.copy()
-                    self.last_selection_hash = current_selection_hash
-                    # Actually execute the analysis — save it to metadata and
-                    # create any new spectra the output-option checkboxes
-                    # requested. Same reasoning as Peak Fitting: this dialog
-                    # is opened directly from the Analysis & Visualization
-                    # menu/groupbox (run_visualization_analysis ->
-                    # show_parameters_dialog_for), which has no separate
-                    # "Run" step afterwards to trigger the commit.
-                    self.handle_melting_curve_analysis()
-                else:
-                    self.current_parameters.pop(operation, None)
-                    self.last_op_settings.pop("Melting Curve Analysis", None)
+            if results and results.get('curve'):
+                self.current_parameters[operation] = results.copy()
+                self.last_op_settings["Melting Curve Analysis"] = results.copy()
+                self.last_selection_hash = current_selection_hash
+            else:
+                self.current_parameters.pop(operation, None)
+                self.last_op_settings.pop("Melting Curve Analysis", None)
+
+            if result == QDialog.Accepted and results and results.get('curve'):
+                # Actually execute the analysis — save it to metadata and
+                # create any new spectra the output-option checkboxes
+                # requested. Same reasoning as Peak Fitting: this dialog
+                # is opened directly from the Analysis & Visualization
+                # menu/groupbox (run_visualization_analysis ->
+                # show_parameters_dialog_for), which has no separate
+                # "Run" step afterwards to trigger the commit.
+                self.handle_melting_curve_analysis()
 
     def on_operation_changed(self, operation_name):
         """

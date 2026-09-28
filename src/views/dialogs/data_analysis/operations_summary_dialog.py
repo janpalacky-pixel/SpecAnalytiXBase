@@ -3,7 +3,8 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QListWidget, QListWidgetItem, 
                            QPushButton, QHBoxLayout, QDialogButtonBox, QLabel,
                            QMessageBox, QWidget, QTableWidget, QTableWidgetItem, QHeaderView, 
-                           QFrame, QFileDialog, QTabWidget, QMenu, QApplication, QAbstractItemView)
+                           QFrame, QFileDialog, QTabWidget, QMenu, QApplication, QAbstractItemView,
+                           QSizePolicy)
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush,QCursor
 import numpy as np
@@ -390,6 +391,8 @@ class OperationParametersDialog(QDialog):
                 self.setup_cd_unit_conversion_parameters()
             elif self.operation_name.startswith("Peak Fitting"):
                 self.setup_peak_fitting_parameters()
+            elif self.operation_name.startswith("Melting Curve Analysis"):
+                self.setup_melting_curve_parameters()
             elif (isinstance(self.parameters, dict) and
                   set(self.parameters.keys()) == {'copied_count', 'source_labels', 'copy_labels'}):
                 self.setup_copy_operation_parameters()
@@ -710,6 +713,387 @@ class OperationParametersDialog(QDialog):
         layout.addLayout(button_row)
 
         dialog.exec_()
+
+    def setup_melting_curve_parameters(self):
+        """Set up parameters table for Melting Curve Analysis.
+
+        Previously fell through to setup_standard_parameters(), which has
+        no special handling for the four large computed-result blobs this
+        operation stores directly as top-level parameter values: curve
+        (raw/normalized arrays plus baseline-region diagnostics),
+        fit_result (optimizer output -- y_fit/components arrays, per-
+        parameter values and errors), automatic_fit_result, and
+        component_thermodynamics (y_pure/y_local_data arrays plus any
+        Arrhenius/thermodynamic quantities). Each came out as a wall of
+        raw numpy-array repr -- exactly the unreadable dump the SVD
+        Background / Peak Fitting tables got the same treatment for.
+        Now: the genuinely human settings (extraction/normalization/fit
+        settings, which output spectra were created, ...) are shown
+        directly, and the four heavy blobs are moved behind one "Fit &
+        Curve Detail" row instead of a dozen-plus unreadable inline rows.
+
+        'temperatures' (every source spectrum's label -> its temperature)
+        and 'source_labels' (the same labels again, with no values) are
+        collapsed into one "Source spectra" summary row instead of shown
+        as two large, almost entirely redundant per-spectrum dumps -- the
+        full per-spectrum breakdown is still available, aligned with the
+        extracted curve's own Raw/Normalized/Fit values, in the "Fit &
+        Curve Detail" table's own Spectrum column.
+        """
+        HEAVY_KEYS = ('curve', 'fit_result', 'automatic_fit_result', 'component_thermodynamics')
+        # spectra_fingerprint is a pure cache key (see MeltingCurveDialog.
+        # _compute_spectra_fingerprint) -- never meant for a human to read.
+        HIDDEN_KEYS = HEAVY_KEYS + ('spectra_fingerprint', 'source_labels')
+
+        OUTPUT_OPTION_LABELS = [
+            ('add_raw_curve', 'Raw curve'),
+            ('add_normalized_curve', 'Normalized curve'),
+            ('add_baselines', 'Baselines'),
+            ('add_fit', 'Fit'),
+            ('add_residual', 'Residual'),
+            ('add_components', 'Individual components'),
+        ]
+
+        rows = []  # [(display_key, display_value), ...]
+        for key, value in self.parameters.items():
+            if key in HIDDEN_KEYS:
+                continue
+            if key == 'output_options' and isinstance(value, dict):
+                selected = [label for opt_key, label in OUTPUT_OPTION_LABELS if value.get(opt_key)]
+                rows.append((
+                    'Output spectra created',
+                    ', '.join(selected) if selected
+                    else '(none -- analysis only, no output spectra created)'
+                ))
+            elif key == 'temperatures':
+                rows.append((
+                    'Source spectra',
+                    self._summarize_melting_curve_sources(
+                        value, self.parameters.get('source_labels'))))
+            else:
+                rows.append((str(key), self._format_value_for_display(value)))
+
+        has_detail = any(self.parameters.get(k) is not None for k in HEAVY_KEYS)
+
+        self.table.setRowCount(len(rows) + (1 if has_detail else 0))
+
+        for row, (display_key, display_value) in enumerate(rows):
+            param_item = QTableWidgetItem(display_key)
+            param_item.setFlags(param_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 0, param_item)
+
+            value_item = QTableWidgetItem(display_value)
+            value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(row, 1, value_item)
+
+        if has_detail:
+            detail_row = len(rows)
+            param_item = QTableWidgetItem("Fit & Curve Detail")
+            param_item.setFlags(param_item.flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(detail_row, 0, param_item)
+
+            value_item = QTableWidgetItem(
+                "Click to view the extracted curve, fit quality/parameters, "
+                "and component thermodynamics")
+            value_item.setForeground(QBrush(QColor(0, 0, 255)))
+            value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+            value_item.setData(Qt.UserRole, {k: self.parameters.get(k) for k in HEAVY_KEYS})
+            self.table.setItem(detail_row, 1, value_item)
+
+        self.table.resizeRowsToContents()
+
+    @staticmethod
+    def _summarize_melting_curve_sources(temperatures, source_labels):
+        """One-line summary for what used to be two large, almost
+        entirely redundant rows (see setup_melting_curve_parameters'
+        docstring). Defensive about temperatures/source_labels being
+        missing, empty, or (a saved fit from an older version) not a
+        dict -- always returns SOME usable text rather than raising."""
+        if isinstance(temperatures, dict) and temperatures:
+            n = len(temperatures)
+            values = sorted(v for v in temperatures.values() if isinstance(v, (int, float)))
+        elif source_labels:
+            n = len(source_labels)
+            values = []
+        else:
+            return "(none)"
+
+        if not values:
+            return f"{n} spectra"
+
+        lo, hi = values[0], values[-1]
+        step_text = ""
+        if n > 1:
+            diffs = [round(b - a, 6) for a, b in zip(values, values[1:])]
+            if diffs and all(abs(d - diffs[0]) < 1e-6 for d in diffs):
+                step_text = f", step \u2248{diffs[0]:g}"
+        return (f"{n} spectra, {lo:g}\u2013{hi:g}{step_text} "
+                f"(see Fit & Curve Detail for the full per-spectrum list)")
+
+    def show_melting_curve_fit_details_dialog(self, detail):
+        """Show the computed-result detail behind Melting Curve Analysis'
+        "Fit & Curve Detail" row: fit quality/parameters, component
+        thermodynamics, and a per-temperature table of the source
+        spectrum/raw/normalized/fitted curve -- replaces what used to be
+        a dozen-plus rows of raw numpy-array repr (fit_result's y_fit/
+        components arrays, component_thermodynamics' y_pure/y_local_data
+        arrays, curve's own baseline_low/baseline_high/coeffs_low/
+        coeffs_high/unstable_mask/svd_diagnostics), and is also where the
+        full per-spectrum temperature list lives now that the main table
+        only shows a one-line summary of it.
+
+        Every field pulled from fit_result/component_thermodynamics is
+        compared with "is not None" rather than plain truthiness --
+        several of them (fit_result['params'] in particular) are numpy
+        arrays, and "if array:" raises ValueError for anything but a
+        single-element array."""
+        curve = detail.get('curve') or {}
+        fit_result = detail.get('fit_result')
+        automatic_fit_result = detail.get('automatic_fit_result')
+        component_thermodynamics = detail.get('component_thermodynamics')
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Fit & Curve Detail for Operation #{self.operation_index + 1}")
+        dialog.resize(700, 580)
+        layout = QVBoxLayout(dialog)
+
+        title_label = QLabel("Fit quality, parameters, and thermodynamics")
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        layout.addWidget(title_label)
+
+        summary_rows = []
+        if fit_result is not None:
+            shape_text = (
+                f"{fit_result.get('shape_name', '?')}, "
+                f"{fit_result.get('n_components', '?')} component(s)"
+                + (" (constrained)" if fit_result.get('constrained') else "")
+            )
+            summary_rows.append(("Shape / components", shape_text))
+            quality = fit_result.get('quality')
+            if quality is not None:
+                summary_rows.append(("Fit quality", self._format_value_for_display(quality)))
+            if fit_result.get('params') is not None:
+                summary_rows.append(("Fit parameters", self._format_value_for_display(fit_result['params'])))
+            if fit_result.get('inflection_points') is not None:
+                summary_rows.append(("Inflection point(s)",
+                                     self._format_value_for_display(fit_result['inflection_points'])))
+        else:
+            summary_rows.append(("Fit", "(no fit was run for this analysis)"))
+
+        if automatic_fit_result is not None:
+            summary_rows.append(("Automatic mode",
+                                 "Succeeded" if automatic_fit_result.get('success') else "Failed"))
+            if automatic_fit_result.get('message'):
+                summary_rows.append(("Automatic mode message", str(automatic_fit_result['message'])))
+
+        # component_thermodynamics is a LIST, one dict per fitted
+        # sigmoid component (even for a single-component fit) -- see
+        # MeltingCurveManager.compute_component_thermodynamics's own
+        # docstring. Earlier code here wrongly treated it as one flat
+        # dict (component_thermodynamics.get(tkey)), which crashed with
+        # AttributeError: 'list' object has no attribute 'get' on any
+        # real fit result.
+        if component_thermodynamics is not None:
+            single = len(component_thermodynamics) == 1
+            for i, comp in enumerate(component_thermodynamics):
+                label_prefix = "" if single else f"Component {i + 1} - "
+                for tkey in ('arrhenius', 'thermodynamics'):
+                    tval = comp.get(tkey) if isinstance(comp, dict) else None
+                    summary_rows.append((
+                        f"{label_prefix}{tkey.capitalize()}",
+                        self._format_value_for_display(tval) if tval is not None else "(not computed)"))
+
+        summary_table = QTableWidget()
+        summary_table.setColumnCount(2)
+        summary_table.setHorizontalHeaderLabels(["Field", "Value"])
+        summary_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        summary_table.setWordWrap(True)
+        summary_table.setRowCount(len(summary_rows))
+        for r, (field, value) in enumerate(summary_rows):
+            summary_table.setItem(r, 0, QTableWidgetItem(str(field)))
+            summary_table.setItem(r, 1, QTableWidgetItem(str(value)))
+        summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        summary_table.resizeRowsToContents()
+        summary_table.setMaximumHeight(220)
+        layout.addWidget(summary_table)
+
+        # Per-temperature curve table -- the genuinely inspectable part of
+        # what used to be several bare numpy-array dumps, now including
+        # which spectrum each row came from (the full list that used to
+        # be the main table's separate 'temperatures'/'source_labels'
+        # rows). Defensive about exact array shapes/keys/lengths (e.g.
+        # normalization_result's schema can vary by normalization method,
+        # and a saved/restored fit could in principle predate a field)
+        # so a mismatch just narrows which columns show up, rather than
+        # breaking the whole dialog.
+        try:
+            temps = curve.get('x_temperature')
+            raw = curve.get('y_raw')
+            labels = curve.get('source_labels')
+            norm_result = curve.get('normalization_result')
+            norm = norm_result.get('y_norm') if isinstance(norm_result, dict) else norm_result
+            fit_y = fit_result.get('y_fit') if fit_result is not None else None
+
+            n = len(temps) if temps is not None else 0
+            columns = []
+            if labels is not None and len(labels) == n:
+                columns.append("Spectrum")
+            columns += ["Temperature", "Raw Signal"]
+            if norm is not None and len(norm) == n:
+                columns.append("Normalized")
+            if fit_y is not None and len(fit_y) == n:
+                columns.append("Fit")
+
+            component_list = (component_thermodynamics
+                              if isinstance(component_thermodynamics, list) else [])
+            single_component = len(component_list) == 1
+            for i, comp in enumerate(component_list):
+                if not isinstance(comp, dict):
+                    continue
+                prefix = "" if single_component else f"Component {i + 1}: "
+                y_local_data = comp.get('y_local_data')
+                if y_local_data is not None and len(y_local_data) == n:
+                    columns.append(f"{prefix}Data (reconstructed)")
+                y_pure = comp.get('y_pure')
+                if y_pure is not None and len(y_pure) == n:
+                    columns.append(f"{prefix}Model")
+
+            if n:
+                curve_label = QLabel("Extracted curve")
+                curve_label.setStyleSheet("font-weight: bold;")
+                layout.addWidget(curve_label)
+
+                def fmt(v):
+                    return f"{v:.6g}" if isinstance(v, (int, float, np.floating, np.integer)) else str(v)
+
+                curve_table = QTableWidget()
+                curve_table.setColumnCount(len(columns))
+                curve_table.setHorizontalHeaderLabels(columns)
+                curve_table.setEditTriggers(QTableWidget.NoEditTriggers)
+                curve_table.setRowCount(n)
+                for r in range(n):
+                    c = 0
+                    if "Spectrum" in columns:
+                        curve_table.setItem(r, c, QTableWidgetItem(str(labels[r])))
+                        c += 1
+                    curve_table.setItem(r, c, QTableWidgetItem(fmt(temps[r])))
+                    c += 1
+                    curve_table.setItem(r, c, QTableWidgetItem(fmt(raw[r]) if raw is not None and r < len(raw) else ""))
+                    c += 1
+                    if "Normalized" in columns:
+                        curve_table.setItem(r, c, QTableWidgetItem(fmt(norm[r])))
+                        c += 1
+                    if "Fit" in columns:
+                        curve_table.setItem(r, c, QTableWidgetItem(fmt(fit_y[r])))
+                        c += 1
+                    for i, comp in enumerate(component_list):
+                        if not isinstance(comp, dict):
+                            continue
+                        prefix = "" if single_component else f"Component {i + 1}: "
+                        recon_col = f"{prefix}Data (reconstructed)"
+                        if recon_col in columns:
+                            y_local_data = comp.get('y_local_data')
+                            curve_table.setItem(r, c, QTableWidgetItem(fmt(y_local_data[r])))
+                            c += 1
+                        model_col = f"{prefix}Model"
+                        if model_col in columns:
+                            y_pure = comp.get('y_pure')
+                            curve_table.setItem(r, c, QTableWidgetItem(fmt(y_pure[r])))
+                            c += 1
+                # Interactive, not Stretch: a multi-component fit can
+                # add several "Component N: Data (reconstructed)"/
+                # "Component N: Model" columns, and Stretch
+                # forces every column to squeeze into the visible width
+                # regardless of content -- which is exactly what clipped
+                # those longer header names down to a few characters,
+                # with no way to see the rest (no scrollbar ever
+                # appears in Stretch mode, since nothing is ever wider
+                # than the viewport by construction). Interactive sizes
+                # each column to fit its own header/content up front
+                # (resizeColumnsToContents(), below) and lets the user
+                # drag any column narrower/wider afterward; a normal
+                # horizontal scrollbar appears on its own whenever the
+                # total column width exceeds the table's viewport.
+                curve_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+                curve_table.resizeColumnsToContents()
+                layout.addWidget(curve_table)
+        except Exception:
+            logger.warning("Melting Curve Analysis detail dialog: failed building "
+                            "the per-temperature curve table", exc_info=True)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch()
+
+        # Same small orange "?" pattern used throughout this app (e.g.
+        # NormalizationDialog's own result-scaling/preset info buttons) --
+        # "Data (reconstructed)" and "Model" read as two arbitrary curves
+        # without knowing one is real (isolated) data and the other a
+        # noise-free theoretical curve; this explains the difference
+        # without sending the user to the main Help window.
+        component_info_button = QPushButton('?')
+        component_info_button.setFixedWidth(24)
+        component_info_button.setToolTip(
+            "Explain 'Data (reconstructed)' vs. 'Model' in the table above")
+        component_info_button.setStyleSheet(
+            'QPushButton {'
+            '  background-color: #F57C00;'
+            '  color: white;'
+            '  border: none;'
+            '  border-radius: 4px;'
+            '  font-weight: bold;'
+            '}'
+            'QPushButton:hover { background-color: #E65100; }'
+        )
+        component_info_button.clicked.connect(
+            lambda: self._show_component_columns_info(dialog))
+        button_row.addWidget(component_info_button)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(dialog.reject)
+        # QDialogButtonBox defaults to an Expanding horizontal size
+        # policy -- with nothing after it in this row, it silently
+        # claimed the rest of the row's width and right-aligned its
+        # own Close button inside that extra space, opening up a gap
+        # between it and the "?" button that looked like "?" was
+        # floating in the middle of the row rather than sitting next
+        # to Close. Fixed size keeps the box (and Close) snug against
+        # "?", which is exactly what the addStretch() above is
+        # already there to arrange.
+        button_box.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        button_row.addWidget(button_box)
+        layout.addLayout(button_row)
+
+        dialog.exec_()
+
+
+    def _show_component_columns_info(self, parent):
+        """Brief popup behind the "?" next to Close in the Fit & Curve
+        Detail dialog -- explains the two per-component curve-table columns
+        added for a multi-transition Sigmoid Fit. The full version of this
+        (with the reconstruction formula) lives in the main Melting Curve
+        Analysis help under 'Per-component Arrhenius plots' / 'Implementation
+        Details' -- this is the short, in-context version."""
+        QMessageBox.information(
+            parent, "Data (reconstructed) vs. Model",
+            "<b>Model</b><br>"
+            "This component's own ideal, noise-free sigmoid curve — the "
+            "shape function evaluated at this component's own fitted "
+            "midpoint/width alone, with no noise and no rescaling by its "
+            "factor.<br><br>"
+            "<b>Data (reconstructed)</b><br>"
+            "This component's own isolated slice of the REAL measured "
+            "curve — the whole fit's residual (measured minus the total "
+            "fit) added back to just this component's own contribution, "
+            "then rescaled by its own factor. Still real, noisy data, not "
+            "a second fit.<br><br>"
+            "Comparing the two shows how well the idealized shape actually "
+            "matches the real, isolated data for that one transition — the "
+            "same relationship the main curve's <b>Normalized</b> and "
+            "<b>Fit</b> columns show for the whole series, just one "
+            "component at a time. See the Melting Curve Analysis help's "
+            "own 'Per-component Arrhenius plots' section for the full "
+            "explanation, including the exact reconstruction formula.")
 
     def setup_copy_operation_parameters(self):
         """Set up parameters table for the generic 'copy operation' record
@@ -2398,6 +2782,10 @@ class OperationParametersDialog(QDialog):
                   and self.operation_name.startswith("Peak Fitting")):
                 rows = value_item.data(Qt.UserRole)
                 self.show_peak_fitting_details_dialog(rows)
+            elif (param_name == "Fit & Curve Detail" and "Click to view" in value_item.text()
+                  and self.operation_name.startswith("Melting Curve Analysis")):
+                detail = value_item.data(Qt.UserRole)
+                self.show_melting_curve_fit_details_dialog(detail)
             elif param_name == "Spectra Created" and "Click to view" in value_item.text():
                 pairs = value_item.data(Qt.UserRole)
                 self.show_copy_operation_pairs_dialog(pairs)

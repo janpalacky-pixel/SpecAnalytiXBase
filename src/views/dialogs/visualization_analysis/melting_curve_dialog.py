@@ -3177,8 +3177,18 @@ class MeltingCurveDialog(QDialog):
         # "uncheck both curve panels, Extract Curve again, re-check them"
         # bug: the guess-preview curve ended up drawn on the Original
         # (raw-scale) panel because normalization genuinely hadn't run.
+        #
+        # Passes this method's own 'silent' through (was hardcoded True)
+        # so that a genuine baseline-fit failure (see
+        # MeltingCurveManager.normalize_melting_curve's LinAlgError
+        # handling) surfaces its warning on a real extraction — fresh or
+        # user-edited, called with silent=False — while staying quiet
+        # for the cache-restore path (perform_extraction(silent=True), a
+        # reopen with unchanged data) and for every live baseline-slider
+        # drag, which calls _run_current_normalization(silent=True)
+        # directly and is untouched by this change.
         if self.norm_combo.currentIndex() != 0:
-            self._run_current_normalization(silent=True)
+            self._run_current_normalization(silent=silent)
         else:
             self.update_plot()
 
@@ -3464,9 +3474,15 @@ class MeltingCurveDialog(QDialog):
 
         if result is None:
             if not silent:
-                QMessageBox.warning(self, "Normalization Failed",
-                                    "No data points fall inside one or both baseline regions. "
-                                    "Widen the Low-T / High-T ranges.")
+                # last_normalization_error is set only for the "the fit
+                # itself failed" case (e.g. degenerate baseline-region
+                # data) -- the plain empty-mask case leaves it None, so
+                # the original wording still applies there.
+                QMessageBox.warning(
+                    self, "Normalization Failed",
+                    getattr(self.manager, 'last_normalization_error', None)
+                    or "No data points fall inside one or both baseline regions. "
+                       "Widen the Low-T / High-T ranges.")
             return
 
         self.normalization_result = result

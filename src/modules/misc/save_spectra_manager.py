@@ -609,6 +609,20 @@ class SaveManager:
                 if hasattr(op.operations_manager, 'import_batches'):
                     state['operations']['import_batches'] = op.operations_manager.import_batches
 
+        # Melting Curve Analysis' "Saved Fits" -- a named container of
+        # complete result snapshots (curve, fit, thermodynamics) the user
+        # explicitly asked to keep around for comparison via "Save Current
+        # Fit", independent of whatever curve is currently active. Unlike
+        # the many small "last dialog settings" caches elsewhere in this
+        # app (never snapshotted -- they're throwaway conveniences), this
+        # one holds content the user deliberately chose to keep, so losing
+        # it on every snapshot load defeats its own purpose. Only written
+        # when there's actually something in it, same reasoning as the
+        # None-filtering on plot_settings above.
+        mcc = getattr(main_controller, 'melting_curve_controller', None)
+        if mcc is not None and getattr(mcc, 'saved_fits', None):
+            state['melting_curve_saved_fits'] = mcc.saved_fits
+
         return state
 
     @staticmethod
@@ -954,6 +968,10 @@ class SaveManager:
                 self._report_progress(progress_callback, 4, "Restoring operations history…")
                 self._restore_operations(main_controller, state['operations'])
 
+            if 'melting_curve_saved_fits' in state:
+                self._restore_melting_curve_saved_fits(
+                    main_controller, state['melting_curve_saved_fits'])
+
             if hasattr(main_controller, 'spectrum_selector'):
                 self._report_progress(progress_callback, 5, "Restoring spectrum selection…")
                 self._restore_spectrum_selection(main_controller, state)
@@ -1162,6 +1180,34 @@ class SaveManager:
             # triggers exactly one render after every piece of state (UI,
             # operations, selection) has been restored, so the grid/plot
             # isn't rebuilt multiple times over the course of one load.
+
+    def _restore_melting_curve_saved_fits(self, main_controller, saved_fits: dict) -> None:
+        """Restore Melting Curve Analysis' "Saved Fits" container (see
+        _build_state's comment on why this -- unlike every other dialog's
+        in-memory "last settings" cache -- is worth snapshotting: the user
+        explicitly chose to keep each entry via "Save Current Fit").
+
+        Restored in place (clear() + update() on the existing dict, never a
+        reassignment) because MeltingCurveController.saved_fits is handed to
+        MeltingCurveDialog BY REFERENCE (see MeltingCurveController.show_dialog);
+        an already-open dialog's reference would go stale if this replaced
+        the dict object instead of mutating it.
+
+        A problem here shouldn't abort the rest of the snapshot load -- same
+        defensive spirit as _restore_operations below.
+        """
+        try:
+            if not hasattr(main_controller, 'melting_curve_controller'):
+                from src.controllers.visualization_analysis.melting_curve_controller import (
+                    MeltingCurveController)
+                main_controller.melting_curve_controller = MeltingCurveController(main_controller)
+            mcc = main_controller.melting_curve_controller
+            mcc.saved_fits.clear()
+            mcc.saved_fits.update(saved_fits)
+        except Exception:
+            logger.warning(
+                "Snapshot: failed restoring Melting Curve Analysis Saved Fits",
+                exc_info=True)
 
     def _restore_operations(self, main_controller, ops: dict) -> None:
         """
