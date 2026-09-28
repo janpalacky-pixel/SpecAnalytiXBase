@@ -19,7 +19,7 @@ SpecAnalytiXBase is built around a single spectra list: import data from several
 
 Spectra can also be exported back out to text, Excel, and SPC.
 
-## Processing Operations (18)
+## Processing Operations (19)
 
 **Baseline Correction** — Manual Baseline Correction, Automated Baseline Correction, SNIP Baseline, SVD Background
 
@@ -27,7 +27,7 @@ Spectra can also be exported back out to text, Excel, and SPC.
 
 **Data Manipulation** — Data Range, Combine Spectra, Interactive Subtraction, X-Axis Alignment, SVD Interpolation
 
-**Axis & Unit Conversion** — Spectral Calculator, Normalization, CD Unit Conversion, X-axis Unit Conversion
+**Axis & Unit Conversion** — Spectral Calculator, Normalization, CD Unit Conversion, X-axis Unit Conversion, Mean-Center Spectra (Dataset)
 
 **Spike Removal** — Spike Removal, Cosmic Ray Removal
 
@@ -35,9 +35,9 @@ Spectra can also be exported back out to text, Excel, and SPC.
 
 Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it on a new batch of spectra.
 
-## Analysis & Visualization Tools (15)
+## Analysis & Visualization Tools (16)
 
-**Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, 2D Map, 2D Correlation, PLS/PLS-DA
+**Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, Self-Organizing Map (SOM), 2D Map, 2D Correlation, PLS/PLS-DA
 
 **Data Analysis** — Peak Fitting, Band Ratio, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection
 
