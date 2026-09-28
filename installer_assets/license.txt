@@ -36,6 +36,7 @@ understand the terms of this License Agreement.
 
 For any inquiries, please contact:
 
+    Jan Palacky, Ph.D. -- lead developer
     Institute of Biophysics of the Czech Academy of Sciences (BFU)
     Email: janpalacky@ibp.cz
     Institute website: https://www.ibp.cz/en/

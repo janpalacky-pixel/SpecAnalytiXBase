@@ -32,5 +32,6 @@ the terms.
 Questions, bug reports, collaboration
 ----------------------------------------
 
+    Contact:             Jan Palacky, Ph.D. -- lead developer
     Email:               janpalacky@ibp.cz
     Research group page: https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile
