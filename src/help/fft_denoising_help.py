@@ -72,8 +72,8 @@ def get_fft_denoising_help_content():
             update live. Each click adds a band to the same stop-bands table below,
             so everything being removed shows up in one place.</li>
         <li>Optionally add more specific <strong>stop-bands</strong> by hand (F low /
-            F high + Add band) to target a narrow noise spike visible in the power
-            spectrum.</li>
+            F high + Add, both on the same row) to target a narrow noise spike visible
+            in the power spectrum.</li>
         <li>Click <strong>Apply</strong> to replace the selected spectra with the denoised
             result, or <strong>Add as New</strong> to keep the originals and add the result
             under new names.</li>
@@ -141,9 +141,9 @@ def get_fft_denoising_help_content():
                 Multiple bands can be stacked — Quick cut bands and manually
                 typed bands all sit in the same list.
                 Values are in the normalised 0–1 scale
-                (not %). Set F low/F high above the table and click
-                <strong>Add band</strong>; click a row in the table to select
-                it — the button relabels itself <strong>Update band</strong>
+                (not %). Set F low/F high and click
+                <strong>Add</strong> (same row as the spinboxes); click a row in the
+                table to select it — the button relabels itself <strong>Update</strong>
                 (with a <strong>Cancel edit</strong> button right next to it) so
                 you can change that band's values in place instead of adding a
                 duplicate. Adding or updating to values that exactly match a
@@ -267,8 +267,8 @@ def get_fft_denoising_help_content():
     <div class="tip">
         <strong>Fine-tuning a Quick cut.</strong> Click Cut low or Cut high once
         to add the band, then select that row in the stop-bands table — its
-        values load into F low/F high below where you can nudge them and click
-        Update band, instead of clicking Cut low/high repeatedly.
+        values load into F low/F high where you can nudge them and click
+        Update, instead of clicking Cut low/high repeatedly.
     </div>
 
     <div class="tip">

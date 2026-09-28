@@ -108,6 +108,16 @@ def get_combine_spectra_help_content():
         main list. If the chosen name already exists, a numeric suffix is added
         automatically (e.g. <em>Avg_of_5_spectra_2</em>).</p>
 
+        <div class="tip">
+            <strong>Settings are remembered.</strong> Average/Sum, the output
+            name, and the <b>Show selected spectra with result</b>, <b>Show
+            legend</b>, and <b>Show &plusmn;1 std-dev band</b> checkboxes are all
+            remembered the next time this dialog is opened for the same spectra
+            selection &mdash; whether it was last closed with OK or with Cancel /
+            the window's close button. <b>Shorten names</b> is the one exception:
+            it is never remembered, consistent with every other dialog in the app.
+        </div>
+
         <h2>Workflow Summary</h2>
         <ol>
             <li>Select two or more spectra with identical x-axes from the main spectrum list.</li>

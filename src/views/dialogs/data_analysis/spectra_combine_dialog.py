@@ -266,6 +266,22 @@ class CombineSpectraDialog(QDialog):
         if name:
             self.name_edit.setText(name)
 
+        # Restoring the radio button above already forced show_variance_cb
+        # off (and disabled) via _on_operation_toggled when op_type is
+        # 'sum' -- get_settings() below can never save True for it
+        # together with a sum operation in normal use, but guard it
+        # explicitly anyway rather than relying on that ordering.
+        if op_type != 'sum':
+            self.show_variance_cb.setChecked(
+                bool(self.current_settings.get('show_variance', False))
+            )
+        self.show_legend_cb.setChecked(
+            bool(self.current_settings.get('show_legend', False))
+        )
+        self.show_selected_cb.setChecked(
+            bool(self.current_settings.get('show_selected', False))
+        )
+
     def _on_commit_clicked(self, add_as_new):
         """Apply or Add as New — validates the name field (same check
         get_settings() already enforces), then commits directly via
@@ -313,6 +329,9 @@ class CombineSpectraDialog(QDialog):
         return {
             'operation_type': 'average' if self.average_radio.isChecked() else 'sum',
             'new_spectrum_name': self.name_edit.text().strip(),
+            'show_variance': self.show_variance_cb.isChecked(),
+            'show_legend': self.show_legend_cb.isChecked(),
+            'show_selected': self.show_selected_cb.isChecked(),
         }
 
     # =================================================================

@@ -1148,20 +1148,32 @@ class OperationsController:
             dialog = BandRatioDialog(self.controller.view, selected_spectra,
                                      current_settings=last_settings,
                                      controller=self.controller.band_ratio_controller)
-            if dialog.exec_() == QDialog.Accepted:
-                settings = dialog.get_settings()
-                if settings:
-                    self.current_parameters["Band Ratio"] = settings.copy()
-                    self.last_op_settings["Band Ratio"]   = settings.copy()
-                    # Actually save the computed ratio(s) to each
-                    # spectrum's metadata and register the operation in
-                    # history — same dead-path issue as Peak Fitting.
-                    # handle_band_ratio() does real work (unlike
-                    # handle_reference_matching(), which is an
-                    # intentional no-op since that tool is fully
-                    # self-contained in its own dialog) but was never
-                    # being called from anywhere reachable.
-                    self.handle_band_ratio()
+            result = dialog.exec_()
+            # Remember whatever was last configured regardless of how the
+            # dialog closed (OK, Cancel, or the window's own X) -- every
+            # other dialog in this app (CD/X-axis unit conversion, FFT
+            # Denoising, Combine Spectra, ...) remembers settings on any
+            # close, and this dialog's OK/Cancel pair is otherwise
+            # confusingly inconsistent with that if only OK does it.
+            # get_settings() reads straight from the dialog's own current
+            # widget state, so it's just as valid to read after Cancel/X
+            # as after OK.
+            settings = dialog.get_settings()
+            if settings:
+                self.current_parameters["Band Ratio"] = settings.copy()
+                self.last_op_settings["Band Ratio"]   = settings.copy()
+                self.last_selection_hash = current_selection_hash
+            # Actually saving the computed ratio(s) to each spectrum's
+            # metadata and registering the operation in history stays
+            # gated on OK specifically -- unlike CD/X-axis/FFT/Combine
+            # Spectra, this dialog has no separate Apply/Add as New step;
+            # OK IS its commit action, so Cancel/X must still mean "don't
+            # apply this" even though settings are now remembered either
+            # way. handle_band_ratio() does real work (unlike
+            # handle_reference_matching(), which is an intentional no-op
+            # since that tool is fully self-contained in its own dialog).
+            if result == QDialog.Accepted and settings:
+                self.handle_band_ratio()
 
         elif operation == "Isosbestic Point Detection":
             selected_spectra = self._get_current_state_for_selected_spectra()

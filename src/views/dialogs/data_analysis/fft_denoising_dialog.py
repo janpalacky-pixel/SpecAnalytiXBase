@@ -70,8 +70,8 @@ class FFTDenoisingDialog(QDialog):
         self._stop_bands: list[tuple[float, float]] = []
         # When a row in _bands_table is selected, its bounds are loaded
         # into the F low/F high spinboxes and this tracks which row is
-        # being edited, so "Add band" (relabeled "Update band") updates
-        # that entry in place instead of appending a duplicate. None means
+        # being edited, so "Add" (relabeled "Update") updates that entry
+        # in place instead of appending a duplicate. None means
         # "not currently editing an existing band" — same pattern used by
         # normalization_dialog.py's region editing.
         self._editing_band_row = None
@@ -236,12 +236,12 @@ class FFTDenoisingDialog(QDialog):
         # a separate parallel "Frequency filter" mechanism: this just adds
         # a (0, x) or (x, 1) band to the same stop-bands list below, so
         # there's a single place that shows and controls everything that's
-        # being removed. Low and high each get their own row rather than
-        # sharing one — cramming label + spinbox + button twice into a
-        # single row left "Cut high" truncated in the narrow left panel.
-        quick_low_row = QHBoxLayout()
-        quick_low_row.setSpacing(4)
-        quick_low_row.addWidget(QLabel('Cut below:'))
+        # being removed. Low and high share one row -- short enough labels
+        # and spinboxes that this fits the narrow left panel without
+        # truncating "Cut high", unlike a wider control would.
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(4)
+        quick_row.addWidget(QLabel('Cut below:'))
         self._quick_low_spin = QDoubleSpinBox()
         self._quick_low_spin.setRange(0.0001, 99.9)
         self._quick_low_spin.setDecimals(2)
@@ -252,17 +252,15 @@ class FFTDenoisingDialog(QDialog):
             'Percent of Nyquist below which everything is removed '
             '(removes slowly-varying baseline drift).'
         )
-        quick_low_row.addWidget(self._quick_low_spin)
+        quick_row.addWidget(self._quick_low_spin)
         btn_cut_low = QPushButton('Cut low')
         btn_cut_low.setToolTip('Add a stop-band from 0 up to this value.')
         btn_cut_low.clicked.connect(self._quick_cut_low)
-        quick_low_row.addWidget(btn_cut_low)
-        quick_low_row.addStretch()
-        layout.addLayout(quick_low_row)
+        quick_row.addWidget(btn_cut_low)
 
-        quick_high_row = QHBoxLayout()
-        quick_high_row.setSpacing(4)
-        quick_high_row.addWidget(QLabel('Cut above:'))
+        quick_row.addSpacing(12)
+
+        quick_row.addWidget(QLabel('Cut above:'))
         self._quick_high_spin = QDoubleSpinBox()
         self._quick_high_spin.setRange(0.0001, 99.9)
         self._quick_high_spin.setDecimals(2)
@@ -273,13 +271,13 @@ class FFTDenoisingDialog(QDialog):
             'Percent of Nyquist above which everything is removed '
             '(removes HF electronic/shot noise).'
         )
-        quick_high_row.addWidget(self._quick_high_spin)
+        quick_row.addWidget(self._quick_high_spin)
         btn_cut_high = QPushButton('Cut high')
         btn_cut_high.setToolTip('Add a stop-band from this value up to Nyquist.')
         btn_cut_high.clicked.connect(self._quick_cut_high)
-        quick_high_row.addWidget(btn_cut_high)
-        quick_high_row.addStretch()
-        layout.addLayout(quick_high_row)
+        quick_row.addWidget(btn_cut_high)
+        quick_row.addStretch()
+        layout.addLayout(quick_row)
 
         self._bands_table = QTableWidget(0, 2)
         self._bands_table.setHorizontalHeaderLabels(['F low (0–1)', 'F high (0–1)'])
@@ -300,6 +298,10 @@ class FFTDenoisingDialog(QDialog):
         self._bands_table.itemSelectionChanged.connect(self._on_band_row_selected)
         layout.addWidget(self._bands_table)
 
+        # F low / F high plus Add/Update and Remove all share one row --
+        # they're really one unit (set the values, then act on them), and
+        # this saves the vertical space a separate row for each used to
+        # cost.
         add_row = QHBoxLayout()
         add_row.setSpacing(6)
         add_row.addWidget(QLabel('F low:'))
@@ -317,20 +319,18 @@ class FFTDenoisingDialog(QDialog):
         self._band_hi_spin.setSingleStep(0.01)
         self._band_hi_spin.setValue(0.2)
         add_row.addWidget(self._band_hi_spin)
-        add_row.addStretch()
-        layout.addLayout(add_row)
+        add_row.addSpacing(8)
 
-        btn_row = QHBoxLayout()
-        self._add_band_btn = QPushButton('Add band')
+        self._add_band_btn = QPushButton('Add')
         self._add_band_btn.setToolTip(
             'Add the F low / F high values above as a new stop-band.'
         )
         self._add_band_btn.clicked.connect(self._add_band)
-        btn_row.addWidget(self._add_band_btn)
-        # Cancel edit sits right next to Add/Update band — while editing,
+        add_row.addWidget(self._add_band_btn)
+        # Cancel edit sits right next to Add/Update -- while editing,
         # this is the button you actually reach for, not something at the
         # far end of the row past Remove. Only shown while a band
-        # is selected (i.e. while _add_band_btn reads "Update band").
+        # is selected (i.e. while _add_band_btn reads "Update").
         # QTableWidget does not reliably clear its selection when clicking
         # empty space below the rows, so an explicit way out of edit mode
         # is needed rather than relying on it.
@@ -338,14 +338,15 @@ class FFTDenoisingDialog(QDialog):
         self._cancel_band_edit_btn.setToolTip('Deselect the band and go back to adding a new one.')
         self._cancel_band_edit_btn.setVisible(False)
         self._cancel_band_edit_btn.clicked.connect(self._cancel_band_edit)
-        btn_row.addWidget(self._cancel_band_edit_btn)
+        add_row.addWidget(self._cancel_band_edit_btn)
         rm_btn = QPushButton('Remove')
         rm_btn.setToolTip(
             'Remove the selected stop-band(s).\nCtrl/Shift-click rows in the table to select more than one.'
         )
         rm_btn.clicked.connect(self._remove_band)
-        btn_row.addWidget(rm_btn)
-        layout.addLayout(btn_row)
+        add_row.addWidget(rm_btn)
+        add_row.addStretch()
+        layout.addLayout(add_row)
         return group
 
     # ------------------------------------------------------------------
@@ -546,8 +547,8 @@ class FFTDenoisingDialog(QDialog):
         """Add the F low/F high values above as a new stop-band — or, if a
         band is currently selected in _bands_table (self._editing_band_row
         set by _on_band_row_selected), update that band in place instead.
-        The button itself is relabeled "Update band" while editing, so
-        this single slot covers both cases."""
+        The button itself is relabeled "Update" while editing, so this
+        single slot covers both cases."""
         f_lo, f_hi = self._band_lo_spin.value(), self._band_hi_spin.value()
         if f_lo >= f_hi:
             return
@@ -585,9 +586,9 @@ class FFTDenoisingDialog(QDialog):
 
     def _on_band_row_selected(self):
         """Populate the F low/F high spinboxes when a stop-band row is
-        selected, and switch "Add band" into "Update band" mode (with a
-        "Cancel edit" button appearing alongside it). Deselecting switches
-        back to "Add band".
+        selected, and switch "Add" into "Update" mode (with a "Cancel
+        edit" button appearing alongside it). Deselecting switches back
+        to "Add".
 
         Editing only activates when EXACTLY one row is selected — with
         several selected (for bulk Remove) there's no single band
@@ -604,7 +605,7 @@ class FFTDenoisingDialog(QDialog):
                 self._band_lo_spin.setValue(f_lo)
                 self._band_hi_spin.setValue(f_hi)
                 self._editing_band_row = row
-                self._add_band_btn.setText('Update band')
+                self._add_band_btn.setText('Update')
                 self._add_band_btn.setToolTip(
                     'Update the selected stop-band with the F low / F high values above.'
                 )
@@ -621,7 +622,7 @@ class FFTDenoisingDialog(QDialog):
 
     def _exit_band_edit_mode(self):
         self._editing_band_row = None
-        self._add_band_btn.setText('Add band')
+        self._add_band_btn.setText('Add')
         self._add_band_btn.setToolTip(
             'Add the F low / F high values above as a new stop-band.'
         )
@@ -718,6 +719,24 @@ class FFTDenoisingDialog(QDialog):
             self._stop_bands.append((float(high), 1.0))
         self._refresh_bands_table()
 
+        # View/display preferences -- these don't change what denoising
+        # actually does, only how the dialog's own preview looks, but a
+        # settings dict from before this fix (older projects, Operations
+        # History replay) won't have these keys at all, so each falls
+        # back to this dialog's own existing default rather than forcing
+        # one on dialogs that never had this option.
+        signal_mode_id = s.get('signal_mode')
+        if signal_mode_id is not None:
+            btn = self._signal_mode.button(int(signal_mode_id))
+            if btn is not None:
+                btn.setChecked(True)
+        if 'show_power' in s:
+            self._show_power_cb.setChecked(bool(s['show_power']))
+        if 'show_signal' in s:
+            self._show_signal_cb.setChecked(bool(s['show_signal']))
+        if 'show_legend' in s:
+            self.show_legend_cb.setChecked(bool(s['show_legend']))
+
     def _show_help(self):
         try:
             from src.help.fft_denoising_help import (
@@ -780,6 +799,11 @@ class FFTDenoisingDialog(QDialog):
             'high_cutoff': None,
             'stop_bands':  list(self._stop_bands),
             'window':      'none',
+            # View/display preferences -- see _populate_from_settings.
+            'signal_mode':  self._signal_mode.checkedId(),
+            'show_power':   self._show_power_cb.isChecked(),
+            'show_signal':  self._show_signal_cb.isChecked(),
+            'show_legend':  self.show_legend_cb.isChecked(),
         }
 
 

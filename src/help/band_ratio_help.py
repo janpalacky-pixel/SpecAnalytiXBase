@@ -147,6 +147,18 @@ def get_band_ratio_help_content():
             software.</li>
     </ol>
 
+    <div class="tip">
+        <strong>OK vs. Cancel vs. closing the dialog.</strong> Band A / Band B
+        ranges, metric, and operation are remembered the next time this dialog
+        is opened for the same spectra selection, regardless of whether it was
+        last closed with <strong>OK</strong>, <strong>Cancel</strong>, or the
+        window's own close button. Only <strong>OK</strong> actually commits the
+        ratio &mdash; it writes the computed values into each spectrum's
+        metadata and records the operation in Operations History, the same role
+        Apply / Add as New plays in other dialogs. Cancel and the close button
+        both discard that commit but still keep the settings for next time.
+    </div>
+
     <div class="screenshot">
         <img src="$BAND_CONFIG" width="${BAND_CONFIG_W}" height="${BAND_CONFIG_H}" alt="Band A, Band B, and Operation groupboxes with Configure buttons and metric dropdowns" />
         <p class="caption">Band A / Band B configuration and the Operation dropdown that reveals Band B.</p>

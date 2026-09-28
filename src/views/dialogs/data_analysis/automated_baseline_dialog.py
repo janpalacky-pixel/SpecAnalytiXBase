@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
                              QComboBox, QStackedWidget, QTabWidget, QFrame,
                              QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator,
-                             QAbstractItemView, QApplication)
+                             QAbstractItemView, QApplication, QMessageBox)
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QFont
 import time
@@ -21,6 +21,146 @@ from src.help.automated_baseline_help import (get_automated_baseline_help_conten
                                               get_automated_baseline_help_title)
 from src.help.help_window import show_help_window
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+
+
+BASELINE_METHOD_INFO = {
+    'als': {
+        'label': 'ALS (Asymmetric Least Squares)',
+        'info': (
+            "The classic Eilers/Boelens asymmetric least squares baseline: "
+            "iteratively refits a smooth curve -- controlled by the "
+            "Smoothness (\u03bb) slider, a curvature penalty -- while "
+            "down-weighting points that sit above the fit by a factor of "
+            "1-p (the Asymmetry slider). Most of the other ALS-family "
+            "methods below are refinements of this same idea -- start "
+            "here if you're not sure which one to pick."
+        ),
+    },
+    'airpls': {
+        'label': 'airPLS (adaptive iteratively reweighted PLS)',
+        'info': (
+            "airPLS usually needs a much smaller \u03bb than ALS -- use "
+            "the preview to find a value that follows the background "
+            "without dipping into the peaks. It has no asymmetry "
+            "parameter of its own: its weighting is derived adaptively "
+            "from the residuals each iteration, rather than a fixed p."
+        ),
+    },
+    'arpls': {
+        'label': 'arPLS (asymmetrically reweighted PLS)',
+        'info': (
+            "arPLS re-weights points by how far below a data-driven "
+            "threshold their residual sits, rather than airPLS's "
+            "exponential growth -- often a bit steadier on noisy data. "
+            "Use the preview to compare against ALS/airPLS on your own "
+            "spectra."
+        ),
+    },
+    'iarpls': {
+        'label': 'iarPLS (improved arPLS)',
+        'info': (
+            "A fix for arPLS's known tendency to overestimate the "
+            "baseline under small peaks in noisy data -- same \u03bb "
+            "slider, different internal weighting. Try this first if "
+            "arPLS seems to sit a bit high under small peaks."
+        ),
+    },
+    'aspls': {
+        'label': 'asPLS (adaptive smoothness PLS)',
+        'info': (
+            "Another arPLS-style method, but the smoothness penalty "
+            "itself adapts point-by-point to the residuals instead of "
+            "being applied uniformly -- stiffer where the fit is "
+            "confident, looser near features it's still unsure about."
+        ),
+    },
+    'drpls': {
+        'label': 'drPLS (doubly reweighted PLS)',
+        'info': (
+            "Higher \u03b7 (Peak Relaxation) lets peak regions relax "
+            "more independently of the surrounding baseline's "
+            "smoothness -- 0 behaves closest to arPLS, 1 relaxes the "
+            "peak-region penalty the most."
+        ),
+    },
+    'psalsa': {
+        'label': 'psalsa (peak-decay asymmetric least squares)',
+        'info': (
+            "Peaks are suppressed by exponential decay rather than a "
+            "hard cutoff, which is why a higher p than ALS's still "
+            "works well here. The decay's own peak-height scale (k) is "
+            "set automatically from the spectrum's noise level."
+        ),
+    },
+    'imodpoly': {
+        'label': 'I-ModPoly (improved modified polynomial fit)',
+        'info': (
+            "A single low-order polynomial fit to the whole spectrum, "
+            "with peaks iteratively rejected from the fit -- good for "
+            "smooth, broadly-curved fluorescence backgrounds. Higher "
+            "orders follow more background curvature but risk fitting "
+            "into broad peaks; use the preview to check."
+        ),
+    },
+    'morphological': {
+        'label': 'Morphological Opening (adaptive structuring element)',
+        'info': (
+            "Fully automatic -- no parameters to tune. Repeatedly opens "
+            "the spectrum with a growing structuring element until the "
+            "result stops changing, then refines it to correct for "
+            "band-shape distortion. Good for smooth backgrounds that "
+            "don't fit a fixed polynomial order or global penalty."
+        ),
+    },
+    'mpls': {
+        'label': 'mpls (morphological weighted PLS)',
+        'info': (
+            "Morphological opening picks a handful of trustworthy "
+            "\"anchor\" points and solves ALS's own penalty once -- no "
+            "iterative reweighting. Anchor points always get weight "
+            "1-p; the Non-Anchor Weight slider sets everyone else's "
+            "weight, 0 by default (ignored entirely)."
+        ),
+    },
+    'mollification': {
+        'label': 'Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)',
+        'info': (
+            "Fully automatic -- no parameters to tune. Each pass takes "
+            "the smaller of the raw spectrum and the average of a "
+            "morphological closing/opening of the current baseline "
+            "estimate, then smooths that with a fixed \"mollifier\" "
+            "kernel, repeating until the result stops changing. Good "
+            "when a background's morphology already makes the baseline "
+            "fairly obvious, without an iterative-reweighting or "
+            "single-solve method's own assumptions."
+        ),
+    },
+    'mpspline': {
+        'label': 'mpspline (morphology-based penalized spline)',
+        'info': (
+            "Like mpls, morphology picks a handful of trustworthy "
+            "\"anchor\" points and fits once -- no iterative "
+            "reweighting. Here the fit is a cubic penalized spline "
+            "(fewer effective degrees of freedom than mpls's own "
+            "point-by-point solve) rather than a direct Whittaker "
+            "smoother. Anchor points always get weight 1-p; the "
+            "Non-Anchor Weight slider sets everyone else's weight, 0 by "
+            "default."
+        ),
+    },
+    'jbcd': {
+        'label': 'jbcd (joint baseline-correction and denoising)',
+        'info': (
+            "Jointly solves for a smooth baseline AND a denoised "
+            "spectrum, rather than picking anchor points from "
+            "morphology and fitting once. \u03b1 pulls the baseline "
+            "toward the morphological opening; \u03b2 caps how "
+            "strongly the baseline is smoothed as the fit anneals. "
+            "Slower than the other morphology-family methods, but "
+            "doesn't depend on picking good anchor points."
+        ),
+    },
+}
 
 class _MethodTreeCombo(QWidget):
     """Categorised dropdown for "Baseline Method".
@@ -300,6 +440,30 @@ class _MethodTreeCombo(QWidget):
         self._button.setText(label + arrow)
 
 
+class _CurrentPageStackedWidget(QStackedWidget):
+    """A QStackedWidget sizes itself to the LARGEST of all its pages
+    by default, even while showing a much smaller one -- Qt computes
+    sizeHint()/minimumSizeHint() as the max across every page it holds,
+    not just the current one. That's why "Method Parameters" used to
+    reserve empty vertical space sized for whichever baseline method
+    has the most sliders (e.g. JBCD or drPLS, with two sliders each),
+    regardless of which method is actually selected (e.g. airPLS, with
+    just one). Overriding
+    both hints to consider only the CURRENTLY VISIBLE page, and asking
+    the layout to recompute (updateGeometry()) whenever the page
+    changes via currentChanged (see create_control_panel below), makes
+    the groupbox shrink-wrap to whichever method is actually showing.
+    """
+
+    def sizeHint(self):
+        w = self.currentWidget()
+        return w.sizeHint() if w is not None else super().sizeHint()
+
+    def minimumSizeHint(self):
+        w = self.currentWidget()
+        return w.minimumSizeHint() if w is not None else super().minimumSizeHint()
+
+
 class AutomatedBaselineCanvas(FigureCanvas):
     """Canvas for plotting and selecting exclusion ranges."""
     range_selected = pyqtSignal(float, float)
@@ -519,9 +683,10 @@ class AutomatedBaselineDialog(QDialog):
         self.mpls_p_slider.setValue(slider_mpls_p_val)
 
         # Load mpspline's own lambda/p -- same p convention as mpls
-        # (see this page's own note below), but a different lambda
-        # default/scale since mpspline penalizes spline coefficients,
-        # not the data grid (see calculate_mpspline_baseline).
+        # (see BASELINE_METHOD_INFO['mpspline'], shown via the Method
+        # Info button), but a different lambda default/scale since
+        # mpspline penalizes spline coefficients, not the data grid
+        # (see calculate_mpspline_baseline).
         mpspline_lam_val = self.current_settings.get('lambda', 1e4) if algorithm == 'mpspline' else 1e4
         slider_mpspline_lam_val = int(np.clip(
             10 * np.log10(mpspline_lam_val), self.mpspline_lam_slider.minimum(), self.mpspline_lam_slider.maximum()))
@@ -569,6 +734,12 @@ class AutomatedBaselineDialog(QDialog):
         spectra_group = QGroupBox("Preview Spectrum")
         spectra_layout = QVBoxLayout()
         self.spectra_list = QListWidget()
+        # Expanding (rather than the default Preferred) so this list -- not
+        # empty space -- is what grows when other groupboxes in this panel
+        # need less vertical room than the layout has available (see the
+        # spectra_group stretch factor below, and _CurrentPageStackedWidget's
+        # docstring for where that freed room usually comes from).
+        self.spectra_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.spectra_list.addItems([s['label'] for s in self.selected_spectra])
         # Display-only "shorten names" — selection is read back
         # positionally (see on_spectrum_selected's .row(item)), never by
@@ -585,7 +756,10 @@ class AutomatedBaselineDialog(QDialog):
         )
         spectra_layout.addWidget(self.checkBox_shorten_names)
         spectra_group.setLayout(spectra_layout)
-        layout.addWidget(spectra_group)
+        # Stretch factor 1: every other groupbox in this panel takes
+        # exactly its own sizeHint (stretch 0), so this is the one that
+        # absorbs whatever vertical space they don't need.
+        layout.addWidget(spectra_group, 1)
 
         # Baseline Method — switches the stacked parameter panel below.
         # userData on each entry is the params['algorithm'] value used
@@ -597,21 +771,48 @@ class AutomatedBaselineDialog(QDialog):
         _ALS_FAMILY = "ALS / Whittaker-smoothing family"
         _POLY_FAMILY = "Polynomial"
         _MORPH_FAMILY = "Morphological family"
-        self.method_combo.addItem("ALS (Asymmetric Least Squares)", "als", _ALS_FAMILY)
-        self.method_combo.addItem("airPLS (adaptive iteratively reweighted PLS)", "airpls", _ALS_FAMILY)
-        self.method_combo.addItem("arPLS (asymmetrically reweighted PLS)", "arpls", _ALS_FAMILY)
-        self.method_combo.addItem("iarPLS (improved arPLS)", "iarpls", _ALS_FAMILY)
-        self.method_combo.addItem("asPLS (adaptive smoothness PLS)", "aspls", _ALS_FAMILY)
-        self.method_combo.addItem("drPLS (doubly reweighted PLS)", "drpls", _ALS_FAMILY)
-        self.method_combo.addItem("psalsa (peak-decay asymmetric least squares)", "psalsa", _ALS_FAMILY)
-        self.method_combo.addItem("I-ModPoly (improved modified polynomial fit)", "imodpoly", _POLY_FAMILY)
-        self.method_combo.addItem("Morphological Opening (adaptive structuring element)", "morphological", _MORPH_FAMILY)
-        self.method_combo.addItem("mpls (morphological weighted PLS)", "mpls", _MORPH_FAMILY)
-        self.method_combo.addItem("Morphology + Mollification (Koch/Suhr; Chen/Xu/Broderick)", "mollification", _MORPH_FAMILY)
-        self.method_combo.addItem("mpspline (morphology-based penalized spline)", "mpspline", _MORPH_FAMILY)
-        self.method_combo.addItem("jbcd (joint baseline-correction and denoising)", "jbcd", _MORPH_FAMILY)
+        # Labels come from BASELINE_METHOD_INFO (declared above this
+        # class) so the dropdown text and the Method Info popup can never
+        # drift apart -- see that dict's own docstring comment.
+        _M = BASELINE_METHOD_INFO
+        self.method_combo.addItem(_M['als']['label'], 'als', _ALS_FAMILY)
+        self.method_combo.addItem(_M['airpls']['label'], 'airpls', _ALS_FAMILY)
+        self.method_combo.addItem(_M['arpls']['label'], 'arpls', _ALS_FAMILY)
+        self.method_combo.addItem(_M['iarpls']['label'], 'iarpls', _ALS_FAMILY)
+        self.method_combo.addItem(_M['aspls']['label'], 'aspls', _ALS_FAMILY)
+        self.method_combo.addItem(_M['drpls']['label'], 'drpls', _ALS_FAMILY)
+        self.method_combo.addItem(_M['psalsa']['label'], 'psalsa', _ALS_FAMILY)
+        self.method_combo.addItem(_M['imodpoly']['label'], 'imodpoly', _POLY_FAMILY)
+        self.method_combo.addItem(_M['morphological']['label'], 'morphological', _MORPH_FAMILY)
+        self.method_combo.addItem(_M['mpls']['label'], 'mpls', _MORPH_FAMILY)
+        self.method_combo.addItem(_M['mollification']['label'], 'mollification', _MORPH_FAMILY)
+        self.method_combo.addItem(_M['mpspline']['label'], 'mpspline', _MORPH_FAMILY)
+        self.method_combo.addItem(_M['jbcd']['label'], 'jbcd', _MORPH_FAMILY)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_layout.addWidget(self.method_combo)
+
+        # "? Method info" -- same pattern as NormalizationDialog's own
+        # button: the description that used to sit as a fixed, always-
+        # visible QLabel inside each method's params page (wasting
+        # vertical space for whichever method's note happened to be
+        # longest) now shows on demand instead, for whichever method is
+        # currently selected in the combo above.
+        self.method_info_button = QPushButton('? Method info')
+        self.method_info_button.setToolTip('Show a description of the selected baseline method')
+        self.method_info_button.setStyleSheet(
+            'QPushButton {'
+            '  background-color: #F57C00;'
+            '  color: white;'
+            '  border: none;'
+            '  border-radius: 4px;'
+            '  padding: 3px 8px;'
+            '  font-weight: bold;'
+            '}'
+            'QPushButton:hover { background-color: #E65100; }'
+        )
+        self.method_info_button.clicked.connect(self._show_method_info)
+        method_layout.addWidget(self.method_info_button, alignment=Qt.AlignRight)
+
         method_group.setLayout(method_layout)
         layout.addWidget(method_group)
 
@@ -652,13 +853,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: airpls_lam_label.setText(f"Smoothness (λ): {10**(v/10.0):.3g}"))
         self.airpls_lam_slider.valueChanged.connect(self.update_preview)
         airpls_layout.addWidget(airpls_lam_label); airpls_layout.addWidget(self.airpls_lam_slider)
-        airpls_note = QLabel(
-            "airPLS usually needs a much smaller λ than ALS — use the\n"
-            "preview to find a value that follows the background\n"
-            "without dipping into the peaks."
-        )
-        airpls_note.setStyleSheet("color: gray; font-style: italic;")
-        airpls_layout.addWidget(airpls_note)
 
         # arPLS Parameters -- its own lambda slider, but on ALS's scale
         # (range 20-90 -> 1e2-1e9), not airPLS's much smaller one: arPLS
@@ -679,15 +873,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: arpls_lam_label.setText(f"Smoothness (λ): 1e{v/10:.1f}"))
         self.arpls_lam_slider.valueChanged.connect(self.update_preview)
         arpls_layout.addWidget(arpls_lam_label); arpls_layout.addWidget(self.arpls_lam_slider)
-        arpls_note = QLabel(
-            "arPLS re-weights points by how far below a data-driven\n"
-            "threshold their residual sits, rather than airPLS's\n"
-            "exponential growth -- often a bit steadier on noisy data.\n"
-            "Use the preview to compare against ALS/airPLS on your own\n"
-            "spectra."
-        )
-        arpls_note.setStyleSheet("color: gray; font-style: italic;")
-        arpls_layout.addWidget(arpls_note)
 
         # iarPLS Parameters -- its own lambda slider, same scale as
         # arPLS's (arPLS's second-order-penalty solver, unchanged): the
@@ -706,14 +891,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: iarpls_lam_label.setText(f"Smoothness (λ): 1e{v/10:.1f}"))
         self.iarpls_lam_slider.valueChanged.connect(self.update_preview)
         iarpls_layout.addWidget(iarpls_lam_label); iarpls_layout.addWidget(self.iarpls_lam_slider)
-        iarpls_note = QLabel(
-            "A fix for arPLS's known tendency to overestimate the\n"
-            "baseline under small peaks in noisy data -- same λ slider,\n"
-            "different internal weighting. Try this first if arPLS\n"
-            "seems to sit a bit high under small peaks."
-        )
-        iarpls_note.setStyleSheet("color: gray; font-style: italic;")
-        iarpls_layout.addWidget(iarpls_note)
 
         # asPLS Parameters -- its own λ slider, same scale as arPLS's
         # (same second-order-penalty family): the adaptive part (the
@@ -732,14 +909,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: aspls_lam_label.setText(f"Smoothness (\u03bb): 1e{v/10:.1f}"))
         self.aspls_lam_slider.valueChanged.connect(self.update_preview)
         aspls_layout.addWidget(aspls_lam_label); aspls_layout.addWidget(self.aspls_lam_slider)
-        aspls_note = QLabel(
-            "Another arPLS-style method, but the smoothness penalty\n"
-            "itself adapts point-by-point to the residuals instead of\n"
-            "being applied uniformly -- stiffer where the fit is\n"
-            "confident, looser near features it's still unsure about."
-        )
-        aspls_note.setStyleSheet("color: gray; font-style: italic;")
-        aspls_layout.addWidget(aspls_note)
 
         # drPLS Parameters -- its own λ slider on arPLS's scale, plus a
         # second slider for eta (0-1): how much the smoothness penalty
@@ -766,14 +935,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: drpls_eta_label.setText(f"Peak Relaxation (\u03b7): {v/100:.2f}"))
         self.drpls_eta_slider.valueChanged.connect(self.update_preview)
         drpls_layout.addWidget(drpls_eta_label); drpls_layout.addWidget(self.drpls_eta_slider)
-        drpls_note = QLabel(
-            "Higher \u03b7 lets peak regions relax more independently\n"
-            "of the surrounding baseline's smoothness -- 0 behaves\n"
-            "closest to arPLS, 1 relaxes the peak-region penalty\n"
-            "the most."
-        )
-        drpls_note.setStyleSheet("color: gray; font-style: italic;")
-        drpls_layout.addWidget(drpls_note)
 
         # psalsa Parameters -- its own λ slider on ALS's scale (same
         # second-order-penalty solver, same range/default as the ALS
@@ -803,14 +964,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: psalsa_p_label.setText(f"Asymmetry (p): {v/100:.2f}"))
         self.psalsa_p_slider.valueChanged.connect(self.update_preview)
         psalsa_layout.addWidget(psalsa_p_label); psalsa_layout.addWidget(self.psalsa_p_slider)
-        psalsa_note = QLabel(
-            "Peaks are suppressed by exponential decay rather than a\n"
-            "hard cutoff, which is why a higher p than ALS's still\n"
-            "works well here. The decay's own peak-height scale (k)\n"
-            "is set automatically from the spectrum's noise level."
-        )
-        psalsa_note.setStyleSheet("color: gray; font-style: italic;")
-        psalsa_layout.addWidget(psalsa_note)
 
         # I-ModPoly Parameters -- a single polynomial order, not a
         # lambda: I-ModPoly fits one global low-order polynomial rather
@@ -830,33 +983,19 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: imodpoly_order_label.setText(f"Polynomial Order: {v}"))
         self.imodpoly_order_slider.valueChanged.connect(self.update_preview)
         imodpoly_layout.addWidget(imodpoly_order_label); imodpoly_layout.addWidget(self.imodpoly_order_slider)
-        imodpoly_note = QLabel(
-            "A single low-order polynomial fit to the whole spectrum,\n"
-            "with peaks iteratively rejected from the fit -- good for\n"
-            "smooth, broadly-curved fluorescence backgrounds. Higher\n"
-            "orders follow more background curvature but risk fitting\n"
-            "into broad peaks; use the preview to check."
-        )
-        imodpoly_note.setStyleSheet("color: gray; font-style: italic;")
-        imodpoly_layout.addWidget(imodpoly_note)
 
         # Morphological Opening Parameters -- deliberately no controls at
         # all. Unlike every other method here, it has no smoothness,
         # asymmetry, or order parameter to expose: the structuring
         # element it would otherwise need is grown automatically until
         # the result stops changing (see calculate_morphological_baseline).
-        # This page exists only so the stack has something to show and
-        # the explanatory note has somewhere to live.
+        # The full explanation lives in BASELINE_METHOD_INFO, behind the
+        # Method Info button -- this page just needs a short pointer to
+        # it so an empty-looking panel doesn't read as broken.
         morph_params_page = QWidget()
         morph_layout = QVBoxLayout(morph_params_page)
         morph_layout.setContentsMargins(0, 0, 0, 0)
-        morph_note = QLabel(
-            "Fully automatic -- no parameters to tune. Repeatedly opens\n"
-            "the spectrum with a growing structuring element until the\n"
-            "result stops changing, then refines it to correct for\n"
-            "band-shape distortion. Good for smooth backgrounds that\n"
-            "don't fit a fixed polynomial order or global penalty."
-        )
+        morph_note = QLabel("No adjustable parameters for this method -- see Method Info.")
         morph_note.setStyleSheet("color: gray; font-style: italic;")
         morph_layout.addWidget(morph_note)
         morph_layout.addStretch()
@@ -888,15 +1027,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: mpls_p_label.setText(f"Non-Anchor Weight (p): {v/100:.2f}"))
         self.mpls_p_slider.valueChanged.connect(self.update_preview)
         mpls_layout.addWidget(mpls_p_label); mpls_layout.addWidget(self.mpls_p_slider)
-        mpls_note = QLabel(
-            "Morphological opening picks a handful of trustworthy\n"
-            '"anchor" points and solves ALS\'s own penalty once --\n'
-            "no iterative reweighting. Anchor points always get\n"
-            "weight 1-p; this slider sets everyone else's weight,\n"
-            "0 by default (ignored entirely)."
-        )
-        mpls_note.setStyleSheet("color: gray; font-style: italic;")
-        mpls_layout.addWidget(mpls_note)
 
         # Morphology + Mollification Parameters -- fully parameter-free,
         # same spirit as Morphological Opening's own page: the
@@ -906,16 +1036,7 @@ class AutomatedBaselineDialog(QDialog):
         mollification_params_page = QWidget()
         mollification_layout = QVBoxLayout(mollification_params_page)
         mollification_layout.setContentsMargins(0, 0, 0, 0)
-        mollification_note = QLabel(
-            'Fully automatic -- no parameters to tune. Each pass takes\n'
-            'the smaller of the raw spectrum and the average of a\n'
-            'morphological closing/opening of the current baseline\n'
-            'estimate, then smooths that with a fixed "mollifier"\n'
-            'kernel, repeating until the result stops changing. Good\n'
-            "when a background's morphology already makes the\n"
-            'baseline fairly obvious, without an iterative-reweighting\n'
-            "or single-solve method's own assumptions."
-        )
+        mollification_note = QLabel("No adjustable parameters for this method -- see Method Info.")
         mollification_note.setStyleSheet("color: gray; font-style: italic;")
         mollification_layout.addWidget(mollification_note)
         mollification_layout.addStretch()
@@ -947,17 +1068,6 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: mpspline_p_label.setText(f"Non-Anchor Weight (p): {v/100:.2f}"))
         self.mpspline_p_slider.valueChanged.connect(self.update_preview)
         mpspline_layout.addWidget(mpspline_p_label); mpspline_layout.addWidget(self.mpspline_p_slider)
-        mpspline_note = QLabel(
-            "Like mpls, morphology picks a handful of trustworthy\n"
-            '"anchor" points and fits once -- no iterative\n'
-            "reweighting. Here the fit is a cubic penalized spline\n"
-            "(fewer effective degrees of freedom than mpls's own\n"
-            "point-by-point solve) rather than a direct Whittaker\n"
-            "smoother. Anchor points always get weight 1-p; this\n"
-            "slider sets everyone else's weight, 0 by default."
-        )
-        mpspline_note.setStyleSheet("color: gray; font-style: italic;")
-        mpspline_layout.addWidget(mpspline_note)
 
 
         # jbcd Parameters -- unlike every other morphology-family method
@@ -988,21 +1098,10 @@ class AutomatedBaselineDialog(QDialog):
             lambda v: jbcd_beta_label.setText(f"Baseline Smoothness Ceiling (β): {float(v):.1f}"))
         self.jbcd_beta_slider.valueChanged.connect(self.update_preview)
         jbcd_layout.addWidget(jbcd_beta_label); jbcd_layout.addWidget(self.jbcd_beta_slider)
-        jbcd_note = QLabel(
-            "Jointly solves for a smooth baseline AND a denoised\n"
-            "spectrum, rather than picking anchor points from\n"
-            "morphology and fitting once. α pulls the baseline\n"
-            "toward the morphological opening; β caps how strongly\n"
-            "the baseline is smoothed as the fit anneals. Slower\n"
-            "than the other morphology-family methods, but doesn't\n"
-            "depend on picking good anchor points."
-        )
-        jbcd_note.setStyleSheet("color: gray; font-style: italic;")
-        jbcd_layout.addWidget(jbcd_note)
 
         params_group = QGroupBox("Method Parameters")
         params_group_layout = QVBoxLayout()
-        self.params_stack = QStackedWidget()
+        self.params_stack = _CurrentPageStackedWidget()
         self.params_stack.addWidget(als_params_page)       # index 0 == 'als'
         self.params_stack.addWidget(airpls_params_page)    # index 1 == 'airpls'
         self.params_stack.addWidget(arpls_params_page)     # index 2 == 'arpls'
@@ -1016,6 +1115,10 @@ class AutomatedBaselineDialog(QDialog):
         self.params_stack.addWidget(mollification_params_page)  # index 10 == 'mollification'
         self.params_stack.addWidget(mpspline_params_page)      # index 11 == 'mpspline'
         self.params_stack.addWidget(jbcd_params_page)          # index 12 == 'jbcd'
+        # _CurrentPageStackedWidget only overrides the *hints* -- Qt still
+        # needs to be told to re-read them each time the visible page
+        # changes, or the groupbox keeps whatever size it last settled on.
+        self.params_stack.currentChanged.connect(lambda _index: self.params_stack.updateGeometry())
         params_group_layout.addWidget(self.params_stack)
         params_group.setLayout(params_group_layout)
         layout.addWidget(params_group)
@@ -1080,7 +1183,9 @@ class AutomatedBaselineDialog(QDialog):
         regions_group.setLayout(regions_layout)
         layout.addWidget(regions_group)
 
-        layout.addStretch()
+        # No trailing addStretch() here: spectra_group's stretch factor
+        # (see above) is what should absorb any leftover vertical space,
+        # not a spacer between Fitting Regions and the button row.
 
         # Dialog Buttons — Apply / Add as New commit directly via
         # commit_callback, there's no separate Run step in the main window
@@ -1137,6 +1242,20 @@ class AutomatedBaselineDialog(QDialog):
         the same spectrum."""
         self.params_stack.setCurrentIndex(index)
         self.update_preview()
+
+    def _show_method_info(self):
+        """Show a popup with the description of the currently selected
+        baseline method -- see BASELINE_METHOD_INFO (module level, above
+        _MethodTreeCombo) and the "? Method info" button in
+        create_control_panel."""
+        key = self.method_combo.currentData()
+        meta = BASELINE_METHOD_INFO.get(key)
+        if not meta:
+            return
+        QMessageBox.information(
+            self, meta['label'],
+            f"<b>{meta['label']}</b><br><br>{meta['info']}"
+        )
 
     def show_help(self):
         content = get_automated_baseline_help_content()

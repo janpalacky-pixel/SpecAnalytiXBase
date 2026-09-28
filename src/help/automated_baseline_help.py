@@ -16,13 +16,17 @@ def get_automated_baseline_help_content():
             .warning { background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; }
             .tip { background-color: #d4edda; padding: 10px; border-left: 4px solid #28a745; }
             code { background-color: #f1f1f1; padding: 2px 4px; border-radius: 3px; font-family: monospace;}
+            table { border-collapse: collapse; width: 100%; margin: 10px 0 20px 0; }
+            th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+            th { background-color: #E8F5E9; color: #2E7D32; }
+            tr:nth-child(even) { background-color: #f8f8f8; }
         </style>
     </head>
     <body>
         <h1>Automated Baseline Correction Help</h1>
         
         <h2>Overview</h2>
-        <p>This tool offers twelve automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>asPLS</b> (adaptive smoothness Penalized Least Squares), <b>drPLS</b> (doubly reweighted Penalized Least Squares), <b>psalsa</b> (peaked signal's asymmetric least squares algorithm), <b>I-ModPoly</b> (Improved Modified Polynomial fit), <b>Morphological Opening</b> (adaptive structuring element), <b>mpls</b> (morphological weighted Penalized Least Squares), <b>Morphology + Mollification</b>, <b>mpspline</b> (morphology-based penalized spline), and <b>jbcd</b> (joint baseline-correction and denoising) — the first seven fit a locally-penalized smooth curve built up through iterative reweighting, I-ModPoly instead fits a single global polynomial with iterative peak rejection, Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all, mpls combines both ideas with a single non-iterative penalized-least-squares solve through morphology-identified anchor points, Morphology + Mollification combines them a different way — no linear system to solve at all, just repeated min/max operations smoothed by a fixed convolution kernel until the result settles — mpspline combines them yet another way, using morphology to pick out trustworthy points for a non-iterative fit as mpls does, but fitting a compact cubic spline through them instead of mpls's direct Whittaker smoother — and jbcd is the one method here that never singles out anchor points at all, instead solving a single joint equation for a smooth baseline and a denoised spectrum together, pulled toward a morphological opening rather than fit through a handful of points sampled from it. All thirteen are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
+        <p>This tool offers thirteen automated curve-fitting algorithms for detecting and removing curving baselines, chosen with the <b>Baseline Method</b> dropdown: <b>ALS</b> (Asymmetric Least Squares), <b>airPLS</b> (adaptive iteratively reweighted Penalized Least Squares), <b>arPLS</b> (asymmetrically reweighted Penalized Least Squares), <b>iarPLS</b> (improved arPLS), <b>asPLS</b> (adaptive smoothness Penalized Least Squares), <b>drPLS</b> (doubly reweighted Penalized Least Squares), <b>psalsa</b> (peaked signal's asymmetric least squares algorithm), <b>I-ModPoly</b> (Improved Modified Polynomial fit), <b>Morphological Opening</b> (adaptive structuring element), <b>mpls</b> (morphological weighted Penalized Least Squares), <b>Morphology + Mollification</b>, <b>mpspline</b> (morphology-based penalized spline), and <b>jbcd</b> (joint baseline-correction and denoising) — the first seven fit a locally-penalized smooth curve built up through iterative reweighting, I-ModPoly instead fits a single global polynomial with iterative peak rejection, Morphological Opening uses neither, estimating the baseline from local minima/maxima with no fitted model at all, mpls combines both ideas with a single non-iterative penalized-least-squares solve through morphology-identified anchor points, Morphology + Mollification combines them a different way — no linear system to solve at all, just repeated min/max operations smoothed by a fixed convolution kernel until the result settles — mpspline combines them yet another way, using morphology to pick out trustworthy points for a non-iterative fit as mpls does, but fitting a compact cubic spline through them instead of mpls's direct Whittaker smoother — and jbcd is the one method here that never singles out anchor points at all, instead solving a single joint equation for a smooth baseline and a denoised spectrum together, pulled toward a morphological opening rather than fit through a handful of points sampled from it. All thirteen are enhanced with <b>region-specific fitting</b>, letting you define which parts of the spectrum the algorithm should use for its calculation — including one-click <b>Region Shortcuts</b> (e.g. the water/O-H band) that add straight into the same ranges table.</p>
         <p>The <b>Baseline Method</b> dropdown groups these thirteen into three families so the list stays easy to scan: <b>ALS / Whittaker-smoothing family</b> (ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa), <b>Polynomial</b> (I-ModPoly), and <b>Morphological family</b> (Morphological Opening, mpls, Morphology + Mollification, mpspline, jbcd) — click a family heading in the dropdown to expand or collapse it.</p>
 
         <div class="warning">
@@ -32,6 +36,53 @@ def get_automated_baseline_help_content():
             become numerically unstable — see those tools' own help for why. Either algorithm here is
             fine for that purpose; it doesn't need to be a perfect fit, just a reasonable one.
         </div>
+
+
+        <h2>Method Comparison at a Glance</h2>
+        <h3>Three Families</h3>
+        <table>
+            <tr><th>Family</th><th>Methods</th><th>Core idea</th></tr>
+            <tr>
+                <td>ALS / Whittaker-smoothing family (7)</td>
+                <td>ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, psalsa</td>
+                <td>A locally-penalized smooth curve, built up through iterative reweighting of a fidelity-vs-smoothness fit.</td>
+            </tr>
+            <tr>
+                <td>Polynomial (1)</td>
+                <td>I-ModPoly</td>
+                <td>A single global polynomial fit with iterative peak rejection -- no local penalty at all.</td>
+            </tr>
+            <tr>
+                <td>Morphological family (5)</td>
+                <td>Morphological Opening, mpls, Morphology + Mollification, mpspline, jbcd</td>
+                <td>Built from local minima/maxima (erosion/dilation); ranges from parameter-free to genuine hybrids with a fitted model.</td>
+            </tr>
+        </table>
+
+        <h3>ALS / Whittaker-Smoothing Family</h3>
+        <p>Seven methods sharing an iteratively-reweighted, locally-penalized fidelity-vs-smoothness fit.</p>
+        <table>
+            <tr><th>Method</th><th>Fit type</th><th>Parameters</th><th>Relative speed</th><th>Best suited for</th></tr>
+            <tr><td>ALS</td><td>Iterative reweighted least squares</td><td>&lambda;, p</td><td>Fast</td><td>General-purpose baseline; the reference method</td></tr>
+            <tr><td>airPLS</td><td>Iterative, adaptive weights</td><td>&lambda; (own scale)</td><td>Fast</td><td>Automated pipelines -- no asymmetry to tune</td></tr>
+            <tr><td>arPLS</td><td>Iterative, logistic weights</td><td>&lambda; (ALS scale)</td><td>Fast</td><td>Noisy baselines, steadier than airPLS</td></tr>
+            <tr><td>iarPLS</td><td>Iterative, sharpened logistic weights</td><td>&lambda; (arPLS scale)</td><td>Fast</td><td>Noisy data where arPLS overestimates under small peaks</td></tr>
+            <tr><td>asPLS</td><td>Iterative, point-adaptive penalty</td><td>&lambda; (ALS scale)</td><td>Moderate</td><td>Backgrounds whose smoothness genuinely varies by region</td></tr>
+            <tr><td>drPLS</td><td>Iterative, dual penalty + relaxation</td><td>&lambda;, &eta;</td><td>Moderate</td><td>Sloped baselines needing peak-specific relaxation</td></tr>
+            <tr><td>psalsa</td><td>Iterative, exponential peak decay</td><td>&lambda;, p (wide range)</td><td>Fast</td><td>Noisy data with real peaks; p easier to set than ALS</td></tr>
+        </table>
+
+        <h3>Polynomial &amp; Morphological Family</h3>
+        <p>One global polynomial method, plus five methods built from local minima/maxima -- from parameter-free to full hybrids.</p>
+        <table>
+            <tr><th>Method</th><th>Fit type</th><th>Parameters</th><th>Relative speed</th><th>Best suited for</th></tr>
+            <tr><td>I-ModPoly</td><td>Global polynomial, iterative rejection</td><td>Polynomial order</td><td>Moderate</td><td>Broad, genuinely polynomial-shaped fluorescence backgrounds</td></tr>
+            <tr><td>Morphological Opening</td><td>Erosion + dilation, auto window</td><td>None</td><td>Fast</td><td>Quick, parameter-free first look; no background-shape assumption</td></tr>
+            <tr><td>mpls</td><td>Morphology anchors + single Whittaker solve</td><td>&lambda;, p</td><td>Fast</td><td>Baseline fairly obvious from morphology; trust a few clean points</td></tr>
+            <tr><td>Morphology + Mollification</td><td>Iterative min/max + convolution</td><td>None</td><td>Moderate</td><td>Parameter-free alternative when morphology alone under/overshoots</td></tr>
+            <tr><td>mpspline</td><td>Morphology anchors + penalized spline</td><td>&lambda; (own scale), p</td><td>Fast&ndash;Moderate</td><td>Large spectra -- fewer effective degrees of freedom than Whittaker</td></tr>
+            <tr><td>jbcd</td><td>Joint alternating baseline + denoise solve</td><td>&alpha;, &beta;</td><td>Slowest</td><td>Noisy spectra where denoising and baseline-fitting should be joint</td></tr>
+        </table>
 
         <h2>Workflow</h2>
         <ol>
