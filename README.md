@@ -72,11 +72,13 @@ Full documentation is built into the application itself — open the **Help** me
 
 GNU General Public License v3.0 — see [`LICENSE`](LICENSE) for the full text, or [`installer_assets/license.txt`](installer_assets/license.txt) for a plain-language summary. Free to use, modify, and redistribute; modified versions must remain open under the same terms.
 
+Copyright (C) 2026 Institute of Biophysics of the Czech Academy of Sciences, v. v. i. — SpecAnalytiXBase was developed there as an employee work, with the Institute holding the copyright.
+
 Provided "as-is," without warranty of any kind.
 
 ## Contact
 
-Developed at the Institute of Biophysics of the Czech Academy of Sciences (BFU).
+Developed by Jan Palacký, Ph.D., at the Institute of Biophysics of the Czech Academy of Sciences (BFU) — lead developer and point of contact for questions, bug reports, and collaboration.
 
 - Email: [janpalacky@ibp.cz](mailto:janpalacky@ibp.cz)
 - Research group: [Biophysics of Nucleic Acids](https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile)
