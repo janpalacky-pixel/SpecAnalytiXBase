@@ -1637,6 +1637,26 @@ class MainWindow(QMainWindow):
             _act.setToolTip(f"Open {_fname} in the application")
             self.menuHelpTestDatasets2DMaps.addAction(_act)
             self.real_dataset_actions[_fname] = _act
+
+        # The large 2D maps (LARGE_TEST_DATASETS) are never bundled — they're
+        # only ever fetched on demand via "Download large test datasets..."
+        # below. List them here too, right away, rather than only after a
+        # download: open_real_dataset() already reports a clear "not
+        # downloaded yet" message if one is picked before it exists locally,
+        # so there's no need to hide the entry, and no menu rebuild is
+        # needed after a download completes — the action is already here.
+        if LARGE_TEST_DATASETS:
+            self.menuHelpTestDatasets2DMaps.addSeparator()
+        for _label, _fname in LARGE_TEST_DATASETS:
+            _act = QAction(self)
+            _act.setObjectName(f"actionRealDataset_{_fname.replace('/', '_').replace('.', '_')}")
+            _act.setText(f"{_label}  (download required)")
+            _act.setToolTip(
+                f"Open {_fname} in the application. Not downloaded yet? Use "
+                "\u2018Download large test datasets\u2026\u2019 below first."
+            )
+            self.menuHelpTestDatasets2DMaps.addAction(_act)
+            self.real_dataset_actions[_fname] = _act
         self.menuHelpTestDatasetsReal.addMenu(self.menuHelpTestDatasets2DMaps)
 
         self.actionOpenRealFolder = QAction(self)

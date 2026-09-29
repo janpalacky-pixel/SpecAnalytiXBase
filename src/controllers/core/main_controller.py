@@ -1442,7 +1442,16 @@ class MainController(QMainWindow):
     # ------------------------------------------------------------------
 
     def _test_datasets_dir(self, kind='synthetic'):
-        """<app root>/resources/test_data/<kind>/  (kind: 'synthetic' | 'real')."""
+        """<app root>/resources/test_data/<kind>/  (kind: 'synthetic' | 'real').
+
+        This is READ-ONLY at runtime: in a packaged (PyInstaller) build it
+        resolves under sys._MEIPASS, which for a --onedir install sits
+        inside the install directory (e.g. "C:\\Program Files
+        (x86)\\SpecAnalytiXBase\\_internal\\..."). A normal, non-admin
+        user has no write permission there, so nothing should ever be
+        downloaded or otherwise written into this folder — see
+        _downloaded_real_datasets_dir() below for that.
+        """
         import sys, os
         base = getattr(sys, '_MEIPASS', None)
         if base is None:
@@ -1450,8 +1459,31 @@ class MainController(QMainWindow):
                 os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
         return os.path.join(base, 'resources', 'test_data', kind)
 
+    def _downloaded_real_datasets_dir(self):
+        """Writable, per-user folder that the large real-data 2D maps in
+        LARGE_TEST_DATASETS get downloaded into (see
+        open_large_dataset_downloader). These are never bundled — with the
+        app installed or run from source alike, they only ever exist here
+        once downloaded — so, unlike _test_datasets_dir(), this must NOT
+        resolve inside the install directory: a non-admin user has no
+        write permission there (that used to make every download fail with
+        "[Errno 13] Permission denied" against a path under "Program Files
+        (x86)\\...\\_internal\\..."). Follows the same
+        %LOCALAPPDATA%\\SpecAnalytiXBase\\... convention already used for
+        logs/profiles/pipelines (see src/modules/utils/app_logger.py).
+        """
+        import sys, os
+        if sys.platform == 'win32':
+            base = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+            return os.path.join(base, 'SpecAnalytiXBase', 'test_data', 'real')
+        return os.path.join(os.path.expanduser('~'), '.specanalytixbase', 'test_data', 'real')
+
     def open_real_dataset(self, filename):
-        """Open one shipped MEASURED dataset. Unlike the synthetic ones, real
+        """Open one MEASURED dataset — either shipped with the app
+        (REAL_TEST_DATASETS / REAL_TEST_DATASETS_2D_MAPS, under
+        _test_datasets_dir()) or one of the large ones fetched on demand
+        via the downloader (LARGE_TEST_DATASETS, under
+        _downloaded_real_datasets_dir()). Unlike the synthetic ones, real
         data has no known ground truth to check the analysis against.
 
         filename may be a forward-slash relative path (e.g. entries under
@@ -1461,10 +1493,20 @@ class MainController(QMainWindow):
         """
         import os
         from PyQt5.QtWidgets import QMessageBox
-        path = os.path.join(self._test_datasets_dir('real'), *filename.split('/'))
-        if not os.path.exists(path):
-            QMessageBox.warning(self.view, 'Test dataset not found',
-                                f'Could not find:\n{path}')
+        candidates = [
+            os.path.join(self._test_datasets_dir('real'), *filename.split('/')),
+            os.path.join(self._downloaded_real_datasets_dir(), *filename.split('/')),
+        ]
+        path = next((p for p in candidates if os.path.exists(p)), None)
+        if path is None:
+            looked_in = '\n'.join(candidates)
+            QMessageBox.warning(
+                self.view, 'Test dataset not found',
+                f'Could not find {filename}.\n\n'
+                'If this is one of the large downloadable 2D maps, use '
+                'Help \u2192 Test datasets \u2192 Real (measured) \u2192 '
+                '\u2018Download large test datasets\u2026\u2019 first.\n\n'
+                f'Looked in:\n{looked_in}')
             return
         try:
             self.import_controller.execute_paths([path])
@@ -1478,7 +1520,9 @@ class MainController(QMainWindow):
     def open_large_dataset_downloader(self):
         """Open the dialog for fetching real-data 2D maps too large to
         ship in the git repository, hosted as GitHub Release assets
-        instead (see LARGE_TEST_DATASETS in main_window.py)."""
+        instead (see LARGE_TEST_DATASETS in main_window.py). Downloads
+        into _downloaded_real_datasets_dir() — a writable per-user
+        folder, never the (possibly admin-only) install directory."""
         from src.views.main_window import (
             LARGE_TEST_DATASETS, LARGE_TEST_DATASETS_OWNER_REPO,
             LARGE_TEST_DATASETS_RELEASE_TAG,
@@ -1490,7 +1534,7 @@ class MainController(QMainWindow):
             f"/releases/download/{LARGE_TEST_DATASETS_RELEASE_TAG}"
         )
         dlg = DatasetDownloadDialog(
-            self.view, LARGE_TEST_DATASETS, self._test_datasets_dir('real'), base_url)
+            self.view, LARGE_TEST_DATASETS, self._downloaded_real_datasets_dir(), base_url)
         dlg.exec_()
 
     def _reveal_folder(self, folder):

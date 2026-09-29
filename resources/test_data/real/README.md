@@ -64,20 +64,32 @@ GitHub hard-refuses any file over 100 MB, and strongly discourages anything
 over 50 MB — several real 2D maps are well past that. Those are **not**
 committed to git at all; instead they're attached as assets to a GitHub
 Release, and downloaded on demand from inside the app via
-**Help → Test datasets → Real (measured) → Download large test datasets…**,
-which saves them into this folder (`resources/test_data/real/`, or
-`2D map/` for a map — the download filename must match wherever the app
-expects to find it).
+**Help → Test datasets → Real (measured) → Download large test datasets…**.
 
-**Installer builds don't bundle these files either.** `SpecAnalytiXBase.spec`
-copies the whole `resources/` folder as-is (`datas=[('resources', 'resources')]`),
-so any large `.mat` file sitting in this folder at build time gets bundled
-into the exe regardless of git status — that's exactly what happened before
-this note was updated. Before running `BuildInstaller.bat`, make sure none of
-the `LARGE_TEST_DATASETS` files are present locally (delete them from this
-folder if they are — they're gitignored, so this never touches git history).
-Everyone, installer users included, fetches these the same way: via the
-in-app downloader, on demand.
+**They do NOT get saved into this folder.** They're saved into a writable,
+per-user folder instead — `%LOCALAPPDATA%\SpecAnalytiXBase\test_data\real\`
+on Windows, `~/.specanalytixbase/test_data/real/` elsewhere (see
+`MainController._downloaded_real_datasets_dir()`), the same convention
+already used for logs/profiles/pipelines. This folder
+(`resources/test_data/real/`) sits inside the install directory for a
+packaged build, which a non-admin user normally can't write to — that
+mismatch is exactly what used to make every download fail with
+`[Errno 13] Permission denied` before `_downloaded_real_datasets_dir()`
+was introduced. `open_real_dataset()` looks in both folders, so a shipped
+dataset and a downloaded one are opened the same way regardless of which
+one it actually lives in.
+
+**Installer builds don't bundle `LARGE_TEST_DATASETS` either.**
+`SpecAnalytiXBase.spec` copies the whole `resources/` folder as-is
+(`datas=[('resources', 'resources')]`), so any large `.mat` file sitting in
+*this* folder at build time would get bundled into the exe regardless of
+git status — that's exactly what happened before this note was updated.
+Before running `BuildInstaller.bat`, make sure none of the
+`LARGE_TEST_DATASETS` files are present in this folder (delete them if they
+are — they're gitignored, so this never touches git history; and since they
+now download into `%LOCALAPPDATA%\...` instead, they shouldn't end up here
+in the first place). Everyone, installer users included, fetches these the
+same way: via the in-app downloader, on demand.
 
 To add one:
 

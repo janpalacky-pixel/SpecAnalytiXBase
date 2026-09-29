@@ -1,11 +1,15 @@
 # src/views/dialogs/misc/dataset_download_dialog.py
 """Dialog for fetching real-data test datasets that are too large to keep
-in the git repository. They're hosted instead as assets attached to a
-GitHub Release; this dialog downloads whichever the user picks into the
-app's resources/test_data/real/ folder.
+in the git repository (some are 100+ MB). They're hosted instead as assets
+attached to a GitHub Release; this dialog downloads whichever the user
+picks into a writable, per-user folder (see
+MainController._downloaded_real_datasets_dir() — never the app's own
+install directory, which a non-admin user typically can't write into).
 
-Only relevant when running from source — a packaged install already has
-these files bundled by the installer.
+These files are never bundled, whether running from source or from a
+packaged install — the whole point of hosting them as release assets
+instead of shipping them is that a normal build never carries them, so
+this dialog is the only way to get them locally either way.
 """
 
 import os
@@ -65,7 +69,8 @@ class _DownloadWorker(QThread):
 
 class DatasetDownloadDialog(QDialog):
     """Lets the user pick which large real-data test datasets to download
-    from the app's GitHub Release assets into resources/test_data/real/."""
+    from the app's GitHub Release assets into a writable, per-user
+    folder (dest_dir — see MainController._downloaded_real_datasets_dir())."""
 
     def __init__(self, parent, datasets, dest_dir, base_url):
         """
@@ -163,7 +168,8 @@ class DatasetDownloadDialog(QDialog):
         QMessageBox.information(
             self, "Download complete",
             "Finished downloading the selected datasets.\n"
-            "Reopen Help → Test datasets to use them.")
+            "Open them from Help \u2192 Test datasets \u2192 Real (measured) "
+            "\u2192 2D maps, same as any other test dataset.")
 
     def _on_close(self):
         if self._worker is not None and self._worker.isRunning():
