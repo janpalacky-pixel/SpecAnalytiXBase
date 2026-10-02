@@ -1,13 +1,21 @@
-# Automatically rebuilds the Windows installer on every push to main, and
-# publishes it under a single, permanent "nightly" GitHub Release — so
-# users who want the current development build can always use the same
-# download link, instead of digging through commits or building it
-# themselves.
+# Rebuilds the Windows installer once a day (on a schedule, not on every
+# push) and publishes it under a single, permanent "nightly" GitHub
+# Release — so users who want the current development build can always
+# use the same download link, instead of digging through commits or
+# building it themselves.
+#
+# Deliberately NOT triggered by push: pushing straight to main several
+# times a day would otherwise mean several full rebuilds a day, for no
+# benefit (this isn't running tests that need fast per-push feedback, it's
+# just producing a downloadable installer). A daily schedule bounds that
+# to at most one automatic build a day, however many times you pushed.
+# Use workflow_dispatch (the "Run workflow" button) for an extra build
+# right now, same as before.
 #
 # This is NOT a substitute for the normal, versioned Releases (v1.x.x):
 # those stay exactly as they are — hand-tagged, hand-published, stable
 # snapshots. This workflow only maintains a separate "nightly" release
-# that tracks main automatically. See resources/test_data/real/README.md-
+# that tracks main's latest state. See resources/test_data/real/README.md-
 # style docs below for how someone would use each.
 #
 # Cost: this repository is public, so GitHub Actions minutes (including
@@ -25,18 +33,14 @@
 name: Nightly build
 
 on:
-  push:
-    branches: [main]
-    # Skip rebuilding (and burning ~10 minutes) for changes that can't
-    # affect the built application. Remove this block if you'd rather
-    # every single push trigger a rebuild regardless.
-    paths-ignore:
-      - '**.md'
-      - 'dev_notes/**'
-      - 'Claude outputs/**'
-      - '.gitignore'
+  # Once a day, from whatever is on main at that moment. Times are UTC;
+  # 2am UTC is late evening in most of the US and early morning in Europe,
+  # picked simply to be an off-hours default — change it to whenever suits
+  # you, it has no effect on build correctness.
+  schedule:
+    - cron: '0 2 * * *'
   # Lets you trigger a rebuild by hand from the Actions tab, without
-  # needing to push an empty commit.
+  # waiting for the schedule.
   workflow_dispatch: {}
 
 # Without this, a workflow's GITHUB_TOKEN is read-only by default on
