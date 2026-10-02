@@ -1,0 +1,121 @@
+# Automatically rebuilds the Windows installer on every push to main, and
+# publishes it under a single, permanent "latest" GitHub Release — so
+# users who want the current development build can always use the same
+# download link, instead of digging through commits or building it
+# themselves.
+#
+# This is NOT a substitute for the normal, versioned Releases (v1.x.x):
+# those stay exactly as they are — hand-tagged, hand-published, stable
+# snapshots. This workflow only maintains a separate "latest" release
+# that tracks main automatically. See resources/test_data/real/README.md-
+# style docs below for how someone would use each.
+#
+# Cost: this repository is public, so GitHub Actions minutes (including
+# the windows-latest runner used here) are free and unmetered — no paid
+# plan, billing, or secrets setup needed. GITHUB_TOKEN, used below to
+# publish the release, is created automatically for every workflow run.
+#
+# Mirrors BuildInstaller.bat's two steps (PyInstaller, then Inno Setup)
+# exactly, so the CI build matches a local build byte-for-byte in
+# everything but the signing/timestamp metadata Windows itself adds.
+
+name: Nightly build
+
+on:
+  push:
+    branches: [main]
+    # Skip rebuilding (and burning ~10 minutes) for changes that can't
+    # affect the built application. Remove this block if you'd rather
+    # every single push trigger a rebuild regardless.
+    paths-ignore:
+      - '**.md'
+      - 'dev_notes/**'
+      - 'Claude outputs/**'
+      - '.gitignore'
+  # Lets you trigger a rebuild by hand from the Actions tab, without
+  # needing to push an empty commit.
+  workflow_dispatch: {}
+
+# Without this, a workflow's GITHUB_TOKEN is read-only by default on
+# repositories created after Feb 2023 — the release-publishing step
+# below would fail with a 403/"Resource not accessible" error. Declaring
+# it here overrides that default for this workflow specifically, with no
+# repository-settings change required.
+permissions:
+  contents: write
+
+# If two pushes land close together, cancel the older in-progress build
+# rather than letting both finish and race to publish "latest".
+concurrency:
+  group: nightly-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Same invocation as BuildInstaller.bat's first step.
+      - name: Build with PyInstaller
+        run: >-
+          pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
+          --add-data "resources;resources"
+          --icon="resources/icons/app_icon.ico" main.py
+
+      # windows-latest doesn't ship Inno Setup — install it via
+      # Chocolatey, which does ship on every windows-latest runner.
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # Same invocation as BuildInstaller.bat's second step.
+      - name: Build installer with Inno Setup
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+        shell: pwsh
+
+      # installer.iss names the file after MyAppVersion (e.g.
+      # Setup_for_SpecAnalytiXBase_ver_1.3.0.exe), so the download link
+      # would change on every version bump. Keep the "latest" release's
+      # link permanently stable by also publishing a fixed-name copy.
+      - name: Add a version-independent copy for the "latest" link
+        shell: pwsh
+        run: |
+          $built = Get-ChildItem -Path installer -Filter *.exe | Select-Object -First 1
+          Copy-Item $built.FullName "installer\SpecAnalytiXBase-latest-setup.exe"
+
+      - name: Publish/update the "latest" release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: latest
+          name: 'Latest development build'
+          body: |
+            Automatically rebuilt from commit ${{ github.sha }}
+            (${{ github.event.head_commit.timestamp }}).
+
+            **This is not a tested, stable release** — it tracks the tip
+            of `main` and is replaced on every push. For a tested,
+            versioned release, use one of the normal Releases instead
+            (tagged vX.Y.Z).
+
+            Download: `SpecAnalytiXBase-latest-setup.exe` below — this
+            filename never changes, so the link stays the same across
+            rebuilds.
+          prerelease: true
+          allowUpdates: true
+          removeArtifacts: true
+          artifacts: 'installer/*.exe'
+          token: ${{ secrets.GITHUB_TOKEN }}
