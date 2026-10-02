@@ -1,0 +1,107 @@
+# Builds and publishes the Windows installer for a real, numbered release
+# (v1.4.0, v2.0.0, ...), triggered by pushing a version tag — the same
+# "tag it, push the tag" step you already do, just no longer followed by
+# building the installer by hand on your own computer and uploading it.
+#
+# Different from nightly-build.yml in the ways that matter for a real
+# release: it only ever runs once per tag (not on a schedule), it
+# publishes as a genuine release (not a prerelease), and it creates the
+# release as a DRAFT — the build and installer happen automatically, but
+# nothing is visible to the public until you open the draft, write the
+# actual release notes, and click Publish yourself.
+#
+# Cost: same as nightly-build.yml — this repository is public, so GitHub
+# Actions minutes are free and unmetered, no billing or secrets setup
+# needed.
+
+name: Release build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      # installer.iss names the installer file after MyAppVersion and
+      # bakes that version into the installed app. If that line isn't
+      # bumped to match the tag before tagging, the build would otherwise
+      # succeed silently and ship a v1.3.0-named file inside a v1.4.0
+      # release. Catching that here, loudly, beats finding out later.
+      - name: Check installer.iss version matches the tag
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          iss_version=$(grep -oP '(?<=#define MyAppVersion ")[^"]+' installer.iss)
+          echo "Tag version:          $tag_version"
+          echo "installer.iss version: $iss_version"
+          if [ "$tag_version" != "$iss_version" ]; then
+            echo "::error::installer.iss says MyAppVersion=\"$iss_version\" but the pushed tag is $GITHUB_REF_NAME. Update installer.iss to match before tagging."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pytest
+
+      # Same reasoning as the nightly build: a release is exactly the
+      # kind of build where shipping a broken change would matter most,
+      # so this runs first and stops everything below it if anything
+      # fails.
+      - name: Run test suite
+        run: pytest tests/
+
+      # Same invocation as BuildInstaller.bat's first step.
+      - name: Build with PyInstaller
+        run: >-
+          pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
+          --add-data "resources;resources"
+          --icon="resources/icons/app_icon.ico" main.py
+
+      # windows-latest doesn't ship Inno Setup — install it via
+      # Chocolatey, which does ship on every windows-latest runner.
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # Same invocation as BuildInstaller.bat's second step. No
+      # version-independent copy step here (unlike the nightly build) —
+      # a real release's filename is meant to carry its version number,
+      # and it's already unique per tag.
+      - name: Build installer with Inno Setup
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+        shell: pwsh
+
+      # draft: true — this is the one load-bearing difference from the
+      # nightly release. The installer is attached and ready, but the
+      # release itself stays hidden until you open it on GitHub, write
+      # the real release notes, and click Publish.
+      - name: Create draft release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.ref_name }}
+          name: 'SpecAnalytiXBase ${{ github.ref_name }}'
+          body: |
+            *Draft created automatically by the Release build workflow —
+            replace this with real release notes before publishing.*
+          draft: true
+          prerelease: false
+          allowUpdates: true
+          artifacts: 'installer/*.exe'
+          token: ${{ secrets.GITHUB_TOKEN }}
