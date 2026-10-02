@@ -616,7 +616,7 @@ def get_normalization_help_content():
         <h3>Area (integral) — algorithm</h3>
         <p><strong>Step 1 — build the region mask</strong> (same as above).</p>
         <p><strong>Step 2 — compute the area by the trapezoidal rule:</strong>
-        <span class="fm">A = numpy.trapz(y[mask], x[mask])</span><br>
+        <span class="fm">A = numpy.trapezoid(y[mask], x[mask])</span><br>
         Each pair of adjacent points forms a trapezoid; their areas are summed.
         The trapezoidal rule is exact for linearly interpolated data and handles
         non-uniform x-axis spacing correctly (important for spectrometers with

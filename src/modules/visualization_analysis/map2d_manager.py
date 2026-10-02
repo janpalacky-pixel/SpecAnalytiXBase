@@ -6,6 +6,12 @@ from src.modules.utils.spectra_validation import axes_match, describe_axis_misma
 
 logger = get_logger(__name__)
 
+# np.trapz was removed in NumPy 2.0 (renamed to np.trapezoid). Using this
+# shim instead of calling either name directly means this module works
+# whether the app is running on NumPy 1.x or 2.x, rather than crashing
+# with AttributeError the moment anyone upgrades.
+_trapz = getattr(np, 'trapezoid', None) or np.trapz
+
 
 class Map2DManager:
     """
@@ -271,7 +277,7 @@ class Map2DManager:
                 continue
 
             if metric == "Integral":
-                values[i] = np.trapz(yf, xf) if len(xf) > 1 else yf[0]
+                values[i] = _trapz(yf, xf) if len(xf) > 1 else yf[0]
             elif metric == "Mean":
                 values[i] = np.mean(yf)
             elif metric == "Variance":
@@ -395,7 +401,7 @@ class Map2DManager:
             return float(y[0]) if len(y) else np.nan
         # Straight line from (x[0], y[0]) to (x[-1], y[-1])
         baseline = y[0] + (y[-1] - y[0]) * (x - x[0]) / (x[-1] - x[0])
-        return np.trapz(y - baseline, x)
+        return _trapz(y - baseline, x)
 
     # ------------------------------------------------------------------ #
     # Map arithmetic                                                       #

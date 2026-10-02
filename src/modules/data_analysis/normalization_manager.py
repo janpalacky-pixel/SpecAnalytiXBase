@@ -14,6 +14,12 @@ except ImportError:
 
 logger = get_logger(__name__)
 
+# np.trapz was removed in NumPy 2.0 (renamed to np.trapezoid). Using this
+# shim instead of calling either name directly means this module works
+# whether the app is running on NumPy 1.x or 2.x, rather than crashing
+# with AttributeError the moment anyone upgrades.
+_trapz = getattr(np, 'trapezoid', None) or np.trapz
+
 
 # Presets are stored as JSON in the user's home directory so they persist
 # across application restarts, independent of any single dialog session.
@@ -204,8 +210,8 @@ class NormalizationManager:
         """Return the integral factor used by area normalization."""
         mask = self._get_range_mask(x_scale)
         if np.any(mask):
-            return np.trapz(y_scale[mask], x_scale[mask])
-        return np.trapz(y_scale, x_scale)
+            return _trapz(y_scale[mask], x_scale[mask])
+        return _trapz(y_scale, x_scale)
 
     def _normalize_unit_area(self, x_scale, y_scale):
         """Area normalization — divides by the integral over the selected region."""
