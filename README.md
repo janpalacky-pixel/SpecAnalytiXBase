@@ -50,6 +50,13 @@ Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it o
 - PDF report export from analysis dialogs
 - Project save/load, so a full working session can be reopened later
 
+## Downloads
+
+The [Releases page](../../releases) has two kinds of build:
+
+- **Stable releases** (e.g. `v1.3.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
+- **[Nightly build](../../releases/tag/nightly)** — rebuilt automatically from the tip of `main` on every code change. Always has the newest fixes, but isn't a tested release. Useful if you need a fix that hasn't made it into a numbered release yet; not recommended as your everyday install.
+
 ## Installation
 
 See [`INSTALLATION.txt`](INSTALLATION.txt) for full details. In short:
