@@ -7,7 +7,6 @@
 #define MyOutputDir "installer"
 #define MyWizardImage "installer_assets\wizardimage.bmp"
 #define MySetupIcon "installer_assets\setupicon.ico"
-#define MyUninstallIcon "installer_assets\uninstall_icon.ico"
 
 [Setup]
 AppId={{8a84bbec-d963-4f73-9840-8c4f5549a1ea}}
@@ -19,7 +18,7 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppFolder}
 DefaultGroupName={#MyAppName}
-UninstallDisplayIcon={app}\{#MyUninstallIcon}
+UninstallDisplayIcon={app}\{#MyAppExeName}
 OutputBaseFilename=Setup_for_{#MyAppName}_ver_{#MyAppVersion}
 OutputDir={#MyOutputDir}
 WizardImageFile={#MyWizardImage}
@@ -40,7 +39,6 @@ Name: "czech"; MessagesFile: "compiler:Languages\Czech.isl"
 [Files]
 Source: "dist\{#MyAppFolder}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\{#MyAppFolder}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#MyUninstallIcon}"; DestDir: "{app}"; Flags: dontcopy
 Source: "installer_assets\license.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "installer_assets\readme.txt"; DestDir: "{app}"; Flags: ignoreversion
 
