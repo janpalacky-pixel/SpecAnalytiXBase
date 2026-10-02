@@ -71,6 +71,8 @@ See [`INSTALLATION.txt`](INSTALLATION.txt) for full details. In short:
   ```
 - **Build your own installer:** run `BuildInstaller.bat` (Windows, requires PyInstaller and Inno Setup 6).
 
+**A note on antivirus warnings:** some antivirus software (including Windows Defender SmartScreen, ESET, AVG, and Avast) may flag the installer `.exe` as a potential threat. This is a known false positive that commonly affects applications packaged with PyInstaller, the tool used to build this installer, and is not a sign of actual malicious content. If this happens, you can safely add an exception for the file in your antivirus software. If you'd prefer not to, you can instead run the application directly from source using the "Any OS, from source" instructions above, which don't involve the compiled installer at all.
+
 ## Documentation
 
 Full documentation is built into the application itself — open the **Help** menu once running for the User Guide, Quick Start, Installation, Developer Guide, and per-dialog help pages.
