@@ -75,7 +75,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller pytest
+
+      # Runs the same suite documented in tests/README.md. If anything
+      # fails, this step fails and GitHub Actions stops the job right
+      # here by default — the build/publish steps below never run, so a
+      # broken change can't make it into the published "nightly"
+      # installer. This check happens automatically on every build,
+      # scheduled or manual, independently of anyone remembering to run
+      # it by hand first.
+      - name: Run test suite
+        run: pytest tests/
 
       # Same invocation as BuildInstaller.bat's first step.
       - name: Build with PyInstaller
