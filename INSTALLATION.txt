@@ -111,9 +111,26 @@ In addition to the Python environment set up in section 2, you need:
     Setup 6 alongside it, or edit that path in BuildInstaller.bat to
     point at wherever ISCC.exe actually is on your machine.
 
-Then, from the project root, simply run:
+BuildInstaller.bat itself does not activate any virtual environment -
+it simply runs whatever "pyinstaller" command it finds active in the
+current terminal at that moment. Since everyone's virtual environment
+lives in a different place on their own machine, the environment from
+section 2 above is not hard-coded into this script; instead, activate
+it yourself first, in the same terminal, before running the script:
+
+         venv\Scripts\activate            (Windows)
+
+(substituting your own environment's actual name/path if different
+from the "venv" example in section 2). Then, from that same terminal,
+with the project root as the current folder, run:
 
          BuildInstaller.bat
+
+Note: double-clicking BuildInstaller.bat directly in File Explorer
+does NOT use an activated environment - it runs with whatever Python
+is on your system's default PATH, which may not have PyInstaller (or
+any of this project's dependencies) installed at all. Run it from an
+activated terminal as described above instead.
 
 This does two things in sequence:
 
