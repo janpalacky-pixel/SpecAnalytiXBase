@@ -7,31 +7,39 @@
 # page for the full setup guide, including how to create the virtual
 # environment in the first place.
 #
-# Lower bounds below are the oldest versions known to work; newer versions
-# within the same major line are expected to work too. If you hit a
-# version-specific issue, try the latest available release of that package
-# before filing a bug report.
+# Versions below are pinned exactly (==), not "this or newer". This is
+# deliberate: it means every build — yours, and the automated GitHub
+# builds — installs the exact same, already-tested set of libraries,
+# every time, instead of whatever happens to be newest on the day the
+# build runs. A library silently changing underneath a build (as
+# happened once already — NumPy removed a function this project used)
+# can no longer happen on its own.
+#
+# To intentionally upgrade a library later: bump its version number
+# here, run `pip install -r requirements.txt --upgrade`, run the test
+# suite (pytest tests/), and only keep the change if everything still
+# passes.
 #
 # This list was produced by scanning every import statement in src/ and
 # main.py (not guessed), then empirically confirmed by simulating each
 # package's absence and checking whether the application still starts.
 
-PyQt5>=5.15.4          # GUI toolkit the whole application is built on
-numpy>=1.22             # array/numeric backbone used throughout
-scipy>=1.8               # optimization, signal processing, sparse solvers
-                         # (Automated Baseline / ALS, Resolution Enhancement,
-                         # Peak Fitting, and others) — required at startup,
-                         # not just when those specific tools are opened
-matplotlib>=3.5          # all plotting (main plot, every dialog's preview canvas)
-pandas>=1.4              # required at startup — used by Save, Cluster
-                         # Analysis, PCA Scores, SVD Analysis, MCR-ALS, NMF,
-                         # 2D Correlation, Melting Curve Analysis, and the
-                         # Operations Summary dialog's Excel export
-scikit-learn>=1.0        # required at startup — Cluster Analysis (K-Means,
-                         # Hierarchical, DBSCAN) and its PCA/scaling steps
-                         # (SOM / Self-Organizing Map is implemented from
-                         # scratch in plain numpy — see som_manager.py's
-                         # own docstring — so it needs no new dependency)
+PyQt5==5.15.11            # GUI toolkit the whole application is built on
+numpy==2.2.6              # array/numeric backbone used throughout
+scipy==1.15.3              # optimization, signal processing, sparse solvers
+                           # (Automated Baseline / ALS, Resolution Enhancement,
+                           # Peak Fitting, and others) — required at startup,
+                           # not just when those specific tools are opened
+matplotlib==3.10.9        # all plotting (main plot, every dialog's preview canvas)
+pandas==2.3.3              # required at startup — used by Save, Cluster
+                           # Analysis, PCA Scores, SVD Analysis, MCR-ALS, NMF,
+                           # 2D Correlation, Melting Curve Analysis, and the
+                           # Operations Summary dialog's Excel export
+scikit-learn==1.7.2        # required at startup — Cluster Analysis (K-Means,
+                           # Hierarchical, DBSCAN) and its PCA/scaling steps
+                           # (SOM / Self-Organizing Map is implemented from
+                           # scratch in plain numpy — see som_manager.py's
+                           # own docstring — so it needs no new dependency)
 
 # openpyxl is the one genuine exception: every import of it in the codebase
 # is deferred (inside a function, only when that function actually runs),
@@ -40,7 +48,7 @@ scikit-learn>=1.0        # required at startup — Cluster Analysis (K-Means,
 # are unavailable until it's installed. main.py checks for it at startup
 # and shows a warning (not a crash) if it's missing. Still recommended,
 # since Excel is one of the primary supported formats:
-openpyxl>=3.0.9
+openpyxl==3.1.5
 
 # --- Development / testing only — not needed to run the application ------
 # Install separately if you want to run the automated test suite (pytest.ini
