@@ -138,7 +138,7 @@ class ClusterAnalysisManager:
             
             # Construct data matrix (spectra x wavelengths)
             self.x_axis = first_x
-            self.data_matrix = np.row_stack(y_scales)
+            self.data_matrix = np.vstack(y_scales)
             self.spectrum_labels = [spectrum['label'] for spectrum in spectra]
             self.method = method
             self.n_clusters = n_clusters
@@ -563,7 +563,7 @@ class ClusterAnalysisManager:
         try:
             # Prepare data - only need y_scales for clustering
             y_scales = [s['y_scale'] for s in spectra]
-            data_matrix = np.row_stack(y_scales)
+            data_matrix = np.vstack(y_scales)
             
             # Standardize data
             scaler = StandardScaler()

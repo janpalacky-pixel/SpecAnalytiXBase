@@ -223,7 +223,7 @@ class SOMManager:
                         return False
 
                 self.x_axis = first_x
-                self.data_matrix = np.row_stack(y_scales)
+                self.data_matrix = np.vstack(y_scales)
                 self.feature_defs = None
                 self.feature_labels = None
 
