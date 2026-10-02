@@ -1017,19 +1017,37 @@ spectrum_B    5.5      6.6      7.7      8.8
     <table>
         <tr><th>Option</th><th>Behaviour</th></tr>
         <tr><td><b>Auto</b></td>
-            <td>If the first row contains mostly non-numeric text it is used
-                as a header and its values become spectrum labels.
-                If it is fully numeric it is treated as data.</td></tr>
+            <td>First looks for where the real table actually starts,
+                discarding any preamble above it (an instrument banner,
+                operator notes, a multi-line title) exactly as <b>Row N</b>
+                would — then, on that row, decides header vs. data the usual
+                way: mostly non-numeric text is used as a header and its
+                values become spectrum labels, fully numeric is treated as
+                data.</td></tr>
         <tr><td><b>No header</b></td>
             <td>Always treat the first row as data.
                 Spectra are numbered automatically
                 (<code>0001</code>, <code>0002</code>, &hellip;).</td></tr>
         <tr><td><b>Row N</b></td>
             <td>Row <i>N</i> is the header — <b>everything above it is
-                discarded</b>. Use this when the file carries preamble above the
-                real table (an instrument banner, a title, units on their own
-                line). <b>Row 1</b> is the same as the old <b>Yes</b>.</td></tr>
+                discarded</b>. Pick this by hand when a file's preamble is
+                long or unusual enough that Auto doesn't find the right row
+                on its own. <b>Row 1</b> is the same as the old <b>Yes</b>.</td></tr>
     </table>
+
+    <div class="note">
+        <b>Auto skips preamble on its own, within reason.</b> It compares
+        each candidate line's column count against the table's real width
+        (learned from the rows further down) and discards anything that
+        doesn't look like it belongs — but deliberately tolerates a header
+        that is exactly <b>one</b> column narrower than the data (the common
+        convention of leaving the X column unlabeled), so that pattern is
+        never mistaken for junk and discarded by accident. This only looks
+        within the first couple hundred lines of the file; a preamble longer
+        than that, or junk that happens to match the table's column count,
+        can still fool it — pick <b>Row N</b> by hand if Auto gets a
+        particular file wrong.
+    </div>
 
     <div class="note">
         <b>Row numbers count the rows you can actually see in the preview.</b>

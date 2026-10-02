@@ -396,15 +396,17 @@ def get_user_guide_help_content():
 
         <h3>Auto-Detection</h3>
         <p>The importer automatically detects delimiter, decimal separator, header rows,
-        and Layout (Standard / Interlaced / Row-oriented). Override any of these per file
-        directly in the Import dialog.</p>
+        and Layout (Standard / Interlaced / Row-oriented). It also discards leading
+        preamble on its own — instrument banners, operator notes, a title above the
+        real table — the same way manually picking a header row would. Override any of
+        these per file directly in the Import dialog.</p>
 
         <table>
             <tr><th>Setting</th><th>Options</th><th>Description</th></tr>
             <tr><td>Sheet</td><td>Auto / any sheet name</td><td>Excel files only — which worksheet to read. "Import several sheets" turns this into a checklist so several can be read in one pass; their spectra are labelled <code>file [sheet] : column</code> so identically-named columns stay distinct. <strong>Each sheet keeps its own settings</strong> — click a sheet in the list to configure it (tick = import it, click = configure it).</td></tr>
             <tr><td>Value separator</td><td>Auto, ; tab , | space</td><td>Column delimiter</td></tr>
             <tr><td>Decimal separator</td><td>Auto . ,</td><td>Decimal point character</td></tr>
-            <tr><td>Header row</td><td>Auto Yes No</td><td>Whether row 1 (or, in Row-oriented, column 1) contains labels</td></tr>
+            <tr><td>Header row</td><td>Auto / No header / Row N</td><td>Whether the table's first row (or, in Row-oriented, first column) contains labels. Auto also skips any preamble above the real table first; pick Row N by hand for a file Auto doesn't get right</td></tr>
             <tr><td>Header threshold</td><td>1–100%</td><td>How strict Auto header detection is — % of non-numeric tokens required to call it a header</td></tr>
             <tr><td>Layout</td><td>Standard / Interlaced / Row-oriented</td><td>Which of the three layouts above the file uses</td></tr>
             <tr><td>Label column</td><td>Row-oriented only</td><td>Which raw-file column supplies spectrum names, if not the first</td></tr>

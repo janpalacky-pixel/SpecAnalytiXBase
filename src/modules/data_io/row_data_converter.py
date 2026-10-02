@@ -116,6 +116,7 @@ def read_row_data(
     from src.modules.data_io.table_data_converter import (
         _read_raw_data, _detect_delimiter, _detect_decimal_separator,
         _detect_header, _split_line, _parse_column_data,
+        _detect_preamble_lines,
     )
 
     raw_data = _read_raw_data(filepath)
@@ -128,6 +129,14 @@ def read_row_data(
     # FLAG in row-oriented refers to the label COLUMN (see label_column), not to
     # a row, so it is deliberately left untouched.
     raw_data = _apply_header_row_rows(raw_data, header_row)
+
+    if header_row is None:
+        # Auto: same leading-junk detection the column-format reader uses —
+        # see table_data_converter._detect_preamble_lines.
+        skip = _detect_preamble_lines(raw_data, analyze_rows)
+        if skip:
+            logger.debug("Auto-detected %d leading preamble line(s); skipping", skip)
+            raw_data = raw_data[skip:]
 
     logger.debug("Read %d lines", len(raw_data))
 

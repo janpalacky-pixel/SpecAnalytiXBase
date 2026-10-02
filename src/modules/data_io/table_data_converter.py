@@ -21,6 +21,7 @@
 import numpy as np
 from typing import List, Dict, Union, Optional, Tuple
 from datetime import datetime
+from collections import Counter
 import os
 import re
 
@@ -89,6 +90,78 @@ def _apply_header_row(rows: list, header_row: Optional[int]):
             f"{len(rows)} rows."
         )
     return rows[header_row:]
+
+
+def _detect_preamble_lines(raw_data: list, analyze_rows: int) -> int:
+    """
+    Count leading lines of junk (instrument banners, notes, anything that
+    isn't the table) sitting above the real header/data, so Auto mode can
+    discard them the same way a manually-chosen header_row already does.
+
+    Only ever engages for Auto (header_row is None) — see read_table_data /
+    read_row_data, which both call this right where the manual header_row
+    slice would otherwise be a no-op.
+
+    Why this can't just reuse _detect_header: that function (and
+    _detect_delimiter before it) only ever look at line 0, trusting it's
+    already part of the table. Junk text above the table breaks that
+    assumption for BOTH of them — a junk line is non-numeric, so it gets
+    misread as "the header", and the delimiter detector's column-count
+    consistency check gets thrown off by lines that don't contain the
+    table's real delimiter at all. So this has to run first, and find the
+    table on its own rather than trusting line 0.
+
+    Approach: real table rows (header or data) share a consistent column
+    count under whichever delimiter the file actually uses; junk lines
+    don't. So for each candidate delimiter, look at the BOTTOM half of the
+    sample (junk is only ever at the very top, never the bottom) and find
+    its most common column count — that's "how wide the real table is".
+    Then walk down from line 0 and skip every line that's narrower than
+    that by more than one column.
+
+    The "more than one column" slack (not an exact match) is deliberate: a
+    header row is allowed to have one fewer column than the data rows below
+    it (the common "no label over the X column" convention), and that
+    already-supported case must not be mistaken for junk.
+
+    Returns 0 (no-op) whenever the file doesn't show a clear, consistent
+    column count to compare against — e.g. a single column of values, or
+    data that's already ragged on its own — rather than guess.
+    """
+    if len(raw_data) < 2:
+        return 0
+
+    # Finding the table's start is a different job from sampling a few of
+    # its rows: analyze_rows (often small, e.g. 20) is tuned for the latter.
+    # A preamble can run longer than that, so search further than
+    # analyze_rows specifically for this — once the real start is found and
+    # sliced off, analyze_rows governs delimiter/header sampling as normal.
+    PREAMBLE_SEARCH_ROWS = 200
+    window = raw_data[:max(analyze_rows, PREAMBLE_SEARCH_ROWS)]
+
+    def split(line, delim):
+        return line.split() if delim is None else line.split(delim)
+
+    best = None  # (consistency, mode_count, skip)
+    for delim in ('\t', ';', '|', ',', None):
+        counts = [len(split(line, delim)) for line in window]
+        bottom = counts[len(counts) // 2:]
+        if not bottom:
+            continue
+        mode_count, mode_freq = Counter(bottom).most_common(1)[0]
+        if mode_count <= 1:
+            continue  # not actually tabular under this delimiter
+        consistency = mode_freq / len(bottom)
+        if consistency < 0.8:
+            continue  # the "real" rows aren't even consistent with each other
+
+        threshold = mode_count - 1
+        skip = next((i for i, c in enumerate(counts) if c >= threshold), 0)
+        score = (consistency, mode_count)
+        if best is None or score > best[0]:
+            best = (score, skip)
+
+    return best[1] if best else 0
 
 
 def read_table_data(
@@ -234,6 +307,13 @@ def read_table_data(
     if header_row is not None:
         # The user has explicitly pointed at the header row, so it IS a header.
         header = True
+    else:
+        # Auto: look for the same kind of leading junk a manual header_row
+        # would otherwise be needed to skip, and discard it automatically.
+        skip = _detect_preamble_lines(raw_data, analyze_rows)
+        if skip:
+            logger.debug("Auto-detected %d leading preamble line(s); skipping", skip)
+            raw_data = raw_data[skip:]
 
     logger.debug("Read %d lines", len(raw_data))
 
