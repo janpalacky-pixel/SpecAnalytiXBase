@@ -2648,7 +2648,7 @@ class Map2DDialog(QDialog):
     def _draw_cluster_map(self, map_data, k, n_rows, n_cols, title="Cluster overlay"):
         """Render the cluster label map with a discrete colormap."""
         import matplotlib.colors as mcolors
-        base_cmap    = plt.cm.get_cmap('tab10', k)
+        base_cmap    = plt.get_cmap('tab10', k)
         norm         = mcolors.BoundaryNorm(
             boundaries=np.arange(-0.5, k + 0.5, 1), ncolors=k)
         interp       = self._interp_combo.currentText()
@@ -3013,7 +3013,7 @@ class Map2DDialog(QDialog):
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
         fig = Figure(figsize=(6, 3), tight_layout=True)
         ax  = fig.add_subplot(111)
-        cmap_tab = plt.cm.get_cmap('tab10', k)
+        cmap_tab = plt.get_cmap('tab10', k)
         for ci in range(k):
             if ci in avgs:
                 col = cmap_tab(ci)
