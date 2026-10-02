@@ -63,8 +63,38 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          # Full history (not just the latest commit) is needed below, to
+          # diff against the commit the "nightly" tag currently points to.
+          fetch-depth: 0
+
+      # paths-ignore (the push-trigger setting that used to skip building
+      # for doc-only changes) doesn't exist for schedule/workflow_dispatch
+      # — those aren't tied to any specific push, so there's nothing for
+      # it to check. This reproduces the same effect by hand instead:
+      # compare the current code against whatever commit the "nightly"
+      # tag was last built from, and skip the rest of the job if the only
+      # differences are in paths nobody needs a rebuild for.
+      - name: Check whether anything worth rebuilding changed
+        id: changes
+        shell: bash
+        run: |
+          if git rev-parse nightly >/dev/null 2>&1; then
+            changed=$(git diff --name-only nightly..HEAD)
+            relevant=$(echo "$changed" | grep -vE '\.md$|^\.gitignore$' || true)
+            if [ -z "$relevant" ]; then
+              echo "No relevant changes since the last nightly build — skipping."
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # No nightly tag yet (very first run ever) — always build.
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Python
+        if: steps.changes.outputs.should_build == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -72,6 +102,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install Python dependencies
+        if: steps.changes.outputs.should_build == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -85,10 +116,12 @@ jobs:
       # scheduled or manual, independently of anyone remembering to run
       # it by hand first.
       - name: Run test suite
+        if: steps.changes.outputs.should_build == 'true'
         run: pytest tests/
 
       # Same invocation as BuildInstaller.bat's first step.
       - name: Build with PyInstaller
+        if: steps.changes.outputs.should_build == 'true'
         run: >-
           pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
           --add-data "resources;resources"
@@ -97,10 +130,12 @@ jobs:
       # windows-latest doesn't ship Inno Setup — install it via
       # Chocolatey, which does ship on every windows-latest runner.
       - name: Install Inno Setup
+        if: steps.changes.outputs.should_build == 'true'
         run: choco install innosetup --no-progress -y
 
       # Same invocation as BuildInstaller.bat's second step.
       - name: Build installer with Inno Setup
+        if: steps.changes.outputs.should_build == 'true'
         run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
         shell: pwsh
 
@@ -109,12 +144,14 @@ jobs:
       # would change on every version bump. Keep the "nightly" release's
       # link permanently stable by also publishing a fixed-name copy.
       - name: Add a version-independent copy for the "nightly" link
+        if: steps.changes.outputs.should_build == 'true'
         shell: pwsh
         run: |
           $built = Get-ChildItem -Path installer -Filter *.exe | Select-Object -First 1
           Copy-Item $built.FullName "installer\SpecAnalytiXBase-nightly-setup.exe"
 
       - name: Publish/update the "nightly" release
+        if: steps.changes.outputs.should_build == 'true'
         uses: ncipollo/release-action@v1
         with:
           tag: nightly
@@ -124,9 +161,9 @@ jobs:
             (${{ github.event.head_commit.timestamp }}).
 
             **This is not a tested, stable release** — it tracks the tip
-            of `main` and is replaced on every push. For a tested,
-            versioned release, use one of the normal Releases instead
-            (tagged vX.Y.Z).
+            of `main` and is replaced automatically once a day (or sooner,
+            if rebuilt by hand). For a tested, versioned release, use one
+            of the normal Releases instead (tagged vX.Y.Z).
 
             Download: `SpecAnalytiXBase-nightly-setup.exe` below — this
             filename never changes, so the link stays the same across
