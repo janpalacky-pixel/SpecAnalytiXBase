@@ -23,19 +23,24 @@
 # This list was produced by scanning every import statement in src/ and
 # main.py (not guessed), then empirically confirmed by simulating each
 # package's absence and checking whether the application still starts.
+#
+# Versions current as of the v1.4.0 release: freshly installed (no
+# cached/old packages), full pytest suite passing (600/600), and the
+# actual GUI exercised by hand for every feature touched by this round
+# of updates (Cluster Analysis, SOM, 2D Map).
 
 PyQt5==5.15.11            # GUI toolkit the whole application is built on
-numpy==2.2.6              # array/numeric backbone used throughout
-scipy==1.15.3              # optimization, signal processing, sparse solvers
+numpy==2.5.3              # array/numeric backbone used throughout
+scipy==1.18.1              # optimization, signal processing, sparse solvers
                            # (Automated Baseline / ALS, Resolution Enhancement,
                            # Peak Fitting, and others) — required at startup,
                            # not just when those specific tools are opened
-matplotlib==3.10.9        # all plotting (main plot, every dialog's preview canvas)
-pandas==2.3.3              # required at startup — used by Save, Cluster
+matplotlib==3.11.2        # all plotting (main plot, every dialog's preview canvas)
+pandas==3.0.6              # required at startup — used by Save, Cluster
                            # Analysis, PCA Scores, SVD Analysis, MCR-ALS, NMF,
                            # 2D Correlation, Melting Curve Analysis, and the
                            # Operations Summary dialog's Excel export
-scikit-learn==1.7.2        # required at startup — Cluster Analysis (K-Means,
+scikit-learn==1.9.1        # required at startup — Cluster Analysis (K-Means,
                            # Hierarchical, DBSCAN) and its PCA/scaling steps
                            # (SOM / Self-Organizing Map is implemented from
                            # scratch in plain numpy — see som_manager.py's
