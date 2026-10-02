@@ -11,6 +11,12 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt # Import pyplot
+# matplotlib's default color cycle is hex strings on older versions but
+# RGB float tuples on newer ones (e.g. matplotlib 3.11). QColor() rejects a
+# bare tuple, so normalize through to_hex() everywhere a peak color is
+# turned into a QColor, both when it's first assigned and when displaying
+# one that may have been saved by an older/different matplotlib version.
+from matplotlib.colors import to_hex as _mpl_to_hex
 import numpy as np
 
 from src.modules.data_analysis.peak_fitting_manager import PeakFittingManager
@@ -36,7 +42,7 @@ class PeakFittingDialog(QDialog):
         self.click_connection_id = None # To manage the click handler connection
         
         # Get the default matplotlib color cycle for new peaks
-        self.colors = [color['color'] for color in plt.rcParams['axes.prop_cycle']]
+        self.colors = [_mpl_to_hex(color['color']) for color in plt.rcParams['axes.prop_cycle']]
         
         # Tracks the next color to use from the cycle
         self.peak_color_index = 0
@@ -543,7 +549,7 @@ class PeakFittingDialog(QDialog):
                 # Color Swatch (from self.peaks, which has the color)
                 color_hex = self.peaks[i]['color']
                 color_item = QTableWidgetItem()
-                color_item.setBackground(QColor(color_hex))
+                color_item.setBackground(QColor(_mpl_to_hex(color_hex)))
                 color_item.setFlags(color_item.flags() & ~Qt.ItemIsEditable)
                 self.peaks_table.setItem(i, 0, color_item)
 
@@ -567,7 +573,7 @@ class PeakFittingDialog(QDialog):
                 # Color Swatch
                 color_hex = peak['color']
                 color_item = QTableWidgetItem()
-                color_item.setBackground(QColor(color_hex))
+                color_item.setBackground(QColor(_mpl_to_hex(color_hex)))
                 color_item.setFlags(color_item.flags() & ~Qt.ItemIsEditable)
                 self.peaks_table.setItem(i, 0, color_item)
 
@@ -634,7 +640,7 @@ class PeakFittingDialog(QDialog):
             return # Not the color column or invalid row
 
         current_color_hex = self.peaks[row]['color']
-        current_color = QColor(current_color_hex)
+        current_color = QColor(_mpl_to_hex(current_color_hex))
         
         new_color = QColorDialog.getColor(current_color, self, "Select Peak Color")
         
