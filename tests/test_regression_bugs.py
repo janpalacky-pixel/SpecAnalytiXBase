@@ -289,3 +289,124 @@ class TestSinglePointSpectrumSurvives:
     def test_mismatched_lengths_still_raise(self):
         with pytest.raises(ValueError):
             Spectrum(x_scale=np.array([1.0, 2.0]), y_scale=np.array([1.0]))
+
+
+# ---------------------------------------------------------------------- #
+# NumPy/Matplotlib API removals (NumPy 2.x, Matplotlib 3.11)              #
+# ---------------------------------------------------------------------- #
+#
+# The four tests below lock in real crashes found by running the app
+# itself against freshly-installed, current-at-the-time library versions
+# (NumPy 2.5.3, Matplotlib 3.11.2, pandas 3.0.6) — not just the code's own
+# lower-bound requirements, which had drifted out of date. Two distinct
+# API removals were involved:
+#
+#   * np.row_stack was removed (renamed to np.vstack back in NumPy 2.0).
+#     Hit in Cluster Analysis (K-Means/Hierarchical) and SOM — but those
+#     are already covered by test_cluster_analysis_silhouette_bounds.py
+#     and test_som_last_error.py, which is how this was first caught.
+#     compute_elbow_curve() has the identical call but, unlike the other
+#     two, had no test coverage at all before this — added here.
+#
+#   * np.trapz was removed (renamed to np.trapezoid in NumPy 2.0). Five
+#     modules already had a `getattr(np, 'trapezoid', None) or np.trapz`
+#     shim guarding against exactly this; normalization_manager.py and
+#     map2d_manager.py had been missed. Covered below.
+
+
+from src.modules.visualization_analysis.cluster_analysis_manager import ClusterAnalysisManager
+from src.modules.visualization_analysis.map2d_manager import Map2DManager
+from src.modules.data_analysis.normalization_manager import NormalizationManager
+
+
+class TestClusterAnalysisElbowCurveNoCrash:
+    """
+    Bug: compute_elbow_curve() builds its data matrix with np.row_stack,
+    same as compute_clustering() and compute_som() — but unlike those two,
+    no test exercised this method at all, so a reintroduced np.row_stack
+    here would currently pass CI even though it crashes the app (the
+    "suggest number of clusters" elbow plot in the Cluster Analysis tool).
+    """
+
+    def test_elbow_curve_runs_without_crashing(self):
+        rng = np.random.default_rng(0)
+        spectra = [
+            {'label': f'sp{i}', 'y_scale': rng.random(30), 'x_scale': np.arange(30)}
+            for i in range(8)
+        ]
+        mgr = ClusterAnalysisManager()
+        k_values, wcss = mgr.compute_elbow_curve(spectra, max_clusters=5)
+        assert k_values is not None
+        assert wcss is not None
+        assert len(k_values) == len(wcss)
+        assert all(np.isfinite(w) for w in wcss)
+
+
+class TestMap2DIntegralMetricUsesTrapezoid:
+    """
+    Bug: compute_intensity_map's "Integral" metric called np.trapz
+    directly (no fallback shim), so it crashed with AttributeError on
+    NumPy 2.5.3 the moment anyone chose Integral in the 2D Map tool —
+    confirmed by running the real app. Fixed via the same
+    `getattr(np, 'trapezoid', None) or np.trapz` shim already used
+    elsewhere in the codebase.
+
+    Each spectrum here is a flat line (constant y) over x = [0, 1, 2, 3],
+    so the trapezoidal integral has an exact, hand-checkable answer:
+    constant_value * (x_max - x_min).
+    """
+
+    def test_integral_metric_matches_hand_computed_area(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        constants = [2.0, 5.0, 10.0, 1.0]
+        spectra = [
+            {'label': f'flat{i}', 'x_scale': x, 'y_scale': np.full(4, c)}
+            for i, c in enumerate(constants)
+        ]
+        mgr = Map2DManager()
+        result = mgr.compute_intensity_map(spectra, n_rows=2, n_cols=2, metric="Integral")
+        assert result is not None
+        expected = np.array(constants).reshape(2, 2) * 3.0  # width = 3 - 0
+        np.testing.assert_allclose(result, expected)
+
+
+class TestMap2DBaselineCorrectedIntegral:
+    """Same bug/fix as above, second call site (_baseline_corrected_integral,
+    used by the "Baseline-corrected integral" metric). A triangular bump
+    sitting on a straight-line baseline between its endpoints has a known
+    area once the baseline is subtracted, computed via the trapezoidal
+    rule over the exact sample points (not a continuous-triangle formula,
+    since the samples include flat zero segments either side of the rise).
+    """
+
+    def test_baseline_corrected_integral_removes_linear_background(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
+        baseline = np.array([1.0, 2.0, 3.0, 4.0, 5.0])  # straight line, endpoints match y below
+        bump = np.array([0.0, 0.0, 2.0, 0.0, 0.0])       # triangular bump of height 2 at x=2
+        y = baseline + bump
+        area = Map2DManager._baseline_corrected_integral(x, y)
+        # Trapezoidal rule on [0, 0, 2, 0, 0] over x = [0,1,2,3,4]:
+        # (1)*(0+0)/2 + (1)*(0+2)/2 + (1)*(2+0)/2 + (1)*(0+0)/2 = 0+1+1+0 = 2
+        assert area == pytest.approx(2.0)
+
+
+class TestNormalizationUnitAreaUsesTrapezoid:
+    """
+    Bug: _get_unit_area_factor (used by "Unit area" normalization) called
+    np.trapz directly with no fallback, same removal as above. Checked
+    against the same hand-computable flat-spectrum case.
+    """
+
+    def test_unit_area_factor_matches_hand_computed_area(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        y = np.full(4, 5.0)
+        mgr = NormalizationManager()
+        factor = mgr._get_unit_area_factor(x, y)
+        assert factor == pytest.approx(15.0)  # 5.0 * (3 - 0)
+
+    def test_normalize_unit_area_divides_by_that_factor(self):
+        x = np.array([0.0, 1.0, 2.0, 3.0])
+        y = np.full(4, 5.0)
+        mgr = NormalizationManager()
+        normalized = mgr._normalize_unit_area(x, y)
+        np.testing.assert_allclose(normalized, y / 15.0)
