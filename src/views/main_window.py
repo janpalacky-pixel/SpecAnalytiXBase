@@ -1725,6 +1725,11 @@ class MainWindow(QMainWindow):
         self.actionLicense.setObjectName("actionLicense")
         self.actionLicense.setText("License")
 
+        # About -- version / build / library versions of this running copy.
+        self.actionAbout = QAction(self)
+        self.actionAbout.setObjectName("actionAbout")
+        self.actionAbout.setText("About SpecAnalytiXBase")
+
         # Other existing actions
         self.actionSave = QAction(self)
         self.actionSave.setObjectName("actionSave")
@@ -1833,6 +1838,7 @@ class MainWindow(QMainWindow):
         self.menuHelp.addAction(self.actionOur_Institute)
         self.menuHelp.addSeparator()
         self.menuHelp.addAction(self.actionLicense)
+        self.menuHelp.addAction(self.actionAbout)
 
         # Add actions to other menus
         self.menuImport.addAction(self.actionImport_new)
