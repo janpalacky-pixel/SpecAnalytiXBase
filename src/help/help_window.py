@@ -176,6 +176,68 @@ def _write_all_registered_pages():
             logger.warning("help: failed to pre-generate page for '%s': %s", reg_key, exc)
 
 
+def _declare_help_modules_for_bundlers():
+    """Never called. Exists only so PyInstaller bundles every help topic.
+
+    Topics are looked up by *string* in _REGISTRY and loaded with
+    importlib.import_module() at runtime, which PyInstaller's static
+    analysis cannot see. Any topic module that nothing else imports
+    explicitly was therefore left out of the installer: Help > User Guide,
+    Quick Start, Installation, Developer Guide and License (and a few other
+    topics) opened nothing in v1.3.0 - v1.4.1 although they worked from
+    source. An import statement inside a function body is still found by
+    the analysis, so every registered module is listed here.
+
+    tests/test_help_modules_bundled.py fails if a module is added to
+    _REGISTRY without being listed here.
+    """
+    import src.help.automated_baseline_help  # noqa: F401
+    import src.help.band_markers_help  # noqa: F401
+    import src.help.band_ratio_help  # noqa: F401
+    import src.help.baseline_correction_help  # noqa: F401
+    import src.help.batch_pipeline_help  # noqa: F401
+    import src.help.cd_unit_conversion_help  # noqa: F401
+    import src.help.cluster_analysis_help  # noqa: F401
+    import src.help.cosmic_ray_help  # noqa: F401
+    import src.help.data_range_help  # noqa: F401
+    import src.help.developer_guide_help  # noqa: F401
+    import src.help.fft_denoising_help  # noqa: F401
+    import src.help.import_help  # noqa: F401
+    import src.help.installation_help  # noqa: F401
+    import src.help.interactive_subtraction_help  # noqa: F401
+    import src.help.isosbestic_point_help  # noqa: F401
+    import src.help.kinetics_fitting_help  # noqa: F401
+    import src.help.license_help  # noqa: F401
+    import src.help.map2d_help  # noqa: F401
+    import src.help.mcr_als_help  # noqa: F401
+    import src.help.mean_centering_help  # noqa: F401
+    import src.help.melting_curve_help  # noqa: F401
+    import src.help.nmf_help  # noqa: F401
+    import src.help.normalization_help  # noqa: F401
+    import src.help.pca_scores_help  # noqa: F401
+    import src.help.peak_fitting_help  # noqa: F401
+    import src.help.plot_controls_help  # noqa: F401
+    import src.help.pls_help  # noqa: F401
+    import src.help.qc_outlier_help  # noqa: F401
+    import src.help.quick_start_help  # noqa: F401
+    import src.help.reference_matching_help  # noqa: F401
+    import src.help.resolution_enhancement_help  # noqa: F401
+    import src.help.save_help  # noqa: F401
+    import src.help.sg_smoothing_help  # noqa: F401
+    import src.help.snip_baseline_help  # noqa: F401
+    import src.help.som_help  # noqa: F401
+    import src.help.spectra_combine_help  # noqa: F401
+    import src.help.spectral_calculator_help  # noqa: F401
+    import src.help.spike_removal_help  # noqa: F401
+    import src.help.svd_background_help  # noqa: F401
+    import src.help.svd_interpolation_help  # noqa: F401
+    import src.help.svd_reconstruction_help  # noqa: F401
+    import src.help.two_d_correlation_help  # noqa: F401
+    import src.help.user_guide_help  # noqa: F401
+    import src.help.xaxis_alignment_help  # noqa: F401
+    import src.help.xaxis_unit_conversion_help  # noqa: F401
+
+
 # ======================================================================
 # Public API
 # ======================================================================
