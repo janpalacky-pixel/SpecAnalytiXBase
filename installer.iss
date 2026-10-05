@@ -1,7 +1,7 @@
 #define MyAppName "SpecAnalytiXBase"
 #define MyAppExeName "SpecAnalytiXBase.exe"
 #define MyAppFolder "SpecAnalytiXBase"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.1"
 #define MyAppPublisher "Institute of Biophysics of the Czech Academy of Sciences"
 #define MyAppURL "https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile"
 #define MyOutputDir "installer"
@@ -35,6 +35,14 @@ UsePreviousTasks=no
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "czech"; MessagesFile: "compiler:Languages\Czech.isl"
+
+[InstallDelete]
+; An upgrade installs into the same folder as the previous version, and Inno Setup
+; never removes files it is not installing this time. Libraries that an older build
+; shipped but this one doesn't (e.g. a leftover _internal\pyarrow folder from 1.3.0)
+; would otherwise stay on sys.path and break imports at startup. Clear the whole
+; bundled-library folder before the new files are copied.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "dist\{#MyAppFolder}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
