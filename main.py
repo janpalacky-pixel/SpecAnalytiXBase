@@ -1,28 +1,25 @@
 import sys
 import os
 import importlib.util
+import multiprocessing
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtGui import QIcon
-
-from src.modules.utils.app_logger import configure_logging, enable_crash_diagnostics
-from src.modules.utils.resource_path import resource_path
-
-# Configure logging before importing anything else
-configure_logging()
-
-# Arm faulthandler so a true native crash (not a catchable Python
-# exception) still leaves a diagnostic trace instead of the process just
-# disappearing with no output at all. See enable_crash_diagnostics()'s
-# docstring for why this is a separate safety net from the sys.excepthook
-# configure_logging() already installs.
-enable_crash_diagnostics()
+# IMPORTANT - keep this module's top level light.
+#
+# Parallel worker processes (multiprocessing, "spawn" start method on
+# Windows) begin by re-running this file's top level. Anything heavy here
+# - PyQt, the logging setup, the whole GUI - would be repeated in EVERY
+# worker: wasting memory (it can even fail with Windows error 1455,
+# "paging file too small", on machines with many cores) and, for logging
+# and crash diagnostics, opening the application's log file once per
+# worker. So the top level only imports light standard-library modules;
+# everything else is imported and started inside main(), which only the
+# real application process runs. tests/test_main_worker_safe.py guards
+# this.
 
 
-# Packages the application cannot start without, beyond PyQt5 itself (already
-# imported above — if PyQt5 is missing, nothing here could show a Qt dialog
-# about it anyway, so that one failure mode is unavoidable and left as a
-# plain Python traceback). Checked with importlib.util.find_spec rather than
+# Packages the application cannot start without, beyond PyQt5 itself (if
+# PyQt5 is missing, nothing here could show a Qt dialog about it anyway, so
+# that one failure mode is unavoidable and left as a plain Python traceback). Checked with importlib.util.find_spec rather than
 # actually importing each one, so this stays cheap and doesn't trigger the
 # heavy import chain these packages pull in themselves.
 #
@@ -57,6 +54,7 @@ def _fail_with_missing_packages(missing: list) -> None:
     """Show a clear message box naming exactly what's missing and how to
     install it, then exit — instead of letting the application crash into
     an unreadable traceback the user has no way to act on."""
+    from PyQt5.QtWidgets import QApplication, QMessageBox
     app = QApplication.instance() or QApplication(sys.argv)
     lines = "\n".join(f"  • {imp}  (pip install {pkg})" for imp, pkg in missing)
     pip_names = " ".join(pkg for _, pkg in missing)
@@ -75,12 +73,6 @@ def _fail_with_missing_packages(missing: list) -> None:
     sys.exit(1)
 
 
-_missing = _missing_required_packages()
-if _missing:
-    _fail_with_missing_packages(_missing)
-
-from src.controllers.core.main_controller import MainController
-
 
 def _check_optional_dependencies() -> None:
     """
@@ -93,6 +85,8 @@ def _check_optional_dependencies() -> None:
     only the specific feature that needs one is unavailable until it's
     installed.
     """
+    from PyQt5.QtWidgets import QMessageBox
+
     missing = []
 
     try:
@@ -114,6 +108,34 @@ def _check_optional_dependencies() -> None:
 
 
 def main():
+    # Everything below runs only in the real application process (see the
+    # note at the top of this file).
+    from src.modules.utils.app_logger import configure_logging, enable_crash_diagnostics
+
+    # Configure logging before importing anything else
+    configure_logging()
+
+    # Arm faulthandler so a true native crash (not a catchable Python
+    # exception) still leaves a diagnostic trace instead of the process
+    # just disappearing with no output at all. See
+    # enable_crash_diagnostics()'s docstring for why this is a separate
+    # safety net from the sys.excepthook configure_logging() already
+    # installs.
+    enable_crash_diagnostics()
+
+    # Packages the application cannot start without, beyond PyQt5 itself
+    # (if PyQt5 is missing, nothing here could show a Qt dialog about it
+    # anyway, so that one failure mode is unavoidable and left as a plain
+    # Python traceback).
+    _missing = _missing_required_packages()
+    if _missing:
+        _fail_with_missing_packages(_missing)
+
+    from PyQt5.QtWidgets import QApplication
+    from PyQt5.QtGui import QIcon
+    from src.modules.utils.resource_path import resource_path
+    from src.controllers.core.main_controller import MainController
+
     app = QApplication(sys.argv)
     icon_path = resource_path(os.path.join('resources', 'icons', 'app_icon.ico'))
     app.setWindowIcon(QIcon(icon_path))
@@ -126,4 +148,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Required for parallel worker processes in the PyInstaller-built
+    # (installed) application on Windows: without it each worker would
+    # start the whole application again instead of running its task.
+    # No effect when running from source.
+    multiprocessing.freeze_support()
     main()
