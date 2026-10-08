@@ -19,6 +19,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.progress_utils import OperationCancelled
 from src.modules.utils.label_shortening import make_shorten_names_checkbox
 
 logger = get_logger(__name__)
@@ -1306,22 +1307,38 @@ class SOMDialog(QDialog):
         # progress_callback docstring for why that's possible here but not
         # for e.g. Cluster Analysis's single scikit-learn fit() call).
         self._som_progress = QProgressDialog(
-            'Running SOM…', None, 0, self.iterations_spin.value() + 1, self)
+            'Running SOM…', 'Cancel', 0, self.iterations_spin.value() + 1, self)
         self._som_progress.setWindowModality(Qt.WindowModal)
         self._som_progress.setWindowTitle('SOM Analysis')
         self._som_progress.setMinimumDuration(0)
-        self._som_progress.setCancelButton(None)
         self._som_progress.setValue(0)
+        self._som_cancel_requested = False
+        self._som_progress.canceled.connect(self._on_som_cancel_clicked)
         self._som_progress.show()
 
         self._som_worker = _ComputeWorker(None, self)
+
+        def _progress(step, total_steps, label):
+            # Runs on the worker thread once per training pass. Cancel takes
+            # effect here: the manager stops and restores its previous
+            # results (see SOMManager.compute_som).
+            if self._som_cancel_requested:
+                raise OperationCancelled()
+            self._som_worker.progress.emit(step, total_steps, label)
+
         self._som_worker._fn = lambda: self.controller.compute_som(
-            self.spectra, progress_callback=self._som_worker.progress.emit, **params)
+            self.spectra, progress_callback=_progress, **params)
         self._som_worker.progress.connect(self._on_som_progress)
         self._som_worker.done.connect(self._on_som_computed)
         self._som_worker.start(QThread.LowPriority)
 
+    def _on_som_cancel_clicked(self):
+        # Only a request: training stops at the end of the current pass.
+        self._som_cancel_requested = True
+
     def _on_som_progress(self, step, total_steps, label):
+        if self._som_cancel_requested:
+            return                      # the dialog is closing; don't re-show it
         if total_steps != self._som_progress.maximum():
             self._som_progress.setMaximum(total_steps)
         self._som_progress.setLabelText(label)
@@ -1362,6 +1379,8 @@ class SOMDialog(QDialog):
                 self.export_csv_btn.setEnabled(True)
                 self._has_run_once = True
                 self._stale_warning_label.setVisible(False)
+            elif getattr(self.controller.manager, 'cancelled', False):
+                pass                    # cancelled: previous map (if any) is kept as it was
             else:
                 detail = getattr(self.controller.manager, 'last_error', None)
                 QMessageBox.warning(self, "SOM Training Failed", detail or "SOM training failed.")

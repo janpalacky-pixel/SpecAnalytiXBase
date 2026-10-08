@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.progress_utils import OperationCancelled
 from src.modules.utils.spectra_validation import axes_match, describe_axis_mismatch
 from src.modules.visualization_analysis.band_ratio_manager import BandRatioManager
 
@@ -104,6 +105,7 @@ class SOMManager:
         self.grid_cols = None
         self.n_iterations = None
         self.training_method = 'online'
+        self.cancelled = False          # True after compute_som() was cancelled by the user
         self.learning_rate_start = None
         self.learning_rate_end = None
         self.radius_end = None
@@ -124,7 +126,40 @@ class SOMManager:
     # Training                                                            #
     # ------------------------------------------------------------------ #
 
-    def compute_som(self, spectra, grid_rows=5, grid_cols=5, n_iterations=300,
+    def compute_som(self, spectra, **kwargs):
+        """Train a Self-Organizing Map on the given spectra. See
+        _compute_som_unprotected for the arguments and details.
+
+        All or nothing: if training fails, or is cancelled (the progress
+        callback raises OperationCancelled -- the dialog's Cancel button),
+        every attribute is restored to what it was before the call, so a
+        previously displayed map stays complete and consistent instead of
+        mixing the new grid size / spectra with the old trained weights.
+        After a cancel, self.cancelled is True and the call returns False
+        without an error message.
+
+        Returns:
+            bool: True if training was successful.
+        """
+        saved = dict(self.__dict__)
+        try:
+            ok = self._compute_som_unprotected(spectra, **kwargs)
+        except OperationCancelled:
+            self.__dict__.clear()
+            self.__dict__.update(saved)
+            self.cancelled = True
+            self.last_error = None
+            logger.info("SOM training cancelled by the user; previous results kept.")
+            return False
+        if not ok:
+            error = self.last_error
+            self.__dict__.clear()
+            self.__dict__.update(saved)
+            self.last_error = error
+        self.cancelled = False
+        return ok
+
+    def _compute_som_unprotected(self, spectra, grid_rows=5, grid_cols=5, n_iterations=300,
                      learning_rate_start=0.5, learning_rate_end=0.02,
                      radius_end=0.5, random_seed=42, train_mode='shape',
                      feature_defs=None, progress_callback=None,
@@ -307,6 +342,8 @@ class SOMManager:
 
             return True
 
+        except OperationCancelled:
+            raise
         except Exception as e:
             logger.error(f"SOM computation failed: {e}")
             logger.exception("Traceback:")

@@ -164,3 +164,84 @@ def test_dialog_defaults_to_online_and_greys_out_learning_rates_for_batch():
 def test_dialog_shows_the_speed_tip_only_for_bigger_datasets():
     assert _dialog(n=30)._method_tip_label.isHidden()
     assert not _dialog(n=300)._method_tip_label.isHidden()
+
+
+# ---------------------------------------------------------------- cancel / all-or-nothing
+
+from src.modules.utils.progress_utils import OperationCancelled
+
+
+def _cancel_after(passes):
+    def callback(step, total, label):
+        if step >= passes:
+            raise OperationCancelled()
+    return callback
+
+
+@pytest.mark.parametrize('method', ['online', 'batch'])
+def test_cancel_keeps_the_previous_map_untouched(method):
+    spectra = _spectra()
+    m = SOMManager()
+    assert m.compute_som(spectra, grid_rows=4, grid_cols=4, n_iterations=10)
+    before = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in m.__dict__.items()}
+
+    ok = m.compute_som(spectra[:30], grid_rows=6, grid_cols=7, n_iterations=50,
+                       training_method=method, progress_callback=_cancel_after(3))
+    assert ok is False
+    assert m.cancelled is True and m.last_error is None
+    assert (m.grid_rows, m.grid_cols) == (4, 4)                 # not the cancelled 6 x 7
+    assert np.array_equal(m.weights, before['weights'])
+    assert len(m.spectrum_labels) == 60                         # not the cancelled 30
+    assert m.hit_map.shape == m.weights.shape[:2]               # still consistent
+
+
+def test_cancel_before_any_previous_run_leaves_an_empty_manager():
+    m = SOMManager()
+    assert m.compute_som(_spectra(), grid_rows=4, grid_cols=4, n_iterations=10,
+                         progress_callback=_cancel_after(1)) is False
+    assert m.cancelled and m.weights is None and m.grid_rows is None
+
+
+def test_a_successful_run_after_a_cancel_works_and_clears_the_flag():
+    m = SOMManager()
+    m.compute_som(_spectra(), grid_rows=4, grid_cols=4, n_iterations=10,
+                  progress_callback=_cancel_after(1))
+    assert m.compute_som(_spectra(), grid_rows=4, grid_cols=4, n_iterations=10)
+    assert m.cancelled is False and m.weights.shape == (4, 4, 40)
+
+
+def test_failed_run_keeps_the_previous_map_but_reports_the_error():
+    spectra = _spectra()
+    m = SOMManager()
+    assert m.compute_som(spectra, grid_rows=4, grid_cols=4, n_iterations=10)
+    weights = m.weights.copy()
+    # feature mode without feature definitions -> fails after some state was touched
+    assert m.compute_som(spectra, grid_rows=6, grid_cols=6, n_iterations=10,
+                         train_mode='feature', feature_defs=None) is False
+    assert m.last_error and 'feature' in m.last_error.lower()
+    assert m.cancelled is False
+    assert (m.grid_rows, m.grid_cols) == (4, 4) and np.array_equal(m.weights, weights)
+
+
+def test_dialog_cancel_button_stops_training_and_keeps_the_dialog_usable():
+    from PyQt5.QtCore import QTimer, QEventLoop
+    d = _dialog(n=300)
+    d.iterations_spin.setValue(5000)                   # long enough to be cancelled
+    d.grid_rows_spin.setValue(10); d.grid_cols_spin.setValue(10)
+    from PyQt5.QtWidgets import QPushButton
+
+    def click_cancel():                                # exactly what the user does
+        buttons = d._som_progress.findChildren(QPushButton)
+        assert buttons, 'the progress dialog has no Cancel button'
+        buttons[0].click()
+    QTimer.singleShot(300, click_cancel)
+    d.run_som()
+    loop = QEventLoop()
+    d._som_worker.done.connect(loop.quit)
+    QTimer.singleShot(30000, loop.quit)                # safety net
+    if d._som_worker.isRunning():
+        loop.exec_()
+    app.processEvents()
+    assert d.controller.manager.cancelled is True
+    assert d.run_btn.isEnabled() and d._som_running is False
+    assert d.controller.manager.weights is None        # nothing half-trained left behind

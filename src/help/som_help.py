@@ -155,7 +155,9 @@ def get_som_help_content():
         (5&ndash;8% of spectra had their two best nodes not next to each other,
         against 0% for Online). For exploring, choose Batch; for a final map, run
         both and compare. While training, the progress window shows an estimate of
-        the remaining time.
+        the remaining time and a <strong>Cancel</strong> button. Cancelling stops
+        training after the current pass and keeps the previous map (if there was
+        one) exactly as it was.
     </div>
     <div class="detail">
         <strong>Why aren't these adjustable in MeltAnalytiX?</strong> They exist
