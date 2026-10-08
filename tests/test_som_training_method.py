@@ -117,16 +117,10 @@ def test_batch_reports_progress_for_every_pass():
     assert 'batch' in seen[-1][2]
 
 
-def test_batch_is_much_faster_than_online():
-    import time
-    spectra = _spectra(n_per=60, n_features=300)
-    t0 = time.perf_counter()
-    SOMManager().compute_som(spectra, grid_rows=8, grid_cols=8, n_iterations=40)
-    online = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    SOMManager().compute_som(spectra, grid_rows=8, grid_cols=8, n_iterations=40, training_method='batch')
-    batch = time.perf_counter() - t0
-    assert batch * 3 < online
+# (No wall-clock "batch is faster" test here on purpose: timing asserts fail
+# at random on busy or shared machines -- such as the GitHub build that runs
+# these tests before every nightly/release build -- and would block a build
+# for no real reason. Measured speed: see the SOM help and dev notes.)
 
 
 # ---------------------------------------------------------------- progress estimate

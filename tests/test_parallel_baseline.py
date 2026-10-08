@@ -317,9 +317,7 @@ def test_cancel_in_serial_mode_raises_and_stops_early(monkeypatch):
 
 
 def test_cancel_in_parallel_mode_ends_workers_quickly_without_serial_redo(monkeypatch):
-    import time
     spectra = _spectra(n=40, points=1500)
-    started = time.perf_counter()
 
     def cancel_at_once(done, total):
         raise OperationCancelled()
@@ -328,7 +326,7 @@ def test_cancel_in_parallel_mode_ends_workers_quickly_without_serial_redo(monkey
     with pytest.raises(OperationCancelled):
         mgr.apply_correction(spectra, {'algorithm': 'jbcd', 'processing_mode': 'parallel',
                                        'max_workers': 2}, progress=cancel_at_once)
-    assert time.perf_counter() - started < 15          # not the whole (slow) job
+    assert mgr._progress_done < len(spectra)           # stopped early, not the whole job
     assert mgr.last_run_info['fallback_reason'] is None   # cancel is not a "failure"
     # and the manager is perfectly usable afterwards
     out = mgr.apply_correction(_spectra(n=3), {'algorithm': 'als', 'processing_mode': 'serial'})
