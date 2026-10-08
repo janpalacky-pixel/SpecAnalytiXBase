@@ -522,6 +522,14 @@ def get_import_help_content():
         </ul>
     </div>
 
+    <p>
+        <b>Try it with sample data.</b> Three real CD melting scans ship with the
+        application: <b>Help &rarr; Test datasets &rarr; Real (measured) &rarr; CD
+        melting (JASCO .jwb)</b> &mdash; two heating runs and one cooling run.
+        Open one, keep only <b>CD [mdeg]</b>, then run <b>Melting Curve
+        Analysis</b>: it reads each spectrum's temperature from its name.
+    </p>
+
     <h2>MAT Files (WITec/Project FIVE Hyperspectral Maps)</h2>
     <p>
         MAT files of this kind are hyperspectral <b>maps</b>, not single

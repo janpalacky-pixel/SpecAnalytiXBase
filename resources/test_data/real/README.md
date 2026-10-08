@@ -17,6 +17,22 @@ in-app downloader (see `LARGE_TEST_DATASETS` in `src/views/main_window.py`) —
 were measured and kindly provided by Assoc. Prof. Peter Mojzeš, Division of
 Biomolecular Physics, Institute of Physics, Charles University in Prague.
 
+## CD melting (JASCO `.jwb`)
+
+`CD melting/` holds three JASCO temperature scans (circular dichroism + absorbance,
+480–220 nm, 15–17 temperatures each), shown under
+**Help → Test datasets → Real (measured) → CD melting (JASCO .jwb)** and listed in
+`REAL_TEST_DATASETS_CD_MELTING` in `src/views/main_window.py`. They are sample data
+for the `.jwb` import and Melting Curve Analysis, demonstrating the import and
+thermal CD spectra; the files were given generic names (the instrument's own
+names were date based).
+
+| File | Original name | Temperatures |
+|---|---|---|
+| `CD_melt_sample_1_heating.jwb` | `2026_09_10-1-Cell 1.jwb` | 15, 10 → 81 °C |
+| `CD_melt_sample_2_heating.jwb` | `2026_09_15-1-Cell 1.jwb` | 16, 10 → 86.5 °C |
+| `CD_melt_sample_3_cooling.jwb` | `2026_09_21-1-Cell 5.jwb` | 17, 86.5 → 5 °C |
+
 ## Adding a single-series dataset
 
 1. Drop the file (`.xlsx`, `.csv`, `.txt`, …) into this folder.

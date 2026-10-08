@@ -43,6 +43,20 @@ REAL_TEST_DATASETS_2D_MAPS = [
     ('Microchloropsis (WITec 2D map, 20×40)', '2D map/Microchloropsis.mat'),
 ]
 
+# CD temperature scans (JASCO .jwb, CD melting) -- their own submenu, kept
+# in resources/test_data/real/CD melting/. Each file holds CD and absorbance
+# spectra at 15-17 temperatures; the import dialog asks which channel(s) to
+# load, and Melting Curve Analysis reads the temperature from the labels.
+# Generic demonstration data; the names say only heating or cooling.
+REAL_TEST_DATASETS_CD_MELTING = [
+    ('CD melting sample 1 \u2013 heating 10\u201381 \u00b0C',
+     'CD melting/CD_melt_sample_1_heating.jwb'),
+    ('CD melting sample 2 \u2013 heating 10\u201387 \u00b0C',
+     'CD melting/CD_melt_sample_2_heating.jwb'),
+    ('CD melting sample 3 \u2013 cooling 87\u20135 \u00b0C',
+     'CD melting/CD_melt_sample_3_cooling.jwb'),
+]
+
 # Real-data 2D maps too large to keep in the git repository (several are
 # 100+ MB — over or right at GitHub's 100 MB per-file limit). Shipped
 # instead as assets on a GitHub Release; Help -> Test datasets ->
@@ -1658,6 +1672,21 @@ class MainWindow(QMainWindow):
             self.menuHelpTestDatasets2DMaps.addAction(_act)
             self.real_dataset_actions[_fname] = _act
         self.menuHelpTestDatasetsReal.addMenu(self.menuHelpTestDatasets2DMaps)
+
+        # "CD melting (JASCO .jwb)" -- temperature scans, one file = one
+        # series of spectra at increasing or decreasing temperature.
+        self.menuHelpTestDatasetsCDMelting = QMenu(self.menuHelpTestDatasetsReal)
+        self.menuHelpTestDatasetsCDMelting.setObjectName("menuHelpTestDatasetsCDMelting")
+        self.menuHelpTestDatasetsCDMelting.setTitle("CD melting (JASCO .jwb)")
+        for _label, _fname in REAL_TEST_DATASETS_CD_MELTING:
+            _act = QAction(self)
+            _act.setObjectName(f"actionRealDataset_{_fname.replace('/', '_').replace('.', '_')}")
+            _act.setText(_label)
+            _act.setToolTip(f"Open {_fname} in the application (choose CD and/or "
+                            "absorbance in the import dialog)")
+            self.menuHelpTestDatasetsCDMelting.addAction(_act)
+            self.real_dataset_actions[_fname] = _act
+        self.menuHelpTestDatasetsReal.addMenu(self.menuHelpTestDatasetsCDMelting)
 
         self.actionOpenRealFolder = QAction(self)
         self.actionOpenRealFolder.setObjectName("actionOpenRealFolder")
