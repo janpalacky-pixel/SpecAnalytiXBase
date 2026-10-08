@@ -1,5 +1,7 @@
 # src/modules/data_analysis/automated_baseline_manager.py
 
+import time
+
 import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
@@ -8,7 +10,26 @@ from scipy.interpolate import BSpline
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import notify_progress
 from src.modules.utils.correction_history import append_correction_history
+from src.modules.utils.parallel_utils import (
+    describe_worker_limits, resolve_worker_count, run_in_process_pool)
 logger = get_logger(__name__)
+
+# Display name of every algorithm in the correction history. An unknown
+# algorithm name falls back to ALS (and its label), as it always has.
+_ALGORITHM_LABELS = {
+    'als': 'ALS', 'airpls': 'airPLS', 'arpls': 'arPLS', 'iarpls': 'iarPLS',
+    'aspls': 'asPLS', 'drpls': 'drPLS', 'psalsa': 'psalsa',
+    'imodpoly': 'I-ModPoly', 'morphological': 'Morphological Opening',
+    'mpls': 'mpls', 'mollification': 'Morphology + Mollification',
+    'mpspline': 'mpspline', 'jbcd': 'jbcd',
+}
+
+# 'auto' processing mode: how many spectra are timed serially first, the
+# shortest remaining job for which parallel processing is considered at
+# all, and the (conservative) time it takes to start the worker processes.
+_AUTO_CALIBRATION_SPECTRA = 3
+_AUTO_MIN_SERIAL_SECONDS = 6.0
+_POOL_STARTUP_SECONDS = 4.0
 
 
 class AutomatedBaselineManager:
@@ -131,6 +152,9 @@ class AutomatedBaselineManager:
         # Labels of any spectra whose correction failed on the most
         # recent apply_correction() call — see that method's docstring.
         self.failed_labels = []
+        # What the most recent apply_correction() actually did (processing
+        # mode, workers, seconds) -- see run_summary().
+        self.last_run_info = None
 
     def calculate_als_baseline(self, y, lam, p, niter=10, exclude_indices=None):
         """
@@ -1654,7 +1678,185 @@ class AutomatedBaselineManager:
             return b
         return np.interp(np.arange(L), included_indices, b)
 
-    def apply_correction(self, spectra: list, params: dict, progress_callback=None) -> list:
+    # ------------------------------------------------------------------ #
+    # Computing the baselines (serial or parallel)                        #
+    # ------------------------------------------------------------------ #
+
+    def _baseline_for_spectrum(self, algorithm, x_scale, y_scale, cfg):
+        """The baseline of ONE spectrum. The single place that turns the
+        settings into an algorithm call: used by the serial path and by
+        the worker processes alike, which is what guarantees identical
+        results in every processing mode."""
+        region_mask = np.zeros_like(x_scale, dtype=bool)
+        for start, end in cfg['fitting_ranges']:
+            low, high = min(start, end), max(start, end)
+            region_mask |= (x_scale >= low) & (x_scale <= high)
+        # If "Invert" is checked, we exclude everything OUTSIDE the selected regions.
+        exclude_mask = ~region_mask if cfg['invert_regions'] else region_mask
+        lam, p, eta, n_iter = cfg['lam'], cfg['p'], cfg['eta'], cfg['n_iter']
+
+        if algorithm == 'airpls':
+            return self.calculate_airpls_baseline(
+                y_scale, lam=lam, porder=1, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'arpls':
+            return self.calculate_arpls_baseline(
+                y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'iarpls':
+            return self.calculate_iarpls_baseline(
+                y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'aspls':
+            return self.calculate_aspls_baseline(
+                y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'drpls':
+            return self.calculate_drpls_baseline(
+                y_scale, lam=lam, eta=eta, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'psalsa':
+            return self.calculate_psalsa_baseline(
+                y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'imodpoly':
+            return self.calculate_imodpoly_baseline(
+                x_scale, y_scale, poly_order=cfg['poly_order'], itermax=n_iter,
+                exclude_indices=exclude_mask)
+        if algorithm == 'morphological':
+            return self.calculate_morphological_baseline(
+                y_scale, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'mpls':
+            return self.calculate_mpls_baseline(
+                y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'mollification':
+            return self.calculate_mollification_baseline(
+                y_scale, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'mpspline':
+            return self.calculate_mpspline_baseline(
+                y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
+        if algorithm == 'jbcd':
+            return self.calculate_jbcd_baseline(
+                y_scale, alpha=cfg['alpha'], beta=cfg['beta'], itermax=n_iter,
+                exclude_indices=exclude_mask)
+        return self.calculate_als_baseline(
+            y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
+
+    def _compute_serial(self, spectra, indices, algorithm, cfg, baselines, progress_callback):
+        for i in indices:
+            notify_progress(progress_callback, i)
+            spectrum = spectra[i]
+            baselines[i] = self._baseline_for_spectrum(
+                algorithm, spectrum['x_scale'], spectrum['y_scale'].copy(), cfg)
+
+    def _compute_all_baselines(self, spectra, algorithm, cfg, mode, max_workers,
+                               progress_callback, status_callback):
+        """Baseline (array, or None for a failed fit) of every spectrum.
+        Fills self.last_run_info; see apply_correction for the modes."""
+        n = len(spectra)
+        started = time.perf_counter()
+        if mode not in ('auto', 'serial', 'parallel'):
+            mode = 'auto'
+        info = {'requested_mode': mode, 'mode': 'serial', 'workers': 1,
+                'n_spectra': n, 'seconds': 0.0, 'fallback_reason': None, 'note': None}
+        self.last_run_info = info
+        baselines = [None] * n
+        remaining = list(range(n))
+
+        workers = resolve_worker_count(max_workers) if mode != 'serial' else 1
+        if mode != 'serial' and (workers < 2 or n < 2):
+            info['note'] = (f'only one worker is available ({describe_worker_limits()}), '
+                            f'so parallel processing was not used' if workers < 2
+                            else 'there is only one spectrum')
+            mode = 'serial'
+
+        if mode == 'auto':
+            # Time the first few spectra here, then decide with the real
+            # speed of this machine and method whether starting worker
+            # processes (a few seconds on Windows) is worth it.
+            calibration = remaining[:_AUTO_CALIBRATION_SPECTRA]
+            t0 = time.perf_counter()
+            self._compute_serial(spectra, calibration, algorithm, cfg, baselines,
+                                 progress_callback)
+            per_spectrum = (time.perf_counter() - t0) / len(calibration)
+            remaining = remaining[len(calibration):]
+            serial_estimate = per_spectrum * len(remaining)
+            parallel_estimate = _POOL_STARTUP_SECONDS + serial_estimate / workers
+            if (serial_estimate >= _AUTO_MIN_SERIAL_SECONDS
+                    and parallel_estimate <= 0.7 * serial_estimate):
+                mode = 'parallel'
+            else:
+                info['note'] = (f'the job is short (about {serial_estimate:.1f} s '
+                                f'for the rest), so parallel workers would not pay off')
+
+        if mode == 'parallel' and remaining:
+            try:
+                if status_callback is not None:
+                    status_callback("Starting parallel workers\u2026")
+                self._compute_parallel(spectra, remaining, algorithm, cfg, baselines,
+                                       workers, progress_callback)
+                if status_callback is not None:
+                    status_callback("Finishing\u2026")
+                info['mode'] = 'parallel'
+                info['workers'] = workers
+                remaining = []
+            except Exception as exc:
+                # Any pool problem (cannot start, killed for lack of
+                # memory, ...) -- or an error in the algorithm itself,
+                # which then raises again below, just as in serial mode.
+                logger.warning(
+                    "Parallel baseline correction failed (%r); "
+                    "redoing it serially.", exc)
+                info['fallback_reason'] = f'{type(exc).__name__}: {exc}'
+                for i in remaining:
+                    baselines[i] = None
+
+        if remaining:
+            self._compute_serial(spectra, remaining, algorithm, cfg, baselines,
+                                 progress_callback)
+        info['seconds'] = time.perf_counter() - started
+        return baselines
+
+    def _compute_parallel(self, spectra, indices, algorithm, cfg, baselines,
+                          workers, progress_callback):
+        # Several chunks per worker: keeps all workers busy when some
+        # spectra take longer, and gives the progress callback regular
+        # chances to run. Only the x/y arrays travel to the workers (not
+        # whole spectrum dicts with their metadata), and a common x axis
+        # is sent once per chunk.
+        n_chunks = min(len(indices), workers * 4)
+        chunks = [list(part) for part in np.array_split(np.array(indices), n_chunks)]
+        payloads = []
+        for chunk in chunks:
+            xs = [np.asarray(spectra[i]['x_scale']) for i in chunk]
+            ys = [np.asarray(spectra[i]['y_scale']) for i in chunk]
+            x0 = xs[0]
+            shared = all(len(x) == len(x0) and np.array_equal(x, x0) for x in xs)
+            payloads.append((algorithm, cfg, x0 if shared else None,
+                             None if shared else xs, ys))
+        results = run_in_process_pool(
+            _baseline_chunk_worker, payloads, workers, progress_callback)
+        for chunk, chunk_baselines in zip(chunks, results):
+            for i, baseline in zip(chunk, chunk_baselines):
+                baselines[i] = baseline
+
+    def run_summary(self):
+        """One sentence about how the last apply_correction() call was run
+        (empty if there was none) -- shown to the user so serial and
+        parallel runs can be compared."""
+        info = getattr(self, 'last_run_info', None)
+        if not info:
+            return ''
+        n = info['n_spectra']
+        noun = 'spectrum' if n == 1 else 'spectra'
+        how = (f"parallel, {info['workers']} workers" if info['mode'] == 'parallel'
+               else 'serial')
+        seconds = info['seconds']
+        took = f"{seconds:.2f}" if seconds < 10 else f"{seconds:.1f}"
+        text = f"Computed {n} {noun} in {took} s ({how})."
+        if info['note'] and n > 1:
+            text += f" Ran serially: {info['note']}."
+        if info['fallback_reason']:
+            text += (f" Parallel processing failed and the job was redone serially "
+                     f"({info['fallback_reason']}).")
+        return text
+
+    def apply_correction(self, spectra: list, params: dict, progress_callback=None,
+                         status_callback=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
         below) to a list of spectra.
@@ -1684,6 +1886,23 @@ class AutomatedBaselineManager:
         'airpls', 'arpls', 'iarpls', 'aspls', 'drpls', 'psalsa',
         'imodpoly', 'morphological', 'mpls', 'mollification',
         'mpspline', or 'jbcd'.
+
+        params['processing_mode'] chooses how the baselines are computed
+        (the result is identical in every mode, only the speed differs):
+        'auto' (the default; also used for settings saved before this
+        option existed) times the first few spectra and uses parallel
+        worker processes only when the rest of the job is long enough to
+        pay for starting them; 'serial' computes everything one spectrum
+        after another in this process; 'parallel' always uses worker
+        processes (when at least two workers and two spectra are
+        available). params['max_workers'] (0/absent = automatic, limited
+        by CPU cores and free memory) sets the number of workers.
+        After every call self.last_run_info says what was actually done
+        and run_summary() turns it into a sentence for the user.
+
+        status_callback : optional callable(str) that receives short
+            status texts such as "Starting parallel workers…" (a caller
+            with a progress dialog can show them as its label).
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -1755,77 +1974,28 @@ class AutomatedBaselineManager:
 
         corrected_spectra = []
         self.failed_labels = []
+        algo_label = _ALGORITHM_LABELS.get(algorithm, 'ALS')
+        cfg = {
+            'lam': lam, 'p': p, 'eta': eta, 'n_iter': n_iter,
+            'poly_order': poly_order, 'alpha': alpha, 'beta': beta,
+            'fitting_ranges': [tuple(r) for r in fitting_ranges],
+            'invert_regions': bool(invert_regions),
+        }
+        # All baselines first (serially or in worker processes -- the very
+        # same function computes each one), then the cheap bookkeeping
+        # below always runs here in this process, identically in every
+        # processing mode.
+        baselines = self._compute_all_baselines(
+            spectra, algorithm, cfg,
+            params.get('processing_mode', 'auto'), params.get('max_workers', 0),
+            progress_callback, status_callback)
         for i, spectrum in enumerate(spectra):
-            notify_progress(progress_callback, i)
             corrected_spectrum = {key: (value.copy() if hasattr(value, 'copy') else value)
                                   for key, value in spectrum.items()}
 
             y_scale = corrected_spectrum['y_scale']
-            x_scale = corrected_spectrum['x_scale']
+            baseline = baselines[i]
 
-            # Create the region mask from user-defined ranges
-            region_mask = np.zeros_like(x_scale, dtype=bool)
-            if fitting_ranges:
-                for start, end in fitting_ranges:
-                    low, high = min(start, end), max(start, end)
-                    region_mask |= (x_scale >= low) & (x_scale <= high)
-            
-            # If "Invert" is checked, we exclude everything OUTSIDE the selected regions.
-            exclude_mask = ~region_mask if invert_regions else region_mask
-
-            # Calculate the baseline
-            if is_airpls:
-                baseline = self.calculate_airpls_baseline(
-                    y_scale, lam=lam, porder=1, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'airPLS'
-            elif is_arpls:
-                baseline = self.calculate_arpls_baseline(
-                    y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'arPLS'
-            elif is_iarpls:
-                baseline = self.calculate_iarpls_baseline(
-                    y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'iarPLS'
-            elif is_aspls:
-                baseline = self.calculate_aspls_baseline(
-                    y_scale, lam=lam, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'asPLS'
-            elif is_drpls:
-                baseline = self.calculate_drpls_baseline(
-                    y_scale, lam=lam, eta=eta, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'drPLS'
-            elif is_psalsa:
-                baseline = self.calculate_psalsa_baseline(
-                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'psalsa'
-            elif is_imodpoly:
-                baseline = self.calculate_imodpoly_baseline(
-                    x_scale, y_scale, poly_order=poly_order, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'I-ModPoly'
-            elif is_morph:
-                baseline = self.calculate_morphological_baseline(
-                    y_scale, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'Morphological Opening'
-            elif is_mpls:
-                baseline = self.calculate_mpls_baseline(
-                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'mpls'
-            elif is_mollification:
-                baseline = self.calculate_mollification_baseline(
-                    y_scale, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'Morphology + Mollification'
-            elif is_mpspline:
-                baseline = self.calculate_mpspline_baseline(
-                    y_scale, lam=lam, p=p, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'mpspline'
-            elif is_jbcd:
-                baseline = self.calculate_jbcd_baseline(
-                    y_scale, alpha=alpha, beta=beta, itermax=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'jbcd'
-            else:
-                baseline = self.calculate_als_baseline(y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
-                algo_label = 'ALS'
-            
             # Subtract the baseline (only if calculation was successful)
             success = baseline is not None and not np.isnan(baseline).all()
             if success:
@@ -1885,3 +2055,16 @@ class AutomatedBaselineManager:
             corrected_spectra.append(corrected_spectrum)
             
         return corrected_spectra
+
+
+def _baseline_chunk_worker(payload):
+    """Worker-process entry point (must stay a top-level function): the
+    baselines of one chunk of spectra, via the very same
+    _baseline_for_spectrum() the serial path uses."""
+    algorithm, cfg, x_shared, xs, ys = payload
+    manager = AutomatedBaselineManager()
+    results = []
+    for k, y in enumerate(ys):
+        x = x_shared if x_shared is not None else xs[k]
+        results.append(manager._baseline_for_spectrum(algorithm, x, y.copy(), cfg))
+    return results

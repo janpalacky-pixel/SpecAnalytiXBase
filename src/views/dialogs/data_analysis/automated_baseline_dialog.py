@@ -6,9 +6,10 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
                              QComboBox, QStackedWidget, QTabWidget, QFrame,
                              QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator,
-                             QAbstractItemView, QApplication, QMessageBox)
+                             QAbstractItemView, QApplication, QMessageBox, QSpinBox)
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent
 from PyQt5.QtGui import QFont
+import os
 import time
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -725,6 +726,13 @@ class AutomatedBaselineDialog(QDialog):
         invert_state = self.current_settings.get('invert_regions', False)
         self.invert_regions_checkbox.setChecked(invert_state)
 
+        # Load processing mode / workers (settings saved before this
+        # option existed simply keep the Automatic default).
+        mode_index = self.processing_mode_combo.findData(
+            self.current_settings.get('processing_mode', 'auto'))
+        self.processing_mode_combo.setCurrentIndex(max(0, mode_index))
+        self.max_workers_spin.setValue(int(self.current_settings.get('max_workers', 0) or 0))
+
     def create_control_panel(self):
         widget = QWidget()
         widget.setFixedWidth(400)
@@ -1183,6 +1191,45 @@ class AutomatedBaselineDialog(QDialog):
         regions_group.setLayout(regions_layout)
         layout.addWidget(regions_group)
 
+        # Processing -- how Apply / Add as New compute the baselines. The
+        # numbers are identical in every mode; only the speed differs.
+        # Keeping the choice visible lets the user compare serial against
+        # parallel, or switch parallel off if it ever misbehaves.
+        processing_group = QGroupBox("Processing")
+        processing_layout = QHBoxLayout(processing_group)
+        processing_layout.addWidget(QLabel("Mode:"))
+        self.processing_mode_combo = QComboBox()
+        self.processing_mode_combo.addItem("Automatic (recommended)", 'auto')
+        self.processing_mode_combo.addItem("Serial (one core)", 'serial')
+        self.processing_mode_combo.addItem("Parallel (several cores)", 'parallel')
+        self.processing_mode_combo.setToolTip(
+            "How Apply / Add as New compute the baselines. The result is the "
+            "same in every mode; only the speed differs.\n\n"
+            "Automatic: times the first few spectra and uses several cores only "
+            "when the rest of the job is long enough to pay for starting them "
+            "(large maps, slow methods such as mpspline or jbcd).\n"
+            "Serial: one spectrum after another, on one core.\n"
+            "Parallel: always several worker processes. Use it to compare "
+            "speed, or choose Serial if you suspect a problem with it.")
+        processing_layout.addWidget(self.processing_mode_combo, 1)
+        processing_layout.addWidget(QLabel("Workers:"))
+        self.max_workers_spin = QSpinBox()
+        self.max_workers_spin.setRange(0, max(1, os.cpu_count() or 1))
+        from src.modules.utils.parallel_utils import describe_worker_limits, safe_worker_count
+        self.max_workers_spin.setSpecialValueText(f"Auto ({safe_worker_count()})")
+        self.max_workers_spin.setToolTip(
+            "Number of worker processes for parallel processing.\n"
+            "Auto uses one less than the number of CPU cores, limited by the "
+            "memory that is free right now (about 200 MB per worker).\n"
+            f"Right now on this computer: {describe_worker_limits()}.\n"
+            "A number you type is limited to the CPU cores only, so only raise it "
+            "if you know there is enough free memory.")
+        processing_layout.addWidget(self.max_workers_spin)
+        self.processing_mode_combo.currentIndexChanged.connect(
+            lambda _i: self.max_workers_spin.setEnabled(
+                self.processing_mode_combo.currentData() != 'serial'))
+        layout.addWidget(processing_group)
+
         # No trailing addStretch() here: spectra_group's stretch factor
         # (see above) is what should absorb any leftover vertical space,
         # not a spacer between Fitting Regions and the button row.
@@ -1496,6 +1543,12 @@ class AutomatedBaselineDialog(QDialog):
             QMessageBox.warning(self, "Could Not Apply", message)
 
     def get_settings(self):
+        settings = self._algorithm_settings()
+        settings['processing_mode'] = self.processing_mode_combo.currentData()
+        settings['max_workers'] = self.max_workers_spin.value()
+        return settings
+
+    def _algorithm_settings(self):
         algorithm = self.method_combo.currentData()
         # Flatten to plain (start, end) tuples — the manager (and its
         # tests, and the correction-history metadata) only ever deal in

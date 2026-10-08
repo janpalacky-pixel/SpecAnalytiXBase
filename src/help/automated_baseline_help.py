@@ -163,6 +163,29 @@ def get_automated_baseline_help_content():
             just that range.</p>
         </div>
 
+        <h2>Processing: Automatic, Serial or Parallel</h2>
+        <p>The <b>Processing</b> box above the buttons decides <i>how</i> Apply / Add as New compute
+        the baselines. <b>The result is the same in every mode</b> &mdash; only the speed differs.</p>
+        <table>
+            <tr><th>Mode</th><th>What it does</th></tr>
+            <tr><td><b>Automatic</b> (default)</td><td>Times the first few spectra on your computer and
+            uses several cores only when the rest of the job is long enough to be worth starting them
+            (a few seconds). Small jobs just run normally.</td></tr>
+            <tr><td><b>Serial</b></td><td>One spectrum after another, on one core &mdash; the way it
+            always worked.</td></tr>
+            <tr><td><b>Parallel</b></td><td>Always uses several worker processes (the
+            <b>Workers</b> box sets how many; <i>Auto</i> = one less than your CPU cores, limited by free
+            memory).</td></tr>
+        </table>
+        <p>When the job finishes, the message tells you how it was computed, for example
+        <i>"Computed 5000 spectra in 41 s (parallel, 7 workers)"</i>, so you can compare the modes on your
+        own data. Parallel processing helps with <b>large maps</b> (thousands of spectra) and with the
+        slow methods (<b>mpspline, jbcd, asPLS, iarPLS</b>); for a few dozen spectra it is not faster
+        because starting the workers takes a few seconds.</p>
+        <div class="tip"><b>If something looks wrong:</b> choose <b>Serial</b> and run again. If parallel
+        processing cannot start (for example not enough free memory) the job is redone serially
+        automatically and the message says so.</div>
+
         <h2>Parameters Explained</h2>
         <h3>ALS</h3>
         <ul>

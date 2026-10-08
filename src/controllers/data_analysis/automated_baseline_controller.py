@@ -49,6 +49,21 @@ class AutomatedBaselineController:
     # directly.                                                            #
     # ------------------------------------------------------------------ #
 
+    # Methods slow enough that even a handful of spectra take noticeable time.
+    _SLOW_ALGORITHMS = ('mpspline', 'jbcd', 'aspls', 'iarpls')
+
+    def _spectra_count_for_progress(self, settings, n_spectra):
+        """Count handed to the progress-dialog threshold. A small job
+        normally gets no dialog; but a parallel run (starting workers
+        takes seconds) or a slow method deserves one even for a few
+        spectra. A single spectrum never does."""
+        if n_spectra < 2:
+            return n_spectra
+        if (settings.get('processing_mode') == 'parallel'
+                or settings.get('algorithm') in self._SLOW_ALGORITHMS):
+            return max(n_spectra, self.oc._PROGRESS_DIALOG_SPECTRA_THRESHOLD)
+        return n_spectra
+
     def commit_automated_baseline(self, settings, add_as_new, selected_spectra):
         """Commit the Automated Baseline operation directly, called by
         the dialog's own Apply / Add as New buttons rather than through the
@@ -67,13 +82,22 @@ class AutomatedBaselineController:
         progress = self.oc._show_busy_progress(
             "Automated Baseline",
             f"Applying automated baseline correction to {n_spectra} spectra\u2026",
-            n_spectra,
+            self._spectra_count_for_progress(settings, n_spectra),
         )
+
+        def _show_status(text):
+            # e.g. "Starting parallel workers..." -- starting processes on
+            # Windows takes seconds, which would otherwise look frozen.
+            if progress is not None:
+                progress.setLabelText(text)
+                QApplication.processEvents()
+
         try:
             try:
                 processed_spectra = self.manager.apply_correction(
                     selected_spectra, settings,
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
+                    status_callback=_show_status,
                 )
             except Exception as exc:
                 return False, f'Error applying automated baseline correction: {exc}'
@@ -175,4 +199,11 @@ class AutomatedBaselineController:
             failed_names = self.oc._format_names_for_message(self.manager.failed_labels)
             message += (f'\n\u26a0 Baseline fit failed for {fn} {fnoun} (left unchanged): '
                         f'{failed_names}. Try different fitting regions or parameters.')
+        # How it was computed (mode, workers, time), so serial and parallel
+        # runs can be compared -- or a failed parallel attempt noticed.
+        info = self.manager.last_run_info or {}
+        if n > 1 or info.get('fallback_reason'):
+            summary = self.manager.run_summary()
+            if summary:
+                message += f'\n{summary}'
         return True, message

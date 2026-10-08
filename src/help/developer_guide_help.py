@@ -2147,16 +2147,17 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
                 sandbox; it was <em>not</em> measured on a real, likely-more-multicore
                 desktop, so don't treat "marginal" as the final word for every machine —
                 only for this one.</li>
-            <li><strong>A real blocker, found independently of the timing result:</strong>
+            <li><strong>A real blocker, found independently of the timing result
+                (since resolved &mdash; see <a href="#parallel-automated-baseline">Parallel
+                Automated Baseline</a> below):</strong>
                 this app is packaged with PyInstaller (<code>SpecAnalytiXBase.spec</code>),
-                and <code>main.py</code> does not call
+                and <code>main.py</code> did not call
                 <code>multiprocessing.freeze_support()</code>. Without it, spawning worker
                 processes from a frozen Windows <code>.exe</code> is a known way for each
-                worker to re-launch the whole GUI instead of just running its trial — this
-                needs to be added to <code>main.py</code>, right after its existing
-                <code>if __name__ == "__main__":</code> guard, and tested against an actual
-                frozen build, before any <code>ProcessPoolExecutor</code>/
-                <code>multiprocessing.Pool</code> use could ship safely.</li>
+                worker to re-launch the whole GUI instead of just running its trial.
+                <code>main.py</code> now calls it right after its
+                <code>if __name__ == "__main__":</code> guard, and its top level is kept
+                light (see below).</li>
         </ol>
 
         <p>Given a measured ~10% gain (on this sandbox), an unmeasured payoff on real
@@ -2168,6 +2169,64 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
         as its own dedicated piece of work — profiled on a real, target machine first — if
         a future feature (e.g. bootstrap resampling, which needs the same "refit many times
         independently" shape) makes the sequential cost actually painful in practice.</p>
+
+        <h2 id="parallel-automated-baseline">Parallel Automated Baseline: Serial,
+        Parallel or Automatic</h2>
+
+        <p>The Automated Baseline dialog has a <b>Processing</b> box (Mode: Automatic /
+        Serial / Parallel, and a Workers number). The numbers are identical in every mode &mdash;
+        only the speed differs &mdash; and keeping the choice visible lets a user compare
+        modes, or switch parallel processing off if it ever misbehaves.</p>
+
+        <h3>When it pays off (measured)</h3>
+        <p>Per spectrum (synthetic spectra, 2-core test machine): ALS-family methods take
+        5&ndash;20&nbsp;ms (1000&ndash;4000 points), iarPLS 14&ndash;48&nbsp;ms, asPLS
+        33&ndash;105&nbsp;ms, jbcd 170&ndash;320&nbsp;ms and mpspline 34&nbsp;ms to about 1&nbsp;s.
+        A normal dataset of a few hundred spectra therefore takes seconds and gains nothing from
+        workers (starting them takes a few seconds on Windows). It pays off for maps with
+        thousands of spectra and for the slow methods.</p>
+
+        <h3>Design</h3>
+        <ul>
+            <li><b>One code path.</b> <code>AutomatedBaselineManager._baseline_for_spectrum()</code>
+            turns the settings into the algorithm call for ONE spectrum; the serial path and the
+            worker processes (<code>_baseline_chunk_worker</code>) both call it, so the results
+            are the same by construction (<code>tests/test_parallel_baseline.py</code> compares
+            them bit for bit). Only the baselines are computed in workers; subtraction and the
+            correction history always happen in the main process.</li>
+            <li><b>Automatic mode</b> times the first three spectra serially and extrapolates
+            with the real speed of the machine and method; workers are started only if the rest
+            would take at least 6&nbsp;s serially and the estimate with workers (4&nbsp;s
+            start-up + time/workers) is under 70% of it. No hand-tuned table of methods.</li>
+            <li><b>Chunks, not single spectra.</b> The spectra are split into about four chunks
+            per worker; only the x/y arrays travel to the workers (a common x axis once per
+            chunk), not whole spectrum dictionaries with their metadata.</li>
+            <li><b>Memory-safe worker count</b> (<code>src/modules/utils/parallel_utils.py</code>):
+            one less than the CPU cores (so the window stays responsive), limited by the free
+            memory (about 200&nbsp;MB per worker after leaving 1&nbsp;GB; on Windows the larger of
+            the free physical RAM and the free <i>commit</i> limit, read with ctypes &mdash; the
+            commit figure alone said &ldquo;1 worker&rdquo; on a 32&nbsp;GB machine whose browsers had
+            committed most of it, while 20 workers then ran fine and about 5.6&times; faster). Workers run with
+            <code>OPENBLAS/OMP/MKL_NUM_THREADS=1</code>. These are the lessons of MeltAnalytiX's
+            WinError&nbsp;1455 ("paging file too small") fixes.</li>
+            <li><b>Light <code>main.py</code>.</b> On Windows every worker re-runs
+            <code>main.py</code>'s top level before its task, so that top level only imports a
+            few standard-library modules; logging, PyQt and the GUI are set up inside
+            <code>main()</code>. <code>multiprocessing.freeze_support()</code> is required for the
+            installed (PyInstaller) build. <code>tests/test_main_worker_safe.py</code> guards
+            both.</li>
+            <li><b>"spawn" everywhere.</b> The pool always uses the spawn start method, i.e.
+            the same behaviour as Windows, also when developing on Linux/macOS.</li>
+            <li><b>Fallback.</b> If the pool cannot start or dies (memory, killed worker), the job
+            is redone serially and the result message says so. An error inside the algorithm
+            itself is not hidden: it is raised again by the serial redo, as it always was.</li>
+            <li><b>Responsive window.</b> While waiting, the main thread calls the progress
+            callback (<code>QApplication.processEvents</code>) about ten times a second,
+            under the usual modal progress dialog ("Starting parallel workers&hellip;").</li>
+        </ul>
+        <p><b>Not done yet:</b> a Cancel button for a running job, and the same treatment for
+        other per-spectrum operations. Those methods are all fast enough that parallelizing
+        them would cost more (worker start-up) than it saves, except for map-sized datasets.</p>
 
         <h2 id="mcr-als-bootstrap-uncertainty">MCR-ALS Bootstrap Uncertainty: Residual
         Resampling With a Warm-Started Refit</h2>
