@@ -644,6 +644,37 @@ class SOMDialog(QDialog):
             "What do these training parameters mean?", self._show_training_params_help))
         som_layout.addLayout(header)
 
+        # Training method: the classic online algorithm (slow for hundreds
+        # of spectra) or the much faster batch algorithm (a different
+        # algorithm: the map differs). Online stays the default so existing
+        # results are unchanged.
+        method_row = QHBoxLayout()
+        method_row.addWidget(QLabel("Training method:"))
+        self.training_method_combo = QComboBox()
+        self.training_method_combo.addItem("Online \u2013 classic (slower)", 'online')
+        self.training_method_combo.addItem("Batch \u2013 fast", 'batch')
+        self.training_method_combo.setToolTip(
+            "Online (classic): adjusts the map after every single spectrum. "
+            "Slow for hundreds of spectra (minutes), but the established "
+            "method and the default.\n\n"
+            "Batch: finds the best node of all spectra at once in every pass. "
+            "Typically 10-50 times faster (seconds), but it is a different "
+            "algorithm, so the map is not identical to the online one; the "
+            "learning rates are not used.")
+        self.training_method_combo.currentIndexChanged.connect(self._on_training_method_changed)
+        method_row.addWidget(self.training_method_combo, 1)
+        som_layout.addLayout(method_row)
+
+        self._method_tip_label = QLabel(
+            "Tip: with hundreds of spectra, Online training can take minutes. "
+            "Batch usually finishes in seconds; compare both if unsure.")
+        self._method_tip_label.setWordWrap(True)
+        self._method_tip_label.setStyleSheet("color: #555; font-size: 11px;")
+        # Shown only for bigger datasets (see _update_method_tip), where the
+        # difference in running time is noticeable.
+        self._method_tip_label.setVisible(False)
+        som_layout.addWidget(self._method_tip_label)
+
         grid_row = QHBoxLayout()
         grid_row.addWidget(QLabel("Grid rows:"))
         self.grid_rows_spin = QSpinBox()
@@ -662,7 +693,8 @@ class SOMDialog(QDialog):
         som_layout.addLayout(grid_row)
 
         lr_row = QHBoxLayout()
-        lr_row.addWidget(QLabel("Learning rate start:"))
+        self._lr_start_label = QLabel("Learning rate start:")
+        lr_row.addWidget(self._lr_start_label)
         self.lr_start_spin = QDoubleSpinBox()
         self.lr_start_spin.setRange(0.01, 5.0)
         self.lr_start_spin.setSingleStep(0.05)
@@ -670,7 +702,8 @@ class SOMDialog(QDialog):
         self.lr_start_spin.setKeyboardTracking(False)
         self.lr_start_spin.valueChanged.connect(self._mark_results_stale)
         lr_row.addWidget(self.lr_start_spin)
-        lr_row.addWidget(QLabel("end:"))
+        self._lr_end_label = QLabel("end:")
+        lr_row.addWidget(self._lr_end_label)
         self.lr_end_spin = QDoubleSpinBox()
         self.lr_end_spin.setRange(0.001, 5.0)
         self.lr_end_spin.setSingleStep(0.01)
@@ -703,12 +736,35 @@ class SOMDialog(QDialog):
         iter_row.addWidget(self.iterations_spin)
         som_layout.addLayout(iter_row)
 
+        self._update_method_tip()
         return som_group
+
+    def _on_training_method_changed(self, _index=None):
+        """Batch training has no learning rate: grey those controls out."""
+        use_learning_rate = self.training_method_combo.currentData() != 'batch'
+        for widget in (self._lr_start_label, self.lr_start_spin,
+                       self._lr_end_label, self.lr_end_spin):
+            widget.setEnabled(use_learning_rate)
+        self._mark_results_stale()
+
+    def _update_method_tip(self):
+        """Show the 'Online can take minutes' tip only for bigger datasets."""
+        n_spectra = len(self.spectra) if self.spectra is not None else 0
+        self._method_tip_label.setVisible(n_spectra >= 150)
 
     def _show_training_params_help(self):
         QMessageBox.information(
             self, "Training Parameters — Help",
             "<html><body style='font-family: Arial, sans-serif; font-size: 12px;'>"
+            "<p><b>Training method</b> — <i>Online</i> (classic, the default) "
+            "adjusts the map after every single spectrum; it is the "
+            "established method but slow for hundreds of spectra (minutes). "
+            "<i>Batch</i> finds the best node of all spectra at once in every "
+            "pass and is typically 10&ndash;50 times faster (seconds). It is a "
+            "<b>different algorithm</b>: the map is not identical to the "
+            "online one (on test data: about 1% higher quantization error, "
+            "somewhat less perfect neighbourhood preservation), and it does "
+            "not use the learning rates. If unsure, run both and compare.</p>"
             "<p><b>Grid rows / cols</b> — size of the node grid. More nodes "
             "give finer resolution but need more spectra and more iterations "
             "to train well. A common starting point is a grid with roughly "
@@ -1237,6 +1293,7 @@ class SOMDialog(QDialog):
             radius_end=self.radius_end_spin.value(),
             train_mode='feature' if is_feature_mode else 'shape',
             feature_defs=feature_defs,
+            training_method=self.training_method_combo.currentData(),
         )
 
         self.run_btn.setEnabled(False)

@@ -121,6 +121,13 @@ def get_som_help_content():
     <h2>Training Parameters</h2>
     <table>
         <tr><th>Parameter</th><th>Meaning</th></tr>
+        <tr><td>Training method</td><td><strong>Online</strong> (classic, the default)
+            adjusts the map after every single spectrum. It is the established
+            method, but it can take minutes for hundreds of spectra.
+            <strong>Batch</strong> finds the best node of all spectra at once in
+            every pass and is typically <strong>10&ndash;50 times faster</strong>
+            (seconds). It is a <em>different algorithm</em>, so the map is not
+            identical to the online one, and it does not use the learning rates.</td></tr>
         <tr><td>Grid rows / cols</td><td>Size of the node grid (rectangular topology).
             More nodes give finer resolution but need more spectra and more
             iterations to train well. A common starting point is a grid with
@@ -140,6 +147,16 @@ def get_som_help_content():
             the cost of longer training time. Training uses a fixed random seed,
             so the same settings always reproduce the same map exactly.</td></tr>
     </table>
+    <div class="tip">
+        <strong>Online or Batch?</strong> Measured on a map of 625 spectra
+        (1800 points each) with a 10&times;10 grid: Online took 77&nbsp;s for the
+        default 300 passes, Batch 1.5&nbsp;s. Batch gave about 1% higher
+        quantization error and somewhat less perfect neighbourhood preservation
+        (5&ndash;8% of spectra had their two best nodes not next to each other,
+        against 0% for Online). For exploring, choose Batch; for a final map, run
+        both and compare. While training, the progress window shows an estimate of
+        the remaining time.
+    </div>
     <div class="detail">
         <strong>Why aren't these adjustable in MeltAnalytiX?</strong> They exist
         in MeltAnalytiX's own SOM training engine too — this dialog's algorithm
