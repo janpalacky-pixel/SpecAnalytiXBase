@@ -3216,6 +3216,25 @@ def _natural_sort_key(cls, label):
         old <code>.lower()</code> key and the new natural-sort key produces
         identical output.</p>
 
+        <h2 id="all-or-nothing-results">A Failed or Cancelled Computation Must Leave the Previous Result Intact</h2>
+        <p>A manager that stores its results in attributes (<code>self.grid_rows</code>,
+        <code>self.weights</code>, &hellip;) and fills them step by step during a computation
+        can be left <em>half-updated</em> if the computation stops midway: an error, or the
+        user pressing Cancel. Found in <code>SOMManager.compute_som</code>: it set the new
+        grid size and spectrum list before training, so a run that failed during training
+        left the <em>new</em> grid size next to the <em>old</em> trained weights &mdash; and the
+        still-open dialog, which redraws from the manager, could then show nonsense or
+        crash on the next click.</p>
+        <p><b>Pattern:</b> keep the public method as a thin all-or-nothing wrapper around
+        the real work: save <code>dict(self.__dict__)</code> first; if the work raises
+        <code>OperationCancelled</code> or returns failure, restore that copy (keeping only
+        the new error message, and a <code>cancelled</code> flag so the dialog can skip
+        the error box). A shallow copy is enough as long as the computation
+        <em>replaces</em> arrays instead of modifying them in place. See
+        <code>SOMManager.compute_som</code> / <code>_compute_som_unprotected</code> and
+        <code>tests/test_som_training_method.py</code>. Any new long computation with a
+        Cancel button needs the same treatment.</p>
+
         <h2 id="redraw-after-operation">Interactive Update Must Survive Apply / Add as New</h2>
 
         <p>Every <code>commit_*</code> method used to end by calling
@@ -3439,6 +3458,16 @@ pytest tests/ -v
             confirm the test actually fails against the old, buggy code, then confirm
             it passes against the fix. A test that was never seen to fail hasn't
             actually verified anything.
+        </div>
+        <div class="warning">
+            <b>No timing assertions.</b> Every nightly and release build runs this suite
+            first and stops if any test fails. A test like &ldquo;batch must be 3&times;
+            faster than online&rdquo; compares clock times, which jump around on a busy or
+            shared machine (the GitHub build machines are both) &mdash; such a test failed
+            about every second run and would have blocked builds at random. Check
+            <em>what</em> happened (results identical, job stopped early, fewer spectra
+            processed), never <em>how long</em> it took; document measured speed in the help
+            instead.
         </div>
 
         <!-- ═══════════════════════════════════════════════════════════

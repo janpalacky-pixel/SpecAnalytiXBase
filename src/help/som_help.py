@@ -159,6 +159,45 @@ def get_som_help_content():
         training after the current pass and keeps the previous map (if there was
         one) exactly as it was.
     </div>
+
+    <h3>How Online and Batch training differ</h3>
+    <p>Both start from the same initial map (nodes spread along the two main
+    directions of variation in your data) and shrink the neighbourhood radius in the
+    same way. They differ in how the nodes are moved:</p>
+    <ul>
+        <li><strong>Online (classic)</strong> takes one spectrum at a time (in random
+        order), finds its best node, and pulls that node and its grid neighbours a
+        little toward the spectrum &mdash; then the next spectrum, and so on. With 625
+        spectra and 300 passes that is 187,500 small steps, each depending on the one
+        before, so it cannot be sped up by using more processor cores.</li>
+        <li><strong>Batch</strong> first finds the best node of <em>every</em> spectrum
+        with the map as it is, then moves each node in one step to the average of the
+        spectra assigned to it and to its neighbours (closer neighbours count more).
+        One pass is a few matrix operations, which is why it is so much faster. It has
+        no learning rate.</li>
+    </ul>
+
+    <h3>Measuring map quality</h3>
+    <ul>
+        <li><strong>Quantization error</strong> &mdash; the average distance between each
+        spectrum and its best node. It says how well the nodes <em>represent</em> the
+        spectra: smaller is better. Batch is typically about 1% higher than Online.</li>
+        <li><strong>Topographic error</strong> &mdash; the fraction of spectra whose best
+        and second-best nodes are <em>not</em> neighbours on the grid. It says how well
+        the map keeps <em>similar spectra next to each other</em> (the whole point of a
+        SOM compared with plain clustering): 0% is perfect. Online reached 0% on the test
+        data, Batch 5&ndash;8%, i.e. for a few spectra the second-best node lies
+        further away on the map.</li>
+    </ul>
+
+    <div class="note">
+        <strong>Rotated or mirrored maps are normal.</strong> A SOM has no fixed
+        &ldquo;up&rdquo; or &ldquo;left&rdquo;: a map turned by 90&deg;/180&deg; or
+        mirrored describes exactly the same relationships between your spectra. Online
+        and Batch often end up in different orientations of the same structure, so
+        compare <em>which spectra share or neighbour a node</em>, not where on the grid
+        they sit.
+    </div>
     <div class="detail">
         <strong>Why aren't these adjustable in MeltAnalytiX?</strong> They exist
         in MeltAnalytiX's own SOM training engine too — this dialog's algorithm
