@@ -3,7 +3,8 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QRadioButton,
                            QPushButton, QDialogButtonBox, QButtonGroup, QCheckBox, QLabel, 
                            QLineEdit, QGroupBox, QMessageBox, QSplitter, QWidget, QSizePolicy,
-                           QListWidget, QListWidgetItem)
+                           QListWidget, QListWidgetItem, QTableWidget,
+                           QTableWidgetItem, QHeaderView)
 from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtCore import Qt, pyqtSignal
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas

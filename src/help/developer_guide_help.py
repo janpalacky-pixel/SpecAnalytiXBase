@@ -2224,9 +2224,20 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
             callback (<code>QApplication.processEvents</code>) about ten times a second,
             under the usual modal progress dialog ("Starting parallel workers&hellip;").</li>
         </ul>
-        <p><b>Not done yet:</b> a Cancel button for a running job, and the same treatment for
-        other per-spectrum operations. Those methods are all fast enough that parallelizing
-        them would cost more (worker start-up) than it saves, except for map-sized datasets.</p>
+        <h3>Progress bar and Cancel</h3>
+        <p><code>apply_correction(..., progress=callable(done, total))</code> reports after every
+        spectrum (serial) or every finished chunk plus ten times a second (parallel), throttled to
+        about 20 calls a second. The controller fills a real progress bar from it and keeps the
+        window alive; the callable raises <code>OperationCancelled</code> when Cancel was pressed,
+        which the manager does not treat as a pool failure (no serial redo) and which makes the
+        parallel pool end its workers immediately (<code>_terminate_workers</code>). The old
+        &ldquo;every 50 spectra&rdquo; <code>progress_callback</code> is still accepted, but at about
+        0.2&nbsp;s per spectrum that is a 10&nbsp;s gap without refreshing the window, and
+        Windows then marks it &ldquo;not responding&rdquo; and the dialogs flicker between
+        their real and ghost images &mdash; hence the time-throttled reporting.</p>
+        <p><b>Not done yet:</b> the same treatment for other per-spectrum operations. Those methods
+        are all fast enough that parallelizing them would cost more (worker start-up) than it saves,
+        except for map-sized datasets.</p>
 
         <h2 id="mcr-als-bootstrap-uncertainty">MCR-ALS Bootstrap Uncertainty: Residual
         Resampling With a Warm-Started Refit</h2>

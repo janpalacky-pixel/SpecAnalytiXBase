@@ -86,3 +86,35 @@ def test_progress_dialog_is_shown_for_parallel_or_slow_methods_but_not_for_one_s
     assert c._spectra_count_for_progress({'algorithm': 'mpspline'}, 5) == 200
     assert c._spectra_count_for_progress({'algorithm': 'mpspline', 'processing_mode': 'parallel'}, 1) == 1
     assert c._spectra_count_for_progress({'algorithm': 'als'}, 500) == 500
+
+
+def test_cancel_leaves_everything_unchanged_and_reports_it():
+    from src.modules.utils.progress_utils import OperationCancelled
+
+    closed = []
+
+    class _FakeProgress:
+        def maximum(self): return 5
+        def setValue(self, v): pass
+        def setLabelText(self, t): pass
+        def wasCanceled(self): return False
+        def close(self): closed.append(1)
+
+    oc = SimpleNamespace(
+        _PROGRESS_DIALOG_SPECTRA_THRESHOLD=200,
+        _show_progress_with_cancel=lambda *a, **k: _FakeProgress())
+    c = AutomatedBaselineController(SimpleNamespace(operations_controller=oc))
+
+    def cancelled(*a, **k):
+        raise OperationCancelled()
+    c.manager.apply_correction = cancelled
+    ok, message = c.commit_automated_baseline({'algorithm': 'als'}, False, [_spectrum('a')])
+    assert ok is False and message.startswith('Cancelled')
+    assert closed == [1]                       # the progress dialog is always closed
+
+
+def test_range_display_dialog_can_be_opened():
+    """It used to raise NameError (QTableWidget etc. were never imported)."""
+    from src.views.dialogs.data_analysis.spectral_range_dialog import RangeDisplayDialog
+    d = RangeDisplayDialog([(100.0, 200.0), (300.0, 400.0)], 'S1')
+    assert d.table.rowCount() == 2

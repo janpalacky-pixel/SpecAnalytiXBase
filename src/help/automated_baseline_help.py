@@ -182,6 +182,9 @@ def get_automated_baseline_help_content():
         own data. Parallel processing helps with <b>large maps</b> (thousands of spectra) and with the
         slow methods (<b>mpspline, jbcd, asPLS, iarPLS</b>); for a few dozen spectra it is not faster
         because starting the workers takes a few seconds.</p>
+        <p>Long jobs (more than 200 spectra, parallel mode, or a slow method) show a <b>progress bar</b>
+        with the number of spectra done and a <b>Cancel</b> button. Cancelling stops the job at once and
+        leaves your spectra unchanged.</p>
         <div class="tip"><b>If something looks wrong:</b> choose <b>Serial</b> and run again. If parallel
         processing cannot start (for example not enough free memory) the job is redone serially
         automatically and the message says so.</div>

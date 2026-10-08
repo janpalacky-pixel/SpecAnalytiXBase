@@ -4,6 +4,7 @@ import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.automated_baseline_manager import AutomatedBaselineManager
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.progress_utils import OperationCancelled
 from src.modules.utils.spectrum_identity import spectrum_key
 
 logger = get_logger(__name__)
@@ -79,26 +80,49 @@ class AutomatedBaselineController:
             return False, 'Please select one or more spectra to apply automated baseline correction.'
 
         n_spectra = len(selected_spectra)
-        progress = self.oc._show_busy_progress(
-            "Automated Baseline",
-            f"Applying automated baseline correction to {n_spectra} spectra\u2026",
-            self._spectra_count_for_progress(settings, n_spectra),
+        base_message = f"Applying automated baseline correction to {n_spectra} spectra\u2026"
+        progress = self.oc._show_progress_with_cancel(
+            "Automated Baseline", base_message, n_spectra,
+            threshold_count=self._spectra_count_for_progress(settings, n_spectra),
         )
+        status = [base_message]
+
+        def _show_label(done=None, total=None):
+            text = status[0]
+            if done is not None:
+                text += f"\n{done} / {total} spectra"
+            progress.setLabelText(text)
 
         def _show_status(text):
             # e.g. "Starting parallel workers..." -- starting processes on
             # Windows takes seconds, which would otherwise look frozen.
             if progress is not None:
-                progress.setLabelText(text)
+                status[0] = text
+                _show_label()
                 QApplication.processEvents()
+
+        def _on_progress(done, total):
+            # Called after every spectrum (parallel: after every chunk and
+            # ten times a second): fills the bar, keeps the window alive
+            # (Windows otherwise flags it "not responding" and it
+            # flickers), and stops the job when Cancel was pressed.
+            if progress is None:
+                return
+            progress.setValue(min(done, progress.maximum()))
+            _show_label(done, total)
+            QApplication.processEvents()
+            if progress.wasCanceled():
+                raise OperationCancelled()
 
         try:
             try:
                 processed_spectra = self.manager.apply_correction(
                     selected_spectra, settings,
-                    progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                     status_callback=_show_status,
+                    progress=_on_progress if progress is not None else None,
                 )
+            except OperationCancelled:
+                return False, 'Cancelled. The spectra were left unchanged.'
             except Exception as exc:
                 return False, f'Error applying automated baseline correction: {exc}'
 

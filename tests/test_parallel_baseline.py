@@ -251,3 +251,85 @@ def test_windows_free_memory_takes_the_larger_of_physical_and_commit():
     assert parallel_utils._windows_available_mb(800 * mb, 6000 * mb) == 6000
     # the case from the 32 GB test machine: 3.5 GB free RAM -> (3500-1024)/200 = 12 workers
     assert safe_worker_count(cpu_count=20, available_mb=3500) == 12
+
+
+# --------------------------------------------------------------------------
+# progress bar and Cancel
+# --------------------------------------------------------------------------
+
+from src.modules.utils.progress_utils import OperationCancelled
+
+
+def _collect_progress(spectra, **settings):
+    seen = []
+    mgr = AutomatedBaselineManager()
+    mgr.apply_correction(spectra, settings, progress=lambda done, total: seen.append((done, total)))
+    return mgr, seen
+
+
+def test_serial_progress_counts_up_to_the_total():
+    mgr, seen = _collect_progress(_spectra(n=9), algorithm='als', processing_mode='serial')
+    assert seen[-1] == (9, 9)
+    dones = [d for d, _ in seen]
+    assert dones == sorted(dones) and all(t == 9 for _, t in seen)
+
+
+def test_parallel_progress_counts_up_to_the_total():
+    mgr, seen = _collect_progress(_spectra(n=10), algorithm='als',
+                                  processing_mode='parallel', max_workers=2)
+    assert mgr.last_run_info['mode'] == 'parallel'
+    assert seen[-1] == (10, 10)
+    dones = [d for d, _ in seen]
+    assert dones == sorted(dones)
+
+
+def test_progress_is_reported_often_even_for_a_slow_serial_job(monkeypatch):
+    """The window flickered on Windows because it was refreshed only every
+    50 spectra; now every spectrum may report (throttled by time only)."""
+    monkeypatch.setattr(abm, '_PROGRESS_MIN_INTERVAL', 0.0)
+    _, seen = _collect_progress(_spectra(n=7), algorithm='als', processing_mode='serial')
+    assert len(seen) >= 7
+
+
+def test_cancel_in_serial_mode_raises_and_stops_early(monkeypatch):
+    # report after every spectrum, so the test does not depend on timing
+    monkeypatch.setattr(abm, '_PROGRESS_MIN_INTERVAL', 0.0)
+    computed = []
+    original = AutomatedBaselineManager._baseline_for_spectrum
+
+    def counting(self, *a, **k):
+        computed.append(1)
+        return original(self, *a, **k)
+
+    def cancel_at_three(done, total):
+        if done >= 3:
+            raise OperationCancelled()
+
+    mgr = AutomatedBaselineManager()
+    AutomatedBaselineManager._baseline_for_spectrum = counting
+    try:
+        with pytest.raises(OperationCancelled):
+            mgr.apply_correction(_spectra(n=20), {'algorithm': 'als', 'processing_mode': 'serial'},
+                                 progress=cancel_at_three)
+    finally:
+        AutomatedBaselineManager._baseline_for_spectrum = original
+    assert len(computed) < 20
+
+
+def test_cancel_in_parallel_mode_ends_workers_quickly_without_serial_redo(monkeypatch):
+    import time
+    spectra = _spectra(n=40, points=1500)
+    started = time.perf_counter()
+
+    def cancel_at_once(done, total):
+        raise OperationCancelled()
+
+    mgr = AutomatedBaselineManager()
+    with pytest.raises(OperationCancelled):
+        mgr.apply_correction(spectra, {'algorithm': 'jbcd', 'processing_mode': 'parallel',
+                                       'max_workers': 2}, progress=cancel_at_once)
+    assert time.perf_counter() - started < 15          # not the whole (slow) job
+    assert mgr.last_run_info['fallback_reason'] is None   # cancel is not a "failure"
+    # and the manager is perfectly usable afterwards
+    out = mgr.apply_correction(_spectra(n=3), {'algorithm': 'als', 'processing_mode': 'serial'})
+    assert len(out) == 3

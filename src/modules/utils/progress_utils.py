@@ -49,3 +49,11 @@ def notify_progress(progress_callback, index, every=50):
     """
     if progress_callback is not None and index % every == 0:
         progress_callback()
+
+
+class OperationCancelled(Exception):
+    """Raised by a progress callback (e.g. when the user presses Cancel in
+    a progress dialog) to stop a long per-spectrum operation. The
+    operation lets it propagate and changes nothing; its caller reports
+    "cancelled". Deliberately NOT swallowed by the "parallel failed, redo
+    serially" fallback of the Automated Baseline manager."""

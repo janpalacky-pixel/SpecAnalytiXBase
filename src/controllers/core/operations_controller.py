@@ -154,6 +154,35 @@ class OperationsController:
         QApplication.processEvents()
         return progress
 
+    def _show_progress_with_cancel(self, title, message, n_spectra, threshold_count=None):
+        """Progress dialog with a real progress bar (0..n_spectra) and a
+        Cancel button, for operations whose manager reports progress
+        (see AutomatedBaselineManager.apply_correction's `progress`).
+
+        The caller advances it with setValue() and checks wasCanceled()
+        after each report (raising OperationCancelled).
+
+        Like _show_busy_progress it returns None for small jobs.
+        threshold_count (default n_spectra) is the number compared with
+        the threshold, so a caller can ask for the dialog for a small but
+        slow job; the bar itself always counts n_spectra.
+        Callers must close() a returned dialog in a finally block.
+        """
+        count = n_spectra if threshold_count is None else threshold_count
+        if count < self._PROGRESS_DIALOG_SPECTRA_THRESHOLD:
+            return None
+
+        progress = QProgressDialog(message, "Cancel", 0, max(1, n_spectra), self.controller.view)
+        progress.setWindowTitle(title)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        progress.show()
+        QApplication.processEvents()
+        return progress
+
     def _rebuild_spectra_list_with_selection(self, highlight_ids):
         """Rebuild spectra_list_widget from self.controller.original_spectra,
         highlighting every spectrum whose identity (spectrum_key(spectrum) —

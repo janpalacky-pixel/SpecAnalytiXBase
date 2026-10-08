@@ -160,7 +160,21 @@ def limited_blas_threads():
                 os.environ[name] = value
 
 
-def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None):
+def _terminate_workers(executor):
+    """End the worker processes of an executor right now (a cancelled job
+    must not keep computing until each worker finishes its chunk).
+    executor.shutdown() cannot interrupt a running task, and
+    ProcessPoolExecutor has no public "kill workers" before Python 3.14,
+    hence the private attribute; failures here are harmless."""
+    try:
+        for process in list(getattr(executor, '_processes', {}).values()):
+            process.terminate()
+    except Exception as exc:
+        logger.debug("Could not terminate worker processes: %r", exc)
+
+
+def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None,
+                        on_payload_done=None):
     """Run worker_fn(payload) for every payload in separate processes and
     return the results in payload order.
 
@@ -171,7 +185,12 @@ def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None
 
     progress_callback (no arguments, may be None) is called about ten
     times a second while waiting, so a caller can pass
-    ``QApplication.processEvents`` to keep its window alive.
+    ``QApplication.processEvents`` to keep its window alive. It may raise
+    an exception (e.g. OperationCancelled) to stop the job: the workers
+    are then ended at once and the exception propagates.
+
+    on_payload_done(i) (may be None) is called in this process when the
+    i-th payload has finished, so a caller can count progress.
     """
     results = [None] * len(payloads)
     context = multiprocessing.get_context('spawn')
@@ -189,11 +208,15 @@ def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None
                     pending, timeout=_POLL_SECONDS,
                     return_when=concurrent.futures.FIRST_COMPLETED)
                 for future in done:
-                    results[future_to_index[future]] = future.result()
+                    index = future_to_index[future]
+                    results[index] = future.result()
+                    if on_payload_done is not None:
+                        on_payload_done(index)
                 if progress_callback is not None:
                     progress_callback()
         except BaseException:
             executor.shutdown(wait=False, cancel_futures=True)
+            _terminate_workers(executor)
             raise
         else:
             executor.shutdown(wait=True)

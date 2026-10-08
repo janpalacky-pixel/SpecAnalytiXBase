@@ -1539,6 +1539,8 @@ class AutomatedBaselineDialog(QDialog):
         if success:
             QMessageBox.information(self, "Done", message)
             self.accept()
+        elif message.startswith('Cancelled'):
+            QMessageBox.information(self, "Cancelled", message)
         else:
             QMessageBox.warning(self, "Could Not Apply", message)
 

@@ -8,7 +8,7 @@ from scipy.sparse.linalg import spsolve
 from scipy.ndimage import grey_erosion, grey_dilation
 from scipy.interpolate import BSpline
 from src.modules.utils.app_logger import get_logger
-from src.modules.utils.progress_utils import notify_progress
+from src.modules.utils.progress_utils import OperationCancelled, notify_progress
 from src.modules.utils.correction_history import append_correction_history
 from src.modules.utils.parallel_utils import (
     describe_worker_limits, resolve_worker_count, run_in_process_pool)
@@ -30,6 +30,9 @@ _ALGORITHM_LABELS = {
 _AUTO_CALIBRATION_SPECTRA = 3
 _AUTO_MIN_SERIAL_SECONDS = 6.0
 _POOL_STARTUP_SECONDS = 4.0
+
+# Shortest time (seconds) between two reports to the progress callable.
+_PROGRESS_MIN_INTERVAL = 0.05
 
 
 class AutomatedBaselineManager:
@@ -1736,15 +1739,30 @@ class AutomatedBaselineManager:
         return self.calculate_als_baseline(
             y_scale, lam=lam, p=p, niter=n_iter, exclude_indices=exclude_mask)
 
+    def _report_progress(self, force=False):
+        """Tell the progress callable how far we are -- but not more than
+        about 20 times a second (a call refreshes the window, which costs
+        more than a fast spectrum). Often enough that Windows never sees
+        the window as "not responding" (which makes it flicker)."""
+        if self._progress_fn is None:
+            return
+        now = time.perf_counter()
+        if not force and now - self._progress_last < _PROGRESS_MIN_INTERVAL:
+            return
+        self._progress_last = now
+        self._progress_fn(self._progress_done, self._progress_total)
+
     def _compute_serial(self, spectra, indices, algorithm, cfg, baselines, progress_callback):
         for i in indices:
             notify_progress(progress_callback, i)
             spectrum = spectra[i]
             baselines[i] = self._baseline_for_spectrum(
                 algorithm, spectrum['x_scale'], spectrum['y_scale'].copy(), cfg)
+            self._progress_done += 1
+            self._report_progress()
 
     def _compute_all_baselines(self, spectra, algorithm, cfg, mode, max_workers,
-                               progress_callback, status_callback):
+                               progress_callback, status_callback, progress=None):
         """Baseline (array, or None for a failed fit) of every spectrum.
         Fills self.last_run_info; see apply_correction for the modes."""
         n = len(spectra)
@@ -1756,6 +1774,10 @@ class AutomatedBaselineManager:
         self.last_run_info = info
         baselines = [None] * n
         remaining = list(range(n))
+        self._progress_fn = progress
+        self._progress_total = n
+        self._progress_done = 0
+        self._progress_last = 0.0
 
         workers = resolve_worker_count(max_workers) if mode != 'serial' else 1
         if mode != 'serial' and (workers < 2 or n < 2):
@@ -1794,6 +1816,8 @@ class AutomatedBaselineManager:
                 info['mode'] = 'parallel'
                 info['workers'] = workers
                 remaining = []
+            except OperationCancelled:
+                raise                  # the user cancelled: no serial redo
             except Exception as exc:
                 # Any pool problem (cannot start, killed for lack of
                 # memory, ...) -- or an error in the algorithm itself,
@@ -1804,11 +1828,13 @@ class AutomatedBaselineManager:
                 info['fallback_reason'] = f'{type(exc).__name__}: {exc}'
                 for i in remaining:
                     baselines[i] = None
+                self._progress_done = n - len(remaining)   # count again from the redo's start
 
         if remaining:
             self._compute_serial(spectra, remaining, algorithm, cfg, baselines,
                                  progress_callback)
         info['seconds'] = time.perf_counter() - started
+        self._report_progress(force=True)
         return baselines
 
     def _compute_parallel(self, spectra, indices, algorithm, cfg, baselines,
@@ -1828,8 +1854,16 @@ class AutomatedBaselineManager:
             shared = all(len(x) == len(x0) and np.array_equal(x, x0) for x in xs)
             payloads.append((algorithm, cfg, x0 if shared else None,
                              None if shared else xs, ys))
+        def tick():
+            if progress_callback is not None:
+                progress_callback()
+            self._report_progress(force=True)
+
+        def chunk_done(k):
+            self._progress_done += len(chunks[k])
+
         results = run_in_process_pool(
-            _baseline_chunk_worker, payloads, workers, progress_callback)
+            _baseline_chunk_worker, payloads, workers, tick, chunk_done)
         for chunk, chunk_baselines in zip(chunks, results):
             for i, baseline in zip(chunk, chunk_baselines):
                 baselines[i] = baseline
@@ -1856,7 +1890,7 @@ class AutomatedBaselineManager:
         return text
 
     def apply_correction(self, spectra: list, params: dict, progress_callback=None,
-                         status_callback=None) -> list:
+                         status_callback=None, progress=None) -> list:
         """
         Applies automated baseline correction (see params['algorithm']
         below) to a list of spectra.
@@ -1903,6 +1937,14 @@ class AutomatedBaselineManager:
         status_callback : optional callable(str) that receives short
             status texts such as "Starting parallel workers…" (a caller
             with a progress dialog can show them as its label).
+
+        progress : optional callable(done, total), called after spectra
+            are finished (at most about 20 times a second, and about ten
+            times a second while parallel workers are busy) -- for a
+            progress bar and for keeping the window alive. It may raise
+            OperationCancelled (e.g. the user pressed Cancel): the call
+            then raises it too, stops at once and returns nothing, so the
+            caller can leave the spectra unchanged.
         """
         algorithm = params.get('algorithm', 'als')
         is_airpls = (algorithm == 'airpls')
@@ -1988,7 +2030,7 @@ class AutomatedBaselineManager:
         baselines = self._compute_all_baselines(
             spectra, algorithm, cfg,
             params.get('processing_mode', 'auto'), params.get('max_workers', 0),
-            progress_callback, status_callback)
+            progress_callback, status_callback, progress)
         for i, spectrum in enumerate(spectra):
             corrected_spectrum = {key: (value.copy() if hasattr(value, 'copy') else value)
                                   for key, value in spectrum.items()}
