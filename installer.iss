@@ -1,7 +1,7 @@
 #define MyAppName "SpecAnalytiXBase"
 #define MyAppExeName "SpecAnalytiXBase.exe"
 #define MyAppFolder "SpecAnalytiXBase"
-#define MyAppVersion "1.4.2"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "Institute of Biophysics of the Czech Academy of Sciences"
 #define MyAppURL "https://www.ibp.cz/en/research/departments/biophysics-of-nucleic-acids/research-profile"
 #define MyOutputDir "installer"

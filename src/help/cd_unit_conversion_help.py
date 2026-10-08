@@ -41,7 +41,7 @@ def get_cd_unit_conversion_help_content():
     <h1>CD Unit Conversion</h1>
 
     <p>CD (circular dichroism) spectropolarimeters — including the JASCO
-    instruments read by this application's <strong>.jws</strong> importer —
+    instruments read by this application's <strong>.jws</strong> and <strong>.jwb</strong> importers —
     report raw ellipticity in <strong>millidegrees (mdeg)</strong>. That raw
     reading is a physical property of the sample itself (like an ordinary
     UV/Vis absorbance reading), and it scales directly with concentration
@@ -76,7 +76,7 @@ def get_cd_unit_conversion_help_content():
 
     <div class="note">
         <strong>Typical pipeline position:</strong><br>
-        Import (.jws or other CD data) &rarr; Baseline correction / Data
+        Import (.jws, .jwb or other CD data) &rarr; Baseline correction / Data
         range &rarr; <strong>CD Unit Conversion</strong> &rarr; further
         analysis (SVD Analysis, 2D Correlation, Melting Curve Analysis&hellip;).<br>
         Convert units early, right after basic clean-up and before any
@@ -483,7 +483,7 @@ def get_cd_unit_conversion_help_content():
     <h3>My spectra aren't in millidegrees &mdash; can I still use this?</h3>
     <p>This operation assumes the input y-values are raw ellipticity in
     millidegrees, the standard raw output of a CD spectropolarimeter (and
-    what this application's .jws importer reads for the CD channel). If
+    what this application's .jws and .jwb importers read for the CD channel). If
     your spectra are already in absorbance units or some other quantity,
     converting them here will give an incorrect result &mdash; use
     <strong>Spectral Calculator</strong> instead, which can reproduce this

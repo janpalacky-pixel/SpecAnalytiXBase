@@ -211,6 +211,15 @@ def get_import_help_content():
                 how to pick which ones to import.
             </li>
             <li>
+                <b>JWB files</b> &mdash; <code>.jwb</code>, JASCO SpectraManager's
+                <b>temperature (interval) scan</b>, e.g. a CD melting
+                experiment: one spectrum recorded at every temperature while
+                the sample is heated or cooled. Same container and the same
+                channels as JWS, but every channel you tick is imported as
+                <b>one spectrum per temperature</b>, each labelled with its
+                temperature &mdash; see the dedicated section below.
+            </li>
+            <li>
                 <b>MAT files</b> — <code>.mat</code>, a hyperspectral Raman/IR
                 map exported by WITec's <b>Project FIVE</b> software (the
                 Eigenvector "dataset object" struct layout). Every pixel of
@@ -245,7 +254,7 @@ def get_import_help_content():
         happened to choose) that are otherwise ordinary x/y columns —
         picking <b>All Files</b> in the file-picker's format dropdown (or
         dragging the file onto the window) reaches them the same way any
-        <code>.txt</code> file would be. Binary formats (SPE/SPC/JWS/MAT) and
+        <code>.txt</code> file would be. Binary formats (SPE/SPC/JWS/JWB/MAT) and
         Excel aren't affected by this — those always need their real
         extension, since sniffing binary bytes as text would be meaningless.
     </div>
@@ -440,6 +449,79 @@ def get_import_help_content():
         header, or Layout concept, same as SPE/SPC.
     </p>
 
+    <h2>JWB Files (JASCO Temperature Scans)</h2>
+    <p>
+        JWB is the sibling of JWS: the file JASCO SpectraManager writes for an
+        <b>interval (temperature) scan</b> &mdash; most commonly a <b>CD melting
+        experiment</b>, in which the spectropolarimeter records one complete
+        spectrum at each temperature while the sample is heated or cooled.
+        Internally it is the same OLE2 container as a JWS file and is read the
+        same way, without any third-party library. Like JWS it is not a
+        published format; support here was built from real scans (15&ndash;17
+        temperatures each, heating and cooling) and checked against an
+        independent reader, which gave identical temperatures and identical
+        values for every channel.
+    </p>
+    <p>
+        <b>What is imported.</b> A JWS file gives one spectrum per channel; a
+        JWB file gives <b>one spectrum per channel and per temperature</b>. A
+        scan with 17 temperatures and two channels (CD and Absorbance) can
+        therefore produce 34 spectra. The dialog works exactly as for JWS: a
+        <b>Channels to import</b> table lists the channels, with an
+        <b>Include</b> checkbox, an editable <b>Type</b> and each channel's value
+        <b>range</b>. Untick a channel to leave it out &mdash; for a melting
+        experiment you will usually want only <b>CD [mdeg]</b>, or only
+        <b>Absorbance [AU]</b>. The summary line above the table shows how many
+        temperatures the file holds, the temperature range, the direction
+        (<i>heating</i> or <i>cooling</i>, read from the first and last
+        temperature), and the free-text sample name and comment that were typed
+        at the instrument, if any.
+    </p>
+    <p>
+        <b>Labels.</b> Every spectrum is labelled with the file name, the channel
+        and its temperature, in the same style as SpecOrd CSV imports:
+    </p>
+    <p style="text-align:center;">
+        <code>2026_09_21-1-Cell 5 : CD [mdeg] T=45.00C</code>
+    </p>
+    <p>
+        Having the temperature in the label is deliberate: <b>Melting Curve
+        Analysis</b> guesses each spectrum's temperature from the numbers in its
+        label, and picks the one that actually changes between the selected
+        spectra &mdash; so for a JWB import the Temperature column is normally
+        filled in correctly without any editing (still worth a glance). If the
+        instrument recorded the same temperature twice, the later spectra get a
+        trailing <code>#2</code>, <code>#3</code>, &hellip; so that no label repeats
+        (a repeated label would silently overwrite the earlier spectrum).
+        Importing several JWB files at once &mdash; for example a heating and a
+        cooling run &mdash; is fine: each spectrum carries its own file name.
+    </p>
+    <p>
+        <b>Metadata.</b> Besides the usual file information, every spectrum stores
+        <code>temperature_C</code>, <code>direction</code> (<code>heating</code> or
+        <code>cooling</code>), the instrument's free-text <code>jasco_sample_name</code>
+        and <code>jasco_comment</code>, and the channel and position within the scan
+        (<code>import_parameters</code>) &mdash; open any imported spectrum's
+        Metadata dialog to see them.
+    </p>
+    <div class="note">
+        <b>Practical notes.</b>
+        <ul>
+            <li>The <b>Type</b> of each channel is the same value-range guess as for
+            JWS (see the warning in that section), judged on the values of all
+            temperatures together. Correct it in the dropdown if it looks wrong.</li>
+            <li>The x-axis is stored in scan order (for example 480 &rarr; 220 nm);
+            like every import, the spectra are re-sorted into ascending order on the
+            way in.</li>
+            <li>CD of a sample in buffer is usually mostly noise at the shortest
+            wavelengths of a scan (the detector voltage is high there). Crop the range
+            afterwards with the <b>Data Range</b> operation if it disturbs your
+            analysis.</li>
+            <li>No delimiter, decimal, header, Layout or Zero Padding settings apply
+            &mdash; spectra are named by temperature, not numbered.</li>
+        </ul>
+    </div>
+
     <h2>MAT Files (WITec/Project FIVE Hyperspectral Maps)</h2>
     <p>
         MAT files of this kind are hyperspectral <b>maps</b>, not single
@@ -528,7 +610,7 @@ def get_import_help_content():
     </p>
     <p>
         No other settings apply to MAT files — no delimiter, decimal,
-        header, Layout, or Zero Padding concept, same as SPE/SPC/JWS.
+        header, Layout, or Zero Padding concept, same as SPE/SPC/JWS/JWB.
     </p>
 
     <h2>SpecOrd Row-per-Measurement CSV</h2>
@@ -611,13 +693,13 @@ def get_import_help_content():
     <p>
         No other settings apply to SpecOrd CSV files — no delimiter,
         decimal, header, Layout, or column-picker concept, same as
-        SPE/SPC/JWS. Zero Padding is likewise unused (every spectrum
+        SPE/SPC/JWS/JWB. Zero Padding is likewise unused (every spectrum
         already has a unique label from its own condition/run/temperature).
     </p>
 
     <h2>Expected Data Layout</h2>
     <p><small>(Standard, Interlaced, and Row-oriented — the three
-    text/Excel layouts. SPE, SPC, and JWS files, described above, don't use
+    text/Excel layouts. SPE, SPC, JWS, and JWB files, described above, don't use
     any of these.)</small></p>
 
     <h3>Standard layout (default)</h3>
@@ -654,7 +736,7 @@ x_A      spectrum_A    x_B      spectrum_B
         spectrum into ascending x order, and if the same x-value appears more than
         once it <b>merges those points into one by averaging their y-values</b>.
         This happens at one single point every import passes through on its way in
-        — Standard, Interlaced, Row-oriented, Excel, SPE, SPC, JWS, all of it — so the
+        — Standard, Interlaced, Row-oriented, Excel, SPE, SPC, JWS, JWB, all of it — so the
         same rule applies no matter which file or layout you're importing.
         <br><br>
         The sorting is harmless — it is a pure reordering, every y stays attached to
@@ -791,7 +873,8 @@ spectrum_B    5.5      6.6      7.7      8.8
     <p>
         Supported extensions: <code>.txt</code>, <code>.csv</code>,
         <code>.dat</code>, <code>.xlsx</code>, <code>.xls</code>,
-        <code>.xlsm</code>, <code>.spe</code>, <code>.spc</code>. Dropping
+        <code>.xlsm</code>, <code>.spe</code>, <code>.spc</code>,
+        <code>.jws</code>, <code>.jwb</code>, <code>.mat</code>. Dropping
         a file with an unsupported extension (or dropping something that
         isn't a file at all) is simply ignored.
     </p>

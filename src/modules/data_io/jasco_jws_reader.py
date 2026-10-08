@@ -11,6 +11,20 @@
 # one 3-channel CD+HT+Abs scan) rather than from a published spec. See the
 # comments below for exactly what was verified and how.
 #
+# --- .jwb files (JASCO interval / temperature scans) -----------------------
+# Added 2026-10: a .jwb file is the SAME OLE2 container and the same stream
+# names, but holds a whole series of spectra measured one after another —
+# in practice a CD melting experiment (one spectrum per temperature, heating
+# or cooling). It differs from .jws in exactly three ways, confirmed against
+# 3 real files (15-17 temperatures, 2 channels, heating and cooling):
+#   DataInfo uint32 at offset 4  = number of spectra in the series
+#   DataInfo float64 array from byte 96 = one temperature (deg C) per spectrum,
+#                                         in measured order
+#   Y-Data = float32, channel-major: all spectra of channel 1 (each with all
+#            its points), then all spectra of channel 2, ...
+# See probe_jwb_channels / read_jwb_data at the end of this module. The
+# channel-type guess and the OLE reader are shared with .jws.
+#
 # --- Container format -------------------------------------------------
 # A .jws file IS a Microsoft OLE2 Compound File Binary (CFB) container —
 # the same structured-storage format historically used for .doc/.xls
@@ -453,3 +467,204 @@ def _iso_ctime(filepath: str) -> str:
 def _iso_mtime(filepath: str) -> str:
     from datetime import datetime
     return datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# .jwb: interval / temperature scans (see the module header)
+# ---------------------------------------------------------------------------
+
+_DI_OFF_N_SPECTRA = 4          # int32 — spectra in a .jwb series (1 for .jws)
+_DI_OFF_TEMPERATURES = 96      # float64 x n_spectra — one temperature per spectrum
+_MAX_PLAUSIBLE_TEMPERATURE = 1000.0
+
+
+def _utf16_strings(raw: bytes) -> List[str]:
+    """Printable UTF-16LE text pieces in a binary stream (both byte
+    alignments are tried; the one giving more text wins). Used only to pick
+    up the free-text sample name / comment from SampleInfo."""
+    import re
+    best: List[str] = []
+    for off in (0, 1):
+        chunk = raw[off:]
+        chunk = chunk[:len(chunk) - (len(chunk) % 2)]
+        text = chunk.decode('utf-16-le', errors='replace')
+        parts = [p.strip() for p in re.split(r'[^\x20-\x7e\u00a0-\u017f]+', text)]
+        parts = [p for p in parts if p]
+        if sum(map(len, parts)) > sum(map(len, best)):
+            best = parts
+    return best
+
+
+def _read_jwb_streams(filepath: str) -> Dict:
+    """Read and validate a .jwb file. Returns {'n_spectra', 'n_channels',
+    'n_points', 'x_start', 'x_end', 'temperatures' (n_spectra,),
+    'y' (n_channels, n_spectra, n_points), 'sample_name', 'comment'}.
+    Raises ValueError, with a plain-language reason, for anything that is
+    not a readable temperature scan."""
+    with open(filepath, 'rb') as f:
+        data = f.read()
+
+    name = os.path.basename(filepath)
+    try:
+        streams = _read_ole_streams(data, _WANTED_STREAMS)
+    except ValueError as e:
+        raise ValueError(str(e).replace('.jws', '.jwb')) from e
+    if 'DataInfo' not in streams or 'Y-Data' not in streams:
+        raise ValueError(
+            f"{name}: this .jwb file is missing its expected internal streams "
+            f"(DataInfo/Y-Data) — it may be corrupted, or not a JASCO "
+            f"temperature-scan file."
+        )
+
+    info = streams['DataInfo']
+    if len(info) < _DI_OFF_X_END + 8:
+        raise ValueError(f"{name}: the .jwb header is smaller than expected — "
+                         f"the file may be corrupted or from an unsupported JASCO software version.")
+    n_spectra = struct.unpack_from('<i', info, _DI_OFF_N_SPECTRA)[0]
+    n_channels = struct.unpack_from('<i', info, _DI_OFF_N_CHANNELS)[0]
+    n_points = struct.unpack_from('<i', info, _DI_OFF_N_POINTS)[0]
+    x_start = struct.unpack_from('<d', info, _DI_OFF_X_START)[0]
+    x_end = struct.unpack_from('<d', info, _DI_OFF_X_END)[0]
+
+    y_bytes = streams['Y-Data']
+    if not (1 <= n_spectra <= 10000 and 1 <= n_channels <= 8 and n_points >= 2):
+        raise ValueError(
+            f"{name}: not a temperature scan this program can read "
+            f"({n_spectra} spectra, {n_channels} channels, {n_points} points)."
+        )
+    expected = 4 * n_channels * n_spectra * n_points
+    if len(y_bytes) != expected or len(info) < _DI_OFF_TEMPERATURES + 8 * n_spectra:
+        raise ValueError(
+            f"{name}: the data size ({len(y_bytes)} bytes) does not match the declared "
+            f"{n_spectra} spectra x {n_channels} channel(s) x {n_points} point(s) "
+            f"(expected {expected} bytes) — the file may be corrupted or from an "
+            f"unsupported JASCO software version."
+        )
+    temperatures = np.array(
+        struct.unpack_from(f'<{n_spectra}d', info, _DI_OFF_TEMPERATURES), dtype=float)
+    if not np.all(np.isfinite(temperatures)) or np.any(np.abs(temperatures) > _MAX_PLAUSIBLE_TEMPERATURE):
+        raise ValueError(f"{name}: the temperatures stored in the file could not be read "
+                         f"(this may not be a temperature scan).")
+
+    y = np.frombuffer(y_bytes, dtype='<f4').astype(float).reshape(n_channels, n_spectra, n_points)
+    strings = _utf16_strings(streams.get('SampleInfo', b''))
+    return {
+        'n_spectra': n_spectra, 'n_channels': n_channels, 'n_points': n_points,
+        'x_start': x_start, 'x_end': x_end,
+        'temperatures': temperatures, 'y': y,
+        'sample_name': strings[0] if strings else '',
+        'comment': strings[1] if len(strings) > 1 else '',
+    }
+
+
+def probe_jwb_channels(filepath: str) -> Dict:
+    """Describe a .jwb file for the import dialog's channel table — same
+    idea and same 'channels' entries as probe_jws_channels, plus the number
+    of spectra, the temperature range and the free-text sample name/comment
+    stored in the file. Channel types are guesses (see _classify_channel),
+    judged on the values of ALL spectra of the channel."""
+    d = _read_jwb_streams(filepath)
+    channels = []
+    for i in range(d['n_channels']):
+        y = d['y'][i]
+        ctype = _classify_channel(y)
+        channels.append({
+            'index': i, 'type': ctype, 'display': _CHANNEL_DISPLAY[ctype],
+            'unit': _CHANNEL_UNITS[ctype],
+            'y_min': float(np.nanmin(y)), 'y_max': float(np.nanmax(y)),
+        })
+    T = d['temperatures']
+    return {
+        'n_points': d['n_points'], 'x_start': d['x_start'], 'x_end': d['x_end'],
+        'n_spectra': d['n_spectra'],
+        't_first': float(T[0]), 't_last': float(T[-1]),
+        't_min': float(T.min()), 't_max': float(T.max()),
+        'direction': 'heating' if T[-1] >= T[0] else 'cooling',
+        'sample_name': d['sample_name'], 'comment': d['comment'],
+        'channels': channels,
+    }
+
+
+def read_jwb_data(
+    filepath: str,
+    zero_padding: int = 4,
+    selected_channels: Optional[List[int]] = None,
+    channel_type_overrides: Optional[Dict[int, str]] = None,
+) -> List[Dict]:
+    """
+    Read a JASCO .jwb temperature scan into one spectrum dict per selected
+    channel AND temperature (n_selected_channels x n_spectra spectra), in
+    measured order, channel by channel.
+
+    selected_channels / channel_type_overrides work exactly as in
+    read_jws_data. zero_padding is accepted only so the caller can treat all
+    formats alike; it is not used (spectra are named by temperature).
+
+    Labels follow the SpecOrd-CSV convention, e.g.
+    "2026_09_10-1-Cell 1 : CD [mdeg] T=45.20C", so Melting Curve Analysis
+    finds the temperature itself — it picks the number in the label that
+    varies across the selected series (see specord_csv_converter.py's module
+    docstring). Two spectra measured at the same temperature get a trailing
+    " #2", " #3", ... so no label repeats (spectra are stored by label).
+    The temperature, direction and the free-text sample name/comment from
+    the file are also stored in the spectrum's metadata.
+    """
+    d = _read_jwb_streams(filepath)
+    n_channels, n_spectra, n_points = d['n_channels'], d['n_spectra'], d['n_points']
+    x_scale = np.linspace(d['x_start'], d['x_end'], n_points, dtype=float)
+    temperatures = d['temperatures']
+    direction = 'heating' if temperatures[-1] >= temperatures[0] else 'cooling'
+
+    channel_type_overrides = channel_type_overrides or {}
+    indices = range(n_channels) if selected_channels is None else [
+        i for i in selected_channels if 0 <= i < n_channels
+    ]
+
+    base_name = os.path.splitext(os.path.basename(filepath))[0]
+    try:
+        file_ctime = _iso_ctime(filepath)
+        file_mtime = _iso_mtime(filepath)
+    except OSError:
+        file_ctime = file_mtime = ''
+
+    spectra: List[Dict] = []
+    for i in indices:
+        ctype = channel_type_overrides.get(i) or _classify_channel(d['y'][i])
+        display = _CHANNEL_DISPLAY.get(ctype, ctype)
+        seen: Dict[str, int] = {}
+        for k in range(n_spectra):
+            label = f"{base_name} : {display} T={temperatures[k]:.2f}C"
+            seen[label] = seen.get(label, 0) + 1
+            if seen[label] > 1:
+                label = f"{label} #{seen[label]}"
+            spectra.append({
+                'label': label,
+                'x_scale': x_scale.copy(),
+                'y_scale': d['y'][i, k].copy(),
+                'metadata': {
+                    'file_path': filepath,
+                    'file_type': 'jasco_jwb',
+                    'original_label': label,
+                    'file_ctime': file_ctime,
+                    'file_mtime': file_mtime,
+                    'temperature_C': float(temperatures[k]),
+                    'direction': direction,
+                    'jasco_sample_name': d['sample_name'],
+                    'jasco_comment': d['comment'],
+                    'import_parameters': {
+                        'channel_index': i,
+                        'channel_type': ctype,
+                        'channel_type_auto_detected': i not in channel_type_overrides,
+                        'n_channels_in_file': n_channels,
+                        'spectrum_index': k,
+                        'n_spectra_in_file': n_spectra,
+                        'unit': _CHANNEL_UNITS.get(ctype, ''),
+                    },
+                },
+            })
+
+    logger.info(
+        "Created %d spectra from JASCO .jwb file %s (%d temperature(s), %d of %d channel(s) selected)",
+        len(spectra), os.path.basename(filepath), n_spectra, len(list(indices)), n_channels,
+    )
+    return spectra

@@ -15,6 +15,7 @@ SpecAnalytiXBase is built around a single spectra list: import data from several
 | SPC (Thermo/GRAMS) | `.spc` | Calibrated x-axis |
 | SPE (LightField/WinSpec) | `.spe` | Raman/CCD instrument files |
 | JWS (JASCO SpectraManager) | `.jws` | CD spectropolarimeter files, multi-channel |
+| JWB (JASCO temperature scan) | `.jwb` | CD melting experiments — one spectrum per temperature (and channel), labelled with its temperature |
 | MAT (WITec/Project FIVE map) | `.mat` | Hyperspectral Raman/IR map — one spectrum per pixel, row/col + µm position kept in metadata |
 
 Spectra can also be exported back out to text, Excel, and SPC.

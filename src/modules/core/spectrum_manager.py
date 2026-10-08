@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from src.modules.data_io.table_data_converter import read_table_data
 from src.modules.data_io.spe_data_converter import read_spe_data
 from src.modules.data_io.spc_data_converter import read_spc_data
-from src.modules.data_io.jasco_jws_reader import read_jws_data
+from src.modules.data_io.jasco_jws_reader import read_jws_data, read_jwb_data
 from src.modules.data_io.specord_csv_converter import read_specord_csv_data
 from src.modules.data_io.mat_map_converter import read_mat_map_data
 
@@ -414,9 +414,9 @@ class SpectrumManager:
     """
 
     # File extensions handled by read_table_data, plus the binary
-    # formats (.spe, .spc, .jws, .mat) which bypass it entirely — see
+    # formats (.spe, .spc, .jws, .jwb, .mat) which bypass it entirely — see
     # the file_ext branch in load_spectrum_from_file().
-    SUPPORTED_EXTENSIONS = ('.txt', '.csv', '.dat', '.xlsx', '.xls', '.xlsm', '.spe', '.spc', '.jws', '.mat')
+    SUPPORTED_EXTENSIONS = ('.txt', '.csv', '.dat', '.xlsx', '.xls', '.xlsm', '.spe', '.spc', '.jws', '.jwb', '.mat')
 
     def __init__(self):
         self.spectra: Dict[str, Spectrum] = {}
@@ -476,6 +476,11 @@ class SpectrumManager:
                      own value-range-based channel-type guess where the
                      import dialog's preview didn't match reality — see
                      jasco_jws_reader.py's module docstring.)
+        JWB        : .jwb  (JASCO temperature scan, e.g. a CD melting
+                     experiment — the same container as .jws holding one
+                     spectrum per temperature. The same two jws_* arguments
+                     choose the channel(s); every ticked channel gives one
+                     spectrum per temperature, labelled with it.)
         MAT        : .mat  (WITec/Project FIVE hyperspectral map export —
                      the Eigenvector "dataset object" struct layout. One
                      spectrum per pixel of the map's row x col grid, all
@@ -602,6 +607,17 @@ class SpectrumManager:
                 # and jws_channel_type_overrides are the two JWS-specific
                 # choices threaded from the import dialog.
                 spectra_data = read_jws_data(
+                    filepath, zero_padding=zero_padding,
+                    selected_channels=jws_selected_channels,
+                    channel_type_overrides=jws_channel_type_overrides,
+                )
+            elif file_ext == '.jwb':
+                # JASCO temperature scan (CD melting): same container and
+                # same channel choices as .jws, but every ticked channel
+                # yields one spectrum PER TEMPERATURE — see the .jwb
+                # section of jasco_jws_reader.py. zero_padding is passed
+                # for symmetry only; spectra are named by temperature.
+                spectra_data = read_jwb_data(
                     filepath, zero_padding=zero_padding,
                     selected_channels=jws_selected_channels,
                     channel_type_overrides=jws_channel_type_overrides,

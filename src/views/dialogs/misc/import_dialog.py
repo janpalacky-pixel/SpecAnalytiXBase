@@ -331,12 +331,13 @@ class ImportDialog(QDialog):
                 parent,
                 "Select Spectra Files",
                 "",
-                "All supported files (*.txt *.csv *.dat *.xlsx *.xls *.xlsm *.spe *.spc *.jws *.mat);;"
+                "All supported files (*.txt *.csv *.dat *.xlsx *.xls *.xlsm *.spe *.spc *.jws *.jwb *.mat);;"
                 "Text Files (*.txt *.csv *.dat);;"
                 "Excel Files (*.xlsx *.xls *.xlsm);;"
                 "SPE Files (*.spe);;"
                 "SPC Files (*.spc);;"
                 "JWS Files (*.jws);;"
+                "JWB Files (*.jwb);;"
                 "MAT Map Files (*.mat);;"
                 "All Files (*.*)",
             )
@@ -1015,7 +1016,10 @@ class ImportDialog(QDialog):
         file_ext = os.path.splitext(filepath)[1].lower()
         is_spe = file_ext == '.spe'
         is_spc = file_ext == '.spc'
-        is_jws = file_ext == '.jws'
+        # .jwb (JASCO temperature scan) is the same container and the same
+        # channel table as .jws, so the two share every is_jws code path;
+        # only the preview text differs (see _load_jws_preview).
+        is_jws = file_ext in ('.jws', '.jwb')
         is_mat = file_ext == '.mat'
         is_csv = file_ext == '.csv'
         is_binary = is_spe or is_spc or is_jws or is_mat
@@ -1714,11 +1718,17 @@ class ImportDialog(QDialog):
         saved_selected = saved.get('jws_selected_channels')
         saved_overrides = saved.get('jws_channel_type_overrides') or {}
 
+        is_jwb = os.path.splitext(filepath)[1].lower() == '.jwb'
         try:
-            from src.modules.data_io.jasco_jws_reader import probe_jws_channels
-            probe = probe_jws_channels(filepath)
+            if is_jwb:
+                from src.modules.data_io.jasco_jws_reader import probe_jwb_channels
+                probe = probe_jwb_channels(filepath)
+            else:
+                from src.modules.data_io.jasco_jws_reader import probe_jws_channels
+                probe = probe_jws_channels(filepath)
         except Exception as e:
-            self._summary_label.setText(f"Could not read JWS file: {e}")
+            self._summary_label.setText(
+                f"Could not read {'JWB' if is_jwb else 'JWS'} file: {e}")
             self._summary_label.setStyleSheet(
                 "color:#8a0000; background:#fff0f0; padding:2px 4px;"
                 "border-radius:3px; font-weight:bold;"
@@ -1730,11 +1740,26 @@ class ImportDialog(QDialog):
             return
 
         channels = probe['channels']
-        self._summary_label.setText(
-            f"JASCO .jws file — {len(channels)} channel{'s' if len(channels) != 1 else ''} "
-            f"found, {probe['n_points']} points each, x-axis {probe['x_start']:.2f} to "
-            f"{probe['x_end']:.2f}. Tick which channel(s) to import below."
-        )
+        if is_jwb:
+            n_sp = probe['n_spectra']
+            note = ''
+            if probe.get('sample_name'):
+                note = f" Sample field in the file: \"{probe['sample_name']}\"" + (
+                    f" / \"{probe['comment']}\"." if probe.get('comment') else ".")
+            self._summary_label.setText(
+                f"JASCO .jwb temperature scan — {n_sp} temperatures "
+                f"({probe['t_first']:.2f} to {probe['t_last']:.2f} °C, {probe['direction']}), "
+                f"{len(channels)} channel{'s' if len(channels) != 1 else ''}, "
+                f"{probe['n_points']} points each, x-axis {probe['x_start']:.2f} to "
+                f"{probe['x_end']:.2f}. Every ticked channel below is imported as {n_sp} "
+                f"spectra, one per temperature.{note}"
+            )
+        else:
+            self._summary_label.setText(
+                f"JASCO .jws file — {len(channels)} channel{'s' if len(channels) != 1 else ''} "
+                f"found, {probe['n_points']} points each, x-axis {probe['x_start']:.2f} to "
+                f"{probe['x_end']:.2f}. Tick which channel(s) to import below."
+            )
         self._summary_label.setStyleSheet(
             "color:#7a5c00; background:#fff8dc; padding:2px 4px; border-radius:3px;"
         )

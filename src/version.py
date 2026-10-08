@@ -7,4 +7,4 @@ build workflow -- tests/test_about_info.py fails if the two ever differ, so
 bump both together when cutting a release.
 """
 
-__version__ = "1.4.2"
+__version__ = "1.5.0"

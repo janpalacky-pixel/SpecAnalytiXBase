@@ -3304,7 +3304,11 @@ def _natural_sort_key(cls, label):
                 format, dependency-free — own CFB/directory-tree walk, no
                 <code>olefile</code> requirement — with value-range heuristics to
                 classify CD/HT/Absorbance channels, since the format stores no channel-type
-                string).</td></tr>
+                string). The same module also reads <code>.jwb</code> temperature scans
+                (<code>probe_jwb_channels</code> / <code>read_jwb_data</code>): the same
+                container, but one spectrum per temperature, labelled
+                <code>T=45.00C</code> in the SpecOrd-CSV style so Melting Curve Analysis can
+                guess the temperature from the label.</td></tr>
             <tr><td><code>src/modules/utils/</code></td>
                 <td><code>spectrum_identity.py</code> (<code>spectrum_key</code>/
                 <code>spectrum_id</code> — see <a href="#identity">The Golden Rule</a>),

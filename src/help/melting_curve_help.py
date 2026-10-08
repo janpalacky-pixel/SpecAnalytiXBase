@@ -160,7 +160,7 @@ def get_melting_curve_help_content():
             </ul>
         </div>
         <ol>
-            <li>Check the <b>Temperature</b> column in the source table. It is pre-filled by guessing the first number found in each spectrum's label &mdash; <b>always verify and correct these values</b> before proceeding.</li>
+            <li>Check the <b>Temperature</b> column in the source table. It is pre-filled by guessing a number from each spectrum's label &mdash; <b>always verify and correct these values</b> before proceeding. Spectra imported from a JASCO <code>.jwb</code> temperature scan (or a SpecOrd CSV) carry the temperature in the label (e.g. <code>T=45.00C</code>), and the number that differs between the selected spectra is the one used, so for those it is normally already right.</li>
             <li>Set the x-value to <b>extract</b> the signal at &mdash; the curve builds itself automatically as soon as there's enough data, no button to click.</li>
             <li>(Optional) Choose a normalization method and adjust the Low-T / High-T region ranges (typing, dragging a slider, or the interactive 'b'-key picker) &mdash; the normalized curve updates live, no separate "apply" step needed.</li>
             <li>Set the number of sigmoid <b>Components</b> (1&ndash;4), optionally click <b>Auto-detect Transitions</b> for initial guesses, then click <b>Fit</b> &mdash; this is also how to get deltaH/deltaS/Tm for a single two-state transition (Components = 1).</li>

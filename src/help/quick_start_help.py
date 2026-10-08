@@ -202,7 +202,7 @@ def get_quick_start_help_content():
         <p>The Import dialog reads plain-text (<code>.txt</code>, <code>.csv</code>,
         <code>.dat</code>), Excel (<code>.xlsx</code>, <code>.xls</code>,
         <code>.xlsm</code>), and several instrument-specific binary formats
-        (SPE, SPC, JWS) directly, with a live preview and auto-detection of
+        (SPE, SPC, JWS, JWB, MAT) directly, with a live preview and auto-detection of
         delimiter, decimal separator, and header row so most files import
         correctly with no manual setup at all. For anything auto-detection
         gets wrong, every setting in the dialog is fully explained in one

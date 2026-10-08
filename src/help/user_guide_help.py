@@ -365,6 +365,7 @@ def get_user_guide_help_content():
             <tr><td>SPE (LightField / WinSpec)</td><td>.spe</td><td>Raman/CCD instrument files — LightField 3.x and legacy WinSpec 2.x, auto-detected; one spectrum per frame, numbered with the same Zero padding setting as text/Excel imports. Pixel-index x-axis by default. Legacy WinSpec files with a recorded x-axis calibration offer an opt-in "Use calibrated x-axis" checkbox (unchecked by default); LightField files and uncalibrated legacy files always get the pixel-index axis, no calibration option; see Import → Help for details</td></tr>
             <tr><td>SPC (Thermo/GRAMS)</td><td>.spc</td><td>Universal Data Format — old and new header variants auto-detected; real calibrated x-axis, one spectrum per subfile (almost always one), multi-subfile files numbered with the same Zero padding setting as text/Excel imports; see Import → Help for details</td></tr>
             <tr><td>JWS (JASCO SpectraManager)</td><td>.jws</td><td>CD spectropolarimeter files (e.g. J-815); calibrated wavelength x-axis. A file can carry several co-recorded channels — commonly CD [mdeg], sometimes also HT [V] and/or Absorbance [AU] — shown in a checkable table so you pick which channel(s) to import; each channel's type is an auto-detected guess with an editable override; see Import → Help for details</td></tr>
+            <tr><td>JWB (JASCO temperature scan)</td><td>.jwb</td><td>JASCO interval scans such as a CD melting experiment — the same container and channels as JWS, but every ticked channel is imported as one spectrum per temperature, labelled with it (e.g. <code>T=45.00C</code>), so Melting Curve Analysis finds the temperatures itself; direction (heating/cooling), temperature and the instrument's sample/comment text are stored in the metadata; see Import → Help for details</td></tr>
             <tr><td>MAT (WITec/Project FIVE map)</td><td>.mat</td><td>Hyperspectral Raman/IR map export — one spectrum per pixel of the map's row x col grid, all sharing the map's own calibrated x-axis; row/col position and (when recorded) physical µm coordinates are attached to every spectrum's metadata; see Import → Help for details</td></tr>
             <tr><td>Standard layout</td><td>any</td><td>First column = shared x-scale, remaining columns = one spectrum each (the default)</td></tr>
             <tr><td>Interlaced layout</td><td>any</td><td>Alternating x,y pairs (x1,y1,x2,y2…) — each spectrum has its own x-scale column</td></tr>
@@ -378,7 +379,7 @@ def get_user_guide_help_content():
             for instrument or collaborator files saved under some other extension
             (<code>.bcw</code>, etc.) that are really just ordinary x/y columns. Pick
             <strong>All Files</strong> in the file-picker's format dropdown, or drag
-            the file onto the window, to reach one. Doesn't apply to SPE/SPC/JWS or
+            the file onto the window, to reach one. Doesn't apply to SPE/SPC/JWS/JWB or
             Excel, which always need their real extension.
         </div>
 
