@@ -1,6 +1,5 @@
 # src/modules/data_analysis/normalization_manager.py
 
-import json
 import os
 import numpy as np
 from src.modules.utils.app_logger import get_logger
@@ -13,6 +12,7 @@ except ImportError:
     pass
 
 logger = get_logger(__name__)
+from src.modules.utils.json_store import read_json_store, write_json_atomic
 
 # np.trapz was removed in NumPy 2.0 (renamed to np.trapezoid). Using this
 # shim instead of calling either name directly means this module works
@@ -92,17 +92,19 @@ class NormalizationManager:
     @staticmethod
     def list_region_presets() -> dict:
         """Return {preset_name: [(x_min, x_max), ...]} loaded from disk.
-        Returns an empty dict if no presets have been saved yet, or if the
-        file is missing/corrupted (treated the same as "no presets")."""
-        if not os.path.exists(_PRESETS_FILE):
-            return {}
-        try:
-            with open(_PRESETS_FILE, 'r', encoding='utf-8') as fh:
-                data = json.load(fh)
-            # Tuples don't survive JSON round-trip — convert lists back.
-            return {name: [tuple(r) for r in regions] for name, regions in data.items()}
-        except Exception:
-            return {}
+        Returns an empty dict if no presets have been saved yet. An
+        unreadable file is also treated as empty, but a copy of it is kept
+        first (see json_store.read_json_store) -- before, the next save
+        silently replaced it and every earlier preset was lost."""
+        data = read_json_store(_PRESETS_FILE, 'normalization region presets')
+        result = {}
+        for name, regions in data.items():
+            try:
+                # Tuples don't survive JSON round-trip — convert lists back.
+                result[name] = [tuple(r) for r in regions]
+            except TypeError:
+                logger.warning("Ignoring malformed normalization region preset %r.", name)
+        return result
 
     @staticmethod
     def save_region_preset(name: str, regions: list) -> None:
@@ -110,11 +112,9 @@ class NormalizationManager:
         overwriting any existing preset with the same name."""
         if not name:
             raise ValueError('Preset name cannot be empty')
-        os.makedirs(_PRESETS_DIR, exist_ok=True)
         presets = NormalizationManager.list_region_presets()
         presets[name] = [list(r) for r in regions]
-        with open(_PRESETS_FILE, 'w', encoding='utf-8') as fh:
-            json.dump(presets, fh, indent=2)
+        write_json_atomic(_PRESETS_FILE, presets)
 
     @staticmethod
     def delete_region_preset(name: str) -> None:
@@ -122,9 +122,7 @@ class NormalizationManager:
         presets = NormalizationManager.list_region_presets()
         if name in presets:
             del presets[name]
-            os.makedirs(_PRESETS_DIR, exist_ok=True)
-            with open(_PRESETS_FILE, 'w', encoding='utf-8') as fh:
-                json.dump(presets, fh, indent=2)
+            write_json_atomic(_PRESETS_FILE, presets)
 
     # ------------------------------------------------------------------
     # Backward-compatibility properties so old code using .x_min/.x_max

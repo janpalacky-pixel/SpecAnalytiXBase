@@ -108,6 +108,9 @@ class BaselineCorrectionController:
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                 )
             except Exception as exc:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying baseline correction")
                 return False, f'Error applying baseline correction: {exc}'
 
             # Only spectra that actually had baseline points defined are
@@ -386,7 +389,10 @@ class BaselineCorrectionController:
                 try:
                     self.manager.calculate_baseline(key, sp['x_scale'])
                 except Exception:
-                    pass
+                    # Only the Summary is affected (it fills in once the
+                    # spectrum is previewed) -- but say why in the log.
+                    logger.warning("Could not fit the stored baseline of %r on loading",
+                                   sp.get('label', key), exc_info=True)
 
         logger.info(f"Loaded {loaded} stored baseline points")
         storage.has_stored_points = False

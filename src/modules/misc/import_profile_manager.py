@@ -16,10 +16,10 @@
 
 import os
 import sys
-import json
 
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
+from src.modules.utils.json_store import read_json_store, write_json_atomic
 
 
 def _profiles_dir() -> str:
@@ -60,24 +60,14 @@ class ImportProfileManager:
     # ------------------------------------------------------------------
 
     def _load_all(self) -> dict:
-        if not os.path.exists(self._path):
-            return {}
-        try:
-            with open(self._path, 'r', encoding='utf-8') as fh:
-                data = json.load(fh)
-            if not isinstance(data, dict):
-                logger.warning("Import profiles file is not a JSON object — ignoring its contents.")
-                return {}
-            return data
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning("Could not read import profiles file (%s): %s", self._path, exc)
-            return {}
+        # An unreadable file is copied aside before being treated as empty,
+        # so the next save cannot silently wipe every saved item (see
+        # json_store.read_json_store).
+        return read_json_store(self._path, 'import profiles')
 
-    def _save_all(self, profiles: dict) -> None:
-        os.makedirs(_profiles_dir(), exist_ok=True)
+    def _save_all(self, items: dict) -> None:
         try:
-            with open(self._path, 'w', encoding='utf-8') as fh:
-                json.dump(profiles, fh, indent=2, sort_keys=True)
+            write_json_atomic(self._path, items)
         except OSError as exc:
             raise RuntimeError(f"Could not save import profile: {exc}") from exc
 

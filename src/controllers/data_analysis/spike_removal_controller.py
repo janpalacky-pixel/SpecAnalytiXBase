@@ -81,6 +81,9 @@ class SpikeRemovalController:
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                 )
             except Exception as exc:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying spike removal")
                 return False, f'Error applying spike removal: {exc}'
 
             if not processed_spectra:

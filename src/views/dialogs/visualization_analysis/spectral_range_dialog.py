@@ -16,6 +16,9 @@ matplotlib.use('Agg')
 from matplotlib.backends.backend_qt5agg import (
     FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar)
 from matplotlib.figure import Figure
+from src.modules.utils.app_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def _evenly_spaced(spectra, n):
@@ -638,7 +641,8 @@ class SpectralRangeDialog(QDialog):
                             transform=self._ax.transAxes, ha='center', fontsize=6.5,
                             color='#C62828')
                 except Exception:
-                    pass
+                    # The preview just shows no Average line -- log why.
+                    logger.warning("Could not draw the Average in the range preview", exc_info=True)
 
         if single_active or self._avg_cb.isChecked():
             self._ax.legend(fontsize=7, loc='upper right', framealpha=0.7)

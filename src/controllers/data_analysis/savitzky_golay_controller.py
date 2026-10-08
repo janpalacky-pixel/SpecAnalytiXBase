@@ -63,6 +63,9 @@ class SavitzkyGolayController:
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                 )
             except Exception as exc:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying Savitzky-Golay filter")
                 return False, f'Error applying Savitzky-Golay filter: {exc}'
 
             if not processed_spectra:

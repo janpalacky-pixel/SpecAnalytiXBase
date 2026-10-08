@@ -21,11 +21,11 @@
 
 import os
 import sys
-import json
 from datetime import datetime
 
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
+from src.modules.utils.json_store import read_json_store, write_json_atomic
 
 
 def _pipelines_dir() -> str:
@@ -64,24 +64,14 @@ class PipelineManager:
     # ------------------------------------------------------------------
 
     def _load_all(self) -> dict:
-        if not os.path.exists(self._path):
-            return {}
-        try:
-            with open(self._path, 'r', encoding='utf-8') as fh:
-                data = json.load(fh)
-            if not isinstance(data, dict):
-                logger.warning("Batch pipelines file is not a JSON object — ignoring its contents.")
-                return {}
-            return data
-        except (OSError, json.JSONDecodeError) as exc:
-            logger.warning("Could not read batch pipelines file (%s): %s", self._path, exc)
-            return {}
+        # An unreadable file is copied aside before being treated as empty,
+        # so the next save cannot silently wipe every saved item (see
+        # json_store.read_json_store).
+        return read_json_store(self._path, 'batch pipelines')
 
-    def _save_all(self, pipelines: dict) -> None:
-        os.makedirs(_pipelines_dir(), exist_ok=True)
+    def _save_all(self, items: dict) -> None:
         try:
-            with open(self._path, 'w', encoding='utf-8') as fh:
-                json.dump(pipelines, fh, indent=2, sort_keys=True)
+            write_json_atomic(self._path, items)
         except OSError as exc:
             raise RuntimeError(f"Could not save pipeline: {exc}") from exc
 

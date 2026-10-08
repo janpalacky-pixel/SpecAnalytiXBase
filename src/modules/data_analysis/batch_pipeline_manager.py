@@ -292,7 +292,8 @@ class BatchPipelineManager:
                 try:
                     progress_callback(i - 1, total, f"Step {i}/{total}: {operation}")
                 except Exception:
-                    pass
+                    # A broken progress display must not stop the pipeline.
+                    logger.warning("Pipeline progress callback failed", exc_info=True)
 
             spec = ELIGIBLE_OPERATIONS[operation]
             try:
@@ -306,7 +307,7 @@ class BatchPipelineManager:
             try:
                 progress_callback(total, total, "Done")
             except Exception:
-                pass
+                logger.warning("Pipeline progress callback failed", exc_info=True)
         return current
 
     @staticmethod

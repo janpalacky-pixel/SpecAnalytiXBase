@@ -69,6 +69,9 @@ class NormalizationController:
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                 )
             except Exception as e:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying normalization")
                 return False, f'Error applying normalization: {e}'
 
             if not normalized_spectra:

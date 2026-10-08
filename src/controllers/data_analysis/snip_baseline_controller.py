@@ -73,6 +73,9 @@ class SNIPBaselineController:
                     progress_callback=(lambda: QApplication.processEvents()) if progress is not None else None,
                 )
             except Exception as exc:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying SNIP baseline correction")
                 return False, f'Error applying SNIP baseline correction: {exc}'
 
             if not processed_spectra:

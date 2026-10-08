@@ -3235,6 +3235,30 @@ def _natural_sort_key(cls, label):
         <code>tests/test_som_training_method.py</code>. Any new long computation with a
         Cancel button needs the same treatment.</p>
 
+        <h2 id="saved-user-files">Files the User Builds Up Over Time: Save Atomically, Never Discard an Unreadable One</h2>
+        <p>Normalization region presets, import profiles and batch pipelines are small JSON files
+        in <code>~/.specanalytixbase/</code> that grow as the user saves items. All three used to
+        (1) save with <code>open(path, 'w')</code>, which empties the file before writing &mdash; a
+        crash or full disk mid-save leaves it truncated &mdash; and (2) treat an unreadable file as
+        &ldquo;nothing saved yet&rdquo;, so the <em>next</em> save wrote a file with only the new item
+        and every earlier one was silently lost.</p>
+        <p><b>Rule:</b> use <code>src/modules/utils/json_store.py</code>:
+        <code>write_json_atomic()</code> (temporary file + <code>os.replace</code>: the file is always
+        the complete old or the complete new version) and <code>read_json_store()</code> (keeps a
+        <code>&lt;name&gt;.corrupt-&lt;timestamp&gt;.json</code> copy of an unreadable file and logs
+        where, before treating it as empty). Tests: <code>tests/test_json_store_safety.py</code>
+        &mdash; they fail against the old code.</p>
+
+        <h2 id="log-the-traceback">When an Error Becomes a Message, Also Log It</h2>
+        <p>Operations report failures to the user as one line (&ldquo;Error applying normalization:
+        index out of bounds&rdquo;). That line alone cannot be diagnosed, so every such handler
+        also calls <code>logger.exception(...)</code>, which writes the full traceback to
+        <code>specanalytixbase.log</code>. <code>tests/test_operation_errors_are_logged.py</code>
+        checks all controllers. More generally: a silent <code>except Exception: pass</code> is
+        fine for cosmetic clean-up (tight_layout, removing an old plot marker, closing a figure)
+        but not where it can hide a wrong result or lost data &mdash; there, log a warning with
+        <code>exc_info=True</code>.</p>
+
         <h2 id="redraw-after-operation">Interactive Update Must Survive Apply / Add as New</h2>
 
         <p>Every <code>commit_*</code> method used to end by calling

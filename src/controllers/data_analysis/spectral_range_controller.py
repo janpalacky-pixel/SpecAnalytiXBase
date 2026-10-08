@@ -75,6 +75,9 @@ class SpectralRangeController:
             try:
                 processed_spectra = self.apply_settings_to_spectra(settings, selected_spectra)
             except Exception as e:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying data range")
                 return False, f'Error applying data range: {e}'
 
             if not processed_spectra:

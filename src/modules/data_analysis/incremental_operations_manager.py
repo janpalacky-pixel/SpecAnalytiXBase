@@ -967,7 +967,8 @@ class IncrementalOperationsManager(QObject):
                 if hasattr(bc_controller, 'manager'):
                     return bc_controller.manager.get_baseline_points(key or spectrum_key_or_label)
         except Exception:
-            pass
+            logger.warning("Could not read baseline points of %r from the baseline controller",
+                           spectrum_key_or_label, exc_info=True)
 
         # No points found
         return []

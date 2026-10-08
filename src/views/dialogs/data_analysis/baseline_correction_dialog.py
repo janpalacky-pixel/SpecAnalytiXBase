@@ -963,7 +963,7 @@ class BaselinePlotCanvas(FigureCanvas):
             if hasattr(parent, 'update_view_mode'):
                 parent.update_view_mode()
         except Exception:
-            pass
+            logger.warning("Could not refresh the baseline dialog's view mode", exc_info=True)
 
     def _refresh_legend(self):
         handles, labels = self.axes.get_legend_handles_labels()

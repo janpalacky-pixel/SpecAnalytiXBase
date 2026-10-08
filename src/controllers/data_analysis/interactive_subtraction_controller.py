@@ -8,6 +8,10 @@ from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.revision_tracking import revision_changed
 import numpy as np
 
+from src.modules.utils.app_logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class InteractiveSubtractionController:
     def __init__(self, main_controller):
@@ -76,6 +80,9 @@ class InteractiveSubtractionController:
                         "has been committed via Update."
                     )
             except Exception as e:
+                # The user only sees the one-line message; the log file gets the
+                # full traceback, so a reported error can actually be diagnosed.
+                logger.exception("Error applying interactive subtraction")
                 return False, f'Error applying interactive subtraction: {e}'
 
             affected_set = set(affected_labels)
