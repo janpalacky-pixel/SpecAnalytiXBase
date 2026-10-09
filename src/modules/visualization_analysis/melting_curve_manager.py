@@ -1199,6 +1199,13 @@ class MeltingCurveManager:
         n_edge = max(3, int(round(0.05 * len(order))))
         low_idx, high_idx = order[:n_edge], order[-n_edge:]
         curve_amplitude = float(np.max(y_arr) - np.min(y_arr))
+        # A perfectly flat curve has no transition at all -- and every
+        # "x% of the curve's amplitude" figure below would divide by zero.
+        if not curve_amplitude > 0:
+            out['reason'] = ("The curve is flat: the signal does not change with temperature, "
+                             "so there is no transition to fit. Choose an x-value (wavelength) "
+                             "where the signal changes, or use Manual mode.")
+            return out
         edge_tolerance_relative = SCORE_TOLERANCE * curve_amplitude if curve_amplitude > 0 else 0.0
 
         def _edge_error(norm):

@@ -124,8 +124,12 @@ class SNIPBaselineManager:
         n = len(y)
 
         # Optional pre-smoothing (moving average)
-        if self.smooth_window > 0:
-            w  = self.smooth_window
+        # The window (2w+1 points) can't be wider than the spectrum itself:
+        # np.convolve(mode='same') then returns an array LONGER than y and
+        # everything below fails ("operands could not be broadcast").
+        # Happens with short spectra, e.g. after cutting to a small range.
+        w = min(self.smooth_window, (n - 1) // 2)
+        if w > 0:
             y  = np.convolve(y, np.ones(2 * w + 1) / (2 * w + 1), mode='same')
 
         # Variance-stabilising transform: sqrt(y + 3/8)

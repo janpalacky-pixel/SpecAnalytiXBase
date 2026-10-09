@@ -142,6 +142,12 @@ class CosmicRayManager:
         # if modest, saving. A genuine change (different threshold, or a
         # different/reordered selection) still correctly falls through to
         # a fresh detect() call below.
+        if len(spectra) < 2:
+            # detect() has nothing to compare against and builds no matrix;
+            # without this check the loop below failed with a TypeError.
+            raise ValueError(
+                "Cosmic ray removal compares each spectrum with the others and "
+                "needs at least 2 spectra.")
         cache_valid = (
             self._matrix is not None
             and self._labels == [s['label'] for s in spectra]

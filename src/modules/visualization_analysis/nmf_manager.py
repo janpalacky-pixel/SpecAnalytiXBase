@@ -124,6 +124,7 @@ class NMFManager:
         Returns True on success.
         """
         if not spectra:
+            self.last_error = "No spectra selected."
             return False
 
         self.last_error = None
@@ -156,6 +157,7 @@ class NMFManager:
             from sklearn.decomposition import NMF
         except ImportError:
             logger.error("NMFManager: scikit-learn is not installed")
+            self.last_error = "NMF needs the scikit-learn package, which is not installed."
             return False
 
         # Build data matrix (n_spectra × n_wl), clip negatives
@@ -391,7 +393,9 @@ class NMFManager:
             self.lof = 100.0 * self.reconstruction_error / np.sqrt(X_nn_ss) \
                 if X_nn_ss > 0 else 0.0
         except Exception as exc:
-            logger.error("NMFManager: NMF failed: %s", exc)
+            logger.exception("NMFManager: NMF failed")
+            # Without this the dialog could only say "NMF failed" with no reason.
+            self.last_error = f"NMF failed: {exc}"
             return False
 
         self.x_axis       = x_ref

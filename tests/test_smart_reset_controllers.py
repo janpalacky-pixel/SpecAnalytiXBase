@@ -75,16 +75,24 @@ def _install_fake_dialog(module_path, class_name, **extra_attrs):
 
 
 @pytest.fixture(autouse=True)
-def _clean_fake_modules():
-    # Don't let a fake dialog module leak into a later test that might
-    # (in some future test) want the real one.
-    installed = []
-    orig_setitem = sys.modules.__setitem__
+def _restore_real_dialog_modules():
+    """Put the real dialog modules back after each test.
+
+    _install_fake_dialog() replaces entries in sys.modules. Leaving those
+    stubs behind used to be harmless, until tests/test_smoke_all_tools.py
+    -- which opens the REAL NMF / MCR-ALS / ... dialogs later in the same
+    run -- picked up a leftover `_FakeDialog` instead."""
+    saved = dict(sys.modules)
     yield
-    # nothing to restore automatically -- tests only ever fake dialog
-    # modules that aren't imported anywhere else in this same process
-    # for real, so leaking a stub is harmless, but keep this fixture as
-    # the seam if that ever changes.
+    for name, module in list(sys.modules.items()):
+        if saved.get(name) is module:
+            continue
+        if isinstance(module, types.ModuleType) and getattr(module, '__file__', None) is None \
+                and name.startswith('src.'):
+            if name in saved:
+                sys.modules[name] = saved[name]
+            else:
+                del sys.modules[name]
 
 
 # --------------------------------------------------------------------- #

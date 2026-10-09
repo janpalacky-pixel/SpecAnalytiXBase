@@ -3493,6 +3493,21 @@ pytest tests/ -v
             processed), never <em>how long</em> it took; document measured speed in the help
             instead.
         </div>
+        <h3>The automatic bug hunt: <code>tests/test_smoke_all_tools.py</code></h3>
+        <p>Imports every shipped test dataset, runs every batch-pipeline operation (all 13 baseline
+        methods, all normalization modes, ...) on real data, and then starts the real application
+        without a window and, for a real CD dataset, a two-spectrum file and two files with different
+        x-axes, opens <em>every</em> Spectra Processing operation and Analysis &amp; Visualization tool
+        and presses its action buttons (Run, Fit, Apply, Update Map, Bootstrap, ...). It fails on an
+        unhandled exception, an error ("critical") message box, an ERROR in the log or a computation
+        that never finishes &mdash; a warning box asking for input ("define a range first") is the app
+        behaving correctly and is allowed. A failure lists every problem with its path, e.g.
+        <code>EXCEPTION | two_spectra.txt &gt; analysis: PCA Scores &amp; Loadings &gt; ... &gt;
+        [Recompute SVD] | ZeroDivisionError ... [pca_scores_dialog.py:922]</code>. A new operation or
+        analysis added to the main window's lists is covered automatically. Its first run (October 2026)
+        found six bugs, all fixed with tests in <code>tests/test_bug_hunt_fixes.py</code> &mdash; most
+        importantly that the Spectral Calculator silently created undefined values (log/sqrt of negative
+        CD data) which later made SVD/MCR-ALS/clustering fail with cryptic errors.</p>
 
         <!-- ═══════════════════════════════════════════════════════════
              BUILD, PACKAGING & REPO HYGIENE

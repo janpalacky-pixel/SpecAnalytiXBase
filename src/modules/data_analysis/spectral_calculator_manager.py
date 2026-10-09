@@ -353,6 +353,24 @@ class SpectralCalculatorManager:
                     f"Result shape {result_y.shape} does not match x-axis shape "
                     f"{common_x.shape}{where}. Ensure the formula returns one value per point."
                 )
+            # Undefined results (log/sqrt of zero or negative values -- common
+            # with CD data -- or division by zero) used to be stored silently
+            # as NaN/inf; every later SVD/PCA/MCR/clustering step on such a
+            # spectrum then failed with a cryptic numerical error. Refuse
+            # here instead, saying where and why.
+            bad = ~np.isfinite(result_y)
+            if bad.any():
+                where = '' if len(result_arrays) == 1 else f' (output {idx + 1} of {len(result_arrays)})'
+                xs = common_x[bad]
+                shown = ', '.join(f'{v:.4g}' for v in xs[:5]) + (', \u2026' if len(xs) > 5 else '')
+                raise ValueError(
+                    f"The result{where} is undefined at {int(bad.sum())} of {len(result_y)} "
+                    f"points (x = {shown}).\n\n"
+                    "This happens with log() or sqrt() of zero or negative values "
+                    "(e.g. CD data, which is often negative) or with division by zero. "
+                    "Restrict the x-range first (Data range), use abs(), or add an offset, "
+                    "e.g. log(abs(A) + 1e-6)."
+                )
             outputs.append({
                 'x_scale': common_x.copy(),
                 'y_scale': result_y.copy(),

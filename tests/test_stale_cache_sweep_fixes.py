@@ -82,6 +82,27 @@ def _install_fake_dialog(module_path, class_name, get_settings_result=None):
     return fake_module
 
 
+@pytest.fixture(autouse=True)
+def _restore_real_dialog_modules():
+    """Put the real dialog modules back after each test.
+
+    _install_fake_dialog() replaces entries in sys.modules. Leaving those
+    stubs behind used to be harmless, until tests/test_smoke_all_tools.py
+    -- which opens the REAL NMF / MCR-ALS / ... dialogs later in the same
+    run -- picked up a leftover `_FakeDialog` instead."""
+    saved = dict(sys.modules)
+    yield
+    for name, module in list(sys.modules.items()):
+        if saved.get(name) is module:
+            continue
+        if isinstance(module, types.ModuleType) and getattr(module, '__file__', None) is None \
+                and name.startswith('src.'):
+            if name in saved:
+                sys.modules[name] = saved[name]
+            else:
+                del sys.modules[name]
+
+
 # --------------------------------------------------------------------- #
 # 1. SVD Background -- filter_stale_settings strips computed picks when
 #    an operation ran, keeps genuine settings, and passes through

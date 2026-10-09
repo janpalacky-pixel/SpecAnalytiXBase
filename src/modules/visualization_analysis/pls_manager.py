@@ -172,6 +172,17 @@ class PLSManager:
 
         x_mean = X_cal.mean(axis=0)
         x_std = X_cal.std(axis=0)
+        # Identical (or all-flat) calibration spectra leave nothing for PLS
+        # to model; the solver then failed with a meaningless numerical
+        # message ("illegal value in 4th argument of internal gesdd").
+        # np.ptp (max - min) rather than x_std: rounding in the mean makes the
+        # std of identical values a tiny non-zero number (~1e-17), not 0.
+        if not np.any(np.ptp(X_cal, axis=0) > 0):
+            raise ValueError(
+                "The calibration spectra are all identical, so there is no "
+                "variation for PLS to relate to the entered values. Select "
+                "spectra that actually differ."
+            )
         x_std_safe = np.where(x_std > 0, x_std, 1.0)
 
         def _scale(X):
