@@ -168,17 +168,46 @@ def configure_logging() -> None:
         if issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
             sys.__excepthook__(exc_type, exc_value, exc_tb)
             return
-        root.critical(
-            "UNHANDLED EXCEPTION:\n%s",
-            "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-        )
+        text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        root.critical("UNHANDLED EXCEPTION:\n%s", text)
         sys.__excepthook__(exc_type, exc_value, exc_tb)
+        _show_unhandled_error(text)
 
     sys.excepthook = _log_unhandled_exception
 
     # Suppress noisy third-party loggers
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     logging.getLogger('PIL').setLevel(logging.WARNING)
+
+
+_showing_error = [False]
+
+
+def _show_unhandled_error(text: str) -> None:
+    """Tell the user about an unhandled error (added 2026-10-09, same fix as
+    in MeltAnalytiX): until now it went only into the log file, so the user
+    noticed nothing while the program could be in a half-finished state.
+    The program keeps running (a custom sys.excepthook also stops PyQt5 from
+    aborting the process); the message says so and where the details are.
+    Only from the main (GUI) thread, never two boxes at once, and silently
+    skipped when no QApplication exists (e.g. tests, command-line tools)."""
+    import threading
+    if _showing_error[0] or threading.current_thread() is not threading.main_thread():
+        return
+    try:
+        from PyQt5.QtWidgets import QApplication, QMessageBox
+        if QApplication.instance() is None:
+            return
+        _showing_error[0] = True
+        QMessageBox.critical(
+            None, "SpecAnalytiXBase - unexpected error",
+            "Something went wrong, but the program is still running - you can save your work.\n\n"
+            "The details were written to the log file:\n" + get_log_file_path() +
+            "\n\nPlease send that file (or this message) to the developer.\n\n" + text[-1500:])
+    except Exception:
+        pass
+    finally:
+        _showing_error[0] = False
 
 
 def enable_crash_diagnostics() -> None:
