@@ -56,9 +56,9 @@ def test_interrupted_save_leaves_the_old_file_complete(tmp_path, monkeypatch):
     path = str(tmp_path / 'store.json')
     write_json_atomic(path, {'old': 1})
 
-    def crash(*args, **kwargs):
+    def crash(*args, **kwargs):                       # the disk fails mid-write
         raise OSError('disk full (simulated)')
-    monkeypatch.setattr(json_store.json, 'dump', crash)
+    monkeypatch.setattr(json_store.os, 'fsync', crash)
     with pytest.raises(OSError):
         write_json_atomic(path, {'new': 2})
     monkeypatch.undo()
@@ -110,3 +110,15 @@ def test_profiles_and_pipelines_keep_a_damaged_file(tmp_path, make, save, names)
     backups = _backups(tmp_path)
     assert len(backups) == 1
     assert 'first' in (tmp_path / backups[0]).read_text(encoding='utf-8')
+
+
+def test_interrupted_byte_save_leaves_the_old_file_complete(tmp_path, monkeypatch):
+    from src.modules.utils.json_store import write_bytes_atomic
+    path = str(tmp_path / 'session.snapx')
+    write_bytes_atomic(path, b'old complete content')
+    monkeypatch.setattr(json_store.os, 'fsync', lambda *a: (_ for _ in ()).throw(OSError('power cut')))
+    with pytest.raises(OSError):
+        write_bytes_atomic(path, b'new content that never fully arrives')
+    monkeypatch.undo()
+    assert open(path, 'rb').read() == b'old complete content'
+    assert [f for f in os.listdir(tmp_path) if f.startswith('.tmp-')] == []

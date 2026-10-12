@@ -255,6 +255,8 @@ class ImportController(QObject):
         # refocusing the app from the taskbar). Harmless, but untidy.
         progress.close()
         progress.deleteLater()
+        for imported_path in successful_imports:
+            self._remember_recent(imported_path, 'data')
         QApplication.processEvents()
 
         # --- commit results --------------------------------------------------
@@ -374,29 +376,48 @@ class ImportController(QObject):
         )
 
         if file_path and self.main_controller:
-            try:
-                # load_snapshot() returns False (without raising) both when
-                # the user declines the "replace your workspace?"
-                # confirmation and when the load itself failed (it shows its
-                # own error dialog in that case) — either way nothing
-                # changed, so there's nothing to do here. On success it has
-                # already restored and rendered the full state itself,
-                # including making the spectrum list visible partway
-                # through (see SaveManager._restore_spectrum_selection() --
-                # deliberately done there, before the plot render, not
-                # here after everything including the confirmation dialog
-                # has already finished). This call is now just a harmless
-                # safety net for that same effect, in case a future code
-                # path calls load_snapshot() without going through here.
-                success = self.main_controller.save_controller.load_snapshot(file_path)
-                if success:
-                    self.main_controller.view.spectrum_selection_frame.setVisible(True)
-
-            except Exception as e:
-                logger.exception("Traceback:")
-                QMessageBox.critical(self.view, "Error Loading Snapshot", f"Failed: {str(e)}")
+            self.open_snapshot_path(file_path)
         elif not self.main_controller:
             QMessageBox.critical(self.view, "Error", "Main controller not found")
+
+    def open_snapshot_path(self, file_path: str) -> bool:
+        """Open a snapshot file directly (File -> Import Snapshot after its
+        file dialog, and File -> Open recent). Returns True on success."""
+        success = False
+        if not self.main_controller:
+            return False
+        try:
+            # load_snapshot() returns False (without raising) both when
+            # the user declines the "replace your workspace?"
+            # confirmation and when the load itself failed (it shows its
+            # own error dialog in that case) — either way nothing
+            # changed, so there's nothing to do here. On success it has
+            # already restored and rendered the full state itself,
+            # including making the spectrum list visible partway
+            # through (see SaveManager._restore_spectrum_selection() --
+            # deliberately done there, before the plot render, not
+            # here after everything including the confirmation dialog
+            # has already finished). This call is now just a harmless
+            # safety net for that same effect, in case a future code
+            # path calls load_snapshot() without going through here.
+            success = self.main_controller.save_controller.load_snapshot(file_path)
+            if success:
+                self.main_controller.view.spectrum_selection_frame.setVisible(True)
+                self._remember_recent(file_path, 'snapshot')
+
+        except Exception as e:
+            logger.exception("Traceback:")
+            QMessageBox.critical(self.view, "Error Loading Snapshot", f"Failed: {str(e)}")
+        return bool(success)
+
+    def _remember_recent(self, path: str, kind: str) -> None:
+        """Add to File -> Open recent (never fails an import over it)."""
+        autosave = getattr(self.main_controller, 'autosave_controller', None)
+        if autosave is not None:
+            try:
+                autosave.record_recent(path, kind)
+            except Exception:
+                logger.warning("Could not update the recent files list", exc_info=True)
 
     # ------------------------------------------------------------------
     # Unrecognized file extension

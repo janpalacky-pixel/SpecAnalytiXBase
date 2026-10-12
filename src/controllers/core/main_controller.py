@@ -12,6 +12,7 @@ from PyQt5.QtCore import Qt, QPoint
 from src.views.main_window import MainWindow
 from src.controllers.data_io.import_controller import ImportController
 from src.controllers.misc.save_spectra_controller import SaveController
+from src.controllers.misc.autosave_controller import AutosaveController
 from src.controllers.utils.webpage_controller import WebpageController
 from src.controllers.misc.spectrum_selector_controller import SpectrumSelector
 from src.controllers.core.operations_controller import OperationsController
@@ -169,6 +170,11 @@ class MainController(QMainWindow):
         self.import_controller = ImportController(self.view, self)
         self.import_controller.spectra_cleared.connect(self.reset_plot_state)
         self.save_controller = SaveController(self)
+        # Automatic saving / crash recovery and File -> Open recent. Only
+        # builds its menus here; main.py calls .start() once the window is
+        # shown (so creating a MainController -- e.g. in tests -- never
+        # writes session files or asks the recovery question).
+        self.autosave_controller = AutosaveController(self)
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
         self.peak_detection_controller = PeakDetectionController(self)
@@ -2459,6 +2465,12 @@ class MainController(QMainWindow):
         if reply != QMessageBox.Yes:
             event.ignore()
             return
+        # A normal close: remove this session's automatic save, so only an
+        # abnormal ending (crash, power cut) is ever offered for restoring.
+        try:
+            self.autosave_controller.shutdown()
+        except Exception:
+            logger.exception("Could not finish automatic saving cleanly")
 
         # Excluding self (MainController), not just self.view, matters:
         # MainController is ALSO a QMainWindow — constructed but never

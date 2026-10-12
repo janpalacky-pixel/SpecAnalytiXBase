@@ -10,6 +10,25 @@ import tempfile
 
 
 # ---------------------------------------------------------------------------
+# Never touch the user's real per-user files while testing
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True, scope='session')
+def _isolated_app_data_dir(tmp_path_factory):
+    """Point the app's per-user folder (automatic saves, the Open recent
+    list, preferences -- see src/modules/misc/session_files.py) at a
+    temporary folder for the whole test run, so running the tests never
+    changes the real ones."""
+    old = os.environ.get('SPECANALYTIXBASE_DATA_DIR')
+    os.environ['SPECANALYTIXBASE_DATA_DIR'] = str(tmp_path_factory.mktemp('app_data'))
+    yield
+    if old is None:
+        os.environ.pop('SPECANALYTIXBASE_DATA_DIR', None)
+    else:
+        os.environ['SPECANALYTIXBASE_DATA_DIR'] = old
+
+
+# ---------------------------------------------------------------------------
 # Basic data fixtures
 # ---------------------------------------------------------------------------
 

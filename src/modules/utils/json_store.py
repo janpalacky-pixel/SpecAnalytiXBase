@@ -58,12 +58,22 @@ def write_json_atomic(path, data):
     """Write *data* as JSON to *path* so that the file is never left
     half-written. Raises OSError (or TypeError for unserialisable data);
     the original file is then unchanged."""
+    text = json.dumps(data, indent=2, sort_keys=True)
+    write_bytes_atomic(path, text.encode('utf-8'))
+
+
+def write_bytes_atomic(path, data: bytes):
+    """Write *data* to *path* via a temporary file in the same folder that
+    then replaces *path* in one step: the file is always either the
+    complete old or the complete new version, never a truncated mix.
+    Raises OSError; the original file is then unchanged."""
     folder = os.path.dirname(os.path.abspath(path))
     os.makedirs(folder, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix='.tmp-', suffix='.json', dir=folder)
+    suffix = os.path.splitext(path)[1] or '.tmp'
+    fd, tmp_path = tempfile.mkstemp(prefix='.tmp-', suffix=suffix, dir=folder)
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
-            json.dump(data, fh, indent=2, sort_keys=True)
+        with os.fdopen(fd, 'wb') as fh:
+            fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp_path, path)

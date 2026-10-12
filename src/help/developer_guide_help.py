@@ -3259,6 +3259,35 @@ def _natural_sort_key(cls, label):
         but not where it can hide a wrong result or lost data &mdash; there, log a warning with
         <code>exc_info=True</code>.</p>
 
+        <h2 id="autosave-design">Automatic Saving, Crash Recovery and Open Recent</h2>
+        <p><code>src/modules/misc/session_files.py</code> (no Qt) +
+        <code>src/controllers/misc/autosave_controller.py</code> (timer, menus, the
+        recovery question). Files live in the per-user folder
+        (<code>%LOCALAPPDATA%\SpecAnalytiXBase</code>, overridable with the environment
+        variable <code>SPECANALYTIXBASE_DATA_DIR</code> &mdash; <code>tests/conftest.py</code>
+        points it at a temporary folder for every test run, so tests never touch a
+        user's real files).</p>
+        <ul>
+            <li><b>Crash detection uses an OS file lock, not process ids.</b> Each running
+            instance holds a lock on <code>autosave/session-&lt;id&gt;.lock</code>; the OS
+            releases it when the process ends in any way. A lock someone else can take
+            belongs to an instance that died. The first version compared process ids and
+            failed in a real two-process test: the new instance got the <i>same</i> id as
+            the crashed one, decided "that's me", and on its own normal close deleted the
+            crashed work. Session ids are now <code>&lt;pid&gt;-&lt;random&gt;</code>.</li>
+            <li><b>Only when changed:</b> the snapshot's own time stamp is left out of the
+            change check (<code>SaveManager.snapshot_state_and_digest</code>) &mdash;
+            otherwise every snapshot differs and "only when changed" never skips.</li>
+            <li><b>No frozen window:</b> building the snapshot text (0.2 s for a 1225-spectrum
+            map) runs on the GUI thread; gzip + the atomic write (~0.6 s) on a background
+            thread.</li>
+            <li><b><code>main.py</code> calls <code>autosave_controller.start()</code></b>
+            after the window is shown; merely creating a <code>MainController</code> (as
+            the tests do) writes nothing and asks nothing.</li>
+            <li>Snapshot saves (File &rarr; Save, automatic saves) are now written atomically
+            (<code>json_store.write_bytes_atomic</code>).</li>
+        </ul>
+
         <h2 id="redraw-after-operation">Interactive Update Must Survive Apply / Add as New</h2>
 
         <p>Every <code>commit_*</code> method used to end by calling

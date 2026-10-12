@@ -49,12 +49,14 @@
 
 import os
 import gzip
+import hashlib
 import pandas as pd
 import numpy as np
 
 from src.modules.utils.spectra_validation import axes_match
 from src.modules.utils.spectrum_identity import spectrum_id
 from src.modules.data_io.spc_data_writer import write_spc_data
+from src.modules.utils.json_store import write_bytes_atomic
 
 
 class SaveManager:
@@ -499,8 +501,12 @@ class SaveManager:
             'x_scale':                   self._safe_get(ui, 'x_scale_comboBox', 'currentText'),
             'y_scale':                   self._safe_get(ui, 'y_scale_comboBox', 'currentText'),
             'grid_settings':             main_controller.grid_settings.copy(),
-            'spectra_ordering':          self._safe_get(ui, 'comboBox_spectra_ordering', 'currentText'),
-            'reverse_order':             self._safe_get(ui, 'checkBox_reverse_order', 'isChecked'),
+            # The "reverse sorting" checkbox lives on the main controller
+            # (next to the spectra list), not on the window; it used to be
+            # looked up on the window, so it was silently never saved or
+            # restored. (The former "spectra ordering" dropdown no longer
+            # exists; old snapshots that contain it are simply ignored.)
+            'reverse_order':             self._safe_get(main_controller, 'checkBox_reverse_order', 'isChecked'),
         }
         # Drop any field whose widget no longer exists in this build of the
         # UI (e.g. after a refactor) rather than storing None/False as if
@@ -867,8 +873,9 @@ class SaveManager:
             compressed = gzip.compress(json_bytes, compresslevel=level)
 
             self._report_progress(progress_callback, 4, "Writing file…")
-            with open(file_path, 'wb') as fh:
-                fh.write(compressed)
+            # Temporary file + rename: a crash or full disk during the
+            # write can no longer destroy an existing snapshot file.
+            write_bytes_atomic(file_path, compressed)
 
             logger.info(
                 "Snapshot saved: %s (%d bytes, gzip level %d, %.1fx "
@@ -879,6 +886,32 @@ class SaveManager:
         except Exception:
             logger.exception("Failed to save snapshot")
             return False
+
+    def snapshot_state_and_digest(self, main_controller):
+        """(state, digest) of the current application state. The digest
+        ignores the snapshot's time stamp, so two snapshots of an unchanged
+        session have the same digest -- automatic saving uses it to skip
+        saving when nothing changed."""
+        state = self._build_state(main_controller)
+        stamp = state.pop('timestamp', None)
+        digest = hashlib.sha1(self._to_json(state).encode('utf-8')).hexdigest()
+        if stamp is not None:
+            state['timestamp'] = stamp
+        return state, digest
+
+    def snapshot_json_bytes(self, main_controller, state=None) -> bytes:
+        """The uncompressed snapshot (of *state*, or of the current state),
+        as JSON bytes. Cheap (well under a second even for a 1225-spectrum
+        map); automatic saving compresses and writes these bytes on a
+        background thread so the window never freezes."""
+        if state is None:
+            state = self._build_state(main_controller)
+        return self._to_json(state).encode('utf-8')
+
+    @classmethod
+    def compress_snapshot(cls, json_bytes: bytes, compression_level=1) -> bytes:
+        """gzip-compress snapshot JSON bytes (thread-safe, no Qt)."""
+        return gzip.compress(json_bytes, compresslevel=max(1, min(9, int(compression_level))))
 
     def load_snapshot(self, main_controller, file_path: str, progress_callback=None) -> bool:
         """
@@ -1153,11 +1186,9 @@ class SaveManager:
                                     s['use_automatic_line_colors'])
                 if 'use_default_points' in s:
                     main_controller.use_default_points = s['use_default_points']
-                if 'spectra_ordering' in s:
-                    self._safe_set(ui, 'comboBox_spectra_ordering', 'setCurrentText',
-                                    s['spectra_ordering'])
                 if 'reverse_order' in s:
-                    self._safe_set(ui, 'checkBox_reverse_order', 'setChecked', s['reverse_order'])
+                    self._safe_set(main_controller, 'checkBox_reverse_order', 'setChecked',
+                                   s['reverse_order'])
 
             if 'link_axes' in state:
                 la = state['link_axes']

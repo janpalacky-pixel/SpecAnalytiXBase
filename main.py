@@ -144,6 +144,10 @@ def main():
 
     main_controller = MainController()
     main_controller.show()
+
+    # Automatic saving + the "restore unsaved work?" question after a crash.
+    from src.version import __version__
+    main_controller.autosave_controller.start(__version__)
     sys.exit(app.exec_())
 
 

@@ -163,6 +163,9 @@ class SaveController:
         progress.close()
 
         if success:
+            autosave = getattr(self.controller, 'autosave_controller', None)
+            if autosave is not None:
+                autosave.record_recent(file_path, 'snapshot')
             QMessageBox.information(
                 self.controller.view,
                 "Snapshot Saved",
@@ -272,65 +275,72 @@ class SaveController:
                     return True
         return bool(self.controller.original_spectra)
 
-    def load_snapshot(self, file_path: str) -> bool:
-        """Load a snapshot file and restore application state."""
-        # Built as a QMessageBox instance (rather than the plain
-        # QMessageBox.question() convenience call this used to be) so a
-        # small "?" info button can be added to it -- same orange,
-        # context-help convention used elsewhere in the app (e.g.
-        # SpectraSelectionDialog's "About Select Spectra" button).
-        # Import Snapshot has no dialog of its own to hang this on (it
-        # goes straight from the File menu to a native file picker), so
-        # this confirmation -- the one moment before the action actually
-        # happens -- is the natural place for it.
-        msg_box = QMessageBox(self.controller.view)
-        msg_box.setIcon(QMessageBox.Question)
-        msg_box.setWindowTitle("Load Snapshot")
-        msg_box.setText("Loading a snapshot will replace your current workspace. Continue?")
-        yes_button = msg_box.addButton(QMessageBox.Yes)
-        msg_box.addButton(QMessageBox.No)
-        msg_box.setDefaultButton(QMessageBox.No)
+    def load_snapshot(self, file_path: str, confirm: bool = True) -> bool:
+        """Load a snapshot file and restore application state.
 
-        help_button = QPushButton('?')
-        help_button.setFixedSize(24, 24)
-        help_button.setStyleSheet(
-            'QPushButton { background-color:#F57C00; color:white; '
-            'font-weight:bold; border:none; border-radius:4px; }'
-            'QPushButton:hover { background-color:#EF6C00; }')
-        help_button.setToolTip('About Import Snapshot')
-        msg_box.addButton(help_button, QMessageBox.HelpRole)
+        Asks "replace your current workspace?" first -- but only when
+        something is actually loaded (nothing to lose otherwise, e.g.
+        restoring automatically saved work right after start-up), and
+        never when confirm=False."""
+        must_confirm = confirm and bool(getattr(self.controller, 'original_spectra', None))
+        if must_confirm:
+            # Built as a QMessageBox instance (rather than the plain
+            # QMessageBox.question() convenience call this used to be) so a
+            # small "?" info button can be added to it -- same orange,
+            # context-help convention used elsewhere in the app (e.g.
+            # SpectraSelectionDialog's "About Select Spectra" button).
+            # Import Snapshot has no dialog of its own to hang this on (it
+            # goes straight from the File menu to a native file picker), so
+            # this confirmation -- the one moment before the action actually
+            # happens -- is the natural place for it.
+            msg_box = QMessageBox(self.controller.view)
+            msg_box.setIcon(QMessageBox.Question)
+            msg_box.setWindowTitle("Load Snapshot")
+            msg_box.setText("Loading a snapshot will replace your current workspace. Continue?")
+            yes_button = msg_box.addButton(QMessageBox.Yes)
+            msg_box.addButton(QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
 
-        # QMessageBox closes on ANY of its buttons being clicked, whatever
-        # that button's role -- HelpRole does NOT exempt it from this (an
-        # earlier version of this method assumed it did, based on reading
-        # Qt's docs rather than actually running this dialog; it doesn't --
-        # clicking "?" was closing this whole confirmation instead of just
-        # showing the info, taking the still-unanswered Yes/No question
-        # down with it). So instead of trying to keep this QMessageBox
-        # open while one of its own buttons is clicked, treat a "help"
-        # click as "show the info, then ask the same Yes/No question
-        # again" -- re-executing the same QMessageBox instance is safe to
-        # do any number of times.
-        while True:
-            msg_box.exec_()
-            clicked_button = msg_box.clickedButton()
-            if clicked_button is help_button:
-                QMessageBox.information(
-                    self.controller.view, "About Import Snapshot",
-                    "A snapshot (.snapx file) is a full save of this "
-                    "application's workspace: every spectrum, your whole "
-                    "Operations History (including which step is currently "
-                    "active), your current spectrum selection, and plot/UI "
-                    "settings.\n\n"
-                    "Loading one replaces everything currently open -- spectra, "
-                    "history, and settings -- with what's stored in the file. "
-                    "This can't be undone, so make sure anything you want to "
-                    "keep from the current workspace is saved first.")
-                continue
-            break
+            help_button = QPushButton('?')
+            help_button.setFixedSize(24, 24)
+            help_button.setStyleSheet(
+                'QPushButton { background-color:#F57C00; color:white; '
+                'font-weight:bold; border:none; border-radius:4px; }'
+                'QPushButton:hover { background-color:#EF6C00; }')
+            help_button.setToolTip('About Import Snapshot')
+            msg_box.addButton(help_button, QMessageBox.HelpRole)
 
-        if clicked_button != yes_button:
-            return False
+            # QMessageBox closes on ANY of its buttons being clicked, whatever
+            # that button's role -- HelpRole does NOT exempt it from this (an
+            # earlier version of this method assumed it did, based on reading
+            # Qt's docs rather than actually running this dialog; it doesn't --
+            # clicking "?" was closing this whole confirmation instead of just
+            # showing the info, taking the still-unanswered Yes/No question
+            # down with it). So instead of trying to keep this QMessageBox
+            # open while one of its own buttons is clicked, treat a "help"
+            # click as "show the info, then ask the same Yes/No question
+            # again" -- re-executing the same QMessageBox instance is safe to
+            # do any number of times.
+            while True:
+                msg_box.exec_()
+                clicked_button = msg_box.clickedButton()
+                if clicked_button is help_button:
+                    QMessageBox.information(
+                        self.controller.view, "About Import Snapshot",
+                        "A snapshot (.snapx file) is a full save of this "
+                        "application's workspace: every spectrum, your whole "
+                        "Operations History (including which step is currently "
+                        "active), your current spectrum selection, and plot/UI "
+                        "settings.\n\n"
+                        "Loading one replaces everything currently open -- spectra, "
+                        "history, and settings -- with what's stored in the file. "
+                        "This can't be undone, so make sure anything you want to "
+                        "keep from the current workspace is saved first.")
+                    continue
+                break
+
+            if clicked_button != yes_button:
+                return False
 
         # Deliberately NOT clearing the plot/spectrum list here. An
         # earlier version did, right at this point, specifically so a

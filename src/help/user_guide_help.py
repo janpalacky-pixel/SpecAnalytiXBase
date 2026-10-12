@@ -1910,6 +1910,30 @@ def get_user_guide_help_content():
             <li><strong>Load snapshot:</strong> File → Import Snapshot</li>
             <li>Reload an earlier snapshot to go back to the workspace exactly as
                 it was when that snapshot was saved</li>
+            <li><strong>Open recent:</strong> File → Open recent lists the last 10
+                data files and snapshots you imported, opened or saved; click one
+                to open it again (data files go through the Import dialog as usual)</li>
+        </ul>
+
+        <h3 id="autosave">Automatic Saving and Crash Recovery</h3>
+        <p>While you work, SpecAnalytiXBase quietly saves a snapshot of your
+        workspace every few minutes &mdash; only when something has changed, and in
+        the background, so the window does not freeze even for a large 2D map.</p>
+        <ul>
+            <li>If the program ends unexpectedly (a crash, a power cut, Windows
+                closing it), the next time you start it you are asked
+                <em>"Restore unsaved work?"</em>, with the time of the last automatic
+                save: <strong>Restore</strong> opens it exactly as it was,
+                <strong>Discard</strong> deletes it, <strong>Not now</strong> keeps it
+                and asks again next time.</li>
+            <li>When you close the program normally, the automatic save is deleted
+                &mdash; it is a safety net, not a replacement for File → Save.</li>
+            <li><strong>File → Automatic saving</strong>: Off, or every 2, 5 (default)
+                or 10 minutes; the menu also shows when the last automatic save
+                happened. Your choice is remembered.</li>
+            <li>Several copies of the program can run at the same time; each keeps
+                its own automatic save, and a running copy is never mistaken for a
+                crashed one.</li>
         </ul>
 
         <div class="info">
