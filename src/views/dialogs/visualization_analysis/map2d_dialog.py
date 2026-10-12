@@ -55,6 +55,12 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.progress_utils import OperationCancelled
+from src.modules.visualization_analysis.peak_fit_map import (
+    FITTED_METRICS, fit_single_peak, model_curve)
+from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
+    PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
+    save_settings as save_peak_fit_settings)
 from src.modules.utils.spectra_validation import axes_match, describe_axis_mismatch
 from src.views.dialogs.visualization_analysis.roi_spectra_dialogs import (
     _RemoveROIDialog, _ROISpectraDialog,
@@ -226,7 +232,8 @@ class _MapCanvas(FigureCanvas):
 
         label   = self._hover_spectra[sp_idx].get('label', f'#{sp_idx}')
         val     = self._hover_map_data[row, col]
-        text    = f"Row {row + 1}, Col {col + 1}\n{label}\nValue: {val:.4g}"
+        shown   = "no value" if not np.isfinite(val) else f"{val:.4g}"
+        text    = f"Row {row + 1}, Col {col + 1}\n{label}\nValue: {shown}"
 
         if self._ref_picking_active:
             self._show_mini_spectrum_preview(sp_idx, event)
@@ -395,6 +402,14 @@ class _MapCanvas(FigureCanvas):
         self._tooltip = None
 
         aspect = 'equal' if equal_aspect else 'auto'
+        # Pixels without a value (NaN -- e.g. a rejected peak fit, a ratio
+        # dividing by zero) are transparent in imshow; show them as light
+        # grey with diagonal hatching, so "no value" can never be mistaken
+        # for a low value in any colormap.
+        self.ax.set_facecolor(NO_VALUE_COLOR)
+        self.ax.patch.set_hatch('////')
+        self.ax.patch.set_edgecolor(NO_VALUE_HATCH_COLOR)
+        self.ax.patch.set_linewidth(0)
         self._im = self.ax.imshow(
             data, cmap=cmap, interpolation=interpolation,
             origin='upper', aspect=aspect,
@@ -481,6 +496,10 @@ class _MapCanvas(FigureCanvas):
             zorder=10, clip_on=True,
         )
         self.draw_idle()
+
+
+NO_VALUE_COLOR = '#ececec'
+NO_VALUE_HATCH_COLOR = '#b5b5b5'
 
 
 class _SpectrumCanvas(FigureCanvas):
@@ -633,6 +652,10 @@ class Map2DDialog(QDialog):
         self.controller = controller
         self.spectra    = spectra
         self.n_spectra  = len(spectra)
+        try:
+            self.controller.manager.peak_fit_settings = load_peak_fit_settings()
+        except Exception:
+            logger.exception("Could not load the peak-fit settings")
 
         # Range state — one independent set per mode
         self._ranges     = []       # Intensity mode
@@ -1216,6 +1239,10 @@ class Map2DDialog(QDialog):
             "Peak intensity", "Peak position", "FWHM",
             "Baseline-corrected integral", "Intensity at x",
         ])
+        # Peak-fit metrics: one peak + background fitted in every pixel
+        # (peak_fit_map.py); a separator keeps them apart from the quick ones.
+        self._metric_combo.insertSeparator(self._metric_combo.count())
+        self._metric_combo.addItems(list(FITTED_METRICS))
         self._metric_combo.setToolTip(
             "Integral                    : area under the curve (trapz)\n"
             "Mean                        : average intensity in the range\n"
@@ -1224,7 +1251,10 @@ class Map2DDialog(QDialog):
             "Peak position               : x-value at the intensity maximum\n"
             "FWHM                        : full width at half maximum of the dominant peak\n"
             "Baseline-corrected integral : area above the chord connecting the range endpoints\n"
-            "Intensity at x              : interpolated intensity at a user-specified x-value"
+            "Intensity at x              : interpolated intensity at a user-specified x-value\n"
+            "Fitted …                    : a peak + background fitted in every pixel\n"
+            "                              (position, FWHM, height, area, fit quality R²);\n"
+            "                              more precise than the quick metrics, see Fit settings…"
         )
         metric_row.addWidget(self._metric_combo)
         # Only shown in Intensity metric mode (not Arithmetic, which
@@ -1235,8 +1265,14 @@ class Map2DDialog(QDialog):
         # range like every other option here.
         self._metric_help_btn = self._make_info_button(
             "About the Metric options",
-            "Every option here computes one scalar value per spectrum from the\npixels within the configured Band range — except 'Intensity at x',\nwhich is different (see below).\n\nIntegral: area under the range-filtered spectrum (trapezoidal rule).\nMean: average y-value over the range.\nVariance: spread of y-values within the range.\nPeak intensity: maximum y-value in the range.\nPeak position: x-value at the intensity maximum in the range.\nFWHM: full width at half maximum of the dominant peak in the range.\nBaseline-corrected integral: area above the chord connecting the\nrange endpoints.\n\nIntensity at x: linearly interpolates the full spectrum at one exact\nx-value — a single point, not an average over a range or its\nneighboring points. Because it reads only that one point, it is more\nsensitive to noise at that exact position than the range-based\nmetrics above. If you want noise averaged out, use Mean (or\nIntegral) over a narrow range centered on your feature instead.")
+            "Every option here computes one scalar value per spectrum from the\npixels within the configured Band range — except 'Intensity at x',\nwhich is different (see below).\n\nIntegral: area under the range-filtered spectrum (trapezoidal rule).\nMean: average y-value over the range.\nVariance: spread of y-values within the range.\nPeak intensity: maximum y-value in the range.\nPeak position: x-value at the intensity maximum in the range.\nFWHM: full width at half maximum of the dominant peak in the range.\nBaseline-corrected integral: area above the chord connecting the\nrange endpoints.\n\nIntensity at x: linearly interpolates the full spectrum at one exact\nx-value — a single point, not an average over a range or its\nneighboring points. Because it reads only that one point, it is more\nsensitive to noise at that exact position than the range-based\nmetrics above. If you want noise averaged out, use Mean (or\nIntegral) over a narrow range centered on your feature instead.\n\nFitted peak position / FWHM / height / area: a peak (Gaussian,\nLorentzian or pseudo-Voigt) plus a background is fitted by least\nsquares to the points of the Band range in every pixel. Unlike\n'Peak position' and 'FWHM' above, the position is not limited to the\nmeasured x-values and noise and a sloping background have much less\neffect, so small band shifts across the map become visible. Fit\nquality (R²) shows how well the model describes each pixel (1 = perfect).\nPixels where the fit is rejected get no value (hatched grey). Click a pixel to see its fit.\nChoose the shape, the background and more under 'Fit settings…'.")
         metric_row.addWidget(self._metric_help_btn)
+        self._peak_fit_btn = QPushButton("Fit settings…")
+        self._peak_fit_btn.setToolTip("Peak shape, background, quality filter and parallel "
+                                      "processing for the Fitted … metrics.")
+        self._peak_fit_btn.clicked.connect(self._edit_peak_fit_settings)
+        self._peak_fit_btn.setVisible(False)
+        metric_row.addWidget(self._peak_fit_btn)
         metric_row.addStretch()
         mlay.addLayout(metric_row)
 
@@ -2134,6 +2170,7 @@ class Map2DDialog(QDialog):
             self._is_exclude = is_exclude
 
     def _on_mode_changed(self, _btn):
+        self._update_peak_fit_button()
         is_svd     = self._radio_svd.isChecked()
         is_pca     = self._radio_pca.isChecked()
         is_nmf     = self._radio_nmf.isChecked()
@@ -2242,7 +2279,7 @@ class Map2DDialog(QDialog):
                 f"Unchecked (default): show the spectrum clipped to the\n"
                 f"{kind_label} range so it matches the component x-axis exactly.")
         self._show_svd_cb.setVisible(is_decomp)
-        self._svd_full_range_cb.setVisible(is_decomp)
+        self._svd_full_range_cb.setVisible(is_decomp or self._fit_view_applies())
         self._show_reconstructed_cb.setVisible(is_decomp)
         self._recon_n_spin.setVisible(is_decomp)
         self._recon_n_suffix_label.setVisible(is_decomp)
@@ -2382,8 +2419,44 @@ class Map2DDialog(QDialog):
             self._btn_configure_ranges.setText("Configure Band…")
             self._band_a_header.setText("Band")
 
+    def _is_fitted_metric(self):
+        return self._metric_combo.currentText() in FITTED_METRICS
+
+    def _update_peak_fit_button(self):
+        self._peak_fit_btn.setVisible(
+            self._is_fitted_metric()
+            and (self._radio_intensity.isChecked() or self._radio_arith.isChecked()))
+        # The spectrum panel's "Full spectrum" checkbox (shared with the
+        # SVD/PCA/NMF/MCR-ALS modes, same meaning) also switches a clicked
+        # pixel's peak fit between the zoomed band and the whole spectrum.
+        if self._fit_view_applies():
+            self._svd_full_range_cb.setToolTip(
+                "Checked: show the full spectrum, with the fitted band range shaded.\n"
+                "Unchecked (default): zoom to the band range, so the fit can be judged.")
+            self._svd_full_range_cb.setVisible(True)
+        elif not self._is_decomp_mode():
+            self._svd_full_range_cb.setVisible(False)
+
+    def _fit_view_applies(self):
+        return self._is_fitted_metric() and self._radio_intensity.isChecked()
+
+    def _edit_peak_fit_settings(self):
+        mgr = self.controller.manager
+        dlg = PeakFitSettingsDialog(mgr.peak_fit_settings, self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        new = dlg.settings()
+        if new == mgr.peak_fit_settings:
+            return
+        mgr.peak_fit_settings = new
+        save_peak_fit_settings(new)
+        if self._last_map_data is not None and self._is_fitted_metric() \
+                and (self._radio_intensity.isChecked() or self._radio_arith.isChecked()):
+            self._compute_map()
+
     def _on_metric_changed(self):
         self._update_x_val_visibility()
+        self._update_peak_fit_button()
         if (self._radio_intensity.isChecked() or self._radio_arith.isChecked()) \
                 and self._last_map_data is not None:
             self._compute_map()
@@ -3219,6 +3292,56 @@ class Map2DDialog(QDialog):
     # ── Map computation ─────────────────────────────────────────────────
 
     def _compute_map(self):
+        """Compute the map for the current settings. Peak-fit metrics get
+        a progress bar with Cancel for larger maps (see _compute_map_impl)."""
+        fitted = self._is_fitted_metric() and (
+            self._radio_intensity.isChecked() or self._radio_arith.isChecked())
+        if not fitted:
+            return self._compute_map_impl()
+        mgr = self.controller.manager
+        progress = None
+        if self.n_spectra >= 200:
+            from PyQt5.QtWidgets import QProgressDialog, QApplication
+            progress = QProgressDialog("Fitting the band in every pixel\u2026", "Cancel",
+                                       0, self.n_spectra, self)
+            progress.setWindowTitle("Peak-fit map")
+            progress.setWindowModality(Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setAutoClose(False)
+            progress.setAutoReset(False)
+            progress.setValue(0)
+            progress.show()
+            QApplication.processEvents()
+
+            status = ["Fitting the band in every pixel\u2026"]
+
+            def on_progress(done, total):
+                progress.setValue(min(done, progress.maximum()))
+                progress.setLabelText(f"{status[0]}\n{done} / {total} pixels")
+                QApplication.processEvents()
+                if progress.wasCanceled():
+                    raise OperationCancelled()
+
+            def on_status(text):
+                status[0] = text
+                progress.setLabelText(text)
+                QApplication.processEvents()
+
+            mgr.peak_fit_progress, mgr.peak_fit_status = on_progress, on_status
+        try:
+            self._compute_map_impl()
+        except OperationCancelled:
+            self._click_info_label.setText("Peak fitting cancelled; the map was not changed.")
+            return
+        finally:
+            mgr.peak_fit_progress = mgr.peak_fit_status = None
+            if progress is not None:
+                progress.close()
+        summary = mgr.peak_fit.summary()
+        if summary:
+            self._click_info_label.setText(summary + "  Click a pixel to see its fit.")
+
+    def _compute_map_impl(self):
         n_rows = self._rows_spin.value()
         n_cols = self._cols_spin.value()
 
@@ -4767,7 +4890,81 @@ class Map2DDialog(QDialog):
                 x_max=self._x_max,
             )
             self._draw_range_bands(x)
+            if self._is_fitted_metric() and self._radio_intensity.isChecked():
+                self._draw_pixel_peak_fit(sp)
         self._set_spectrum_panel_visible(True)
+
+    def _draw_pixel_peak_fit(self, sp):
+        """Overlay the fitted peak (and its background) of one pixel on the
+        spectrum panel, so the user can judge whether the fit is sensible."""
+        mgr = self.controller.manager
+        settings = mgr.peak_fit_settings
+        inc = [] if self._is_exclude else self._ranges
+        exc = self._ranges if self._is_exclude else []
+        xw, yw = mgr._apply_range_filter(
+            np.asarray(sp['x_scale'], dtype=float), np.asarray(sp['y_scale'], dtype=float),
+            self._x_min, self._x_max, inc, exc)
+        result = fit_single_peak(xw, yw, settings['shape'], settings['baseline'])
+        ax = self._spectrum_canvas.ax
+        self._pixel_fit_views = None
+        if len(xw) < 2:
+            return
+        full_view = (ax.get_xlim(), ax.get_ylim())
+        x_dense = np.linspace(float(np.min(xw)), float(np.max(xw)), 400)
+        curve, base = model_curve(x_dense, result, settings['shape'], settings['baseline'])
+        if curve is None:
+            ax.text(0.02, 0.95, f"Fit failed for this pixel ({result.get('reason', 'no fit')})",
+                    transform=ax.transAxes, va='top', fontsize=8, color='#B71C1C')
+        elif result['ok']:
+            ax.plot(x_dense, curve, color='#E65100', linewidth=1.3,
+                    label=f"{settings['shape']} fit")
+            if settings['baseline'] != 'None':
+                ax.plot(x_dense, base, color='#E65100', linewidth=0.8, linestyle='--',
+                        label='background')
+            ax.axvline(result['center'], color='#E65100', linewidth=0.6, alpha=0.6)
+            ax.legend(fontsize=7, loc='upper right', title_fontsize=7,
+                      title=(f"centre {result['center']:.4g}, FWHM {result['fwhm']:.3g}, "
+                             f"R² {result['r2']:.3f}"))
+        else:
+            # Shown for transparency, but clearly as the fit that was NOT
+            # used (the pixel is blank in the map); its background is
+            # meaningless and left out.
+            ax.plot(x_dense, curve, color='#757575', linewidth=1.1, linestyle=':',
+                    label='rejected fit (no value in the map)')
+            ax.legend(fontsize=7, loc='upper right', title_fontsize=7,
+                      title=f"rejected: {result.get('reason', 'fit failed')}")
+        # Zoom to the fitting window (plus half its width on each side), so
+        # the fit can actually be judged; the toolbar's Home shows it all.
+        lo, hi = float(np.min(xw)), float(np.max(xw))
+        pad = 0.5 * (hi - lo)
+        x_all = np.asarray(sp.get('original_x_scale', sp['x_scale']), dtype=float)
+        y_all = np.asarray(sp.get('original_y_scale', sp['y_scale']), dtype=float)
+        visible = (x_all >= lo - pad) & (x_all <= hi + pad) & np.isfinite(y_all)
+        if visible.any():
+            y_lo, y_hi = float(np.min(y_all[visible])), float(np.max(y_all[visible]))
+            if curve is not None and result['ok']:
+                y_lo, y_hi = min(y_lo, float(np.min(curve))), max(y_hi, float(np.max(curve)))
+            margin = 0.08 * (y_hi - y_lo or 1.0)
+            x_lo_view = max(lo - pad, float(np.min(x_all)))
+            x_hi_view = min(hi + pad, float(np.max(x_all)))
+            self._pixel_fit_views = {
+                'full': full_view,
+                'zoom': ((x_lo_view, x_hi_view), (y_lo - margin, y_hi + margin * 3)),
+            }
+        self._apply_pixel_fit_view()
+
+    def _apply_pixel_fit_view(self):
+        """Show the clicked pixel's spectrum zoomed to the fitted band, or
+        the whole spectrum ("Full spectrum" checked) -- only the axis limits
+        change, the fit itself is already drawn."""
+        views = getattr(self, '_pixel_fit_views', None)
+        if not views:
+            return
+        xlim, ylim = views['full' if self._svd_full_range_cb.isChecked() else 'zoom']
+        ax = self._spectrum_canvas.ax
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        self._spectrum_canvas.draw_idle()
 
     def _clear_twin_axis(self):
         """Remove the SVD twin-axis overlay from the spectrum canvas."""
@@ -5103,6 +5300,9 @@ class Map2DDialog(QDialog):
 
     def _on_svd_display_changed(self):
         """Toggle between full-spectrum and component-range-only display."""
+        if self._fit_view_applies():
+            self._apply_pixel_fit_view()
+            return
         if self._is_decomp_mode():
             comp_idx = max(0, self._component_combo.currentIndex())
             self._update_subspectrum_in_panel(comp_idx)

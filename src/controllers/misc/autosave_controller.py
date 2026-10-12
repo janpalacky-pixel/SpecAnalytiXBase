@@ -5,10 +5,12 @@ Automatic saving
     Every few minutes (File -> Automatic saving: off / 2 / 5 / 10 min,
     remembered between sessions) the current state is saved as a snapshot
     into the per-user autosave folder -- only when something changed since
-    the last automatic save. Building the snapshot text takes well under a
-    second even for large maps and happens here; compressing and writing
-    it (the slow part) happens on a background thread, so the window never
-    freezes. The file is written atomically (temporary file + rename).
+    the last automatic save (a quick check of the data's identity first, a
+    cheap signature of everything every few turns; see autosave_now). It
+    waits while an operation shows a progress dialog, writes the file on a
+    background thread (snapshot_format.py, atomically), and shows
+    "Saving automatically…" / "Saved automatically at …" in the status bar.
+    A save that is still being written makes the next turn skip.
 
 Crash recovery
     start() is called once the main window is shown (from main.py). If an
@@ -25,13 +27,18 @@ Open recent
 """
 
 import datetime
+import hashlib
+import json
 import os
 import threading
+import time
+import weakref
 
+import numpy as np
 from PyQt5.QtCore import QObject, QTimer
 from PyQt5.QtWidgets import QAction, QActionGroup, QMenu, QMessageBox
 
-from src.modules.misc.save_spectra_manager import SaveManager
+from src.modules.misc import snapshot_format
 from src.modules.misc.session_files import (
     AUTOSAVE_CHOICES, AutosaveManager, Preferences, RecentFiles)
 from src.modules.utils.app_logger import get_logger
@@ -39,6 +46,68 @@ from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
 
 AUTOSAVE_GZIP_LEVEL = 1          # fastest; the file is temporary anyway
+BUSY_RETRY_SECONDS = 20          # app busy: try again after this long
+FULL_CHECK_EVERY = 5             # full change check at least every 5th turn
+
+
+_FINGERPRINTS = {}   # id(array) -> (weak reference, fingerprint)
+
+
+def _array_fingerprint(a):
+    """Cheap stand-in for an array's content in the change signature:
+    shape, dtype, the first and last value and the sum of every 37th value
+    -- a fraction of the cost of serialising it. Remembered per array
+    object (weakly, so nothing is kept alive), which makes the check for
+    an unchanged workspace nearly free. Any operation replaces the arrays
+    it changes (none is modified in place), so a new array means a new
+    fingerprint."""
+    key = id(a)
+    cached = _FINGERPRINTS.get(key)
+    if cached is not None and cached[0]() is a:
+        return cached[1]
+    flat = a.reshape(-1)
+    if flat.size and flat.dtype.kind in 'fiub':
+        with np.errstate(all='ignore'):
+            fp = [list(a.shape), a.dtype.str, float(flat[::37].sum()),
+                  float(flat[0]), float(flat[-1])]
+    else:
+        fp = [list(a.shape), a.dtype.str, len(flat)]
+    try:
+        _FINGERPRINTS[key] = (weakref.ref(a), fp)
+    except TypeError:                     # (not weak-referenceable)
+        pass
+    if len(_FINGERPRINTS) > 400000:       # forget arrays that no longer exist
+        for k in [k for k, (ref, _) in _FINGERPRINTS.items() if ref() is None]:
+            del _FINGERPRINTS[k]
+    return fp
+
+
+def state_signature(state):
+    """sha1 over the snapshot state, with arrays replaced by
+    _array_fingerprint -- whether anything changed since the last
+    automatic save, without building the snapshot."""
+    def default(obj):
+        if isinstance(obj, np.ndarray):
+            return ['nd'] + _array_fingerprint(obj)
+        if isinstance(obj, (np.integer, np.floating, np.bool_)):
+            return obj.item()
+        return str(obj)
+    text = json.dumps(state, default=default)
+    return hashlib.sha1(text.encode('utf-8')).hexdigest()
+
+
+def _detach(value):
+    """Copy of the state's containers (lists, dicts), sharing the arrays:
+    the background writer then never sees a list or dict the main window
+    changes meanwhile. Arrays are not changed in place anywhere in the
+    app, so sharing them is safe and saves copying hundreds of MB."""
+    if isinstance(value, dict):
+        return {k: _detach(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_detach(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_detach(v) for v in value)
+    return value
 
 
 class AutosaveController(QObject):
@@ -56,6 +125,17 @@ class AutosaveController(QObject):
         self._write_error = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.autosave_now)
+        # Retry shortly after the app stops being busy (see autosave_now).
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.timeout.connect(self.autosave_now)
+        # Watches the background writer to update the status bar.
+        self._status_timer = QTimer(self)
+        self._status_timer.timeout.connect(self._check_writer)
+        self.last_duration = 0.0
+        self._abort_write = False
+        self._last_quick_key = None
+        self._turns_since_full_check = 0
         self._build_menus()
 
     # ------------------------------------------------------------------ #
@@ -77,7 +157,9 @@ class AutosaveController(QObject):
     def shutdown(self):
         """Normal exit: nothing of this session needs recovering."""
         self.timer.stop()
-        self.wait_for_write(30)
+        self._retry_timer.stop()
+        self._status_timer.stop()
+        self._stop_writing()
         if self.started:
             self.manager.end_session()
             self.started = False
@@ -98,45 +180,135 @@ class AutosaveController(QObject):
         else:
             self.timer.stop()
             if self.started and not minutes:
-                self.wait_for_write(30)
+                self._stop_writing()
                 self.manager.remove_snapshot()
                 self._last_hash = None
+                self._last_quick_key = None
 
-    def autosave_now(self):
+    def autosave_now(self, force=False):
         """Save the current state if it changed. Returns True if a save was
-        started. Safe to call often: unchanged state costs only building
-        and hashing the snapshot text."""
-        if not self.started or self.is_writing():
+        started.
+
+        Built for large workspaces (e.g. a 21 000-spectrum map, where a
+        snapshot is hundreds of MB):
+          * it waits while the app is busy -- a progress dialog is open or a
+            wait cursor shows -- and tries again shortly after, so it never
+            competes with an operation for the computer (force=True skips
+            this check);
+          * whether anything changed is decided from a cheap signature (the
+            structure plus a sampled checksum of every array), not by
+            building the whole snapshot;
+          * the slow part -- writing the file -- runs in a background thread,
+            with a note in the main window's status bar;
+          * while one save is still being written the next one is skipped,
+            so saves never overlap.
+        The state is taken when the save starts: an operation still running
+        then is not in it (it is in the next save)."""
+        if not self.started:
+            return False
+        if self.is_writing():
+            return False
+        if not force and self._app_is_busy():
+            self._retry_timer.start(BUSY_RETRY_SECONDS * 1000)
             return False
         if not getattr(self.main, 'original_spectra', None):
             # Nothing loaded (e.g. everything cleared): nothing to recover.
             self.manager.remove_snapshot()
             self._last_hash = None
+            self._last_quick_key = None
             return False
+        # Quick gate: if neither the data (Operations History, spectra list,
+        # labels, selection) nor the plot type changed since the last save,
+        # skip -- in milliseconds even for a huge map. Every few turns the
+        # full check below runs anyway, so a change elsewhere (e.g. plot
+        # colours) is still saved, just a little later.
+        quick = self._quick_key()
+        self._turns_since_full_check += 1
+        if (quick is not None and quick == self._last_quick_key
+                and self._turns_since_full_check < FULL_CHECK_EVERY):
+            return False
+        self._turns_since_full_check = 0
         save_manager = self.main.save_controller.save_manager
         try:
-            state, digest = save_manager.snapshot_state_and_digest(self.main)
+            state = save_manager._build_state(self.main)
+            state.pop('timestamp', None)
+            digest = state_signature(state)
             if digest == self._last_hash:
+                self._last_quick_key = quick
                 return False                      # nothing changed since the last save
-            json_bytes = save_manager.snapshot_json_bytes(self.main, state)
+            state = _detach(state)
+            state['timestamp'] = datetime.datetime.now().isoformat()
         except Exception:
             logger.exception("Automatic save: could not collect the current state")
             return False
 
+        path = self.manager.autosave_path()
+        self._show_status("Saving automatically\u2026", 0)
+
         def write():
+            started = time.perf_counter()
             try:
-                self.manager.write_snapshot(
-                    SaveManager.compress_snapshot(json_bytes, AUTOSAVE_GZIP_LEVEL))
+                snapshot_format.write(state, path, AUTOSAVE_GZIP_LEVEL,
+                                      abort=lambda: self._abort_write)
                 self._last_hash = digest
+                self._last_quick_key = quick
                 self.last_saved_at = datetime.datetime.now()
+                self.last_duration = time.perf_counter() - started
                 self._write_error = None
+            except snapshot_format.Aborted:
+                pass                              # stopped on purpose (closing, switched off)
             except Exception as exc:              # disk full, folder removed, ...
                 self._write_error = exc
                 logger.warning("Automatic save failed: %s", exc)
 
+        self._abort_write = False
         self._writer = threading.Thread(target=write, name='autosave', daemon=True)
         self._writer.start()
+        self._status_timer.start(500)
         return True
+
+    def _quick_key(self):
+        """A few cheap facts that change whenever the data changes (see
+        autosave_now), or None if they cannot be read."""
+        try:
+            main = self.main
+            om = main.operations_controller.operations_manager
+            spectra = main.original_spectra
+            return (om.revision, om.active_operation_index, len(om.operations_chain),
+                    id(spectra), len(spectra), tuple(s.get('label') for s in spectra),
+                    id(getattr(main, 'selected_spectra', None)),
+                    tuple(sorted(main.spectrum_selector.selected_indices)),
+                    main.view.comboBox_plot_type_choice.currentText())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _app_is_busy():
+        """True while an operation shows a progress dialog or the wait
+        cursor (the main window is then working; an automatic save would
+        only slow it down further)."""
+        from PyQt5.QtWidgets import QApplication, QProgressDialog
+        if QApplication.overrideCursor() is not None:
+            return True
+        return any(isinstance(w, QProgressDialog) and w.isVisible()
+                   for w in QApplication.topLevelWidgets())
+
+    def _check_writer(self):
+        if self.is_writing():
+            return
+        self._status_timer.stop()
+        if self._write_error is not None:
+            self._show_status("Automatic save failed (see the log)", 15000)
+        elif self.last_saved_at is not None:
+            took = getattr(self, 'last_duration', 0.0)
+            note = f" ({took:.0f} s)" if took >= 2 else ""
+            self._show_status(f"Saved automatically at {self.last_saved_at:%H:%M}{note}", 8000)
+
+    def _show_status(self, text, timeout_ms):
+        try:
+            self.main.view.statusBar().showMessage(text, timeout_ms)
+        except Exception:
+            pass
 
     def is_writing(self):
         return self._writer is not None and self._writer.is_alive()
@@ -144,6 +316,14 @@ class AutosaveController(QObject):
     def wait_for_write(self, timeout=None):
         if self._writer is not None:
             self._writer.join(timeout)
+
+    def _stop_writing(self):
+        """Stop a save in progress (it leaves no file behind) and wait for
+        its thread -- before this session's files are removed, so a late
+        write can never re-create an automatic save that would then look
+        like a crashed session."""
+        self._abort_write = True
+        self.wait_for_write(60)
 
     # ------------------------------------------------------------------ #
     # Crash recovery                                                      #
@@ -194,7 +374,8 @@ class AutosaveController(QObject):
         self.main.view.spectrum_selection_frame.setVisible(True)
         self.manager.discard(session)
         self._last_hash = None
-        self.autosave_now()          # protect the restored work under this session
+        self._last_quick_key = None
+        self.autosave_now(force=True)    # protect the restored work under this session
         return True
 
     # ------------------------------------------------------------------ #

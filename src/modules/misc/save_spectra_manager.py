@@ -57,6 +57,7 @@ from src.modules.utils.spectra_validation import axes_match
 from src.modules.utils.spectrum_identity import spectrum_id
 from src.modules.data_io.spc_data_writer import write_spc_data
 from src.modules.utils.json_store import write_bytes_atomic
+from src.modules.misc import snapshot_format
 
 
 class SaveManager:
@@ -828,7 +829,10 @@ class SaveManager:
     def save_snapshot(self, main_controller, file_path: str, progress_callback=None,
                        compression_level=None) -> bool:
         """
-        Save application state as a gzip-compressed JSON snapshot file.
+        Save application state as a snapshot file (format version 2, see
+        snapshot_format.py: a ZIP archive with the structure as JSON and
+        the arrays as plain binary, each distinct array stored once).
+        The notes below about gzip describe version 1, which is still read.
 
         The '.snapx' extension and the Save/Load dialogs' file filters
         are unchanged -- only the bytes on disk are now a gzip stream
@@ -857,30 +861,25 @@ class SaveManager:
         parameter existed.
         """
         try:
+            import time
+            started = time.perf_counter()
             self._report_progress(progress_callback, 1, "Collecting application state…")
             state = self._build_state(main_controller)
-
-            self._report_progress(progress_callback, 2, "Serializing…")
-            json_text = self._to_json(state)
-            json_bytes = json_text.encode('utf-8')
 
             if compression_level is None:
                 level = self.SNAPSHOT_GZIP_LEVEL
             else:
                 level = max(1, min(9, int(compression_level)))
 
-            self._report_progress(progress_callback, 3, "Compressing…")
-            compressed = gzip.compress(json_bytes, compresslevel=level)
-
-            self._report_progress(progress_callback, 4, "Writing file…")
-            # Temporary file + rename: a crash or full disk during the
-            # write can no longer destroy an existing snapshot file.
-            write_bytes_atomic(file_path, compressed)
-
-            logger.info(
-                "Snapshot saved: %s (%d bytes, gzip level %d, %.1fx "
-                "smaller than uncompressed JSON)", file_path, len(compressed),
-                level, len(json_bytes) / max(len(compressed), 1))
+            # Version-2 format (binary arrays, each distinct array once) --
+            # see snapshot_format.py. Written atomically: a crash or full
+            # disk during the write can never destroy an existing file.
+            size = snapshot_format.write(
+                state, file_path, level,
+                progress=lambda stage, label: self._report_progress(
+                    progress_callback, stage + 1, label))
+            logger.info("Snapshot saved: %s (%d bytes, level %d, %.1f s)",
+                        file_path, size, level, time.perf_counter() - started)
             return True
 
         except Exception:
@@ -1138,6 +1137,16 @@ class SaveManager:
             "saved using File → Save → Snapshot.\n\n"
             f"Selected file: {os.path.basename(file_path)}"
         )
+
+        with open(file_path, 'rb') as fh:
+            head = fh.read(4)
+        if snapshot_format.is_v2(head):
+            try:
+                return snapshot_format.read(file_path)
+            except ValueError as exc:
+                if 'newer version' in str(exc):
+                    raise
+                raise not_a_snapshot_error from exc
 
         with open(file_path, 'rb') as fh:
             raw = fh.read()

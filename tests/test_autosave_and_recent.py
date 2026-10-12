@@ -388,3 +388,66 @@ def test_reverse_sorting_is_saved_and_restored_in_snapshots(mc, tmp_path):
     mc.checkBox_reverse_order.setChecked(False)
     assert mc.save_controller.load_snapshot(snap)
     assert mc.checkBox_reverse_order.isChecked()
+
+
+def test_automatic_save_waits_while_an_operation_is_busy(mc):
+    from PyQt5.QtWidgets import QProgressDialog
+    ac = mc.autosave_controller
+    ac.start(offer_recovery=False)
+    _import(mc)
+    busy = QProgressDialog("Working…", "Cancel", 0, 10, mc.view)
+    busy.show()
+    app.processEvents()
+    assert ac.autosave_now() is False                         # postponed, not skipped
+    assert ac._retry_timer.isActive()
+    busy.close()
+    assert ac.autosave_now() is True                          # done once the app is idle
+    ac.wait_for_write(30)
+    with open(ac.manager.autosave_path(), 'rb') as fh:
+        assert fh.read(4) == b'PK\x03\x04'                    # version-2 snapshot
+
+
+def test_status_bar_tells_the_user(mc):
+    ac = mc.autosave_controller
+    ac.start(offer_recovery=False)
+    _import(mc)
+    assert ac.autosave_now() is True
+    assert 'Saving automatically' in mc.view.statusBar().currentMessage()
+    ac.wait_for_write(30)
+    ac._check_writer()
+    assert 'Saved automatically at' in mc.view.statusBar().currentMessage()
+
+
+def test_unchanged_workspace_is_recognised_without_building_a_snapshot(mc, monkeypatch):
+    ac = mc.autosave_controller
+    ac.start(offer_recovery=False)
+    _import(mc)
+    assert ac.autosave_now() is True
+    ac.wait_for_write(30)
+    calls = []
+    real = mc.save_controller.save_manager._build_state
+    monkeypatch.setattr(mc.save_controller.save_manager, '_build_state',
+                        lambda m: calls.append(1) or real(m))
+    for _ in range(3):
+        assert ac.autosave_now() is False
+    assert calls == []                                        # the quick check sufficed
+
+
+def test_closing_during_a_save_leaves_nothing_behind(mc, monkeypatch):
+    import threading
+    from src.modules.misc import snapshot_format
+    ac = mc.autosave_controller
+    ac.start(offer_recovery=False)
+    _import(mc)
+    gate = threading.Event()
+    real_write = snapshot_format.write
+
+    def slow_write(state, path, level, progress=None, abort=None):
+        gate.wait(10)                                         # still writing when the app closes
+        return real_write(state, path, level, progress, abort)
+    monkeypatch.setattr(snapshot_format, 'write', slow_write)
+    assert ac.autosave_now() is True
+    threading.Timer(0.2, gate.set).start()
+    ac.shutdown()
+    assert not os.path.exists(ac.manager.autosave_path())
+    assert os.listdir(ac.manager.folder) == []

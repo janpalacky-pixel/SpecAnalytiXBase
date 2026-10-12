@@ -1867,14 +1867,27 @@ class TestOperationsChainBackfillOnRestore:
 # ---------------------------------------------------------------------------
 
 class TestSaveSnapshotGzipFormat:
-    def test_saved_file_starts_with_gzip_magic_bytes(self, tmp_snapx):
+    def test_saved_file_is_a_version_2_zip_snapshot(self, tmp_snapx):
+        """Since format version 2 (snapshot_format.py) a snapshot is a ZIP
+        archive; version-1 gzip files are still read (tests below)."""
         mgr = SaveManager()
         controller = _FakeMainController(original_spectra=_make_spectra(2))
 
         assert mgr.save_snapshot(controller, tmp_snapx) is True
 
         with open(tmp_snapx, 'rb') as f:
-            assert f.read(2) == b'\x1f\x8b'
+            assert f.read(4) == b'PK\x03\x04'
+
+    def test_load_state_still_reads_version_1_gzip_snapshots(self, tmp_snapx):
+        import gzip as real_gzip
+        mgr = SaveManager()
+        state = _make_state(n_spectra=3, n_points=15)
+        with open(tmp_snapx, 'wb') as f:
+            f.write(real_gzip.compress(mgr._to_json(state).encode('utf-8')))
+        loaded = mgr._load_state(tmp_snapx)
+        assert len(loaded['original_spectra']) == 3
+        np.testing.assert_array_equal(loaded['original_spectra'][1]['y_scale'],
+                                      state['original_spectra'][1]['y_scale'])
 
     def test_save_snapshot_returns_false_on_failure(self, tmp_snapx):
         mgr = SaveManager()
@@ -2130,28 +2143,29 @@ class TestSaveControllerSaveSnapshot:
 # and TestSaveControllerSaveSnapshot's compression-level tests below).
 # ---------------------------------------------------------------------------
 
+from src.modules.misc.snapshot_format import write as _real_snapshot_write
+
+
 class TestSaveSnapshotCompressionLevel:
     def test_default_uses_snapshot_gzip_level(self, tmp_snapx):
         import gzip as real_gzip
         mgr = SaveManager()
         controller = _FakeMainController(original_spectra=_make_spectra(2))
-        with patch('src.modules.misc.save_spectra_manager.gzip.compress',
-                   wraps=real_gzip.compress) as mock_compress:
+        with patch('src.modules.misc.save_spectra_manager.snapshot_format.write',
+                   wraps=_real_snapshot_write) as mock_compress:
             mgr.save_snapshot(controller, tmp_snapx)
 
-        _, kwargs = mock_compress.call_args
-        assert kwargs['compresslevel'] == SaveManager.SNAPSHOT_GZIP_LEVEL
+        assert mock_compress.call_args.args[2] == SaveManager.SNAPSHOT_GZIP_LEVEL
 
     def test_explicit_level_is_used(self, tmp_snapx):
         import gzip as real_gzip
         mgr = SaveManager()
         controller = _FakeMainController(original_spectra=_make_spectra(2))
-        with patch('src.modules.misc.save_spectra_manager.gzip.compress',
-                   wraps=real_gzip.compress) as mock_compress:
+        with patch('src.modules.misc.save_spectra_manager.snapshot_format.write',
+                   wraps=_real_snapshot_write) as mock_compress:
             mgr.save_snapshot(controller, tmp_snapx, compression_level=1)
 
-        _, kwargs = mock_compress.call_args
-        assert kwargs['compresslevel'] == 1
+        assert mock_compress.call_args.args[2] == 1
 
     def test_out_of_range_level_is_clamped_not_rejected(self, tmp_path):
         """A bad compression_level (out of gzip's 1-9 range) must never
@@ -2160,19 +2174,19 @@ class TestSaveSnapshotCompressionLevel:
         mgr = SaveManager()
         controller = _FakeMainController(original_spectra=_make_spectra(2))
 
-        with patch('src.modules.misc.save_spectra_manager.gzip.compress',
-                   wraps=real_gzip.compress) as mock_compress:
+        with patch('src.modules.misc.save_spectra_manager.snapshot_format.write',
+                   wraps=_real_snapshot_write) as mock_compress:
             ok = mgr.save_snapshot(
                 controller, str(tmp_path / 'too_high.snapx'), compression_level=99)
         assert ok is True
-        assert mock_compress.call_args.kwargs['compresslevel'] == 9
+        assert mock_compress.call_args.args[2] == 9
 
-        with patch('src.modules.misc.save_spectra_manager.gzip.compress',
-                   wraps=real_gzip.compress) as mock_compress:
+        with patch('src.modules.misc.save_spectra_manager.snapshot_format.write',
+                   wraps=_real_snapshot_write) as mock_compress:
             ok = mgr.save_snapshot(
                 controller, str(tmp_path / 'too_low.snapx'), compression_level=-5)
         assert ok is True
-        assert mock_compress.call_args.kwargs['compresslevel'] == 1
+        assert mock_compress.call_args.args[2] == 1
 
     def test_higher_level_never_produces_a_larger_file(self, tmp_path):
         mgr = SaveManager()

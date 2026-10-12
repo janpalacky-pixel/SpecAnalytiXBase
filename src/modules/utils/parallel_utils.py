@@ -116,6 +116,21 @@ def safe_worker_count(cpu_count=None, available_mb='measure'):
     return max(1, min(workers, _MAX_POOL_WORKERS))
 
 
+# Work is split into at least this many chunks (more with many workers):
+# progress can only be reported when a chunk is finished, so with only a
+# few chunks per worker all workers finish their chunks at about the same
+# time and the progress bar stands still between big jumps (seen with jbcd
+# on 21 000 spectra and 20 workers: 80 chunks -> jumps of ~5 000 spectra).
+MIN_CHUNKS = 200
+
+
+def chunk_count(n_items, workers):
+    """How many chunks to split *n_items* into for *workers* processes:
+    at least 4 per worker and at least MIN_CHUNKS (about 0.5 % each), never
+    more than the items. Sending a chunk costs far less than computing it."""
+    return max(1, min(n_items, max(workers * 4, MIN_CHUNKS)))
+
+
 def describe_worker_limits():
     """Plain-language description of what limits the worker count right
     now, e.g. "8 CPU cores, 3.2 GB free memory -> 7 workers". Shown to the

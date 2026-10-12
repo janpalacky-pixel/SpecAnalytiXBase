@@ -1520,6 +1520,18 @@ class SomeController:
         </div>
 
         <h3 id="snapshot-file-size">The .snapx File Size: Deduplication and Compression</h3>
+        <div class="note"><b>Format version 2 (1.5.0).</b> Since then a snapshot is a ZIP
+        archive (<code>src/modules/misc/snapshot_format.py</code>): <code>state.json</code>
+        with every array replaced by a reference, <code>arrays.bin</code> with the raw bytes.
+        Each <i>distinct</i> array is stored once (by content: the x axis every spectrum
+        carries, spectra an operation left unchanged), and a float64 array is stored as
+        float32 when that round-trips bit-identically. Measured on a 140&times;150 map
+        (21&nbsp;000 &times; 1600 points, Automated Baseline + Cosmic ray removal): version 1
+        1.36&nbsp;GB / ~70&nbsp;s, version 2 ~280&nbsp;MB / ~18&nbsp;s on a slow 2-core test
+        machine; loading ~2&nbsp;s. The text below describes version 1, which
+        <code>_load_state</code> still reads (gzip or plain JSON). The base64 remark below
+        turned out to matter after all: base64 text is a third larger <i>and</i> defeats
+        gzip &mdash; the same data compressed ~10&times; better as raw bytes.</div>
         <p>A real 95&nbsp;MB text file (an 85&times;55 Raman 2D map &mdash;
         4675 spectra) produced an 837&nbsp;MB <code>.snapx</code> file after
         just two operations (a SNIP baseline correction, then cosmic-ray
@@ -3259,6 +3271,127 @@ def _natural_sort_key(cls, label):
         but not where it can hide a wrong result or lost data &mdash; there, log a warning with
         <code>exc_info=True</code>.</p>
 
+        <h2 id="large-workspace-lessons">Lessons from a 21&nbsp;000-Spectrum Map: Saving, Change Checks and Who Waits for Whom</h2>
+        <p>Found in 1.5.0 by testing with a real 140&times;150 Raman map (21&nbsp;000 spectra &times;
+        1600 points, a 134&nbsp;MB <code>.mat</code>) after Automated Baseline + Cosmic ray removal.
+        Everything worked on the 1225-spectrum test maps; at 17&times; the size several design
+        choices broke at once. The symptoms the user saw: a 1.4&nbsp;GB snapshot, saving taking ~2
+        minutes, clicks on the map freezing from time to time, and peak fitting "hanging" at
+        15&nbsp;480 of 21&nbsp;000 pixels. One root cause linked them.</p>
+
+        <h3>1. Test with the biggest real data set you can get, and measure</h3>
+        <p>"Well under a second" for the 1225-spectrum map was true and meaningless: the
+        snapshot grows with spectra &times; points &times; history steps. Before trusting an
+        estimate, scale the measurement (e.g. time 3000 spectra and multiply). The 21&nbsp;000-map
+        file is kept in <code>dev_notes/</code> for exactly this.</p>
+
+        <h3>2. The GUI thread is shared: <code>processEvents()</code> lets other work in</h3>
+        <p>Operations run on the GUI thread and call <code>QApplication.processEvents()</code> from
+        their progress callbacks so the window stays alive. That also delivers <i>timer</i> events:
+        the autosave timer fired inside the peak-fit progress callback and built the whole snapshot
+        right there, so the fit waited for the autosave. Nothing is "running at the same time"
+        &mdash; whoever holds the GUI thread runs, and <code>processEvents()</code> is a door through
+        which anything queued gets its turn. Rules that follow:</p>
+        <ul>
+            <li>Background housekeeping (autosave, any future periodic task) must check whether the
+            app is busy &mdash; a visible <code>QProgressDialog</code> or a wait cursor
+            (<code>AutosaveController._app_is_busy</code>) &mdash; and postpone itself, never the
+            other way round. The user's operation always has priority.</li>
+            <li>The policy for "an operation is running when a save is due" is therefore:
+            <b>wait, then save the finished state</b> &mdash; not "interrupt the operation" and not
+            "save half". An operation only commits its result at the end
+            (<code>apply_operation</code>), so a save started before it ends correctly contains the
+            last finished state.</li>
+            <li>If an operation starts while a save is being <i>written</i> (background thread),
+            both run; the operation is not blocked, and that save holds the state from before it.
+            </li>
+        </ul>
+
+        <h3>3. Never do heavy work on the GUI thread just to decide whether to do it</h3>
+        <p>The first autosave built and hashed the entire snapshot (2&nbsp;GB of text) every
+        interval just to learn whether anything had changed &mdash; a 10&ndash;20&nbsp;s freeze
+        every 2 minutes, even when nothing had changed. The check is now in two cheap levels:</p>
+        <ol>
+            <li><b>Quick key, milliseconds:</b> the Operations History revision counter, active step,
+            number of steps, the identity and length of the spectra list, labels, selection, plot
+            type. This works <i>without looking at the data</i> because of a rule the whole app
+            follows: <b>spectrum arrays are never modified in place</b> &mdash; an operation always
+            creates new arrays and a new list and bumps the revision. Checking "is it still the same
+            object / the same counter" is like checking a document's version number instead of
+            re-reading it.</li>
+            <li><b>Fingerprint signature, at least every 5th turn:</b> the state with each array
+            replaced by shape, dtype, first/last value and the sum of every 37th value, cached per
+            array object (weak references). It catches changes the quick key cannot see (e.g. plot
+            colours) and is a safety net should the "never in place" rule ever be broken. It still
+            reads only a sample of each array.</li>
+        </ol>
+        <p>If you ever write code that changes <code>x_scale</code>/<code>y_scale</code> in place,
+        you break both this and the snapshot de-duplication below: replace arrays, don't mutate
+        them. (Loaded snapshot arrays are read-only, so in-place changes would fail loudly.)</p>
+
+        <h3>4. Do the slow part in a background thread &mdash; and be able to stop it</h3>
+        <p>Only collecting references to the state happens on the GUI thread (~2&nbsp;s for
+        21&nbsp;000 spectra); the containers are copied (<code>_detach</code>, arrays shared) and
+        the file is written by a thread, with a status-bar message so the user knows why the
+        computer is busy. A save still being written makes the next turn skip, so saves never
+        overlap. Closing the program aborts a running write (<code>snapshot_format.write(abort=)</code>)
+        <i>before</i> the session files are deleted &mdash; otherwise a late write re-creates an
+        autosave file that looks like a crashed session at the next start.</p>
+
+        <h3>5. Binary, de-duplicated, losslessly narrowed storage</h3>
+        <p>Why the snapshot was 10&times; the <code>.mat</code>: three full copies of the data
+        (before any operation, after each step), every spectrum carrying its own copy of the
+        identical x axis, float64 for float32 instrument data, and base64 text that is a third
+        larger and that gzip can barely compress. Format version 2 (<code>snapshot_format.py</code>):
+        raw bytes in a ZIP, each <i>distinct</i> array stored once by content (not as differences
+        &mdash; every stored array is complete, so loading never has to reconstruct anything),
+        float64 stored as float32 only when bit-identical. Result: 1.36&nbsp;GB/~70&nbsp;s &rarr;
+        ~280&nbsp;MB/~18&nbsp;s on a slow test machine; loading ~2&nbsp;s. Old files are still
+        read; new files cannot be opened by 1.4 or older.</p>
+
+        <h3>6. Progress must come in small steps</h3>
+        <p>Parallel jobs report progress only when a chunk finishes. With 4 chunks per worker,
+        20 workers finished their chunks at about the same time, so jbcd's bar jumped by
+        ~5&nbsp;000 spectra and stood still in between &mdash; it looked hung. Use at least
+        <code>parallel_utils.MIN_CHUNKS</code> (200) chunks (<code>chunk_count()</code>), and change
+        the "Starting parallel workers&hellip;" text once the first chunk is back.</p>
+
+        <h3>7. Automatic worker count: cautious, explained, overridable</h3>
+        <p>Auto limits workers by free memory (~200&nbsp;MB each, 1&nbsp;GB kept free). With a huge
+        workspace loaded it can drop to 1 although 20 workers run fine; the Workers box's tooltip
+        shows the numbers behind the choice, a hand-set number is honoured, and if workers cannot
+        start or run out of memory the job falls back to serial &mdash; slower, never wrong.</p>
+
+        <h3>8. Show "no value" as no value</h3>
+        <p>NaN pixels were transparent and showed the dark axes background &mdash; users read them
+        as low values. Map pixels without a value are now hatched light grey, and the hover text
+        says "no value".</p>
+
+        <h2 id="peak-fit-map-design">Peak-Fit Maps</h2>
+        <p>
+        <code>src/modules/visualization_analysis/peak_fit_map.py</code> (Qt-free) fits one
+        peak (Gaussian / Lorentzian / pseudo-Voigt, all parameterised by FWHM) plus a
+        none / constant / linear background per pixel with <code>curve_fit</code>, starting
+        from the band found after removing a straight line through the window ends (so
+        negative CD bands work too). <code>Map2DManager.compute_intensity_map</code> routes the
+        <code>FITTED_METRICS</code> names there, so Intensity mode, Map arithmetic, export and
+        the pixel inspector work unchanged.
+        </p>
+        <ul>
+            <li><b>Cache:</b> <code>PeakFitMapper</code> keeps the last few complete result sets
+            (keyed by the windows' contents, shape and background), so switching between the
+            five fitted maps, or the R² filter, never refits.</li>
+            <li><b>Rejection, not guessing:</b> a fit that fails or whose centre ends at the
+            window edge gives NaN (a blank pixel).</li>
+            <li><b>Parallel:</b> same auto/serial/parallel scheme and
+            <code>run_in_process_pool</code> as the Automated Baseline, with chunks of (x, y)
+            windows sent to <code>_fit_chunk_worker</code>; the results are identical to serial
+            (tested). Progress/Cancel through <code>Map2DManager.peak_fit_progress</code>, set by
+            the dialog around one computation.</li>
+            <li>Tests: <code>tests/test_peak_fit_map.py</code> (accuracy on synthetic bands,
+            sub-data-point positions, cache, cancel, parallel = serial, manager, dialog).</li>
+        </ul>
+
         <h2 id="methods-report-design">Methods Report: Every New Operation Needs a Sentence</h2>
         <p>
         <code>src/modules/misc/methods_report.py</code> (Qt-free) turns
@@ -3302,12 +3435,25 @@ def _natural_sort_key(cls, label):
             failed in a real two-process test: the new instance got the <i>same</i> id as
             the crashed one, decided "that's me", and on its own normal close deleted the
             crashed work. Session ids are now <code>&lt;pid&gt;-&lt;random&gt;</code>.</li>
-            <li><b>Only when changed:</b> the snapshot's own time stamp is left out of the
-            change check (<code>SaveManager.snapshot_state_and_digest</code>) &mdash;
-            otherwise every snapshot differs and "only when changed" never skips.</li>
-            <li><b>No frozen window:</b> building the snapshot text (0.2 s for a 1225-spectrum
-            map) runs on the GUI thread; gzip + the atomic write (~0.6 s) on a background
-            thread.</li>
+            <li><b>Only when changed, cheaply:</b> first a quick key (operations revision,
+            active step, spectra list identity, labels, selection, plot type) &mdash;
+            milliseconds; at least every 5th turn a full signature: the state with every
+            array replaced by a fingerprint (shape, dtype, ends, sum of every 37th value,
+            cached per array object) and without the time stamp. The first version built
+            and hashed the whole snapshot on the GUI thread every turn: on a
+            21&nbsp;000-spectrum map that froze the window for 10&ndash;20&nbsp;s every
+            interval.</li>
+            <li><b>Never during an operation:</b> while a <code>QProgressDialog</code> is
+            visible or a wait cursor is set, the save is postponed (retry after 20 s). A
+            real case: the timer fired inside a peak-fit progress callback's
+            <code>processEvents()</code>, and the fitting "hung" at 15&nbsp;480 of 21&nbsp;000
+            pixels while the snapshot was built.</li>
+            <li><b>Background write:</b> the state's lists and dicts are copied
+            (<code>_detach</code>; arrays shared &mdash; nothing modifies arrays in place),
+            then <code>snapshot_format.write</code> runs in a thread, atomically, with a
+            status-bar message. <code>shutdown()</code> aborts a running write
+            (<code>abort=</code>) before removing the session files, so a late write can't
+            re-create a file that would look like a crashed session.</li>
             <li><b><code>main.py</code> calls <code>autosave_controller.start()</code></b>
             after the window is shown; merely creating a <code>MainController</code> (as
             the tests do) writes nothing and asks nothing.</li>

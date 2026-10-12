@@ -44,6 +44,24 @@ _SCREENSHOT_FILES = {
     "ROI_VIEWER":          "roi_spectra_viewer.png",
     "TYPE_RGB":            "map_type_rgb.png",
     "RGB_OVERLAY_RESULT":  "rgb_overlay_result.png",
+    # Peak-fit metrics (Fitted peak position / FWHM / height / area / R²)
+    "PEAK_FIT_SETTINGS":   "peak_fit_settings.png",
+    "PEAK_FIT_MAP":        "peak_fit_map_result.png",
+    "PEAK_FIT_PIXEL":      "peak_fit_pixel_fit.png",
+}
+
+# Screenshots shown only once the file exists, so a newly documented
+# feature never shows a broken image while its screenshot is still being
+# made: in the page they are inserted as $<KEY>_FIGURE (empty if missing).
+_OPTIONAL_FIGURES = {
+    "PEAK_FIT_SETTINGS": ("Peak-fit settings dialog",
+                          "Fit settings…: peak shape, background, quality filter and processing."),
+    "PEAK_FIT_MAP":      ("2D map of a fitted band",
+                          "A peak-fit map (here: fitted peak area); hatched grey pixels have no value: they could not be "
+                          "fitted or were below the R² limit."),
+    "PEAK_FIT_PIXEL":    ("Fitted band of one pixel",
+                          "Clicking a pixel shows its spectrum zoomed to the band, with the fitted "
+                          "curve, the background and the fit's centre, FWHM and R²."),
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -82,6 +100,13 @@ def _resolve_screenshot_uris():
 
         values[f"{key}_W"] = str(display_w)
         values[f"{key}_H"] = str(display_h)
+
+        if key in _OPTIONAL_FIGURES:
+            alt, caption = _OPTIONAL_FIGURES[key]
+            values[f"{key}_FIGURE"] = (
+                f'<div class="screenshot"><img src="{values[key]}" width="{display_w}" '
+                f'height="{display_h}" alt="{alt}" /><p class="caption">{caption}</p></div>'
+                if os.path.isfile(abs_path) else '')
 
     return values
 
@@ -231,6 +256,59 @@ small orange <b>?</b> button next to the Metric dropdown (visible in
 this mode) for this same explanation without leaving the dialog.</div>
 
 <p>Changing the metric immediately redraws the map.</p>
+
+<h3 id="peak-fit">Peak-fit metrics (Fitted peak position, FWHM, height, area, R²)</h3>
+<p>The last five entries of the Metric list fit a <b>peak plus a background</b> by least
+squares to the points of the Band range, <b>in every pixel</b>, and map the result:</p>
+<table>
+<tr><td><b>Fitted peak position</b></td><td>Centre of the fitted band. Not limited to the measured x-values: shifts of a fraction of a data point across the map become visible (the quick <b>Peak position</b> can only jump from one data point to the next).</td></tr>
+<tr><td><b>Fitted FWHM</b></td><td>Full width at half maximum of the fitted band &mdash; band broadening, e.g. disorder or a changed environment.</td></tr>
+<tr><td><b>Fitted peak height</b></td><td>Height of the band above the fitted background.</td></tr>
+<tr><td><b>Fitted peak area</b></td><td>Area of the band itself, without the background &mdash; usually the best measure of the amount of the substance.</td></tr>
+<tr><td><b>Fit quality (R²)</b></td><td>How well the model describes each pixel: 1 = perfectly; low values where there is no band, only noise, or where the band has a different shape (e.g. two overlapping bands).</td></tr>
+</table>
+<p><b>How it works, in brief:</b> for each pixel the program takes the points inside the
+Band range, makes a first guess of the band (where it is, how high and how wide), and then
+adjusts the peak and the background until the model matches the measured points as closely
+as possible (least-squares fitting, done with the scientific library SciPy). On larger
+maps the pixels are shared among several processor cores and fitted in parallel, which
+gives exactly the same numbers, only faster.
+<a href="#peak-fit-details">Technical details for advanced users &rarr;</a></p>
+<p>The pixels are fitted once; switching between these five maps is instant. For a larger
+map a progress bar with <b>Cancel</b> appears; the line under the map then says how many
+pixels were fitted, how long it took and whether several processes were used.
+<b>Click a pixel</b> to see its spectrum, zoomed to the band, with the fitted curve
+(orange), the background (dashed) and the centre, FWHM and R² of that fit &mdash; the
+best way to check that the fits are sensible. Tick <b>Full spectrum</b> above the spectrum
+panel to see the whole spectrum with the band range shaded instead (the same checkbox as in
+the SVD/PCA/NMF/MCR-ALS modes); untick it to zoom back to the band.</p>
+$PEAK_FIT_MAP_FIGURE
+$PEAK_FIT_PIXEL_FIGURE
+<p><b>Fit settings…</b> (next to the Metric list):</p>
+<ul>
+<li><b>Peak shape:</b> Gaussian (default; broad bands, solids), Lorentzian (narrow bands
+of liquids and gases) or Pseudo-Voigt (a mix of both, its mixing fraction fitted
+as well).</li>
+<li><b>Background:</b> Linear (default; handles a sloping background), Constant, or None
+(only for spectra that are already baseline-corrected).</li>
+<li><b>Hide fits with R² below:</b> leaves pixels with poor fits empty (no value), e.g. outside the
+cell. 0 shows every fit.</li>
+<li><b>Processing:</b> Automatic, Serial or Parallel, as in the Automated Baseline
+correction. Automatic fits a few pixels first and uses several processes only when the
+whole map would take more than a few seconds.</li>
+</ul>
+<p>The choices are remembered between sessions.</p>
+$PEAK_FIT_SETTINGS_FIGURE
+<div class="note"><b>Choosing the range.</b> Configure Band… so that it contains
+<b>one band and some background on both sides</b>. A neighbouring band can be removed
+with an exclude range. Pixels where the fit fails, where the fitted centre ends at the
+edge of the range (the band maximum lies outside it), or where the fitted band would be
+wider than the whole range (usually noise without a real band), get <b>no value</b>
+rather than a misleading number; the map shows them <b>hatched light grey</b>.
+Clicking such a pixel shows the rejected attempt as a grey dotted line, with the reason. Overlapping bands are fitted as one; for those, look
+at the R² map and at single pixels before interpreting the numbers.</div>
+<p>The fitted metrics also work in <b>Map arithmetic</b>, e.g. the ratio of the fitted
+areas of two bands.</p>
 </div>
 
 <h3>◉ Map arithmetic</h3>
@@ -785,6 +863,10 @@ added to the list immediately.
 
 <hr>
 <h2>4 — Display Options</h2>
+<div class="note"><b>Pixels without a value</b> &mdash; e.g. a rejected peak fit, or a
+ratio map dividing by zero &mdash; are drawn <b>hatched light grey</b>, so they can never
+be mistaken for a low value of the colour scale. Hovering over one shows
+<i>Value: no value</i>.</div>
 
 <div class="cat">
 <div class="screenshot">
@@ -1012,6 +1094,18 @@ they work regardless of whether spectra share an axis.
 </div>
 
 <div class="cat">
+<h3>Band-shift map (fitted position)</h3>
+<ol>
+  <li>Stay in <b>Intensity metric</b>; choose <b>Fitted peak position</b>.</li>
+  <li>Click <b>Configure Band…</b> and select one band with a little background on both sides.</li>
+  <li>Check <b>Fit settings…</b> (shape, background), then <b>Update Map</b>.</li>
+  <li>Click a few pixels to check the fits; switch to <b>Fit quality (R²)</b> and, if needed,
+      hide poor fits in Fit settings.</li>
+  <li>Switch to <b>Fitted FWHM</b> or <b>Fitted peak area</b> &mdash; no refitting needed.</li>
+</ol>
+</div>
+
+<div class="cat">
 <h3>SVD component map</h3>
 <ol>
   <li>Apply baseline correction and normalisation beforehand if desired.</li>
@@ -1049,6 +1143,92 @@ they work regardless of whether spectra share an axis.
   <li>Export cluster averages to the main list for further analysis (peak fitting, etc.).</li>
 </ol>
 </div>
+
+<hr>
+<h2 id="peak-fit-details">Technical details: peak-fit metrics</h2>
+<p><a href="#peak-fit">&larr; back to Peak-fit metrics</a></p>
+<p>For readers who want to know exactly what is computed, e.g. to describe it in a
+publication. Implementation: <code>src/modules/visualization_analysis/peak_fit_map.py</code>.</p>
+
+<h3>Model</h3>
+<p>All three shapes use the full width at half maximum <i>w</i> directly as their width
+parameter, so the fitted FWHM needs no conversion. With <i>h</i> the height, <i>x</i><sub>0</sub>
+the centre and <i>u</i> = (<i>x</i> &minus; <i>x</i><sub>0</sub>) / <i>w</i>:</p>
+<table>
+<tr><th>Shape</th><th>Profile <i>S</i>(<i>u</i>), with <i>S</i>(0) = 1</th><th>Area</th></tr>
+<tr><td>Gaussian</td><td>exp(&minus;4 ln2 &middot; <i>u</i>&sup2;)</td><td><i>h w</i> &radic;(&pi; / (4 ln2)) &asymp; 1.0645 <i>h w</i></td></tr>
+<tr><td>Lorentzian</td><td>1 / (1 + 4 <i>u</i>&sup2;)</td><td>(&pi;/2) <i>h w</i> &asymp; 1.5708 <i>h w</i></td></tr>
+<tr><td>Pseudo-Voigt</td><td>&eta; &middot; Lorentzian + (1 &minus; &eta;) &middot; Gaussian, same <i>w</i>; 0 &le; &eta; &le; 1 fitted</td><td>[&eta; &middot; 1.5708 + (1 &minus; &eta;) &middot; 1.0645] <i>h w</i></td></tr>
+</table>
+<p>The fitted function is <i>y</i>(<i>x</i>) = <i>h</i> &middot; <i>S</i>(<i>u</i>) + <i>B</i>(<i>x</i>),
+with the background <i>B</i> = 0 (None), <i>b</i><sub>0</sub> (Constant) or
+<i>b</i><sub>0</sub> + <i>b</i><sub>1</sub>(<i>x</i> &minus; <i>x</i><sub>m</sub>) (Linear),
+<i>x</i><sub>m</sub> being the middle of the window (this keeps the two background parameters
+independent of each other). The reported <b>height</b> and <b>area</b> are those of the peak
+alone, above the background. Only the points inside the Band range are used (exclude
+ranges are left out of the fit); missing values (NaN) are skipped.</p>
+
+<h3>Starting values</h3>
+<ul>
+<li>Background: a straight line through the averages of the first and last few points of the
+window (up to 3 at each end).</li>
+<li>Peak: the largest deviation from that line, upwards or downwards &mdash; so negative
+bands (e.g. in CD spectra) are fitted as well. Its x-value is the starting centre, its
+deviation the starting height.</li>
+<li>Width: the number of points deviating by at least half of that height, times the point
+spacing (kept between 2 points and the window width).</li>
+<li>Pseudo-Voigt: &eta; starts at 0.5.</li>
+</ul>
+
+<h3>Fitting</h3>
+<p>Bounded non-linear least squares, minimising the sum of squared residuals over the window,
+with SciPy's <code>curve_fit</code> (Trust Region Reflective algorithm, at most 4000 function
+evaluations). Bounds: centre within the window; FWHM between half a point spacing and twice the
+window width; 0 &le; &eta; &le; 1; height and background free (any sign).</p>
+
+<h3>Fit quality and rejected fits</h3>
+<p>R&sup2; = 1 &minus; SS<sub>res</sub> / SS<sub>tot</sub>, with SS<sub>res</sub> the sum of
+squared residuals and SS<sub>tot</sub> the sum of squared deviations of the data from their
+mean, both over the window. R&sup2; therefore measures how much of the variation within the
+window the peak + background describe; a window with only noise gives a low value.</p>
+<p>A pixel gets no value (NaN; shown hatched light grey in the map) when: the window has fewer points than parameters + 2; the
+signal is flat; the fit does not converge; the fitted centre lies within half a point
+spacing of the window edge (the band maximum is then outside the window); or the fitted FWHM
+is larger than the window itself (then the "band" is noise or background fitted as a broad
+hump, typically with a huge, meaningless area). In all these cases position, width and area
+would be meaningless. The optional <i>Hide fits with R&sup2; below</i> filter blanks
+further pixels for display only &mdash; it does not refit.</p>
+
+<h3>Parallel processing</h3>
+<ul>
+<li>The pixels are independent, so they are split into chunks (about four per worker) and
+fitted in separate processes (Python <code>ProcessPoolExecutor</code>, "spawn" start method),
+each limited to one numerical-library thread so the workers do not compete for cores.</li>
+<li>The number of workers is one less than the number of CPU cores, further limited by the
+free memory (about 200 MB per worker), unless set by hand.</li>
+<li><i>Automatic</i> mode fits the first 5 pixels serially, estimates the time for the rest,
+and starts workers only if the rest would take at least 6 s and parallel fitting is expected
+to take at most 70&nbsp;% of that, starting the workers included (estimated at 4 s).</li>
+<li>Every pixel is fitted by exactly the same code in either mode, so the results are
+identical (checked by an automated test). If the workers cannot be started, the fitting is
+redone serially and the line under the map says so. Cancel stops the workers at once.</li>
+</ul>
+
+<h3>Caching</h3>
+<p>The complete result (centre, FWHM, height, area, R&sup2; and &eta; for every pixel) is kept for
+the last few combinations of data, window, shape and background, so switching between the
+five fitted maps, changing the R&sup2; filter, or going back to a previous setting needs no
+refitting.</p>
+
+<h3>References</h3>
+<ul>
+<li>Virtanen, P. et al. (2020). SciPy 1.0: fundamental algorithms for scientific computing
+in Python. <i>Nature Methods</i>, 17, 261&ndash;272.</li>
+<li>Branch, M. A., Coleman, T. F., &amp; Li, Y. (1999). A subspace, interior, and conjugate
+gradient method for large-scale bound-constrained minimization problems. <i>SIAM Journal on
+Scientific Computing</i>, 21(1), 1&ndash;23. (the Trust Region Reflective algorithm)</li>
+</ul>
+<p><a href="#peak-fit">&larr; back to Peak-fit metrics</a></p>
 
 </body></html>
 """)

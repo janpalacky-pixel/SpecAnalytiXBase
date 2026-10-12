@@ -1,6 +1,8 @@
 # src/modules/visualization_analysis/map2d_manager.py
 
 import numpy as np
+from src.modules.visualization_analysis.peak_fit_map import (
+    DEFAULT_SETTINGS as PEAK_FIT_DEFAULTS, FITTED_METRICS, PeakFitMapper)
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import axes_match, describe_axis_mismatch
 
@@ -84,6 +86,15 @@ class Map2DManager:
         # call was a plain single fit (n_runs=1) — see _pick_best_of_n.
         self._nmf_run_info = None
         self._mcr_run_info = None
+
+        # Peak-fit metrics ("Fitted peak position", ... -- see
+        # peak_fit_map.py). The dialog sets the settings and, for a
+        # progress bar with Cancel, peak_fit_progress(done, total) /
+        # peak_fit_status(text) before computing.
+        self.peak_fit = PeakFitMapper()
+        self.peak_fit_settings = dict(PEAK_FIT_DEFAULTS)
+        self.peak_fit_progress = None
+        self.peak_fit_status = None
 
     def reset(self):
         """Clear every previous result — same purpose and same fix as
@@ -265,6 +276,14 @@ class Map2DManager:
         include_ranges = include_ranges or []
         exclude_ranges = exclude_ranges or []
 
+        if metric in FITTED_METRICS:
+            windows = [self._apply_range_filter(
+                np.asarray(sp['x_scale'], dtype=float), np.asarray(sp['y_scale'], dtype=float),
+                x_min, x_max, include_ranges, exclude_ranges) for sp in spectra]
+            values = self.peak_fit.values(metric, windows, self.peak_fit_settings,
+                                          self.peak_fit_progress, self.peak_fit_status)
+            return self._store_intensity_map(values, n_rows, n_cols, metric)
+
         values = np.empty(len(spectra))
         for i, sp in enumerate(spectra):
             x = np.asarray(sp['x_scale'], dtype=float)
@@ -314,6 +333,9 @@ class Map2DManager:
             else:
                 values[i] = np.mean(yf)
 
+        return self._store_intensity_map(values, n_rows, n_cols, metric)
+
+    def _store_intensity_map(self, values, n_rows, n_cols, metric):
         self.map_data = values.reshape(n_rows, n_cols)
         self.n_rows = n_rows
         self.n_cols = n_cols

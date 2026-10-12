@@ -11,7 +11,7 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import OperationCancelled, notify_progress
 from src.modules.utils.correction_history import append_correction_history
 from src.modules.utils.parallel_utils import (
-    describe_worker_limits, resolve_worker_count, run_in_process_pool)
+    describe_worker_limits, resolve_worker_count, run_in_process_pool, chunk_count)
 logger = get_logger(__name__)
 
 # Display name of every algorithm in the correction history. An unknown
@@ -1810,7 +1810,7 @@ class AutomatedBaselineManager:
                 if status_callback is not None:
                     status_callback("Starting parallel workers\u2026")
                 self._compute_parallel(spectra, remaining, algorithm, cfg, baselines,
-                                       workers, progress_callback)
+                                       workers, progress_callback, status_callback)
                 if status_callback is not None:
                     status_callback("Finishing\u2026")
                 info['mode'] = 'parallel'
@@ -1838,13 +1838,13 @@ class AutomatedBaselineManager:
         return baselines
 
     def _compute_parallel(self, spectra, indices, algorithm, cfg, baselines,
-                          workers, progress_callback):
+                          workers, progress_callback, status_callback=None):
         # Several chunks per worker: keeps all workers busy when some
         # spectra take longer, and gives the progress callback regular
         # chances to run. Only the x/y arrays travel to the workers (not
         # whole spectrum dicts with their metadata), and a common x axis
         # is sent once per chunk.
-        n_chunks = min(len(indices), workers * 4)
+        n_chunks = chunk_count(len(indices), workers)
         chunks = [list(part) for part in np.array_split(np.array(indices), n_chunks)]
         payloads = []
         for chunk in chunks:
@@ -1859,8 +1859,15 @@ class AutomatedBaselineManager:
                 progress_callback()
             self._report_progress(force=True)
 
+        running = [False]
+
         def chunk_done(k):
             self._progress_done += len(chunks[k])
+            if not running[0]:
+                # The workers are up: replace "Starting parallel workers…".
+                running[0] = True
+                if status_callback is not None:
+                    status_callback(f"Correcting in {workers} parallel workers\u2026")
 
         results = run_in_process_pool(
             _baseline_chunk_worker, payloads, workers, tick, chunk_done)

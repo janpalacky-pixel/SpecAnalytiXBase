@@ -1934,6 +1934,17 @@ def get_user_guide_help_content():
             <li>Several copies of the program can run at the same time; each keeps
                 its own automatic save, and a running copy is never mistaken for a
                 crashed one.</li>
+            <li>The bottom line of the main window shows <em>"Saving automatically…"</em>
+                while a save is written (in the background &mdash; you can keep working)
+                and then <em>"Saved automatically at …"</em>.</li>
+            <li>While an operation is running with a progress bar, automatic saving
+                waits and saves shortly after it has finished, so it never slows the
+                operation down. An automatic save contains the last <em>finished</em>
+                state.</li>
+            <li>If a save takes longer than the interval (a very large workspace), the
+                next one is simply skipped; saves never overlap. The files are kept in
+                <code>%LOCALAPPDATA%\SpecAnalytiXBase\autosave</code> and deleted when the
+                program is closed normally.</li>
         </ul>
 
         <h3 id="methods-report">Methods Report for Publications</h3>
@@ -1965,17 +1976,18 @@ def get_user_guide_help_content():
         </ul>
 
         <div class="info">
-            <strong>Snapshot files are compressed automatically.</strong> A
-            <strong>.snapx</strong> file stores your data losslessly &mdash;
-            nothing is thrown away or approximated, and it still opens exactly
-            the same way &mdash; but the file itself takes up noticeably less
-            disk space than it used to, especially for a workspace with many
-            spectra (a large 2D map, for example) and several Operations
-            History steps applied. Saving a large workspace can take a few
-            extra seconds because of this; a progress bar is shown for the
-            whole save so it's clear the application is working, not stuck.
-            Every snapshot you saved before this change still loads exactly
-            as before.<br><br>
+            <strong>Snapshot files are compact.</strong> A <strong>.snapx</strong>
+            file stores your data losslessly &mdash; nothing is thrown away or
+            approximated &mdash; in a binary format (since version 1.5.0): every
+            distinct piece of data is stored once (the wavenumber axis shared by all
+            spectra, spectra an operation left unchanged), and data that came from
+            the instrument as 32-bit numbers is stored that way. For a 21&nbsp;000-
+            spectrum Raman map with two operations applied this made the file about
+            five times smaller (1.4&nbsp;GB &rarr; under 300&nbsp;MB) and saving it
+            several times faster. A progress bar is shown for the whole save.
+            Every snapshot saved by earlier versions still loads as before; a
+            snapshot saved by this version cannot be opened by version 1.4 or
+            older.<br><br>
             When File &rarr; Save&hellip; &rarr; <strong>Snapshot</strong> is
             selected, the Save dialog shows a <strong>Compression</strong>
             choice: <strong>Fast</strong> (quickest save, larger file),
