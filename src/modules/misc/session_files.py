@@ -280,3 +280,17 @@ class Preferences:
     def autosave_minutes(self):
         value = self.get('autosave_minutes', DEFAULT_AUTOSAVE_MINUTES)
         return value if value in AUTOSAVE_CHOICES else DEFAULT_AUTOSAVE_MINUTES
+
+    # -- CD data quality (see src/modules/data_io/cd_quality.py)
+    def cd_quality_limits(self):
+        """(HT limit in V, absorbance limit), falling back to the defaults
+        for missing or nonsensical stored values."""
+        from src.modules.data_io.cd_quality import DEFAULT_ABS_LIMIT, DEFAULT_HT_LIMIT_V
+        ht = self.get('cd_ht_limit_V', DEFAULT_HT_LIMIT_V)
+        ab = self.get('cd_abs_limit', DEFAULT_ABS_LIMIT)
+        ht = float(ht) if isinstance(ht, (int, float)) and 100 <= ht <= 2000 else DEFAULT_HT_LIMIT_V
+        ab = float(ab) if isinstance(ab, (int, float)) and 0.1 <= ab <= 10 else DEFAULT_ABS_LIMIT
+        return ht, ab
+
+    def cd_quality_shading(self):
+        return bool(self.get('cd_quality_shading', True))

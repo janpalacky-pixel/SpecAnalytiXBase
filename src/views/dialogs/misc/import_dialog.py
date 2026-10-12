@@ -26,8 +26,9 @@ from PyQt5.QtWidgets import (
     QRadioButton, QButtonGroup, QListWidget, QListWidgetItem,
     QMessageBox, QInputDialog, QWidget, QSlider,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QSplitter
 
 # Lazy-loadable, but imported at module level like every other heavy
 # dependency in this app's dialogs (matplotlib is already a hard
@@ -38,7 +39,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from src.help.help_window import open_help_topic
+from src.modules.utils.app_logger import get_logger
 from src.modules.misc.import_profile_manager import ImportProfileManager
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +246,53 @@ class _MatMapPreviewCanvas(FigureCanvas):
         self.ax.set_xticks([])
         self.ax.set_yticks([])
         self.fig.colorbar(im, cax=self.cax)
+        self.draw_idle()
+
+
+class _SpectraPreviewCanvas(FigureCanvas):
+    """Small plot of the spectra the import WOULD produce with the current
+    settings (see ImportDialog._update_plot_preview). One panel per JASCO
+    channel -- their units differ (mdeg, V, AU) -- otherwise one panel."""
+
+    MAX_LINES = 30
+
+    def __init__(self, parent=None):
+        self.fig = Figure(figsize=(4, 2.6))
+        super().__init__(self.fig)
+        self.setParent(parent)
+
+    def show_message(self, text):
+        self.fig.clear()
+        self.fig.text(0.5, 0.5, text, ha='center', va='center', wrap=True,
+                      fontsize=8, color='#666666')
+        self.draw_idle()
+
+    def show_panels(self, panels, footer=''):
+        """panels: list of (title, [(x, y, label), ...], use_colormap)."""
+        import matplotlib.cm as cm
+        self.fig.clear()
+        n = max(1, len(panels))
+        for k, (title, lines, use_cmap) in enumerate(panels):
+            ax = self.fig.add_subplot(n, 1, k + 1) if n > 1 else self.fig.add_subplot(1, 1, 1)
+            shown = lines
+            if len(lines) > self.MAX_LINES:
+                idx = np.linspace(0, len(lines) - 1, self.MAX_LINES).round().astype(int)
+                shown = [lines[i] for i in sorted(set(idx))]
+            colors = (cm.coolwarm(np.linspace(0, 1, len(shown))) if use_cmap and len(shown) > 1
+                      else [None] * len(shown))
+            for (x, y, label), color in zip(shown, colors):
+                ax.plot(x, y, lw=0.8, color=color, label=label)
+            ax.set_title(title, fontsize=8)
+            ax.tick_params(labelsize=7)
+            ax.grid(True, lw=0.3, alpha=0.5)
+            if not use_cmap and 1 < len(shown) <= 6:
+                ax.legend(fontsize=6, loc='best')
+        if footer:
+            self.fig.text(0.01, 0.005, footer, fontsize=7, color='#666666', va='bottom')
+        try:
+            self.fig.tight_layout(rect=(0, 0.04 if footer else 0, 1, 1))
+        except Exception:
+            pass
         self.draw_idle()
 
 
@@ -797,7 +848,7 @@ class ImportDialog(QDialog):
         self._jws_channels_group = QGroupBox("Channels to import")
         jws_layout = QVBoxLayout()
         self._jws_channels_table = QTableWidget(0, 3)
-        self._jws_channels_table.setHorizontalHeaderLabels(["Include", "Type", "Range"])
+        self._jws_channels_table.setHorizontalHeaderLabels(["Include", "Type (guessed)", "Range"])
         self._jws_channels_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self._jws_channels_table.horizontalHeader().setStretchLastSection(True)
         self._jws_channels_table.verticalHeader().setVisible(False)
@@ -806,6 +857,22 @@ class ImportDialog(QDialog):
         self._jws_channels_table.setMaximumHeight(140)
         self._jws_channels_table.itemChanged.connect(self._on_jws_channel_setting_changed)
         jws_layout.addWidget(self._jws_channels_table)
+        self._jws_guess_note = QLabel(
+            "ⓘ  The file does not say which channel is which: the Type is guessed from "
+            "the values (HT: hundreds of volts, never negative; CD: usually positive and "
+            "negative bands; Absorbance: small and positive). Check it against the "
+            "preview below and change it here if it is wrong.")
+        self._jws_guess_note.setWordWrap(True)
+        self._jws_guess_note.setStyleSheet("color:#555; font-size:9pt;")
+        jws_layout.addWidget(self._jws_guess_note)
+        # Shown only when a chosen Type contradicts the values, or two
+        # channels are given the same Type (see _update_jws_type_warning).
+        self._jws_type_warning = QLabel("")
+        self._jws_type_warning.setWordWrap(True)
+        self._jws_type_warning.setStyleSheet(
+            "color:#8a4b00; background:#fff3e0; padding:3px 5px; border-radius:3px;")
+        self._jws_type_warning.setVisible(False)
+        jws_layout.addWidget(self._jws_type_warning)
         self._jws_channels_group.setLayout(jws_layout)
         self._jws_channels_group.setVisible(False)
         root.addWidget(self._jws_channels_group)
@@ -874,7 +941,41 @@ class ImportDialog(QDialog):
         self._mat_rows_row_widget.setVisible(False)
         preview_layout.addWidget(self._mat_rows_row_widget)
 
-        preview_layout.addWidget(self._preview_table)
+        # Values (left) and a plot of what Import would produce with the
+        # current settings (right) -- see _update_plot_preview.
+        self._plot_panel = QWidget()
+        plot_layout = QVBoxLayout(self._plot_panel)
+        plot_layout.setContentsMargins(4, 0, 0, 0)
+        plot_row = QHBoxLayout()
+        self._plot_cb = QCheckBox("Plot spectra")
+        self._plot_cb.setToolTip(
+            "Plot the spectra exactly as Import would read them with the settings "
+            "above (up to 30 of them).")
+        self._plot_cb.setChecked(self._plot_preview_preference())
+        self._plot_cb.toggled.connect(self._on_plot_preview_toggled)
+        plot_row.addWidget(self._plot_cb)
+        self._plot_now_btn = QPushButton("Draw plot")
+        self._plot_now_btn.setToolTip("Large file: the plot is drawn only on request.")
+        self._plot_now_btn.clicked.connect(lambda: self._update_plot_preview(force=True))
+        self._plot_now_btn.setVisible(False)
+        plot_row.addWidget(self._plot_now_btn)
+        plot_row.addStretch(1)
+        plot_layout.addLayout(plot_row)
+        self._plot_canvas = _SpectraPreviewCanvas(self._plot_panel)
+        self._plot_canvas.setMinimumSize(260, 180)
+        plot_layout.addWidget(self._plot_canvas, stretch=1)
+
+        self._preview_splitter = QSplitter(Qt.Horizontal)
+        self._preview_splitter.addWidget(self._preview_table)
+        self._preview_splitter.addWidget(self._plot_panel)
+        self._preview_splitter.setStretchFactor(0, 3)
+        self._preview_splitter.setStretchFactor(1, 2)
+        preview_layout.addWidget(self._preview_splitter, stretch=1)
+
+        self._plot_timer = QTimer(self)
+        self._plot_timer.setSingleShot(True)
+        self._plot_timer.setInterval(350)
+        self._plot_timer.timeout.connect(self._update_plot_preview)
 
         # --- MAT map spatial sanity-check preview --------------------
         # Hidden entirely except for MAT map files (see _load_mat_preview,
@@ -978,6 +1079,13 @@ class ImportDialog(QDialog):
         self._load_file(self._preview_file_index)
 
     def _load_file(self, index: int):
+        """Show file *index* (see _load_file_impl), then its plot."""
+        self._jws_preview_columns = None
+        self._jws_guesses = None
+        self._load_file_impl(index)
+        self._schedule_plot_preview()
+
+    def _load_file_impl(self, index: int):
         """
         Show file *index* in the preview/settings panel.
 
@@ -1764,6 +1872,7 @@ class ImportDialog(QDialog):
             "color:#7a5c00; background:#fff8dc; padding:2px 4px; border-radius:3px;"
         )
 
+        self._jws_guesses = {ch['index']: ch for ch in channels}
         self._jws_channels_group.setVisible(True)
         self._jws_channels_table.blockSignals(True)
         self._jws_channels_table.setRowCount(len(channels))
@@ -1790,14 +1899,111 @@ class ImportDialog(QDialog):
             self._jws_channels_table.setItem(row, 2, range_item)
         self._jws_channels_table.blockSignals(False)
 
-        self._preview_table.setRowCount(0)
-        self._preview_table.setColumnCount(0)
+        self._fill_jws_values_table(filepath, is_jwb)
+        self._update_jws_type_warning()
+
+    _JWS_PREVIEW_ROWS = 12
+
+    def _fill_jws_values_table(self, filepath: str, is_jwb: bool):
+        """Values of every channel at wavelengths spread over the whole
+        range (not just the first rows: at the long-wavelength start of a
+        CD scan all channels look flat). For a .jwb file: the first
+        temperature."""
+        from src.modules.data_io import jasco_jws_reader as jr
+        self._jws_preview_columns = None
+        try:
+            spectra = jr.read_jwb_data(filepath) if is_jwb else jr.read_jws_data(filepath)
+        except Exception as e:
+            self._preview_table.setRowCount(0)
+            self._preview_table.setColumnCount(0)
+            logger.warning("JWS/JWB values preview failed: %s", e)
+            return
+        first = [sp for sp in spectra
+                 if sp['metadata']['import_parameters'].get('spectrum_index', 0) == 0]
+        first.sort(key=lambda sp: sp['metadata']['import_parameters']['channel_index'])
+        if not first:
+            return
+        x = np.asarray(first[0]['x_scale'], dtype=float)
+        n = len(x)
+        rows = sorted(set(np.linspace(0, n - 1, min(self._JWS_PREVIEW_ROWS, n)).round().astype(int)))
+        self._jws_preview_columns = [sp['metadata']['import_parameters']['channel_index'] for sp in first]
+        self._preview_table.clear()
+        self._preview_table.setRowCount(len(rows))
+        self._preview_table.setColumnCount(1 + len(first))
+        for r, i in enumerate(rows):
+            item = QTableWidgetItem(f"{x[i]:.4g}")
+            item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            item.setBackground(Qt.GlobalColor.cyan)
+            item.setForeground(Qt.GlobalColor.darkBlue)
+            self._preview_table.setItem(r, 0, item)
+            for c, sp in enumerate(first):
+                v = QTableWidgetItem(f"{float(sp['y_scale'][i]):.4g}")
+                v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self._preview_table.setItem(r, c + 1, v)
+        self._update_jws_value_headers()
+        temp = (f" at {first[0]['metadata'].get('temperature_C'):.1f} °C (first temperature)"
+                if is_jwb and first[0]['metadata'].get('temperature_C') is not None else "")
+        self._preview_table.setToolTip(
+            f"Values of every channel{temp}, at {len(rows)} wavelengths spread over the "
+            "whole range. Column titles follow the Type chosen above.")
+
+    def _update_jws_value_headers(self):
+        cols = getattr(self, '_jws_preview_columns', None)
+        if not cols or self._preview_table.columnCount() != 1 + len(cols):
+            return
+        labels = ['wavelength (nm)']
+        for ch in cols:
+            kind = self._jws_chosen_text(ch)
+            mark = '  ⚠' if self._jws_type_contradicts_guess(ch) else ''
+            labels.append(f"Channel {ch + 1}: {kind}{mark}")
+        self._preview_table.setHorizontalHeaderLabels(labels)
+
+    def _jws_chosen_text(self, ch):
+        combo = self._jws_channels_table.cellWidget(ch, 1)
+        return combo.currentText() if combo is not None else '?'
+
+    def _jws_type_contradicts_guess(self, ch):
+        guess = (getattr(self, '_jws_guesses', None) or {}).get(ch)
+        if guess is None:
+            return False
+        chosen = self._JWS_COMBO_TEXT_TO_TYPE.get(self._jws_chosen_text(ch), 'Signal')
+        return chosen != guess['type']
+
+    def _update_jws_type_warning(self):
+        """Changing a Type only renames the channel -- the numbers stay the
+        same. Say so when the chosen Type disagrees with what the values
+        look like, and when two ticked channels get the same Type."""
+        guesses = getattr(self, '_jws_guesses', None) or {}
+        lines = []
+        for ch, guess in sorted(guesses.items()):
+            if self._jws_type_contradicts_guess(ch):
+                looks = self._JWS_TYPE_TO_COMBO_TEXT.get(guess['type'], 'Signal')
+                lines.append(
+                    f"Channel {ch + 1} is set to {self._jws_chosen_text(ch)}, but its values "
+                    f"({guess['y_min']:.3g} to {guess['y_max']:.3g}) look like {looks}.")
+        selected = self._current_jws_selected_channels() or []
+        by_type = {}
+        for ch in selected:
+            by_type.setdefault(self._jws_chosen_text(ch), []).append(ch + 1)
+        for kind, chans in by_type.items():
+            if len(chans) > 1:
+                lines.append(
+                    f"Channels {' and '.join(map(str, chans))} are both set to {kind}; they "
+                    f"will be imported as \"{kind} ch{chans[0]}\", \"{kind} ch{chans[1]}\"…")
+        if lines and any('look like' in t for t in lines):
+            lines.append("Changing the Type only renames a channel: the numbers stay the same. "
+                         "Change it only if you know the guess is wrong.")
+        self._jws_type_warning.setText("⚠  " + "\n".join(lines) if lines else "")
+        self._jws_type_warning.setVisible(bool(lines))
 
     def _on_jws_channel_setting_changed(self, *_args):
         """User ticked/unticked a channel or changed its guessed type for
         the JWS file currently on screen — persist immediately, the same
         way the SPE calibration checkbox does."""
         self._capture_current_file_settings()
+        self._update_jws_value_headers()
+        self._update_jws_type_warning()
+        self._schedule_plot_preview()
 
     def _current_jws_selected_channels(self) -> Optional[list]:
         """None when the channel table isn't currently showing a JWS
@@ -2783,6 +2989,7 @@ class ImportDialog(QDialog):
         }
 
     def _refresh_preview(self):
+        self._schedule_plot_preview()
         # The "Row N" entries depend on the current sample lines, which change
         # whenever the file, sheet or layout changes. Rebuilding them here means
         # every one of those paths keeps the list correct without each having to
@@ -3083,7 +3290,8 @@ class ImportDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _on_settings_changed(self, *_):
-        """Called whenever any control changes — refresh preview immediately.
+        """Called whenever any control changes — refresh preview immediately
+        (and, shortly after, the plot -- see _schedule_plot_preview).
 
         SPE/SPC files take a different path: _refresh_preview() only knows
         how to re-parse self._sample_lines (text/Excel sample rows), which
@@ -3094,6 +3302,7 @@ class ImportDialog(QDialog):
         that can actually change while a binary file is on screen, so route
         straight to that format's own preview loader instead.
         """
+        self._schedule_plot_preview()
         if self._file_paths and self._has_loaded_once:
             filepath = self._file_paths[self._preview_file_index]
             ext = os.path.splitext(filepath)[1].lower()
@@ -3140,6 +3349,111 @@ class ImportDialog(QDialog):
         )
         self._redetect_from_sample(self._sample_lines)
         self._refresh_preview()
+
+    # ------------------------------------------------------------------
+    # Plot preview
+    # ------------------------------------------------------------------
+
+    _PLOT_AUTO_MAX_BYTES = 25 * 1024 * 1024
+
+    @staticmethod
+    def _plot_preview_preference():
+        try:
+            from src.modules.misc.session_files import Preferences
+            return bool(Preferences().get('import_plot_preview', True))
+        except Exception:
+            return True
+
+    def _on_plot_preview_toggled(self, checked):
+        try:
+            from src.modules.misc.session_files import Preferences
+            Preferences().set('import_plot_preview', bool(checked))
+        except Exception:
+            pass
+        self._update_plot_preview()
+
+    def _schedule_plot_preview(self):
+        """Redraw the plot shortly after the last change (typing in a
+        field changes settings many times in a row; reading the file once
+        afterwards is enough)."""
+        timer = getattr(self, '_plot_timer', None)
+        if timer is not None:
+            timer.start()
+
+    def _update_plot_preview(self, force=False):
+        """Read the current file with exactly the settings Import would use
+        (shared helper load_file_with_settings) and plot the result."""
+        canvas = self._plot_canvas
+        if not self._plot_cb.isChecked():
+            self._plot_now_btn.setVisible(False)
+            canvas.setVisible(False)
+            return
+        canvas.setVisible(True)
+        if not self._file_paths:
+            canvas.show_message("No file")
+            return
+        filepath = self._file_paths[self._preview_file_index]
+        try:
+            big = os.path.getsize(filepath) > self._PLOT_AUTO_MAX_BYTES
+        except OSError:
+            big = False
+        self._plot_now_btn.setVisible(big)
+        if big and not force:
+            canvas.show_message("Large file: the plot is not drawn automatically.\n"
+                                "Click \"Draw plot\" to read the file and plot it.")
+            return
+        from src.modules.core.spectrum_manager import SpectrumManager
+        from src.modules.data_io.import_settings import (
+            load_file_with_settings, settings_for_sheet, sheets_to_read)
+        try:
+            settings = self.get_settings()
+            sheet = sheets_to_read(settings)[0]
+            manager = SpectrumManager()
+            load_file_with_settings(manager, filepath, settings_for_sheet(settings, sheet), sheet,
+                                    unknown_extension_resolver=lambda *_a: True)
+        except Exception as e:
+            canvas.show_message(f"These settings do not give readable spectra:\n{str(e)[:200]}")
+            return
+        spectra = list(manager.spectra.items())
+        if not spectra:
+            canvas.show_message("No spectra with these settings"
+                                + (" (no channel ticked)" if self._jws_channels_group.isVisible() else ""))
+            return
+        canvas.show_panels(*self._plot_panels(spectra))
+
+    @staticmethod
+    def _plot_panels(spectra):
+        """(panels, footer) for _SpectraPreviewCanvas.show_panels;
+        *spectra* is a list of (label, Spectrum)."""
+        labels = {id(sp): label for label, sp in spectra}
+        spectra = [sp for _label, sp in spectra]
+
+        def label_of(sp):
+            return labels.get(id(sp), '')
+        n = len(spectra)
+        jasco = spectra[0].metadata.get('file_type') in ('jasco_jws', 'jasco_jwb')
+        if jasco:
+            by_channel = {}
+            for sp in spectra:
+                ip = sp.metadata.get('import_parameters', {})
+                by_channel.setdefault(ip.get('channel_index', 0), []).append(sp)
+            panels = []
+            for ch in sorted(by_channel):
+                group = by_channel[ch]
+                ip = group[0].metadata.get('import_parameters', {})
+                kind = {'CD': 'CD [mdeg]', 'HT': 'HT [V]', 'Abs': 'Absorbance [AU]'}.get(
+                    ip.get('channel_type'), 'Signal')
+                temps = [sp.metadata.get('temperature_C') for sp in group]
+                title = f"Channel {ch + 1}: {kind}"
+                if len(group) > 1 and None not in temps:
+                    title += f"  ({len(group)} temperatures, {min(temps):.0f}–{max(temps):.0f} °C, blue→red)"
+                panels.append((title, [(sp.x_scale, sp.y_scale, label_of(sp)) for sp in group],
+                               len(group) > 1))
+            return panels, ''
+        shown = min(n, _SpectraPreviewCanvas.MAX_LINES)
+        title = f"{n} spectr{'um' if n == 1 else 'a'}" + (f" (showing {shown})" if n > shown else "")
+        lines = [(sp.x_scale, sp.y_scale, label_of(sp)) for sp in spectra]
+        return [(title, lines, False)], "What Import will read with the settings above"
 
     def _show_help(self):
         """Open the help page in the user's browser."""

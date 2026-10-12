@@ -75,13 +75,23 @@
 # recoverable from 3 samples alone). Instead, channel identity is inferred
 # from each channel's own value range, which is highly discriminating in
 # practice for these three quantities:
-#   CD [mdeg]   — straddles zero (min < 0 < max); typically small
-#                 magnitude (roughly -100..100 for real samples).
-#   HT [V]      — always positive; large magnitude (typically 100s,
+#   HT [V]      — never negative; large (typically hundreds of volts,
 #                 confirmed 275-973 V in the sample file that has it).
-#   Absorbance  — always positive; small magnitude (confirmed 0.7-5.5 AU
-#                 across all 3 samples that carry it — every one of them,
-#                 in fact, suggesting Abs is very commonly co-recorded).
+#   CD [mdeg]   — usually has both positive and negative bands; values
+#                 typically up to tens of mdeg (roughly -100..100).
+#   Absorbance  — never clearly negative; small (confirmed 0.7-5.5 AU
+#                 across all samples that carry it; usually below ~2
+#                 after blank subtraction, but the raw JASCO channel
+#                 carries an offset of about 1).
+# Rules, in order (see _classify_channel):
+#   no negative values and >= 50            -> HT
+#   clearly negative values (min < -0.5),
+#     or both signs and smaller than 50     -> CD
+#   no clearly negative values and <= 8     -> Absorbance
+#   positive only, between 8 and 50         -> CD (too large for absorbance)
+#   anything else                           -> Signal
+# The one genuinely ambiguous case: a CD spectrum that is positive
+# everywhere AND stays below 8 mdeg looks exactly like absorbance.
 # This is a heuristic, not a guaranteed-correct decode — which is exactly
 # why the import dialog surfaces the guessed label for each channel with
 # an editable override rather than silently trusting it (see
@@ -92,6 +102,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+from src.modules.data_io.cd_quality import build_quality, pick_reference_channel
 from src.modules.utils.app_logger import get_logger
 
 logger = get_logger(__name__)
@@ -114,7 +125,8 @@ _DI_OFF_X_END = 32
 # so real, noisier data still classifies sensibly; the import dialog lets
 # the user correct a wrong guess regardless.
 _HT_MIN_MAGNITUDE = 50.0     # HT[V] is always well above this
-_ABS_MAX_MAGNITUDE = 15.0    # Absorbance stays well below this
+_ABS_MAX_MAGNITUDE = 8.0     # Absorbance stays below this (seen up to 5.5)
+_CLEARLY_NEGATIVE = -0.5     # Abs/HT never go below this; CD does
 
 
 # ---------------------------------------------------------------------------
@@ -282,17 +294,37 @@ def _classify_channel(y: np.ndarray) -> str:
     something (never raises); ambiguous ranges fall back to 'Signal'."""
     y_min, y_max = float(np.nanmin(y)), float(np.nanmax(y))
     max_abs = max(abs(y_min), abs(y_max))
-    if y_min < 0 < y_max and max_abs < _HT_MIN_MAGNITUDE:
-        return 'CD'
     if y_min >= 0 and max_abs >= _HT_MIN_MAGNITUDE:
         return 'HT'
-    if y_min >= -0.5 and max_abs <= _ABS_MAX_MAGNITUDE:
+    if y_min < _CLEARLY_NEGATIVE:
+        return 'CD'                    # absorbance and HT are never clearly negative
+    if y_min < 0 < y_max and max_abs < _HT_MIN_MAGNITUDE:
+        return 'CD'
+    if max_abs <= _ABS_MAX_MAGNITUDE:
         return 'Abs'
+    if y_min >= _CLEARLY_NEGATIVE and y_max < _HT_MIN_MAGNITUDE:
+        return 'CD'                    # positive only, but too large for absorbance
     return 'Signal'
 
 
 _CHANNEL_UNITS = {'CD': 'mdeg', 'HT': 'V', 'Abs': 'AU', 'Signal': ''}
 _CHANNEL_DISPLAY = {'CD': 'CD [mdeg]', 'HT': 'HT [V]', 'Abs': 'Absorbance [AU]', 'Signal': 'Signal'}
+
+
+def _channel_display_names(types: Dict[int, str], indices) -> Dict[int, str]:
+    """Display name per selected channel, e.g. 'CD [mdeg]'. When the user
+    gives two selected channels the same type (e.g. both 'CD'), each gets
+    its channel number ('CD [mdeg] ch2') so their spectra get distinct,
+    recognisable names instead of an automatic ' (2)' suffix."""
+    indices = list(indices)
+    counts: Dict[str, int] = {}
+    for i in indices:
+        counts[types[i]] = counts.get(types[i], 0) + 1
+    names = {}
+    for i in indices:
+        name = _CHANNEL_DISPLAY.get(types[i], types[i])
+        names[i] = f"{name} ch{i + 1}" if counts[types[i]] > 1 else name
+    return names
 
 
 def probe_jws_channels(filepath: str) -> Dict:
@@ -426,11 +458,18 @@ def read_jws_data(
     except OSError:
         file_ctime = file_mtime = ''
 
+    # CD data quality is judged by the HT or absorbance channel of the same
+    # scan, also when only the CD channel is imported (see cd_quality.py).
+    all_types = {j: channel_type_overrides.get(j) or _classify_channel(all_y[j])
+                 for j in range(n_channels)}
+    reference = pick_reference_channel(all_types)
+    display_names = _channel_display_names(all_types, indices)
+
     spectra: List[Dict] = []
     for i in indices:
         y = all_y[i].astype(float)
-        ctype = channel_type_overrides.get(i) or _classify_channel(all_y[i])
-        display = _CHANNEL_DISPLAY.get(ctype, ctype)
+        ctype = all_types[i]
+        display = display_names[i]
         label = f"{base_name} : {display}"
         spectra.append({
             'label': label,
@@ -451,6 +490,10 @@ def read_jws_data(
                 },
             },
         })
+        if ctype == 'CD' and reference is not None:
+            ref_i, ref_type = reference
+            spectra[-1]['metadata']['cd_quality'] = build_quality(
+                x_scale, all_y[ref_i], ref_type, ref_i)
 
     logger.info(
         "Created %d spectra from JASCO .jws file %s (%d channel(s) available, %d selected)",
@@ -627,10 +670,15 @@ def read_jwb_data(
     except OSError:
         file_ctime = file_mtime = ''
 
+    all_types = {j: channel_type_overrides.get(j) or _classify_channel(d['y'][j])
+                 for j in range(n_channels)}
+    reference = pick_reference_channel(all_types)   # see read_jws_data
+    display_names = _channel_display_names(all_types, indices)
+
     spectra: List[Dict] = []
     for i in indices:
-        ctype = channel_type_overrides.get(i) or _classify_channel(d['y'][i])
-        display = _CHANNEL_DISPLAY.get(ctype, ctype)
+        ctype = all_types[i]
+        display = display_names[i]
         seen: Dict[str, int] = {}
         for k in range(n_spectra):
             label = f"{base_name} : {display} T={temperatures[k]:.2f}C"
@@ -662,6 +710,10 @@ def read_jwb_data(
                     },
                 },
             })
+            if ctype == 'CD' and reference is not None:
+                ref_i, ref_type = reference
+                spectra[-1]['metadata']['cd_quality'] = build_quality(
+                    x_scale, d['y'][ref_i, k], ref_type, ref_i)
 
     logger.info(
         "Created %d spectra from JASCO .jwb file %s (%d temperature(s), %d of %d channel(s) selected)",

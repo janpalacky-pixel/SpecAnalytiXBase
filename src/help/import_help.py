@@ -432,17 +432,31 @@ def get_import_help_content():
         that also carries HT.
     </p>
     <div class="warning">
-        JWS does not store a channel-type label anywhere recoverable from
-        the file — the <b>Type</b> shown is this app's own guess, based on
-        each channel's value range (CD straddles zero and stays small; HT
-        is always positive and large, typically hundreds of volts;
-        Absorbance is always positive and small). This is reliable in
-        every sample file tested, but it <i>is</i> a guess rather than
-        something read directly from the file, so double-check it for
-        unusual data — a CD spectrum with an unusually large positive
-        offset, for instance, could conceivably be misread as Absorbance.
-        The <b>Type</b> column is an editable dropdown for exactly this
-        reason: correct it there if it looks wrong, before clicking Import.
+        <b>The Type is a guess.</b> A JWS/JWB file does not say which channel
+        is CD, HT or absorbance (or at least not in a way that could be
+        decoded), so the program guesses from each channel's values &mdash;
+        the import dialog marks the column <b>Type (guessed)</b>:
+        <ul>
+            <li><b>HT</b>: never negative and large &mdash; hundreds of volts.
+            Easy to recognize.</li>
+            <li><b>CD</b>: usually has both positive and negative bands, and is
+            often larger than absorbance (tens of mdeg). Anything clearly
+            negative is taken as CD, because absorbance and HT never are.</li>
+            <li><b>Absorbance</b>: positive and small &mdash; up to about 5
+            (usually below 2 after subtracting the blank).</li>
+            <li>A positive-only channel larger than 8 is taken as CD: it is too
+            large to be absorbance.</li>
+        </ul>
+        The one case the values cannot settle: a CD spectrum that is
+        <b>positive at every wavelength and stays below about 8&nbsp;mdeg</b>
+        looks exactly like absorbance and will be guessed as absorbance. The
+        <b>Preview</b> shows each channel's values and a plot of it, so a wrong
+        guess is easy to spot; the <b>Type</b> column is a dropdown &mdash;
+        correct it there before clicking Import. Changing the Type only
+        <i>renames</i> a channel &mdash; the numbers stay the same &mdash; so the
+        dialog warns (⚠) when a chosen Type does not fit the values, and when two
+        ticked channels get the same Type (they are then named
+        <i>&hellip; ch1</i>, <i>&hellip; ch2</i> so they stay apart).
     </div>
     <p>
         No other settings apply to JWS files — no delimiter, decimal,
@@ -514,9 +528,10 @@ def get_import_help_content():
             like every import, the spectra are re-sorted into ascending order on the
             way in.</li>
             <li>CD of a sample in buffer is usually mostly noise at the shortest
-            wavelengths of a scan (the detector voltage is high there). Crop the range
-            afterwards with the <b>Data Range</b> operation if it disturbs your
-            analysis.</li>
+            wavelengths of a scan (the detector voltage is high there). Those
+            wavelengths are marked automatically &mdash; see <b>CD Data Quality</b>
+            below. Crop the range afterwards with the <b>Data Range</b> operation if
+            it disturbs your analysis.</li>
             <li>No delimiter, decimal, header, Layout or Zero Padding settings apply
             &mdash; spectra are named by temperature, not numbered.</li>
         </ul>
@@ -528,6 +543,65 @@ def get_import_help_content():
         melting (JASCO .jwb)</b> &mdash; two heating runs and one cooling run.
         Open one, keep only <b>CD [mdeg]</b>, then run <b>Melting Curve
         Analysis</b>: it reads each spectrum's temperature from its name.
+    </p>
+
+    <h2 id="cd-quality">CD Data Quality (Unreliable Wavelengths)</h2>
+    <p>
+        A CD spectrometer measures a tiny difference between two kinds of
+        polarized light. Where the sample, buffer and cell together absorb almost
+        all of the light, the detector gets too little of it: it raises its
+        <b>HT voltage</b> to compensate, and the CD values become mostly noise
+        &mdash; sometimes noise that looks like a real band. Instrument guides
+        therefore advise not to trust CD where the HT voltage is above about
+        600&ndash;700&nbsp;V, or where the total absorbance is above about 1
+        (ideal) to 2.
+    </p>
+    <p>
+        JASCO <code>.jws</code> and <code>.jwb</code> files usually store such a
+        channel next to the CD channel. SpecAnalytiXBase uses it to mark the
+        unreliable wavelengths of every CD spectrum &mdash; <b>also when you import
+        only the CD channel</b>:
+    </p>
+    <ul>
+        <li>with an <b>HT</b> channel: unreliable where HT is above <b>700&nbsp;V</b>;</li>
+        <li>otherwise, with an <b>Absorbance</b> channel: where absorbance is above
+        <b>3.0</b>.</li>
+    </ul>
+    <p>
+        Each temperature of a melting scan is judged by its own HT/absorbance
+        values. The <b>Import Results</b> message tells you which wavelengths are
+        affected, and the main plot (and <i>Open in New Window</i>) shades them
+        light grey with the note <i>CD unreliable (too little light)</i>. Nothing
+        is removed or changed &mdash; the decision stays yours; the <b>Data
+        Range</b> operation can cut the region off.
+    </p>
+    <p>
+        <b>View &rarr; CD data quality</b> switches the shading on or off and lets
+        you change both limits (remembered between sessions). The change applies
+        immediately, also to spectra already loaded. The information is kept in
+        snapshots and follows <b>X-axis Unit Conversion</b> (e.g. nm &rarr;
+        cm<sup>&minus;1</sup>).
+    </p>
+    <div class="note">
+        <b>Why 3.0 and not the textbook 1.0?</b> The absorbance channel a JASCO
+        instrument records is not measured against a blank and carries an offset
+        of roughly 1: even pure buffer reads about 0.9 at 320&nbsp;nm, and the
+        bundled sample files read about 1.1 at 450&ndash;480&nbsp;nm, where nothing
+        absorbs. With a limit of 1.0 every wavelength would be flagged. With 3.0,
+        typically the region below about 220&ndash;240&nbsp;nm is marked, which
+        matches practical experience. The default is deliberately lenient; if
+        your instrument's absorbance channel starts near zero, or you want to be
+        stricter, lower it (1.0&ndash;2.0) in the Limits window. The limit is a
+        guide, not a law.
+        <br><br>
+        <b>Blank not subtracted &mdash; on purpose.</b> For your absorbance
+        <i>results</i> you subtract the buffer blank. For this check you must
+        not: the detector is starved by everything in the light path, buffer and
+        cell included, so the raw value is the right one.
+    </div>
+    <p>
+        Files without an HT or absorbance channel, and spectra from other formats,
+        are not marked (the import message says so for JASCO files).
     </p>
 
     <h2>MAT Files (WITec/Project FIVE Hyperspectral Maps)</h2>
@@ -1388,6 +1462,27 @@ spectrum_B    5.5      6.6      7.7      8.8
             header row at all, columns show generic <code>x</code>,
             <code>y1</code>, <code>y2</code>, &hellip; names (<code>x</code>
             / <code>y</code> pairs for interlaced).</li>
+    </ul>
+
+    <h2 id="plot-preview">The Plot Preview</h2>
+    <p>
+        Next to the Preview table, <b>Plot spectra</b> draws the spectra
+        <b>exactly as Import would read them with the current settings</b> (up
+        to 30 of them, spread evenly over the file). It redraws a moment after
+        you change any setting, so a wrong layout, header or decimal separator
+        shows up at once as a strange or empty plot, or as a short message
+        explaining that the settings do not give readable spectra.
+    </p>
+    <ul>
+        <li><b>JASCO .jws/.jwb</b>: one panel per ticked channel (CD, HT and
+        absorbance have different units); a temperature scan shows every
+        temperature from blue (coldest) to red (hottest). The table on the left
+        lists the values of every channel at wavelengths spread over the whole
+        range, with column titles that follow the Type you choose.</li>
+        <li><b>Large files</b> (over 25&nbsp;MB) are not read automatically on
+        every change; click <b>Draw plot</b> when you want the plot.</li>
+        <li>Untick <b>Plot spectra</b> to hide the plot; the choice is
+        remembered.</li>
     </ul>
 
     <h2>Detection Summary Line</h2>

@@ -51,6 +51,7 @@ exactly mirroring the same fix already applied once, centrally, at
 import time.
 """
 import numpy as np
+from src.modules.data_io.cd_quality import convert_quality_x
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.correction_history import append_correction_history
 from src.modules.utils.progress_utils import notify_progress
@@ -263,6 +264,12 @@ class XAxisUnitConversionManager:
             converted['metadata']['correction_history'] = append_correction_history(
                 spectrum.get('metadata'), 'X-axis Unit Conversion', info
             )
+            # The CD data-quality trace shares the spectrum's x axis, so it
+            # is converted along with it (see cd_quality.py).
+            if 'cd_quality' in converted['metadata']:
+                converted['metadata']['cd_quality'] = convert_quality_x(
+                    converted['metadata']['cd_quality'], self.convert_x_values,
+                    UNIT_SHORT.get(self.to_unit, str(self.to_unit)))
 
             converted_spectra.append(converted)
 

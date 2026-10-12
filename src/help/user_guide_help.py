@@ -2123,6 +2123,15 @@ def get_user_guide_help_content():
             <li>Normalise at absorption maxima or by concentration</li>
         </ul></div>
 
+        <h3>CD (Circular Dichroism)</h3>
+        <div class="info"><ul>
+            <li>Wavelengths where the detector got too little light (high HT voltage
+            or absorbance) are shaded grey after importing JASCO .jws/.jwb files:
+            CD there is unreliable. Limits and on/off: <b>View → CD data quality</b>
+            (details in the Import help, section <i>CD Data Quality</i>)</li>
+            <li>Convert mdeg to molar ellipticity with CD Unit Conversion</li>
+        </ul></div>
+
         <h3>NIR</h3>
         <div class="info"><ul>
             <li>Apply SNV or MSC normalisation for scatter correction</li>

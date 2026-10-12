@@ -172,18 +172,26 @@ def create_external_figure(mc):
         except Exception:
             pass
 
-    # Detach from the temporary widget's layout and re-show via pyplot
+    # Detach from the temporary widget and show the SAME figure in a new
+    # pyplot window. (The older approach -- creating an empty pyplot figure
+    # and moving the axes into it with ax.figure = new_fig -- is refused by
+    # current matplotlib: "Can not put single artist in more than one
+    # figure".) Instead an empty pyplot window is created and our figure is
+    # attached to its canvas; the figure, its axes and every artist stay
+    # where they are, so nothing has to be moved.
     figure_count = len(plt.get_fignums()) + 1
+    holder = plt.figure(figsize=fig.get_size_inches())
+    new_manager = holder.canvas.manager
+    new_canvas = holder.canvas
+    new_canvas.figure = fig
+    fig.set_canvas(new_canvas)
+    new_fig = fig
 
-    # Create a new pyplot-managed figure and copy our axes into it
-    new_fig = plt.figure(figsize=fig.get_size_inches())
-    new_manager = new_fig.canvas.manager
-
-    # Transfer axes
-    for ax in fig.get_axes():
-        ax.figure = new_fig
-        new_fig.add_axes(ax)
-    new_fig.set_facecolor(fig.get_facecolor())
+    # CD quality shading (grey "too little light" regions), as in the main
+    # window.
+    cd_quality = getattr(mc, 'cd_quality_controller', None)
+    if cd_quality is not None:
+        cd_quality.decorate(new_fig, spectra, plot_type)
 
     # Set window title
     title = f'Figure {figure_count}: {plot_type}'

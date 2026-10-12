@@ -7,6 +7,8 @@ from src.views.dialogs.misc.import_dialog import ImportDialog
 from typing import Optional
 import os
 
+from src.modules.data_io.import_settings import (
+    load_file_with_settings, settings_for_sheet, sheets_to_read)
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
 
@@ -194,40 +196,20 @@ class ImportController(QObject):
                 # one-element list holding the single chosen sheet (or None,
                 # meaning auto-select), so the single-sheet path is completely
                 # unchanged.
-                sheets = settings.get('sheet_names') or [settings.get('sheet_name')]
+                sheets = sheets_to_read(settings)
                 multi = len(sheets) > 1
                 # Each sheet carries its OWN settings when several are imported
                 # at once (different sheets are usually different tables — a
                 # different layout, different columns to exclude, a different
                 # header row). Falls back to the shared settings for a single
                 # sheet, so nothing changes for the ordinary case.
-                per_sheet = settings.get('sheet_settings') or {}
-
                 for sheet in sheets:
-                    cfg = per_sheet.get(sheet, settings)
+                    cfg = settings_for_sheet(settings, sheet)
                     before = set(work_manager.spectra.keys())
-                    work_manager.load_spectrum_from_file(
-                        file_path,
-                        delimiter         = cfg.get('delimiter'),
-                        decimal_separator = cfg.get('decimal_separator'),
-                        header            = cfg.get('header'),
-                        zero_padding      = cfg.get('zero_padding', 4),
-                        analyze_rows      = cfg.get('analyze_rows', 20),
-                        interlaced_format = cfg.get('interlaced_format', False),
-                        row_oriented      = cfg.get('row_oriented', False),
-                        header_threshold  = cfg.get('header_threshold', 0.5),
-                        label_column      = cfg.get('label_column'),
-                        x_scale_column    = cfg.get('x_scale_column'),
-                        exclude_columns   = cfg.get('exclude_columns'),
-                        sheet_name        = sheet,
-                        header_row        = cfg.get('header_row'),
-                        index_x           = cfg.get('index_x', False),
-                        spe_use_calibration = cfg.get('spe_use_calibration', False),
-                        jws_selected_channels = cfg.get('jws_selected_channels'),
-                        jws_channel_type_overrides = cfg.get('jws_channel_type_overrides'),
-                        specord_csv_format = cfg.get('specord_csv_format', False),
-                        duplicate_block_resolver = self._resolve_duplicate_block,
-                        unknown_extension_resolver = self._resolve_unknown_extension,
+                    load_file_with_settings(
+                        work_manager, file_path, cfg, sheet,
+                        duplicate_block_resolver=self._resolve_duplicate_block,
+                        unknown_extension_resolver=self._resolve_unknown_extension,
                     )
                     if multi:
                         # Labels are built as "<file> : <column>", so two sheets
@@ -518,6 +500,21 @@ class ImportController(QObject):
     # Feedback dialog
     # ------------------------------------------------------------------
 
+    def _cd_quality_note(self, successful_imports: list):
+        """Paragraph about unreliable CD wavelengths (detector got too
+        little light), or None -- see src/modules/data_io/cd_quality.py.
+        Never lets a problem here spoil the import message."""
+        try:
+            from src.modules.data_io.cd_quality import import_summary
+            from src.modules.misc.session_files import Preferences
+            ht_limit, abs_limit = Preferences().cd_quality_limits()
+            metas = [sp.metadata for sp in self.spectrum_manager.spectra.values()
+                     if sp.metadata.get('file_path') in successful_imports]
+            return import_summary(metas, ht_limit, abs_limit)
+        except Exception:
+            logger.exception("CD data quality summary failed")
+            return None
+
     def _show_import_feedback(self, successful_imports: list, failed_imports: list) -> None:
         parts = []
 
@@ -604,6 +601,10 @@ class ImportController(QObject):
                     f"repeated-scan data into separate spectra, per your choice "
                     f"in the import dialog."
                 )
+
+            cd_note = self._cd_quality_note(successful_imports)
+            if cd_note:
+                parts.append(cd_note)
 
         if failed_imports:
             n_fail = len(failed_imports)

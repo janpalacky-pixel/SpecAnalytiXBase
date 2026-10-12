@@ -3162,7 +3162,7 @@ spectra_added = pyqtSignal(object)
 # Digit run, optionally signed — but the '-' only counts as a sign when
 # it's NOT glued onto a preceding letter/digit (distinguishes a real
 # negative value from a "sample-1" style separator hyphen).
-_NATSORT_CHUNK_RE = re.compile(r'((?&lt;![A-Za-z0-9])-?\d+)')
+_NATSORT_CHUNK_RE = re.compile(r'((?&lt;![A-Za-z0-9])-?\\d+)')
 
 @classmethod
 def _natural_sort_key(cls, label):
@@ -3286,6 +3286,36 @@ def _natural_sort_key(cls, label):
             the tests do) writes nothing and asks nothing.</li>
             <li>Snapshot saves (File &rarr; Save, automatic saves) are now written atomically
             (<code>json_store.write_bytes_atomic</code>).</li>
+        </ul>
+
+        <h2 id="cd-quality-design">CD Data Quality: Store the Evidence, Not the Verdict</h2>
+        <p>
+        <code>src/modules/data_io/cd_quality.py</code> (rule, Qt-free),
+        <code>src/modules/visualization/cd_quality_shading.py</code> (drawing) and
+        <code>src/controllers/visualization/cd_quality_controller.py</code> (View menu,
+        limits). The JASCO readers attach <code>metadata['cd_quality']</code> to every CD
+        spectrum: the HT (preferred) or Abs trace of the same scan/temperature with its
+        own x axis, as plain lists.
+        </p>
+        <ul>
+            <li><b>The trace is stored, not yes/no flags</b>, so changing a limit takes effect
+            at once for loaded spectra and snapshots, without re-importing.</li>
+            <li><b>Its own x axis</b> keeps it valid after cropping, smoothing or
+            interpolating the spectrum; only operations that change the <i>meaning</i> of x
+            must convert it (X-axis Unit Conversion does, via
+            <code>convert_quality_x</code>). A new x-transforming operation should do the
+            same.</li>
+            <li><b>Shading is drawn after the plot is finished</b>
+            (<code>_plot_spectra_impl</code> and <code>external_figure</code> call
+            <code>cd_quality_controller.decorate</code>), restores the axis limits, never
+            appears in the legend, and is wrapped so a failure can only lose the shading,
+            never the plot. Grid plot: panel i = spectrum i; other modes: one axes.</li>
+            <li><b>Defaults</b>: HT 700 V; Abs 3.0 rather than the textbook 1.0 because the
+            JASCO Abs channel is not blank-referenced (offset ≈1: buffer blank ≈0.9 at
+            320 nm, sample files ≈1.1 at 480 nm) and the user's lab experience puts the
+            trouble below 220&ndash;230 nm. Raw, not blank-subtracted, Abs is used: the
+            detector is starved by buffer and cell too.
+            Tests: <code>tests/test_cd_data_quality.py</code>.</li>
         </ul>
 
         <h2 id="redraw-after-operation">Interactive Update Must Survive Apply / Add as New</h2>

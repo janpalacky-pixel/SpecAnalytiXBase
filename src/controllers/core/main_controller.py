@@ -24,6 +24,7 @@ from src.controllers.visualization.axis_properties_controller import AxisPropert
 from src.controllers.visualization.custom_plot_properties_controller import CustomPlotPropertiesController
 from src.modules.visualization.plotting import grid_plot_mode, overlay_plot_mode, waterfall_plot_mode, mean_sd_plot_mode, difference_plot_mode, heatmap_plot_mode
 from src.modules.visualization.band_marker_manager import BandMarkerManager
+from src.controllers.visualization.cd_quality_controller import CDQualityController
 # from src.modules.resource_path import resource_path
 from src.modules.visualization.custom_plot_properties_manager import CustomPlotPropertiesManager
 from src.controllers.visualization.legend_properties_controller import LegendPropertiesController
@@ -175,6 +176,7 @@ class MainController(QMainWindow):
         # shown (so creating a MainController -- e.g. in tests -- never
         # writes session files or asks the recovery question).
         self.autosave_controller = AutosaveController(self)
+        self.cd_quality_controller = CDQualityController(self)
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
         self.peak_detection_controller = PeakDetectionController(self)
@@ -2017,6 +2019,7 @@ class MainController(QMainWindow):
     
         # Create a copy of selected spectra to avoid modifying original data
         plot_spectra = self.selected_spectra.copy()
+        plotted = plot_spectra      # what ends up in the figure (CD quality shading)
         
         plot_settings = self.custom_plot_properties_manager.spectrum_properties
         use_automatic_line_colors = self.use_automatic_line_colors
@@ -2158,6 +2161,7 @@ class MainController(QMainWindow):
                 
                 # Create a list with just the single selected spectrum
                 single_spectrum = [self.original_spectra[selected_index]]
+                plotted = single_spectrum
 
                 # Plot the single spectrum
                 self.static_canvas, self.static_toolbar = overlay_plot_mode(plot_widget,
@@ -2174,6 +2178,12 @@ class MainController(QMainWindow):
                                                                             band_marker_manager=self.band_marker_manager,
                                                                             display_labels=display_labels,
                                                                             )
+
+        # Grey shading where CD is unreliable (see cd_quality.py)
+        cd_quality = getattr(self, 'cd_quality_controller', None)
+        if cd_quality is not None and getattr(self, 'static_canvas', None) is not None:
+            if cd_quality.decorate(self.static_canvas.figure, plotted, plot_type):
+                self.static_canvas.draw_idle()
 
         # Set up the context menu for the canvas
         self.static_canvas.mpl_connect('button_press_event', self.handle_mouse_click)  
