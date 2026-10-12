@@ -1936,6 +1936,34 @@ def get_user_guide_help_content():
                 crashed one.</li>
         </ul>
 
+        <h3 id="methods-report">Methods Report for Publications</h3>
+        <p><strong>File → Methods report for publication…</strong> writes a readable
+        description of everything that was done to the spectra, ready to adapt for the
+        Methods section of a paper, for example: <em>"The baseline was estimated and
+        subtracted by asymmetrically reweighted penalized least squares (arPLS) [2] with
+        λ = 10⁵ and at most 50 iterations. The spectra were smoothed with a
+        Savitzky–Golay filter [3, 4] (window 11 points, polynomial order 3)."</em></p>
+        <ul>
+            <li>It describes the steps in the <strong>Operations History up to the active
+                step</strong> &mdash; exactly the processing behind the spectra shown now.
+                Go back in the history first if you want an earlier state described.</li>
+            <li>Treat it as a <strong>template</strong>: the text, the parameter table and
+                the references can all be edited, and the result is generated
+                automatically, so read it and adapt it before use.</li>
+            <li><strong>Text</strong> tab: the paragraph. <strong>Parameters</strong> tab:
+                every step with its settings and how many spectra it was applied to.
+                <strong>References</strong> tab: the original publications of the methods
+                used, numbered in the order they are cited, plus the software itself.</li>
+            <li>Tick whether the <strong>parameter table</strong> and the
+                <strong>references</strong> go with the text; <strong>Copy</strong> keeps
+                the table as a table when pasted into Word; <strong>Save…</strong> writes a
+                Word document (.docx), HTML, Markdown or plain text.</li>
+            <li>Your edits are kept if you close the window, for the rest of the session;
+                <strong>Restore generated draft</strong> brings back the automatic version.</li>
+            <li>The <strong>Help</strong> button in the window explains everything in
+                detail, with typical edits.</li>
+        </ul>
+
         <div class="info">
             <strong>Snapshot files are compressed automatically.</strong> A
             <strong>.snapx</strong> file stores your data losslessly &mdash;

@@ -177,6 +177,7 @@ class MainController(QMainWindow):
         # writes session files or asks the recovery question).
         self.autosave_controller = AutosaveController(self)
         self.cd_quality_controller = CDQualityController(self)
+        self._add_methods_report_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
         self.peak_detection_controller = PeakDetectionController(self)
@@ -1797,6 +1798,46 @@ class MainController(QMainWindow):
         Developer Guide's licensing-intent section."""
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'license')
+
+    def _add_methods_report_action(self):
+        """File -> Methods report for publication (after Save)."""
+        from PyQt5.QtWidgets import QAction
+        action = QAction("Methods report for publication…", self.view)
+        action.setObjectName("actionMethodsReport")
+        action.setToolTip("Describe the processing applied to the spectra, with parameters "
+                          "and references, for a paper's Methods section.")
+        action.triggered.connect(self.show_methods_report)
+        menu = self.view.menuFile
+        actions = menu.actions()
+        save = getattr(self.view, 'actionSave', None)
+        if save in actions and actions.index(save) + 1 < len(actions):
+            menu.insertAction(actions[actions.index(save) + 1], action)
+        else:
+            menu.addAction(action)
+        self.view.actionMethodsReport = action
+
+    def show_methods_report(self):
+        from src.modules.misc.methods_report import report_for_main_controller
+        from src.views.dialogs.misc.methods_report_dialog import MethodsReportDialog
+        try:
+            report = report_for_main_controller(self)
+        except Exception:
+            logger.exception("Methods report failed")
+            QMessageBox.warning(self.view, "Methods report",
+                                "The report could not be created; details are in the log.")
+            return
+        import os
+        start_dir = ''
+        for s in getattr(self, 'original_spectra', None) or []:
+            fp = (s.get('metadata') or {}).get('file_path')
+            if fp and os.path.isdir(os.path.dirname(fp)):
+                start_dir = os.path.dirname(fp)
+                break
+        # Edits made in the report window are kept here for the rest of the
+        # session, so closing the window (even by accident) loses nothing.
+        if not hasattr(self, '_methods_report_draft'):
+            self._methods_report_draft = {}
+        MethodsReportDialog(report, self.view, start_dir, self._methods_report_draft).exec_()
 
     def show_about_dialog(self):
         """Help > About: app version, source-vs-installed, and the Python /

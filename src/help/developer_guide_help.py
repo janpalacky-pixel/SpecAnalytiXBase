@@ -3259,6 +3259,33 @@ def _natural_sort_key(cls, label):
         but not where it can hide a wrong result or lost data &mdash; there, log a warning with
         <code>exc_info=True</code>.</p>
 
+        <h2 id="methods-report-design">Methods Report: Every New Operation Needs a Sentence</h2>
+        <p>
+        <code>src/modules/misc/methods_report.py</code> (Qt-free) turns
+        <code>IncrementalOperationsManager.operations_chain</code> up to
+        <code>active_operation_index</code> into a Methods paragraph, a parameter table and a
+        numbered reference list; <code>src/views/dialogs/misc/methods_report_dialog.py</code>
+        shows it (File menu). Each operation type has a describer in <code>_DESCRIBERS</code>
+        that receives the exact settings dict passed to <code>apply_operation()</code>.
+        </p>
+        <ul>
+            <li><b>Adding an operation:</b> add a describer (sentence with <code>{ref:key}</code>
+            markers + table rows) and its references to <code>REFERENCES</code>.
+            <code>tests/test_methods_report.py</code> scans every
+            <code>apply_operation('...')</code> call in <code>src/controllers</code> and fails
+            if a type has neither a describer nor a place on its deliberate generic list.</li>
+            <li><b>Robust by design:</b> an unknown type, or a describer raising on an odd
+            settings dict, falls back to a generic sentence listing the simple settings &mdash;
+            the report never fails because of one record.</li>
+            <li>Settings that only steer the user interface (legend, plot toggles, worker
+            count) are listed in <code>_UI_ONLY_KEYS</code> and left out of the table.</li>
+            <li><b>Export</b> goes through <code>ExportContent</code> (the edited text, table and
+            references plus the two include flags). Word files are written by
+            <code>src/modules/misc/simple_docx.py</code> directly as Office Open XML, so no
+            new dependency (python-docx would also need its template files bundled by
+            PyInstaller). The test opens the file with python-docx when available.</li>
+        </ul>
+
         <h2 id="autosave-design">Automatic Saving, Crash Recovery and Open Recent</h2>
         <p><code>src/modules/misc/session_files.py</code> (no Qt) +
         <code>src/controllers/misc/autosave_controller.py</code> (timer, menus, the

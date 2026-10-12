@@ -47,6 +47,7 @@ _REGISTRY = {
     # Data import / export
     'import':                 ('src.help.import_help', 'get_import_help_title', 'get_import_help_content'),
     'save':                   ('src.help.save_help', 'get_save_help_title', 'get_save_help_content'),
+    'methods_report':         ('src.help.methods_report_help', 'get_methods_report_help_title', 'get_methods_report_help_content'),
 
     # Spectra Processing
     'data_range':             ('src.help.data_range_help', 'get_data_range_help_title', 'get_data_range_help_content'),
@@ -212,6 +213,7 @@ def _declare_help_modules_for_bundlers():
     import src.help.mcr_als_help  # noqa: F401
     import src.help.mean_centering_help  # noqa: F401
     import src.help.melting_curve_help  # noqa: F401
+    import src.help.methods_report_help  # noqa: F401
     import src.help.nmf_help  # noqa: F401
     import src.help.normalization_help  # noqa: F401
     import src.help.pca_scores_help  # noqa: F401
