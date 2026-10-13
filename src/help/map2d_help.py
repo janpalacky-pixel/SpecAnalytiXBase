@@ -48,6 +48,7 @@ _SCREENSHOT_FILES = {
     "PEAK_FIT_SETTINGS":   "peak_fit_settings.png",
     "PEAK_FIT_MAP":        "peak_fit_map_result.png",
     "PEAK_FIT_PIXEL":      "peak_fit_pixel_fit.png",
+    "PEAK_FIT_TWO_BANDS":  "peak_fit_two_bands.png",
 }
 
 # Screenshots shown only once the file exists, so a newly documented
@@ -62,6 +63,10 @@ _OPTIONAL_FIGURES = {
     "PEAK_FIT_PIXEL":    ("Fitted band of one pixel",
                           "Clicking a pixel shows its spectrum zoomed to the band, with the fitted "
                           "curve, the background and the fit's centre, FWHM and R²."),
+    "PEAK_FIT_TWO_BANDS": ("Fits of Band A and Band B in Map arithmetic",
+                           "Map arithmetic with a Fitted metric: clicking a pixel shows the fit "
+                           "of Band A (dark blue) and of Band B (dark red), each with its dashed "
+                           "background, and both results in the legend."),
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -284,6 +289,12 @@ panel to see the whole spectrum with the band range shaded instead (the same che
 the SVD/PCA/NMF/MCR-ALS modes); untick it to zoom back to the band.</p>
 $PEAK_FIT_MAP_FIGURE
 $PEAK_FIT_PIXEL_FIGURE
+<p><b>Starting the fit.</b> As for SVD, PCA, NMF and MCR-ALS, the fitting runs only when you
+press <b>Update Map</b> (it can take a while on a large map). Choosing a Fitted metric, changing
+the band (Configure Band…), the Fit settings, the map size or the map type does not start it: the map shows
+&ldquo;press Update Map&rdquo; until you do, so you can change several things first. Switching
+between the five fitted maps afterwards is instant, because the fit is kept. (The quick metrics
+such as Integral are still recalculated at once.)</p>
 <p><b>Fit settings…</b> (next to the Metric list):</p>
 <ul>
 <li><b>Peak shape:</b> Gaussian (default; broad bands, solids), Lorentzian (narrow bands
@@ -293,22 +304,52 @@ as well).</li>
 (only for spectra that are already baseline-corrected).</li>
 <li><b>Hide fits with R² below:</b> leaves pixels with poor fits empty (no value), e.g. outside the
 cell. 0 shows every fit.</li>
+<li><b>Reject bands narrower than:</b> off (default), 2, 3 or 4 data points. A fitted band
+whose width (FWHM) is smaller than this many point spacings is a single <b>spike</b> &mdash;
+noise or a cosmic ray &mdash; not a band. Such a fit is set aside and the <b>best fit that is not
+a spike</b> is used instead (e.g. a weak broad band under a cosmic ray); only if there is none
+does the pixel get no value. 2 sets aside only one-point spikes; 3 or 4 also slightly wider
+ones. Choose a number smaller than the width of your
+narrowest real band, counted in data points.</li>
 <li><b>Processing:</b> Automatic, Serial or Parallel, as in the Automated Baseline
 correction. Automatic fits a few pixels first and uses several processes only when the
 whole map would take more than a few seconds.</li>
+<li><b>Parallel workers:</b> a slider from 1 to the number of CPU cores; the default is the
+maximum. The number and the maximum are shown next to it. An orange note appears when the
+memory free right now suits fewer workers (about 200&nbsp;MB each); you can still use more
+&mdash; if the workers run out of memory, the fitting is redone serially.</li>
 </ul>
 <p>The choices are remembered between sessions.</p>
 $PEAK_FIT_SETTINGS_FIGURE
 <div class="note"><b>Choosing the range.</b> Configure Band… so that it contains
 <b>one band and some background on both sides</b>. A neighbouring band can be removed
 with an exclude range. Pixels where the fit fails, where the fitted centre ends at the
-edge of the range (the band maximum lies outside it), or where the fitted band would be
-wider than the whole range (usually noise without a real band), get <b>no value</b>
+edge of the range (the band maximum lies outside it), where the fitted band would be
+wider than the whole range (usually noise without a real band), or &mdash; if you switched
+it on &mdash; narrower than the set number of data points (a spike) with no other
+usable fit, get <b>no value</b>
 rather than a misleading number; the map shows them <b>hatched light grey</b>.
-Clicking such a pixel shows the rejected attempt as a grey dotted line, with the reason. Overlapping bands are fitted as one; for those, look
+Clicking such a pixel shows the rejected attempt as a grey dotted line, with the reason.
+Before a pixel is given up, its fit is <b>retried from other starting points</b> (see the
+technical details), so a noisy first guess does not decide the result. Overlapping bands are fitted as one; for those, look
 at the R² map and at single pixels before interpreting the numbers.</div>
-<p>The fitted metrics also work in <b>Map arithmetic</b>, e.g. the ratio of the fitted
-areas of two bands.</p>
+<p id="peak-fit-arithmetic">The fitted metrics also work in <b>Map arithmetic</b>. Then <b>two fits</b> are made in
+every pixel &mdash; one in Band A's range, one in Band B's &mdash; and the operation combines the
+two fitted values of each pixel, for example:</p>
+<ul>
+<li><b>A / B</b> with <i>Fitted peak area</i>: the ratio of the two band areas, i.e. the relative
+amount of what the two bands stand for (e.g. lipid / protein);</li>
+<li><b>A &minus; B</b> with <i>Fitted peak position</i>: the distance between the two bands, which
+shows shifts of one band relative to the other;</li>
+<li><b>A + B</b>: e.g. the total area of two bands of the same substance;</li>
+<li><b>A &times; B</b>: rarely meaningful with fitted values; offered for completeness.</li>
+</ul>
+<p>Clicking a pixel shows <b>both fits</b> (Band A dark blue, Band B dark red, each with its
+dashed background) and both results in the legend, so you can check that each band was fitted
+sensibly before trusting the ratio. A pixel gets no value if either of its two fits is rejected.
+The map is computed only with <b>Update Map</b>, like the single-band fit. The Fit settings
+(shape, background, R² limit, spike rule) apply to both bands.</p>
+$PEAK_FIT_TWO_BANDS_FIGURE
 </div>
 
 <h3>◉ Map arithmetic</h3>
@@ -330,8 +371,14 @@ stoichiometric variations.</p>
 <tr><td><b>A × B</b></td><td>Product map.</td></tr>
 </table>
 <p>Click <b>Configure Band A…</b> and <b>Configure Band B…</b> to define
-the spectral range for each band independently. The map redraws
-automatically after configuring either band.</p>
+the spectral range for each band independently. With the quick metrics (Integral, Mean, ...)
+the map redraws automatically after configuring either band.</p>
+<div class="note"><b>With a Fitted metric</b> (Fitted peak position / FWHM / height / area /
+R²), one band is fitted in Band A's range and one in Band B's range in every pixel, and the
+operation combines the two fitted values &mdash; e.g. <b>A / B</b> of the fitted areas gives the
+ratio of two bands free of the background, <b>A &minus; B</b> of the fitted positions the distance
+between them. The map is then computed only with <b>Update Map</b>, and clicking a pixel shows
+both fits. See <a href="#peak-fit-arithmetic">Peak fitting in Map arithmetic</a>.</div>
 <p>For <b>Intensity at x</b> metric in arithmetic mode, two separate
 x-value spinboxes appear: <b>x₁ (Band A)</b> and <b>x₂ (Band B)</b>.
 No range configuration buttons are shown — point interpolation needs no range.</p>
@@ -1179,6 +1226,26 @@ deviation the starting height.</li>
 spacing (kept between 2 points and the window width).</li>
 <li>Pseudo-Voigt: &eta; starts at 0.5.</li>
 </ul>
+<h3>Retrying from other starting values</h3>
+<p>The fit searches "downhill" from its starting values and stops where no small change
+improves the match &mdash; which is not always the best fit. In a noisy pixel the largest
+deviation used as the starting peak can be a single noise point; from there the search may end
+in a nonsensical fit, e.g. a downward "band" at the window edge on a steep background, although
+an ordinary band on a gentle background matches the data better (seen on a 21&nbsp;000-pixel
+Raman map). Therefore a fit that is <b>rejected or does not converge</b> is repeated from two
+other starts: the highest and the lowest point of a <b>smoothed copy</b> of the window (a moving
+average over about a tenth of the points), so single noise points can no longer mislead the
+start. Of all fits (the first one included), the one with the <b>smallest sum of squared
+residuals</b> is kept and then judged by exactly the same rules as before. One exception: with
+<i>Reject bands narrower than</i> switched on, fits that are spikes are set aside first, because
+a fit hitting one very high point (a cosmic ray) can match the data &ldquo;best&rdquo; while
+saying nothing about the band &mdash; a weak broad band under a cosmic ray would otherwise always
+end up blank. Tested on such a band with a spike 5&times; its height: blank in 20 of 20 noisy
+versions before, the band found in 16 of 20 now. A fit accepted at the
+first attempt is not repeated, so it stays exactly as it was. Measured on that 21&nbsp;000-pixel map:
+365 of the 1&nbsp;840 rejected pixels (1.7&nbsp;% of the map) got a value, none of the accepted
+pixels changed, and fitting took about 11&nbsp;% longer. (A grid of 10 further starting points was
+also tried: it rescued no more pixels and made fitting several times slower.)</p>
 
 <h3>Fitting</h3>
 <p>Bounded non-linear least squares, minimising the sum of squared residuals over the window,
@@ -1193,19 +1260,27 @@ mean, both over the window. R&sup2; therefore measures how much of the variation
 window the peak + background describe; a window with only noise gives a low value.</p>
 <p>A pixel gets no value (NaN; shown hatched light grey in the map) when: the window has fewer points than parameters + 2; the
 signal is flat; the fit does not converge; the fitted centre lies within half a point
-spacing of the window edge (the band maximum is then outside the window); or the fitted FWHM
+spacing of the window edge (the band maximum is then outside the window); the fitted FWHM
 is larger than the window itself (then the "band" is noise or background fitted as a broad
-hump, typically with a huge, meaningless area). In all these cases position, width and area
+hump, typically with a huge, meaningless area); or &mdash; only if <i>Reject bands narrower
+than</i> is switched on &mdash; the fitted FWHM is smaller than that number of point spacings
+(a single spike, e.g. noise or a cosmic ray). These rules are applied to the best of the fits
+described under <i>Retrying</i>; with the spike rule on, spike fits are set aside first and the
+best of the other fits is judged. In all these cases position, width and area
 would be meaningless. The optional <i>Hide fits with R&sup2; below</i> filter blanks
 further pixels for display only &mdash; it does not refit.</p>
 
 <h3>Parallel processing</h3>
 <ul>
-<li>The pixels are independent, so they are split into chunks (about four per worker) and
+<li>The pixels are independent, so they are split into chunks (at least 200) and
 fitted in separate processes (Python <code>ProcessPoolExecutor</code>, "spawn" start method),
 each limited to one numerical-library thread so the workers do not compete for cores.</li>
-<li>The number of workers is one less than the number of CPU cores, further limited by the
-free memory (about 200 MB per worker), unless set by hand.</li>
+<li>The number of workers is set with the <i>Parallel workers</i> slider; the default is the
+maximum, one per CPU core. The free memory is shown as a hint (about 200&nbsp;MB per worker)
+but does not limit the number.</li>
+<li>Progress is counted per pixel inside the chunks (each worker adds to a shared counter), so
+the progress bar moves smoothly instead of jumping whenever the workers finish a round of
+chunks.</li>
 <li><i>Automatic</i> mode fits the first 5 pixels serially, estimates the time for the rest,
 and starts workers only if the rest would take at least 6 s and parallel fitting is expected
 to take at most 70&nbsp;% of that, starting the workers included (estimated at 4 s).</li>

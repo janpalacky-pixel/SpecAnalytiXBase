@@ -173,17 +173,22 @@ def get_automated_baseline_help_content():
             (a few seconds). Small jobs just run normally.</td></tr>
             <tr><td><b>Serial</b></td><td>One spectrum after another, on one core &mdash; the way it
             always worked.</td></tr>
-            <tr><td><b>Parallel</b></td><td>Always uses several worker processes (the
-            <b>Workers</b> box sets how many; <i>Auto</i> = one less than your CPU cores, limited by free
-            memory).</td></tr>
+            <tr><td><b>Parallel</b></td><td>Always uses several worker processes; the
+            <b>Workers</b> slider sets how many.</td></tr>
         </table>
+        <p><b>Workers</b> is a slider from 1 to the number of CPU cores of your computer; the number
+        and the maximum are shown next to it (e.g. <i>20 / 20 (max)</i>). The default is the maximum.
+        Each worker needs about 200&nbsp;MB of memory; when the memory that is free right now suits
+        fewer workers, a small orange note says how many. You can still use more &mdash; if the
+        workers cannot start or run out of memory, the job is redone serially (same result, slower)
+        and the message says so.</p>
         <p>When the job finishes, the message tells you how it was computed, for example
         <i>"Computed 5000 spectra in 41 s (parallel, 7 workers)"</i>, so you can compare the modes on your
         own data. Parallel processing helps with <b>large maps</b> (thousands of spectra) and with the
         slow methods (<b>mpspline, jbcd, asPLS, iarPLS</b>); for a few dozen spectra it is not faster
         because starting the workers takes a few seconds.</p>
         <p>Long jobs (more than 200 spectra, parallel mode, or a slow method) show a <b>progress bar</b>
-        with the number of spectra done and a <b>Cancel</b> button. Cancelling stops the job at once and
+        that moves spectrum by spectrum, also in parallel mode, with the number of spectra done and a <b>Cancel</b> button. Cancelling stops the job at once and
         leaves your spectra unchanged.</p>
         <div class="tip"><b>If something looks wrong:</b> choose <b>Serial</b> and run again. If parallel
         processing cannot start (for example not enough free memory) the job is redone serially

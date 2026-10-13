@@ -331,3 +331,44 @@ def test_cancel_in_parallel_mode_ends_workers_quickly_without_serial_redo(monkey
     # and the manager is perfectly usable afterwards
     out = mgr.apply_correction(_spectra(n=3), {'algorithm': 'als', 'processing_mode': 'serial'})
     assert len(out) == 3
+
+
+# --------------------------------------------------------------------------
+# Workers: the maximum by default; smooth progress inside chunks
+# --------------------------------------------------------------------------
+
+def test_default_worker_setting_means_all_cores(monkeypatch):
+    monkeypatch.setattr(parallel_utils.os, 'cpu_count', lambda: 20)
+    monkeypatch.setattr(parallel_utils, '_available_memory_mb', lambda: 3379.0)   # suits 11
+    assert parallel_utils.requested_workers(0) == 20
+    assert parallel_utils.requested_workers(None) == 20
+    assert parallel_utils.requested_workers(5) == 5
+    assert resolve_worker_count(parallel_utils.requested_workers(0)) == 20
+    assert parallel_utils.memory_worker_estimate() == 11                          # only a hint
+    monkeypatch.setattr(parallel_utils.os, 'cpu_count', lambda: 100)
+    assert parallel_utils.max_worker_count() == 61                                # Windows limit
+
+
+def test_worker_slider_shows_the_maximum_and_stores_it_as_0(monkeypatch):
+    monkeypatch.setattr(parallel_utils.os, 'cpu_count', lambda: 20)
+    from PyQt5.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from src.views.dialogs.misc.worker_count_slider import WorkerCountSlider
+    w = WorkerCountSlider()
+    assert w.value() == 0 and w.workers() == 20 and '20 / 20' in w.number_label.text()
+    w.setValue(8)
+    assert w.value() == 8 and w.number_label.text().startswith('8 / 20')
+    w.setValue(31)                                          # more than the cores: the maximum
+    assert w.value() == 0 and w.workers() == 20
+
+
+def test_workers_count_every_item_for_smooth_progress():
+    from src.modules.visualization_analysis import peak_fit_map as pf
+    x = np.linspace(0, 100, 60)
+    pairs = [(x, np.exp(-((x - 50) / 8) ** 2) + 0.01 * k) for k in range(12)]
+    payloads = [('Gaussian', 'Linear', pairs[i:i + 4]) for i in range(0, 12, 4)]
+    seen = []
+    out = parallel_utils.run_in_process_pool(pf._fit_chunk_worker, payloads, 2,
+                                             on_items_done=seen.append)
+    assert sum(len(o) for o in out) == 12
+    assert seen and seen[-1] == 12                          # every spectrum was counted

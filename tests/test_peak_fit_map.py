@@ -245,6 +245,8 @@ def test_settings_dialog_changes_are_remembered_and_refit(dialog, monkeypatch):
     dialog._edit_peak_fit_settings()
     assert dialog.controller.manager.peak_fit_settings['shape'] == 'Lorentzian'
     assert sd.load_settings()['shape'] == 'Lorentzian'                 # remembered
+    assert dialog._last_map_data is None                               # waits for Update Map
+    dialog._compute_map()                                              # = Update Map
     assert not np.allclose(dialog._last_map_data, before)              # refitted
 
 
@@ -295,3 +297,177 @@ def test_progress_comes_in_small_steps():
     assert chunk_count(21000, 20) == 200             # ~0.5 % per step, not 80 big ones
     assert chunk_count(21000, 61) == 244
     assert chunk_count(50, 20) == 50 and chunk_count(1, 4) == 1
+
+
+# --- a bad starting guess must not decide the result -----------------------------
+
+def test_a_bad_starting_guess_is_retried():
+    """One deep outlier at the window edge makes the first starting guess a
+    downward 'band' there; the fit from it is rejected (centre at the edge).
+    Retrying from other starts must find the real band."""
+    y = _band(height=60.0, fwhm=40.0, center=1000.0, offset=20.0, slope=0.0, noise=5.0, seed=0)
+    y[-3] -= 150.0
+    r = pf.fit_single_peak(X, y, 'Gaussian', 'Linear')
+    assert r['ok']
+    assert r['center'] == pytest.approx(1000.0, abs=10.0)
+    assert 30.0 < r['fwhm'] < 80.0
+
+
+# --- optional spike rule (Fit settings: "Reject bands narrower than") -------------
+
+def _spike():
+    y = np.random.default_rng(2).normal(0, 1, len(X))
+    y[30] += 40                                                   # one point: a cosmic ray
+    return y
+
+
+def test_spike_rule_is_off_by_default():
+    assert pf.DEFAULT_SETTINGS['min_band_points'] == 0
+    assert pf.fit_single_peak(X, _spike(), 'Gaussian', 'Constant')['ok']
+
+
+@pytest.mark.parametrize('points', [2, 3, 4])
+def test_spike_rule_never_returns_a_spike(points):
+    """With the rule on, the one-point spike is not the result: either the
+    best fit that is not a spike is used, or the pixel is rejected."""
+    dx = X[1] - X[0]
+    r = pf.fit_single_peak(X, _spike(), 'Gaussian', 'Constant', min_band_points=points)
+    assert (r['ok'] and r['fwhm'] >= points * dx) or not r['ok']
+    off = pf.fit_single_peak(X, _spike(), 'Gaussian', 'Constant', min_band_points=0)
+    assert off['ok'] and off['fwhm'] < 2 * dx                     # rule off: the spike is kept
+
+
+def test_spike_rule_finds_a_weak_band_under_a_cosmic_ray():
+    """A weak broad band in noise with one high spike on top: the spike fit
+    matches the points best, but with the rule on the band must be found."""
+    x = np.linspace(3040.0, 3780.0, 388)
+    y = 14.0 * pf.peak_shape(x, 3334.0, 640.0, 'Gaussian') + np.random.default_rng(1).normal(0, 6, len(x))
+    y[200] += 80.0
+    off = pf.fit_single_peak(x, y, 'Gaussian', 'Linear', min_band_points=0)
+    assert off['ok'] and off['fwhm'] < 2 * (x[1] - x[0])         # without the rule: the spike
+    on = pf.fit_single_peak(x, y, 'Gaussian', 'Linear', min_band_points=2)
+    assert on['ok']
+    assert on['center'] == pytest.approx(3334.0, abs=80.0)
+    assert 200.0 < on['fwhm'] < 1000.0
+
+
+def test_spike_rule_keeps_real_bands():
+    # the test band is 12 / 1.7 = 7 data points wide
+    for points in (2, 3, 4):
+        assert pf.fit_single_peak(X, _band(), 'Gaussian', 'Linear', min_band_points=points)['ok']
+
+
+def test_spike_rule_setting_reaches_the_map_and_the_workers():
+    dx = X[1] - X[0]
+    w = _windows(5) + [(X, _spike())]
+    off = pf.PeakFitMapper().results(w, {'processing_mode': 'serial'})
+    assert off['fwhm'][5] < 2 * dx                                      # the spike
+    serial = pf.PeakFitMapper().results(w, {'processing_mode': 'serial', 'min_band_points': 2})
+    assert serial['ok'][:5].all() and not (serial['fwhm'][5] < 2 * dx)  # not the spike
+    parallel = pf.PeakFitMapper().results(
+        w, {'processing_mode': 'parallel', 'max_workers': 2, 'min_band_points': 2})
+    assert np.array_equal(serial['ok'], parallel['ok'])
+    assert np.allclose(serial['fwhm'], parallel['fwhm'], equal_nan=True)
+
+
+def test_settings_dialog_offers_the_spike_rule():
+    from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
+        PeakFitSettingsDialog)
+    d = PeakFitSettingsDialog({'min_band_points': 3})
+    assert d.settings()['min_band_points'] == 3
+    d.min_points_combo.setCurrentIndex(d.min_points_combo.findData(0))
+    assert d.settings()['min_band_points'] == 0
+
+
+# --- choosing a fitted metric does not start the fitting --------------------------
+
+def test_choosing_a_fitted_metric_waits_for_update_map(dialog, monkeypatch):
+    dialog._radio_intensity.setChecked(True)
+    dialog._metric_combo.setCurrentText('Integral')
+    dialog._compute_map()
+    assert dialog._last_map_data is not None
+    calls = []
+    real = dialog.controller.manager.peak_fit.values
+    monkeypatch.setattr(dialog.controller.manager.peak_fit, 'values',
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+    dialog._metric_combo.setCurrentText('Fitted peak position')
+    assert calls == []                                        # nothing fitted yet
+    assert not dialog._peak_fit_btn.isHidden()                # settings can be changed now
+    assert "Update Map" in dialog._click_info_label.text()
+    dialog._compute_map()                                     # = Update Map
+    assert calls and dialog._last_map_data is not None
+    dialog._metric_combo.setCurrentText('Fitted FWHM')        # between fitted metrics: at once
+    assert dialog._last_map_data is not None
+
+
+def test_changing_the_band_waits_for_update_map_for_fitted_metrics(dialog, monkeypatch):
+    from src.views.dialogs.visualization_analysis import spectral_range_dialog as srd
+    dialog._radio_intensity.setChecked(True)
+    dialog._metric_combo.setCurrentText('Fitted peak position')
+    dialog._compute_map()
+    assert dialog._last_map_data is not None
+    calls = []
+    real = dialog.controller.manager.peak_fit.values
+    monkeypatch.setattr(dialog.controller.manager.peak_fit, 'values',
+                        lambda *a, **k: calls.append(1) or real(*a, **k))
+
+    class _RangeDialog:
+        def __init__(self, *a, **k):
+            pass
+
+        def exec_(self):
+            return QDialog.Accepted
+
+        def get_settings(self):
+            return {'ranges': [[965, 1035]], 'is_exclude': False}
+    monkeypatch.setattr(srd, 'SpectralRangeDialog', _RangeDialog)
+    dialog._configure_ranges_inner()
+    assert dialog._ranges == [[965, 1035]]
+    assert calls == [] and dialog._last_map_data is None          # waits ...
+    assert "Update Map" in dialog._click_info_label.text()
+    dialog._compute_map()                                         # ... for Update Map
+    assert calls and dialog._last_map_data is not None
+    # a quick metric is still recomputed at once
+    dialog._metric_combo.setCurrentText('Integral')
+    dialog._configure_ranges_inner()
+    assert dialog._last_map_data is not None
+
+
+# --- Map arithmetic with a fitted metric ------------------------------------------
+
+def test_map_arithmetic_shows_the_fits_of_both_bands(dialog):
+    dialog._radio_arith.click()
+    dialog._metric_combo.setCurrentText('Fitted peak area')
+    dialog._arith_a_ranges, dialog._arith_a_is_exclude = [[960, 1040]], False
+    dialog._arith_b.update(ranges=[[955, 1045]], is_exclude=False, x_min=None, x_max=None)
+    dialog._compute_map()
+    assert np.allclose(dialog._last_map_data, 1.0, atol=0.05)       # area A / area B
+
+    class _Event:
+        inaxes = dialog._map_canvas.ax
+        xdata, ydata, button = 2.0, 1.0, 1
+    dialog._on_map_click(_Event())
+    labels = [l.get_label() for l in dialog._spectrum_canvas.ax.get_lines()]
+    assert 'A: Gaussian fit' in labels and 'B: Gaussian fit' in labels
+    title = dialog._spectrum_canvas.ax.get_legend().get_title().get_text()
+    assert title.startswith('A: centre') and '\nB: centre' in title
+
+
+def test_no_second_band_a_button_in_map_arithmetic(dialog):
+    dialog._radio_arith.click()
+    for metric in ('Integral', 'Fitted peak area', 'Mean'):
+        dialog._metric_combo.setCurrentText(metric)            # used to bring it back
+        assert dialog._btn_configure_ranges.isHidden()
+        assert not dialog._btn_arith_range_a.isHidden()
+
+
+def test_help_has_a_place_for_the_two_band_screenshot(monkeypatch):
+    from src.help import map2d_help
+    real_isfile = map2d_help.os.path.isfile
+    monkeypatch.setattr(map2d_help.os.path, 'isfile',              # screenshot missing
+                        lambda p: 'peak_fit_two_bands' not in str(p) and real_isfile(p))
+    html = map2d_help.get_map2d_help_content()
+    assert '$PEAK_FIT_TWO_BANDS' not in html and 'peak_fit_two_bands.png' not in html
+    monkeypatch.setattr(map2d_help.os.path, 'isfile',              # screenshot present
+                        lambda p: 'peak_fit_two_bands' in str(p) or real_isfile(p))
+    assert 'peak_fit_two_bands.png' in map2d_help.get_map2d_help_content()

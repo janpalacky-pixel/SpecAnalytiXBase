@@ -11,7 +11,8 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import OperationCancelled, notify_progress
 from src.modules.utils.correction_history import append_correction_history
 from src.modules.utils.parallel_utils import (
-    describe_worker_limits, resolve_worker_count, run_in_process_pool, chunk_count)
+    describe_worker_limits, resolve_worker_count, run_in_process_pool, chunk_count,
+    count_item, requested_workers)
 logger = get_logger(__name__)
 
 # Display name of every algorithm in the correction history. An unknown
@@ -1779,7 +1780,8 @@ class AutomatedBaselineManager:
         self._progress_done = 0
         self._progress_last = 0.0
 
-        workers = resolve_worker_count(max_workers) if mode != 'serial' else 1
+        workers = (resolve_worker_count(requested_workers(max_workers))
+                   if mode != 'serial' else 1)
         if mode != 'serial' and (workers < 2 or n < 2):
             info['note'] = (f'only one worker is available ({describe_worker_limits()}), '
                             f'so parallel processing was not used' if workers < 2
@@ -1860,9 +1862,21 @@ class AutomatedBaselineManager:
             self._report_progress(force=True)
 
         running = [False]
+        before = self._progress_done          # spectra already done (auto's first few)
+        by_chunks, by_items = [0], [0]
+
+        def update_done():
+            # Spectra counted inside the chunks (smooth), or whole finished
+            # chunks -- whichever is further.
+            self._progress_done = before + max(by_chunks[0], by_items[0])
+
+        def items_done(count):
+            by_items[0] = count
+            update_done()
 
         def chunk_done(k):
-            self._progress_done += len(chunks[k])
+            by_chunks[0] += len(chunks[k])
+            update_done()
             if not running[0]:
                 # The workers are up: replace "Starting parallel workers…".
                 running[0] = True
@@ -1870,7 +1884,8 @@ class AutomatedBaselineManager:
                     status_callback(f"Correcting in {workers} parallel workers\u2026")
 
         results = run_in_process_pool(
-            _baseline_chunk_worker, payloads, workers, tick, chunk_done)
+            _baseline_chunk_worker, payloads, workers, tick, chunk_done,
+            on_items_done=items_done)
         for chunk, chunk_baselines in zip(chunks, results):
             for i, baseline in zip(chunk, chunk_baselines):
                 baselines[i] = baseline
@@ -1936,8 +1951,9 @@ class AutomatedBaselineManager:
         pay for starting them; 'serial' computes everything one spectrum
         after another in this process; 'parallel' always uses worker
         processes (when at least two workers and two spectra are
-        available). params['max_workers'] (0/absent = automatic, limited
-        by CPU cores and free memory) sets the number of workers.
+        available). params['max_workers'] (0/absent = the maximum, one
+        per CPU core; see parallel_utils.requested_workers) sets the number
+        of workers.
         After every call self.last_run_info says what was actually done
         and run_summary() turns it into a sentence for the user.
 
@@ -2116,4 +2132,5 @@ def _baseline_chunk_worker(payload):
     for k, y in enumerate(ys):
         x = x_shared if x_shared is not None else xs[k]
         results.append(manager._baseline_for_spectrum(algorithm, x, y.copy(), cfg))
+        count_item()                          # smooth progress (see parallel_utils)
     return results

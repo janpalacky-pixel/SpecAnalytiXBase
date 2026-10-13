@@ -1715,6 +1715,23 @@ def get_user_guide_help_content():
         Requires selecting exactly Rows &times; Cols spectra (laid out
         row-by-row) &mdash; a MAT/WITec map import already carries its own
         dimensions and fills these in automatically. An <b>RGB overlay</b> mode (alongside Intensity/SVD/PCA/NMF/MCR-ALS/Cluster) combines up to three already-computed component maps (any mix of SVD/PCA/NMF/MCR-ALS) into R/G/B channels of one false-color composite, with its own panel for assigning channels and exporting the result as a PNG — a common way to show where several components co-occur spatially in a single picture. ROI regions you draw on the map (rectangle/ellipse/lasso/line) persist when you switch Map Type &mdash; only an actual Rows &times; Cols change clears them. Switching Map Type back to an SVD/PCA/NMF/MCR-ALS kind you already fitted redraws that fit instantly from cache instead of recomputing &mdash; but any change that actually invalidates the fit (its spectral range, component count, reference spectra, or, for NMF/MCR-ALS, the <b>Init.</b>/<b>Max iter.</b>/<b>Non-neg. C</b>/<b>Non-neg. ST</b>/<b>Closure</b> fit-control settings) marks it stale, and <b>Update Map</b> is required again.</p>
+        <p><b>Peak fitting per pixel.</b> The Intensity metrics <i>Fitted peak position, FWHM,
+        height, area</i> and <i>Fit quality (R&sup2;)</i> fit one band plus a background in every
+        pixel (<b>Fit settings&hellip;</b>: peak shape, background, R&sup2; limit, optional
+        <i>Reject bands narrower than</i> 2/3/4 data points for spikes, processing). Pixels whose fit
+        is meaningless get no value and are shown hatched grey. Before a pixel is given up, its fit
+        is retried from other starting points and the best fit is kept, so a noisy first guess
+        does not decide the result. The fitting runs only when you press <b>Update Map</b> (choosing
+        the metric, the band or Fit settings does not start it). In <b>Map arithmetic</b> a fitted
+        metric fits Band A and Band B separately in every pixel and combines the two values, e.g.
+        the ratio of two fitted band areas; clicking a pixel shows both fits. Details:
+        <a href="help://map2d">2D Map help</a>.</p>
+        <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, 2D Map peak
+        fitting). Large jobs run in several worker processes. The <b>Workers</b> slider goes from 1
+        to the number of CPU cores and defaults to the maximum; an orange note shows when the memory
+        free right now suits fewer workers. If the workers cannot start or run out of memory, the job
+        is redone serially &mdash; same result, slower. The progress bar counts every spectrum, also
+        in parallel mode.</p>
 
         <h3 id="2d-correlation">2D Correlation (2D-COS) <a href="help://two_d_correlation" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
 

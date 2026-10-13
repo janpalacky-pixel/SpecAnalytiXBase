@@ -29,7 +29,8 @@ from scipy.optimize import curve_fit
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.parallel_utils import (
-    chunk_count, describe_worker_limits, resolve_worker_count, run_in_process_pool)
+    chunk_count, count_item, describe_worker_limits, requested_workers, resolve_worker_count,
+    run_in_process_pool)
 from src.modules.utils.progress_utils import OperationCancelled
 
 logger = get_logger(__name__)
@@ -53,8 +54,12 @@ DEFAULT_SETTINGS = {
     'baseline': 'Linear',
     'min_r2': 0.0,              # pixels with a worse fit are left blank (0 = show all)
     'processing_mode': 'auto',
-    'max_workers': 0,           # 0 = automatic
+    'max_workers': 0,           # 0 = the maximum (all CPU cores)
+    'min_band_points': 0,       # narrower fitted bands are spikes, not bands (0 = off)
 }
+
+# Choices for 'min_band_points' offered in the settings dialog.
+MIN_BAND_POINTS_CHOICES = (0, 2, 3, 4)
 
 _SQRT_LN2 = math.sqrt(math.log(2.0))
 _GAUSS_AREA = math.sqrt(math.pi) / (2.0 * _SQRT_LN2)    # area = factor * height * FWHM
@@ -79,6 +84,10 @@ def normalized_settings(settings=None):
         s['min_r2'] = float(min(max(float(s['min_r2']), 0.0), 1.0))
     except (TypeError, ValueError):
         s['min_r2'] = 0.0
+    try:
+        s['min_band_points'] = float(min(max(float(s['min_band_points']), 0.0), 20.0))
+    except (TypeError, ValueError):
+        s['min_band_points'] = float(DEFAULT_SETTINGS['min_band_points'])
     return s
 
 
@@ -139,7 +148,8 @@ def _nan_result():
     return {key: np.nan for key in RESULT_KEYS} | {'ok': False, 'params': None}
 
 
-def fit_single_peak(x, y, shape='Gaussian', baseline='Linear'):
+def fit_single_peak(x, y, shape='Gaussian', baseline='Linear',
+                    min_band_points=DEFAULT_SETTINGS['min_band_points']):
     """Fit one peak (+ baseline) to the points (x, y).
 
     Returns a dict: center, fwhm, height, area, r2, eta (NaN when not
@@ -148,7 +158,9 @@ def fit_single_peak(x, y, shape='Gaussian', baseline='Linear'):
     A fit is rejected (ok False, values NaN) when it does not converge,
     when its centre ends at the edge of the window (the band maximum is
     then outside the window), or when the fitted band is wider than the
-    window (then it is not a band in the window but noise or background) --
+    window (then it is not a band in the window but noise or background), or
+    narrower than *min_band_points* data-point spacings (then it is a single
+    spike -- noise or a cosmic ray -- not a band; 0 switches this off) --
     in those cases the numbers would be meaningless.
     """
     x = np.asarray(x, dtype=float)
@@ -187,46 +199,143 @@ def fit_single_peak(x, y, shape='Gaussian', baseline='Linear'):
         return result
     above = np.abs(net) >= 0.5 * abs(height0)
     width0 = float(np.clip(above.sum() * dx, 2 * dx, span))
-    p0 = [height0, float(x[i_peak]), width0]
+
     lower = [-np.inf, x[0], 0.5 * dx]
     upper = [np.inf, x[-1], 2.0 * span]
     if has_eta:
-        p0.append(0.5)
         lower.append(0.0)
         upper.append(1.0)
     if n_base >= 1:
-        p0.append(base0)
         lower.append(-np.inf)
         upper.append(np.inf)
     if n_base == 2:
-        p0.append(slope0)
         lower.append(-np.inf)
         upper.append(np.inf)
+
+    def start(height, center, width, b0, b1):
+        p0 = [height, float(np.clip(center, x[0], x[-1])),
+              float(np.clip(width, lower[2], upper[2]))]
+        if has_eta:
+            p0.append(0.5)
+        if n_base >= 1:
+            p0.append(b0)
+        if n_base == 2:
+            p0.append(b1)
+        return p0
+
+    def fit_from(p0):
+        """(params, residual sum of squares), or None if no convergence."""
+        try:
+            params, _ = curve_fit(model, x, y, p0=p0, bounds=(lower, upper), maxfev=4000)
+        except Exception:                     # no convergence, singular, ...
+            return None
+        return params, float(np.sum((y - model(x, *params)) ** 2))
+
+    def is_spike(params):
+        return bool(min_band_points) and float(params[2]) < min_band_points * dx
+
+    def verdict(params):
+        """None if the fit describes a band in the window, else the reason."""
+        center, fwhm = float(params[1]), float(params[2])
+        edge = 0.5 * dx
+        if center <= x[0] + edge or center >= x[-1] - edge:
+            return 'centre at the window edge'
+        if is_spike(params):
+            # Narrower than a few data points: a single spike (noise, a
+            # cosmic ray), not a band -- its position, width and area
+            # would be meaningless.
+            return (f'narrower than {min_band_points:g} data points '
+                    f'(a spike, not a band)')
+        if fwhm > span:
+            # A "band" wider than the whole window is not a band in the
+            # window: typically noise or the background itself fitted as a
+            # broad hump, with a meaningless (often huge) area.
+            return 'band wider than the window'
+        return None
+
     try:
-        params, _ = curve_fit(model, x, y, p0=p0, bounds=(lower, upper), maxfev=4000)
+        params, _ = curve_fit(model, x, y, p0=start(height0, x[i_peak], width0, base0, slope0),
+                              bounds=(lower, upper), maxfev=4000)
+        first_error = None
+        fits = [(params, float(np.sum((y - model(x, *params)) ** 2)))]
+        reason = verdict(params)
     except Exception as exc:                  # no convergence, singular, ...
-        result['reason'] = type(exc).__name__
-        return result
-    fitted = model(x, *params)
-    ss_res = float(np.sum((y - fitted) ** 2))
+        first_error = type(exc).__name__
+        fits, reason = [], first_error
+    best = fits[0] if fits else None
+
+    if reason is not None:
+        # The fit searches downhill from its starting values and can stop in
+        # a worse solution than the best one, e.g. when the starting peak is
+        # a single noise point (seen on a weak band in a noisy Raman map:
+        # a downward "band" at the window edge on a steep background,
+        # although an ordinary band on a gentle background fits better).
+        # So a rejected or failed fit is repeated from two other starts: the
+        # highest and lowest point of a smoothed copy of the data. The fit
+        # with the smallest residual -- the best one, whichever start it
+        # came from -- is then judged by the same rules. A fit that was
+        # accepted at once is not changed.
+        #
+        # Spikes are the one exception to "best fit wins": with the spike
+        # rule on, a fit on a single spike (a cosmic ray, a noise point) is
+        # an artefact, not a band, so it must not win just because hitting
+        # one very high point lowers the residual most. A weak broad band
+        # with a cosmic ray on top would otherwise always end up blank.
+        # Spike fits are therefore set aside and the best of the remaining
+        # fits is judged -- by all rules, so it can still be rejected (e.g.
+        # wider than the window). Only if every fit is a spike is the pixel
+        # rejected as a spike.
+        fits += _fits_from_smoothed_starts(x, y, span, dx, start, fit_from)
+        if not fits:
+            result['reason'] = first_error
+            return result
+        fits.sort(key=lambda f: f[1])
+        not_spikes = [f for f in fits if not is_spike(f[0])]
+        best = not_spikes[0] if not_spikes else fits[0]
+        reason = verdict(best[0])
+
+    params, ss_res = best
     ss_tot = float(np.sum((y - np.mean(y)) ** 2))
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
+    if reason is not None:
+        result.update(r2=r2, params=params, x_ref=x_ref, reason=reason)
+        return result
     height, center, fwhm = float(params[0]), float(params[1]), float(params[2])
     eta = float(params[3]) if has_eta else np.nan
-    edge = 0.5 * dx
-    if center <= x[0] + edge or center >= x[-1] - edge:
-        result.update(r2=r2, params=params, x_ref=x_ref, reason='centre at the window edge')
-        return result
-    if fwhm > span:
-        # A "band" wider than the whole window is not a band in the window:
-        # typically noise or the background itself fitted as a broad hump,
-        # with a meaningless (often huge) area.
-        result.update(r2=r2, params=params, x_ref=x_ref, reason='band wider than the window')
-        return result
     result.update(center=center, fwhm=fwhm, height=height,
                   area=float(peak_area(height, fwhm, shape, eta if has_eta else 0.5)),
                   r2=float(r2), eta=eta, ok=True, params=params, x_ref=x_ref)
     return result
+
+
+def _fits_from_smoothed_starts(x, y, span, dx, start, fit_from):
+    """Fits (params, residual) from two more starting guesses taken from a
+    smoothed copy of the window -- its highest and its lowest point. Smoothing (a moving
+    average over about a tenth of the points) removes the single noise
+    points that misled the first guess. Measured on a 21 000-pixel Raman
+    map: these two starts rescue as many rejected pixels as twelve
+    (adding a grid of 5 positions x 2 widths gained nothing) at a seventh
+    of the time."""
+    n = len(x)
+    window = max(3, (n // 10) | 1)                 # odd, about a tenth of the points
+    kernel = np.ones(window) / window
+    padded = np.concatenate([np.full(window // 2, y[0]), y, np.full(window // 2, y[-1])])
+    smooth = np.convolve(padded, kernel, mode='valid')
+    n_end = max(1, min(window, n // 6))
+    s_left, s_right = float(np.mean(smooth[:n_end])), float(np.mean(smooth[-n_end:]))
+    b1 = (s_right - s_left) / span
+    x_ref = 0.5 * (x[0] + x[-1])
+    b0 = 0.5 * (s_left + s_right)
+    net = smooth - (b0 + b1 * (x - x_ref))
+    scale = float(np.std(y)) or 1.0
+
+    starts = []
+    for i in (int(np.argmax(net)), int(np.argmin(net))):
+        h = float(net[i]) or scale
+        width = max(2 * dx, float(np.sum(np.abs(net) >= 0.5 * abs(h))) * dx)
+        starts.append(start(h, x[i], width, b0, b1))
+
+    return [found for found in (fit_from(p0) for p0 in starts) if found is not None]
 
 
 def model_curve(x, result, shape, baseline):
@@ -253,11 +362,13 @@ def model_curve(x, result, shape, baseline):
 
 def _fit_chunk_worker(payload):
     """Worker-process entry point (top level so it can be pickled)."""
-    shape, baseline, pairs = payload
+    shape, baseline, pairs = payload[:3]
+    min_band_points = payload[3] if len(payload) > 3 else DEFAULT_SETTINGS['min_band_points']
     out = []
     for x, y in pairs:
-        r = fit_single_peak(x, y, shape, baseline)
+        r = fit_single_peak(x, y, shape, baseline, min_band_points)
         out.append([r[k] for k in RESULT_KEYS] + [bool(r['ok'])])
+        count_item()                          # smooth progress (see parallel_utils)
     return out
 
 
@@ -338,7 +449,7 @@ class PeakFitMapper:
             h.append((len(x), float(np.sum(x)) if len(x) else 0.0,
                       float(np.sum(y)) if len(y) else 0.0,
                       float(np.sum(y * y)) if len(y) else 0.0))
-        return (tuple(h), s['shape'], s['baseline'])
+        return (tuple(h), s['shape'], s['baseline'], s['min_band_points'])
 
     def _report(self, done, total, force=False):
         if self._progress_fn is None:
@@ -358,7 +469,8 @@ class PeakFitMapper:
         mode = s['processing_mode']
         info = {'n': n, 'mode': 'serial', 'workers': 1, 'seconds': 0.0,
                 'note': None, 'fallback_reason': None}
-        workers = resolve_worker_count(s['max_workers']) if mode != 'serial' else 1
+        workers = (resolve_worker_count(requested_workers(s['max_workers']))
+                   if mode != 'serial' else 1)
         if mode != 'serial' and (workers < 2 or n < 2):
             info['note'] = (f'only one worker is available ({describe_worker_limits()})'
                             if workers < 2 else 'there is only one spectrum')
@@ -369,7 +481,7 @@ class PeakFitMapper:
         def serial(indices):
             for i in indices:
                 x, y = windows[i]
-                r = fit_single_peak(x, y, s['shape'], s['baseline'])
+                r = fit_single_peak(x, y, s['shape'], s['baseline'], s['min_band_points'])
                 rows[i] = [r[k] for k in RESULT_KEYS] + [bool(r['ok'])]
                 done[0] += 1
                 self._report(done[0], n)
@@ -393,13 +505,26 @@ class PeakFitMapper:
             n_chunks = chunk_count(len(remaining), workers)
             chunks = [list(c) for c in np.array_split(np.array(remaining), n_chunks)]
             payloads = [(s['shape'], s['baseline'],
-                         [(np.asarray(windows[i][0]), np.asarray(windows[i][1])) for i in c])
+                         [(np.asarray(windows[i][0]), np.asarray(windows[i][1])) for i in c],
+                         s['min_band_points'])
                         for c in chunks]
 
             running = [False]
+            before = done[0]                  # pixels already fitted (auto's first few)
+            by_chunks, by_items = [0], [0]
+
+            def update_done():
+                # Spectra counted inside the chunks (smooth), or whole
+                # finished chunks -- whichever is further.
+                done[0] = before + max(by_chunks[0], by_items[0])
+
+            def items_done(count):
+                by_items[0] = count
+                update_done()
 
             def chunk_done(k):
-                done[0] += len(chunks[k])
+                by_chunks[0] += len(chunks[k])
+                update_done()
                 if not running[0]:
                     # The workers are up: replace "Starting parallel workers…".
                     running[0] = True
@@ -411,7 +536,8 @@ class PeakFitMapper:
                     status_callback("Starting parallel workers…")
                 results = run_in_process_pool(
                     _fit_chunk_worker, payloads, workers,
-                    lambda: self._report(done[0], n, force=True), chunk_done)
+                    lambda: self._report(done[0], n, force=True), chunk_done,
+                    on_items_done=items_done)
                 for c, chunk_rows in zip(chunks, results):
                     for i, row in zip(c, chunk_rows):
                         rows[i] = row

@@ -5,11 +5,11 @@ processing. See src/modules/visualization_analysis/peak_fit_map.py."""
 
 from PyQt5.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
-    QSpinBox, QVBoxLayout)
+    QVBoxLayout)
 
-from src.modules.utils.parallel_utils import describe_worker_limits, safe_worker_count
 from src.modules.visualization_analysis.peak_fit_map import (
-    BASELINES, DEFAULT_SETTINGS, SHAPES, normalized_settings)
+    BASELINES, DEFAULT_SETTINGS, MIN_BAND_POINTS_CHOICES, SHAPES, normalized_settings)
+from src.views.dialogs.misc.worker_count_slider import WorkerCountSlider
 
 PREFERENCES_KEY = 'peak_fit_map_settings'
 
@@ -81,6 +81,18 @@ class PeakFitSettingsDialog(QDialog):
             "range, or the band is wider than the range, are always empty.")
         form.addRow("Hide fits with R² below:", self.min_r2_spin)
 
+        self.min_points_combo = QComboBox()
+        for n in MIN_BAND_POINTS_CHOICES:
+            self.min_points_combo.addItem("off" if n == 0 else f"{n} data points", n)
+        self._set_min_points(s['min_band_points'])
+        self.min_points_combo.setToolTip(
+            "A fitted band narrower than this many data-point spacings (its FWHM) is\n"
+            "taken as a single spike -- noise or a cosmic ray -- not a band: the pixel\n"
+            "gets no value. Off: such fits are kept. 2 rejects only one-point spikes;\n"
+            "3 or 4 also two- or three-point ones. Choose a value smaller than the\n"
+            "narrowest real band of your data (in data points).")
+        form.addRow("Reject bands narrower than:", self.min_points_combo)
+
         self.mode_combo = QComboBox()
         for key in ('auto', 'serial', 'parallel'):
             self.mode_combo.addItem(_MODE_TEXT[key], key)
@@ -90,15 +102,7 @@ class PeakFitSettingsDialog(QDialog):
             "the whole map would take more than a few seconds.")
         form.addRow("Processing:", self.mode_combo)
 
-        self.workers_spin = QSpinBox()
-        self.workers_spin.setRange(0, 61)
-        self.workers_spin.setSpecialValueText(f"Auto ({safe_worker_count()})")
-        self.workers_spin.setToolTip(
-            "Auto: one less than the CPU cores, but fewer when little memory is free\n"
-            "(about 200 MB per worker, 1 GB kept free).\n"
-            f"Right now on this computer: {describe_worker_limits()}.\n"
-            "A number set by hand is used as given (up to the number of cores). If the\n"
-            "workers cannot start or run out of memory, the fitting is redone serially.")
+        self.workers_spin = WorkerCountSlider()
         self.workers_spin.setValue(int(s['max_workers'] or 0))
         form.addRow("Parallel workers:", self.workers_spin)
         layout.addLayout(form)
@@ -110,6 +114,13 @@ class PeakFitSettingsDialog(QDialog):
         buttons.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self._defaults)
         layout.addWidget(buttons)
 
+    def _set_min_points(self, value):
+        index = self.min_points_combo.findData(int(value) if float(value).is_integer() else value)
+        if index < 0:                         # a value set elsewhere, e.g. 2.5
+            self.min_points_combo.addItem(f"{value:g} data points", value)
+            index = self.min_points_combo.count() - 1
+        self.min_points_combo.setCurrentIndex(index)
+
     def _defaults(self):
         d = DEFAULT_SETTINGS
         self.shape_combo.setCurrentText(d['shape'])
@@ -117,6 +128,7 @@ class PeakFitSettingsDialog(QDialog):
         self.min_r2_spin.setValue(d['min_r2'])
         self.mode_combo.setCurrentIndex(0)
         self.workers_spin.setValue(0)
+        self._set_min_points(d['min_band_points'])
 
     def settings(self):
         return normalized_settings({
@@ -125,4 +137,5 @@ class PeakFitSettingsDialog(QDialog):
             'min_r2': self.min_r2_spin.value(),
             'processing_mode': self.mode_combo.currentData(),
             'max_workers': self.workers_spin.value(),
+            'min_band_points': self.min_points_combo.currentData(),
         })

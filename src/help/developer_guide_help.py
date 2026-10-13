@@ -3350,17 +3350,33 @@ def _natural_sort_key(cls, label):
         read; new files cannot be opened by 1.4 or older.</p>
 
         <h3>6. Progress must come in small steps</h3>
-        <p>Parallel jobs report progress only when a chunk finishes. With 4 chunks per worker,
-        20 workers finished their chunks at about the same time, so jbcd's bar jumped by
-        ~5&nbsp;000 spectra and stood still in between &mdash; it looked hung. Use at least
-        <code>parallel_utils.MIN_CHUNKS</code> (200) chunks (<code>chunk_count()</code>), and change
-        the "Starting parallel workers&hellip;" text once the first chunk is back.</p>
+        <p>Counting progress per finished chunk is not enough: the workers run their chunks side
+        by side and finish a "round" at about the same time, so the bar jumps by
+        workers&nbsp;/&nbsp;chunks of the job and stands still in between. With 4 chunks per worker
+        (80 for 20 workers) that was 25&nbsp;%: 21&nbsp;000 / 80 &asymp; 262 spectra per chunk,
+        &times; 20 &asymp; 5&nbsp;250 per jump &mdash; jbcd's bar stood at 5&nbsp;266 and looked hung.
+        At least 200 chunks (<code>MIN_CHUNKS</code>, <code>chunk_count()</code>) still gave
+        20&nbsp;/&nbsp;200 = 10&nbsp;% jumps. Now the workers count every spectrum: a worker function calls
+        <code>parallel_utils.count_item()</code> after each item, which adds to a shared counter
+        (a <code>multiprocessing.Value</code> handed to every worker by the pool initializer), and
+        <code>run_in_process_pool(..., on_items_done=...)</code> reads it about ten times a second.
+        The callers take the larger of this count and the finished-chunk count (the latter also
+        works when a test replaces the pool). Also change the "Starting parallel workers&hellip;"
+        text once the first chunk is back.</p>
 
-        <h3>7. Automatic worker count: cautious, explained, overridable</h3>
-        <p>Auto limits workers by free memory (~200&nbsp;MB each, 1&nbsp;GB kept free). With a huge
-        workspace loaded it can drop to 1 although 20 workers run fine; the Workers box's tooltip
-        shows the numbers behind the choice, a hand-set number is honoured, and if workers cannot
-        start or run out of memory the job falls back to serial &mdash; slower, never wrong.</p>
+        <h3>7. Worker count: the maximum by default, memory only as a hint</h3>
+        <p>The first default ("Auto") limited the workers by free memory (~200&nbsp;MB each,
+        1&nbsp;GB kept free). Free memory is hard to read reliably on Windows: Auto said 1 (and
+        later 11) while 20 workers ran fine, and the number shown in the box did not match what
+        was used. So the <b>Workers</b> control is now a slider from 1 to the CPU cores
+        (<code>src/views/dialogs/misc/worker_count_slider.py</code>, shared by Automated Baseline and
+        the peak-fit settings), showing "<i>n</i> / <i>max</i>". The setting 0 (slider at the right end)
+        means "all cores" (<code>parallel_utils.requested_workers()</code>), on whatever computer the
+        settings are used next. <code>memory_worker_estimate()</code> is shown as an orange hint
+        only. The safety net is unchanged: if workers cannot start or run out of memory, the job is
+        redone serially &mdash; slower, never wrong. <code>safe_worker_count()</code> and
+        <code>resolve_worker_count()</code> are kept as they were (resolve still caps a request at
+        the cores).</p>
 
         <h3>8. Show "no value" as no value</h3>
         <p>NaN pixels were transparent and showed the dark axes background &mdash; users read them
@@ -3381,13 +3397,43 @@ def _natural_sort_key(cls, label):
             <li><b>Cache:</b> <code>PeakFitMapper</code> keeps the last few complete result sets
             (keyed by the windows' contents, shape and background), so switching between the
             five fitted maps, or the R² filter, never refits.</li>
-            <li><b>Rejection, not guessing:</b> a fit that fails or whose centre ends at the
-            window edge gives NaN (a blank pixel).</li>
+            <li><b>Rejection, not guessing:</b> a fit that fails, whose centre ends at the
+            window edge, that is wider than the window, or (optional setting
+            <code>min_band_points</code>, 0 = off, 2/3/4 in the dialog) narrower than that many
+            point spacings gives NaN (a blank pixel).</li>
+            <li><b>Retry before rejecting:</b> <code>curve_fit</code> is a local search; a noise
+            point as starting peak can lead to a worse, rejected solution while a better one exists
+            (pixel r111_c046 of the Glenodinium map: R&sup2; 0.163 rejected vs. 0.168 accepted). A
+            rejected or failed first fit is therefore repeated from 2 starts
+            (<code>_fits_from_smoothed_starts</code>: the highest and lowest point of a
+            moving-average-smoothed window); the fit with the smallest residual is kept and judged
+            by the same rules. Best-then-judge, never "best among accepted": the retry must not
+            prefer a worse fit just because it passes. The one exception is spikes (only with
+            <code>min_band_points</code> on): a fit on one cosmic-ray point often has the smallest
+            residual, so spike fits are set aside before choosing, and the best remaining fit is
+            judged by all rules. Accepted first fits are untouched. Measured on all 21&nbsp;000
+            pixels: 365 of 1&nbsp;840 rejected gained a value, 0 accepted changed, +11&nbsp;% time. A
+            further grid of 5 positions &times; 2 widths rescued no more pixels at about 7&times; the
+            retry cost and was dropped. (A first measurement on 1000 pixels had suggested +12&nbsp;%
+            for the 12-start version; that was wrong &mdash; the first timing loop included
+            start-up costs. Time code in alternating repeats.) Retrying every pixel, not just
+            rejected ones, would improve about 5&nbsp;% more fits but cost several times the time
+            &mdash; not done.</li>
             <li><b>Parallel:</b> same auto/serial/parallel scheme and
             <code>run_in_process_pool</code> as the Automated Baseline, with chunks of (x, y)
             windows sent to <code>_fit_chunk_worker</code>; the results are identical to serial
             (tested). Progress/Cancel through <code>Map2DManager.peak_fit_progress</code>, set by
             the dialog around one computation.</li>
+            <li><b>Only on Update Map:</b> a peak-fit map is never started by a side effect
+            (choosing the metric, Configure Band, Fit settings OK, map size, map type) &mdash;
+            <code>Map2DDialog._compute_or_wait_for_update()</code> recomputes quick metrics at once
+            but only marks a peak-fit map as out of date, like SVD/NMF/MCR-ALS. Switching between
+            the five fitted metrics stays instant (cache).</li>
+            <li><b>Map arithmetic:</b> Band A and Band B are fitted separately per pixel
+            (<code>compute_arithmetic_map</code> calls the mapper once per band) and the operation
+            combines the two values; the pixel panel draws both fits
+            (<code>_pixel_fit_bands()</code> supplies each band's range and colour). This was
+            missing at first, and users could not tell what a fitted A/B map meant.</li>
             <li>Tests: <code>tests/test_peak_fit_map.py</code> (accuracy on synthetic bands,
             sub-data-point positions, cache, cancel, parallel = serial, manager, dialog).</li>
         </ul>
@@ -3714,6 +3760,18 @@ pytest tests/ -v
             confirm the test actually fails against the old, buggy code, then confirm
             it passes against the fix. A test that was never seen to fail hasn't
             actually verified anything.
+        </div>
+        <div class="warning">
+            <b>Existing tests describe agreed behaviour &mdash; the project's two rules.</b>
+            (1) A test is never edited to make new code pass: if a change makes an existing test
+            fail, the change is fixed. (2) If behaviour is changed <em>on purpose</em> and an existing
+            test describes the old behaviour, the project owner is told in one or two plain
+            sentences what the program did before and what it will do after (e.g. "before: a
+            spike got a value; after: a spike is left blank"), without code; only after a yes is
+            the test updated. New behaviour gets new tests, appended. Example: the optional spike
+            rule (<code>min_band_points</code>) defaults to <i>off</i>, so the existing
+            R&sup2;-filter test, which uses a pure-noise pixel, still describes the default
+            behaviour unchanged.
         </div>
         <div class="warning">
             <b>No timing assertions.</b> Every nightly and release build runs this suite

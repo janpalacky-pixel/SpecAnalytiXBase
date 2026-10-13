@@ -143,6 +143,41 @@ def describe_worker_limits():
     return f'{cores} CPU cores, {memory} -> {workers} {noun}'
 
 
+def max_worker_count():
+    """The most workers this computer can use: one per CPU core (at most
+    61, the Windows limit of ProcessPoolExecutor)."""
+    return max(1, min(os.cpu_count() or 1, _MAX_POOL_WORKERS))
+
+
+def requested_workers(setting):
+    """The worker count asked for by a 'Parallel workers' setting: 0 (the
+    default) means the maximum, all CPU cores; a positive number is taken
+    as given. The result goes through resolve_worker_count(), which limits
+    it to the cores.
+
+    Why the maximum and not the cautious memory-based estimate
+    (safe_worker_count): the estimate often chose far fewer workers than
+    ran fine (free memory on Windows is hard to read reliably), and a run
+    that does run short of memory is redone serially anyway -- see
+    run_in_process_pool's callers. The memory estimate is still shown to
+    the user (memory_worker_estimate) as a hint."""
+    try:
+        setting = int(setting or 0)
+    except (TypeError, ValueError):
+        setting = 0
+    return max_worker_count() if setting <= 0 else setting
+
+
+def memory_worker_estimate():
+    """How many workers the free memory comfortably allows right now
+    (about 200 MB each, 1 GB kept free), or None if free memory is
+    unknown. Only a hint for the user; not a limit."""
+    free_mb = _available_memory_mb()
+    if free_mb is None:
+        return None
+    return max(1, int((free_mb - _RESERVED_MB) / _MB_PER_WORKER))
+
+
 def resolve_worker_count(requested=None):
     """Worker count to use. requested None/0 = automatic (safe_worker_count);
     a positive number is honoured but limited to the CPU cores."""
@@ -151,6 +186,30 @@ def resolve_worker_count(requested=None):
         return auto
     cores = os.cpu_count() or 1
     return max(1, min(int(requested), cores, _MAX_POOL_WORKERS))
+
+
+# Progress inside chunks. A worker process calls count_item() after each
+# spectrum; the count goes to a shared counter that the main process reads
+# about ten times a second (run_in_process_pool's on_items_done). Without
+# it, progress could only be counted when a whole chunk was finished, and
+# as the workers finish their chunks at about the same time, the bar moved
+# in big jumps and stood still in between.
+_ITEM_COUNTER = None
+
+
+def _init_worker(counter):
+    """Pool initializer: runs once in every worker process."""
+    global _ITEM_COUNTER
+    _ITEM_COUNTER = counter
+
+
+def count_item():
+    """Called by worker functions after each item (spectrum). Does nothing
+    outside a pool started with on_items_done."""
+    counter = _ITEM_COUNTER
+    if counter is not None:
+        with counter.get_lock():
+            counter.value += 1
 
 
 @contextlib.contextmanager
@@ -189,7 +248,7 @@ def _terminate_workers(executor):
 
 
 def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None,
-                        on_payload_done=None):
+                        on_payload_done=None, on_items_done=None):
     """Run worker_fn(payload) for every payload in separate processes and
     return the results in payload order.
 
@@ -206,12 +265,18 @@ def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None
 
     on_payload_done(i) (may be None) is called in this process when the
     i-th payload has finished, so a caller can count progress.
+
+    on_items_done(n) (may be None) is called with the number of items the
+    workers have finished so far -- counted inside the chunks, by workers
+    that call count_item() -- so progress can move smoothly.
     """
     results = [None] * len(payloads)
     context = multiprocessing.get_context('spawn')
+    counter = context.Value('q', 0) if on_items_done is not None else None
     with limited_blas_threads():
         executor = concurrent.futures.ProcessPoolExecutor(
-            max_workers=max_workers, mp_context=context)
+            max_workers=max_workers, mp_context=context,
+            initializer=_init_worker, initargs=(counter,))
         try:
             future_to_index = {
                 executor.submit(worker_fn, payload): i
@@ -227,6 +292,8 @@ def run_in_process_pool(worker_fn, payloads, max_workers, progress_callback=None
                     results[index] = future.result()
                     if on_payload_done is not None:
                         on_payload_done(index)
+                if counter is not None:
+                    on_items_done(counter.value)
                 if progress_callback is not None:
                     progress_callback()
         except BaseException:

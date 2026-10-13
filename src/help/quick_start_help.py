@@ -339,7 +339,9 @@ def get_quick_start_help_content():
                 clustering of your spectra</td>
                 <td><a href="help://cluster_analysis">Open help</a></td></tr>
             <tr><td>2D Map</td><td>False-colour spatial map from a
-                hyperspectral Raman/IR scan &mdash; one pixel per spectrum</td>
+                hyperspectral Raman/IR scan &mdash; one pixel per spectrum; band
+                intensity, ratios, components, clusters, or a peak fit in every pixel
+                (position, width, height, area); large maps use all CPU cores</td>
                 <td><a href="help://map2d">Open help</a></td></tr>
             <tr><td>2D Correlation (2D-COS)</td><td>Synchronous/asynchronous
                 two-dimensional correlation spectroscopy</td>

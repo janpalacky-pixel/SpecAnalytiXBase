@@ -57,7 +57,7 @@ from matplotlib.figure import Figure
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import OperationCancelled
 from src.modules.visualization_analysis.peak_fit_map import (
-    FITTED_METRICS, fit_single_peak, model_curve)
+    FITTED_METRICS, fit_single_peak, model_curve, normalized_settings)
 from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
     PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
     save_settings as save_peak_fit_settings)
@@ -2324,7 +2324,7 @@ class Map2DDialog(QDialog):
             dims_ok = (n_rows > 0 and n_cols > 0
                        and n_rows * n_cols == self.n_spectra)
             if dims_ok:
-                self._compute_map()
+                self._compute_or_wait_for_update("Map type changed")
             else:
                 self._show_range_spectrum_in_panel()
         elif is_rgb:
@@ -2392,7 +2392,11 @@ class Map2DDialog(QDialog):
         # Configure band button: always shown in decomposition/cluster mode,
         # never for RGB overlay (it has no spectral range of its own — it
         # only reads other modes' already-computed component maps)
-        show_configure = (is_decomp or is_cluster or not is_x_metric) and not is_rgb
+        # Not in Map arithmetic: it has its own Band A / Band B buttons
+        # (this button would be a second "Configure Band A…" for the
+        # Intensity range, which arithmetic does not use).
+        show_configure = ((is_decomp or is_cluster or not is_x_metric)
+                          and not is_rgb and not is_arith)
         self._btn_configure_ranges.setVisible(show_configure)
         self._ranges_summary_label.setVisible(show_configure)
 
@@ -2422,6 +2426,25 @@ class Map2DDialog(QDialog):
     def _is_fitted_metric(self):
         return self._metric_combo.currentText() in FITTED_METRICS
 
+    def _fitting_needed(self):
+        """True when the map to show is a peak-fit map (Intensity or Map
+        arithmetic with a Fitted ... metric)."""
+        return self._is_fitted_metric() and (
+            self._radio_intensity.isChecked() or self._radio_arith.isChecked())
+
+    def _compute_or_wait_for_update(self, what):
+        """After a change of band, map size, mode or metric: quick metrics
+        are recomputed at once; a peak-fit map waits for Update Map, like
+        SVD/PCA/NMF/MCR-ALS -- fitting can take a while, and the user may
+        want to change more (band, Fit settings…) before starting it."""
+        if not self._fitting_needed():
+            self._compute_map()
+            return
+        self._invalidate_map()
+        self._click_info_label.setText(
+            f"{what}: check 'Fit settings…' if needed, then press 'Update Map' "
+            f"to start the fitting.")
+
     def _update_peak_fit_button(self):
         self._peak_fit_btn.setVisible(
             self._is_fitted_metric()
@@ -2438,7 +2461,7 @@ class Map2DDialog(QDialog):
             self._svd_full_range_cb.setVisible(False)
 
     def _fit_view_applies(self):
-        return self._is_fitted_metric() and self._radio_intensity.isChecked()
+        return self._fitting_needed()
 
     def _edit_peak_fit_settings(self):
         mgr = self.controller.manager
@@ -2450,15 +2473,26 @@ class Map2DDialog(QDialog):
             return
         mgr.peak_fit_settings = new
         save_peak_fit_settings(new)
-        if self._last_map_data is not None and self._is_fitted_metric() \
-                and (self._radio_intensity.isChecked() or self._radio_arith.isChecked()):
-            self._compute_map()
+        # A shown peak-fit map is now out of date; like every other change
+        # it is refitted only with Update Map (fitting can take a while).
+        if self._last_map_data is not None and self._fitting_needed():
+            self._compute_or_wait_for_update("Fit settings changed")
 
     def _on_metric_changed(self):
         self._update_x_val_visibility()
         self._update_peak_fit_button()
+        was_fitted = getattr(self, '_metric_was_fitted', False)
+        self._metric_was_fitted = self._is_fitted_metric()
         if (self._radio_intensity.isChecked() or self._radio_arith.isChecked()) \
                 and self._last_map_data is not None:
+            if self._metric_was_fitted and not was_fitted:
+                # Choosing a Fitted ... metric must not start the fitting at
+                # once: it can take a while, and 'Fit settings…' only appears
+                # now, so the user first gets the chance to check them and
+                # then starts it with Update Map. (Switching between fitted
+                # metrics afterwards is instant -- the fit is cached.)
+                self._compute_or_wait_for_update("Fitted metric chosen")
+                return
             self._compute_map()
         else:
             self._invalidate_map()
@@ -2500,7 +2534,7 @@ class Map2DDialog(QDialog):
         dims_ok = (n_rows > 0 and n_cols > 0
                    and n_rows * n_cols == self.n_spectra)
         if is_fast and dims_ok:
-            self._compute_map()
+            self._compute_or_wait_for_update("Map size changed")
         else:
             self._invalidate_map()
 
@@ -3176,7 +3210,7 @@ class Map2DDialog(QDialog):
                     self._x_max = None
                     self._update_ranges_summary()
                     if not self._is_decomp_mode():
-                        self._compute_map()
+                        self._compute_or_wait_for_update("Band range changed")
                     else:
                         # SVD/NMF/MCR-ALS are all fit-then-browse — same
                         # reason SVD alone used to be singled out here:
@@ -3249,7 +3283,7 @@ class Map2DDialog(QDialog):
                         self._arith_b['x_min']      = None
                         self._arith_b['x_max']      = None
                     self._update_arith_band_label(band)
-                    self._compute_map()
+                    self._compute_or_wait_for_update("Band range changed")
         except Exception as exc:
             logger.error("Arithmetic band config failed: %s", exc,
                          exc_info=True)
@@ -4890,59 +4924,93 @@ class Map2DDialog(QDialog):
                 x_max=self._x_max,
             )
             self._draw_range_bands(x)
-            if self._is_fitted_metric() and self._radio_intensity.isChecked():
+            if self._fit_view_applies():
                 self._draw_pixel_peak_fit(sp)
         self._set_spectrum_panel_visible(True)
 
+    def _pixel_fit_bands(self):
+        """(label, colour, x_min, x_max, include, exclude) of each band whose
+        fit belongs to the map: the Band in Intensity mode, Band A and Band
+        B in Map arithmetic (same colours as their range bands)."""
+        if self._radio_arith.isChecked():
+            sb = self._arith_b
+            return [
+                # darker than the range bands, so the fits stand out from
+                # the blue spectrum
+                ('A', '#0B2E6B', self._x_min, self._x_max,
+                 [] if self._arith_a_is_exclude else self._arith_a_ranges,
+                 self._arith_a_ranges if self._arith_a_is_exclude else []),
+                ('B', '#8E0000', sb['x_min'], sb['x_max'],
+                 [] if sb['is_exclude'] else sb['ranges'],
+                 sb['ranges'] if sb['is_exclude'] else []),
+            ]
+        return [('', '#E65100', self._x_min, self._x_max,
+                 [] if self._is_exclude else self._ranges,
+                 self._ranges if self._is_exclude else [])]
+
     def _draw_pixel_peak_fit(self, sp):
         """Overlay the fitted peak (and its background) of one pixel on the
-        spectrum panel, so the user can judge whether the fit is sensible."""
+        spectrum panel, so the user can judge whether the fit is sensible --
+        in Map arithmetic both fits, Band A's and Band B's."""
         mgr = self.controller.manager
         settings = mgr.peak_fit_settings
-        inc = [] if self._is_exclude else self._ranges
-        exc = self._ranges if self._is_exclude else []
-        xw, yw = mgr._apply_range_filter(
-            np.asarray(sp['x_scale'], dtype=float), np.asarray(sp['y_scale'], dtype=float),
-            self._x_min, self._x_max, inc, exc)
-        result = fit_single_peak(xw, yw, settings['shape'], settings['baseline'])
+        min_points = normalized_settings(settings)['min_band_points']
         ax = self._spectrum_canvas.ax
         self._pixel_fit_views = None
-        if len(xw) < 2:
-            return
         full_view = (ax.get_xlim(), ax.get_ylim())
-        x_dense = np.linspace(float(np.min(xw)), float(np.max(xw)), 400)
-        curve, base = model_curve(x_dense, result, settings['shape'], settings['baseline'])
-        if curve is None:
-            ax.text(0.02, 0.95, f"Fit failed for this pixel ({result.get('reason', 'no fit')})",
-                    transform=ax.transAxes, va='top', fontsize=8, color='#B71C1C')
-        elif result['ok']:
-            ax.plot(x_dense, curve, color='#E65100', linewidth=1.3,
-                    label=f"{settings['shape']} fit")
-            if settings['baseline'] != 'None':
-                ax.plot(x_dense, base, color='#E65100', linewidth=0.8, linestyle='--',
-                        label='background')
-            ax.axvline(result['center'], color='#E65100', linewidth=0.6, alpha=0.6)
-            ax.legend(fontsize=7, loc='upper right', title_fontsize=7,
-                      title=(f"centre {result['center']:.4g}, FWHM {result['fwhm']:.3g}, "
-                             f"R² {result['r2']:.3f}"))
+        bands = self._pixel_fit_bands()
+        two = len(bands) > 1
+        lines, windows, curves = [], [], []
+        for name, colour, x_min, x_max, inc, exc in bands:
+            xw, yw = mgr._apply_range_filter(
+                np.asarray(sp['x_scale'], dtype=float), np.asarray(sp['y_scale'], dtype=float),
+                x_min, x_max, inc, exc)
+            if len(xw) < 2:
+                continue
+            windows.append((float(np.min(xw)), float(np.max(xw))))
+            result = fit_single_peak(xw, yw, settings['shape'], settings['baseline'], min_points)
+            x_dense = np.linspace(float(np.min(xw)), float(np.max(xw)), 400)
+            curve, base = model_curve(x_dense, result, settings['shape'], settings['baseline'])
+            prefix = f"{name}: " if two else ""
+            if curve is None:
+                lines.append(f"{prefix}fit failed ({result.get('reason', 'no fit')})" if two
+                             else f"Fit failed for this pixel ({result.get('reason', 'no fit')})")
+            elif result['ok']:
+                fit_colour = colour if two else '#E65100'
+                ax.plot(x_dense, curve, color=fit_colour, linewidth=1.6 if two else 1.3,
+                        label=f"{prefix}{settings['shape']} fit")
+                if settings['baseline'] != 'None':
+                    ax.plot(x_dense, base, color=fit_colour, linewidth=0.8, linestyle='--',
+                            label=f"{prefix}background")
+                ax.axvline(result['center'], color=fit_colour, linewidth=0.6, alpha=0.6)
+                curves.append(curve)
+                lines.append(f"{prefix}centre {result['center']:.4g}, "
+                             f"FWHM {result['fwhm']:.3g}, R² {result['r2']:.3f}")
+            else:
+                # Shown for transparency, but clearly as the fit that was
+                # NOT used (the pixel is blank in the map); its background
+                # is meaningless and left out.
+                ax.plot(x_dense, curve, color='#757575', linewidth=1.1, linestyle=':',
+                        label=f"{prefix}rejected fit (no value in the map)")
+                lines.append(f"{prefix}rejected: {result.get('reason', 'fit failed')}")
+        if not windows:
+            return
+        if ax.get_legend_handles_labels()[0]:
+            ax.legend(fontsize=7, loc='upper right', title_fontsize=7, title="\n".join(lines))
         else:
-            # Shown for transparency, but clearly as the fit that was NOT
-            # used (the pixel is blank in the map); its background is
-            # meaningless and left out.
-            ax.plot(x_dense, curve, color='#757575', linewidth=1.1, linestyle=':',
-                    label='rejected fit (no value in the map)')
-            ax.legend(fontsize=7, loc='upper right', title_fontsize=7,
-                      title=f"rejected: {result.get('reason', 'fit failed')}")
-        # Zoom to the fitting window (plus half its width on each side), so
-        # the fit can actually be judged; the toolbar's Home shows it all.
-        lo, hi = float(np.min(xw)), float(np.max(xw))
-        pad = 0.5 * (hi - lo)
+            ax.text(0.02, 0.95, "\n".join(lines), transform=ax.transAxes, va='top',
+                    fontsize=8, color='#B71C1C')
+        # Zoom to the fitting window(s) (plus half the width on each side),
+        # so the fit can actually be judged; the toolbar's Home shows it all.
+        lo = min(w[0] for w in windows)
+        hi = max(w[1] for w in windows)
+        pad = 0.5 * (hi - lo) if not two else 0.1 * (hi - lo)
         x_all = np.asarray(sp.get('original_x_scale', sp['x_scale']), dtype=float)
         y_all = np.asarray(sp.get('original_y_scale', sp['y_scale']), dtype=float)
         visible = (x_all >= lo - pad) & (x_all <= hi + pad) & np.isfinite(y_all)
         if visible.any():
             y_lo, y_hi = float(np.min(y_all[visible])), float(np.max(y_all[visible]))
-            if curve is not None and result['ok']:
+            for curve in curves:
                 y_lo, y_hi = min(y_lo, float(np.min(curve))), max(y_hi, float(np.max(curve)))
             margin = 0.08 * (y_hi - y_lo or 1.0)
             x_lo_view = max(lo - pad, float(np.min(x_all)))

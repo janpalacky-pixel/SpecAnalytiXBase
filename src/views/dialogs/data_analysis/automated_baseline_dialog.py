@@ -1,6 +1,6 @@
 # src/views/dialogs/data_analysis/automated_baseline_dialog.py
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
                              QSlider, QLabel, QDialogButtonBox, QListWidget,
                              QWidget, QSplitter, QSizePolicy, QPushButton,
                              QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
@@ -1196,8 +1196,8 @@ class AutomatedBaselineDialog(QDialog):
         # Keeping the choice visible lets the user compare serial against
         # parallel, or switch parallel off if it ever misbehaves.
         processing_group = QGroupBox("Processing")
-        processing_layout = QHBoxLayout(processing_group)
-        processing_layout.addWidget(QLabel("Mode:"))
+        processing_layout = QGridLayout(processing_group)
+        processing_layout.addWidget(QLabel("Mode:"), 0, 0)
         self.processing_mode_combo = QComboBox()
         self.processing_mode_combo.addItem("Automatic (recommended)", 'auto')
         self.processing_mode_combo.addItem("Serial (one core)", 'serial')
@@ -1211,20 +1211,13 @@ class AutomatedBaselineDialog(QDialog):
             "Serial: one spectrum after another, on one core.\n"
             "Parallel: always several worker processes. Use it to compare "
             "speed, or choose Serial if you suspect a problem with it.")
-        processing_layout.addWidget(self.processing_mode_combo, 1)
-        processing_layout.addWidget(QLabel("Workers:"))
-        self.max_workers_spin = QSpinBox()
-        self.max_workers_spin.setRange(0, max(1, os.cpu_count() or 1))
-        from src.modules.utils.parallel_utils import describe_worker_limits, safe_worker_count
-        self.max_workers_spin.setSpecialValueText(f"Auto ({safe_worker_count()})")
-        self.max_workers_spin.setToolTip(
-            "Number of worker processes for parallel processing.\n"
-            "Auto uses one less than the number of CPU cores, limited by the "
-            "memory that is free right now (about 200 MB per worker).\n"
-            f"Right now on this computer: {describe_worker_limits()}.\n"
-            "A number you type is limited to the CPU cores only, so only raise it "
-            "if you know there is enough free memory.")
-        processing_layout.addWidget(self.max_workers_spin)
+        processing_layout.addWidget(self.processing_mode_combo, 0, 1)
+        processing_layout.addWidget(QLabel("Workers:"), 1, 0)
+        # A slider from 1 to the CPU cores, default the maximum (see
+        # src/views/dialogs/misc/worker_count_slider.py).
+        from src.views.dialogs.misc.worker_count_slider import WorkerCountSlider
+        self.max_workers_spin = WorkerCountSlider()
+        processing_layout.addWidget(self.max_workers_spin, 1, 1)
         self.processing_mode_combo.currentIndexChanged.connect(
             lambda _i: self.max_workers_spin.setEnabled(
                 self.processing_mode_combo.currentData() != 'serial'))
