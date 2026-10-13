@@ -5,8 +5,8 @@ Automatic saving
     Every few minutes (File -> Automatic saving: off / 2 / 5 / 10 min,
     remembered between sessions) the current state is saved as a snapshot
     into the per-user autosave folder -- only when something changed since
-    the last automatic save (a quick check of the data's identity first, a
-    cheap signature of everything every few turns; see autosave_now). It
+    the last automatic save (a cheap signature of everything, compared at
+    every turn; see autosave_now). It
     waits while an operation shows a progress dialog, writes the file on a
     background thread (snapshot_format.py, atomically), and shows
     "Saving automatically…" / "Saved automatically at …" in the status bar.
@@ -47,7 +47,6 @@ logger = get_logger(__name__)
 
 AUTOSAVE_GZIP_LEVEL = 1          # fastest; the file is temporary anyway
 BUSY_RETRY_SECONDS = 20          # app busy: try again after this long
-FULL_CHECK_EVERY = 5             # full change check at least every 5th turn
 
 
 _FINGERPRINTS = {}   # id(array) -> (weak reference, fingerprint)
@@ -134,8 +133,6 @@ class AutosaveController(QObject):
         self._status_timer.timeout.connect(self._check_writer)
         self.last_duration = 0.0
         self._abort_write = False
-        self._last_quick_key = None
-        self._turns_since_full_check = 0
         self._build_menus()
 
     # ------------------------------------------------------------------ #
@@ -183,7 +180,6 @@ class AutosaveController(QObject):
                 self._stop_writing()
                 self.manager.remove_snapshot()
                 self._last_hash = None
-                self._last_quick_key = None
 
     def autosave_now(self, force=False):
         """Save the current state if it changed. Returns True if a save was
@@ -215,26 +211,21 @@ class AutosaveController(QObject):
             # Nothing loaded (e.g. everything cleared): nothing to recover.
             self.manager.remove_snapshot()
             self._last_hash = None
-            self._last_quick_key = None
             return False
-        # Quick gate: if neither the data (Operations History, spectra list,
-        # labels, selection) nor the plot type changed since the last save,
-        # skip -- in milliseconds even for a huge map. Every few turns the
-        # full check below runs anyway, so a change elsewhere (e.g. plot
-        # colours) is still saved, just a little later.
-        quick = self._quick_key()
-        self._turns_since_full_check += 1
-        if (quick is not None and quick == self._last_quick_key
-                and self._turns_since_full_check < FULL_CHECK_EVERY):
-            return False
-        self._turns_since_full_check = 0
+        # The signature covers everything that goes into the snapshot --
+        # data, Operations History, selection, plot and other settings,
+        # metadata -- and is compared at EVERY turn, so any change is saved
+        # at the next turn. (An earlier version first compared a short
+        # summary and the full signature only every 5th turn; changes the
+        # summary did not include, such as plot colours, were then saved up
+        # to 25 minutes late. Measured cost of the full check on a
+        # 21 000-spectrum workspace: about 0.5 s on a slow 2-core machine.)
         save_manager = self.main.save_controller.save_manager
         try:
             state = save_manager._build_state(self.main)
             state.pop('timestamp', None)
             digest = state_signature(state)
             if digest == self._last_hash:
-                self._last_quick_key = quick
                 return False                      # nothing changed since the last save
             state = _detach(state)
             state['timestamp'] = datetime.datetime.now().isoformat()
@@ -251,7 +242,6 @@ class AutosaveController(QObject):
                 snapshot_format.write(state, path, AUTOSAVE_GZIP_LEVEL,
                                       abort=lambda: self._abort_write)
                 self._last_hash = digest
-                self._last_quick_key = quick
                 self.last_saved_at = datetime.datetime.now()
                 self.last_duration = time.perf_counter() - started
                 self._write_error = None
@@ -266,21 +256,6 @@ class AutosaveController(QObject):
         self._writer.start()
         self._status_timer.start(500)
         return True
-
-    def _quick_key(self):
-        """A few cheap facts that change whenever the data changes (see
-        autosave_now), or None if they cannot be read."""
-        try:
-            main = self.main
-            om = main.operations_controller.operations_manager
-            spectra = main.original_spectra
-            return (om.revision, om.active_operation_index, len(om.operations_chain),
-                    id(spectra), len(spectra), tuple(s.get('label') for s in spectra),
-                    id(getattr(main, 'selected_spectra', None)),
-                    tuple(sorted(main.spectrum_selector.selected_indices)),
-                    main.view.comboBox_plot_type_choice.currentText())
-        except Exception:
-            return None
 
     @staticmethod
     def _app_is_busy():
@@ -374,7 +349,6 @@ class AutosaveController(QObject):
         self.main.view.spectrum_selection_frame.setVisible(True)
         self.manager.discard(session)
         self._last_hash = None
-        self._last_quick_key = None
         self.autosave_now(force=True)    # protect the restored work under this session
         return True
 

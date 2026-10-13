@@ -419,6 +419,10 @@ def test_status_bar_tells_the_user(mc):
 
 
 def test_unchanged_workspace_is_recognised_without_building_a_snapshot(mc, monkeypatch):
+    # Changed with the owner's agreement: the full check now runs at every
+    # turn (no quick gate any more), so the state is collected each time --
+    # but an unchanged workspace still writes no file.
+    from src.modules.misc import snapshot_format
     ac = mc.autosave_controller
     ac.start(offer_recovery=False)
     _import(mc)
@@ -428,9 +432,23 @@ def test_unchanged_workspace_is_recognised_without_building_a_snapshot(mc, monke
     real = mc.save_controller.save_manager._build_state
     monkeypatch.setattr(mc.save_controller.save_manager, '_build_state',
                         lambda m: calls.append(1) or real(m))
+    writes = []
+    monkeypatch.setattr(snapshot_format, 'write', lambda *a, **k: writes.append(1))
     for _ in range(3):
         assert ac.autosave_now() is False
-    assert calls == []                                        # the quick check sufficed
+    assert len(calls) == 3 and writes == []                   # checked every turn, nothing written
+
+
+def test_a_settings_only_change_is_saved_at_the_next_turn(mc):
+    ac = mc.autosave_controller
+    ac.start(offer_recovery=False)
+    _import(mc)
+    assert ac.autosave_now() is True
+    ac.wait_for_write(30)
+    assert ac.autosave_now() is False                         # nothing changed
+    mc.use_automatic_line_colors = not mc.use_automatic_line_colors   # a plot setting only
+    assert ac.autosave_now() is True                          # saved at once, not turns later
+    ac.wait_for_write(30)
 
 
 def test_closing_during_a_save_leaves_nothing_behind(mc, monkeypatch):

@@ -1958,6 +1958,14 @@ def get_user_guide_help_content():
                 waits and saves shortly after it has finished, so it never slows the
                 operation down. An automatic save contains the last <em>finished</em>
                 state.</li>
+            <li><strong>Nothing is missed or saved late.</strong> At every interval the
+                program compares a fingerprint of <em>everything</em> that goes into a
+                snapshot &mdash; data, Operations History, selection, plot and other
+                settings, metadata &mdash; with the last automatic save, and if anything
+                differs it saves the <em>whole</em> workspace. (On a 21&nbsp;000-spectrum map
+                this check takes well under a second.)</li>
+            <li><strong>File → Save</strong> (a snapshot you save yourself) always writes
+                the complete current state; no check is involved.</li>
             <li>If a save takes longer than the interval (a very large workspace), the
                 next one is simply skipped; saves never overlap. The files are kept in
                 <code>%LOCALAPPDATA%\SpecAnalytiXBase\autosave</code> and deleted when the

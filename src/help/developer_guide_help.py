@@ -3310,21 +3310,20 @@ def _natural_sort_key(cls, label):
         <h3>3. Never do heavy work on the GUI thread just to decide whether to do it</h3>
         <p>The first autosave built and hashed the entire snapshot (2&nbsp;GB of text) every
         interval just to learn whether anything had changed &mdash; a 10&ndash;20&nbsp;s freeze
-        every 2 minutes, even when nothing had changed. The check is now in two cheap levels:</p>
-        <ol>
-            <li><b>Quick key, milliseconds:</b> the Operations History revision counter, active step,
-            number of steps, the identity and length of the spectra list, labels, selection, plot
-            type. This works <i>without looking at the data</i> because of a rule the whole app
-            follows: <b>spectrum arrays are never modified in place</b> &mdash; an operation always
-            creates new arrays and a new list and bumps the revision. Checking "is it still the same
-            object / the same counter" is like checking a document's version number instead of
-            re-reading it.</li>
-            <li><b>Fingerprint signature, at least every 5th turn:</b> the state with each array
-            replaced by shape, dtype, first/last value and the sum of every 37th value, cached per
-            array object (weak references). It catches changes the quick key cannot see (e.g. plot
-            colours) and is a safety net should the "never in place" rule ever be broken. It still
-            reads only a sample of each array.</li>
-        </ol>
+        every 2 minutes, even when nothing had changed. The check is now a <b>fingerprint
+        signature, at every turn</b>: the state with each array replaced by shape, dtype,
+        first/last value and the sum of every 37th value, cached per array object (weak
+        references), so an unchanged workspace costs about 0.5&nbsp;s even for 21&nbsp;000
+        spectra (slow 2-core machine). This works without reading all the data because of a rule
+        the whole app follows: <b>spectrum arrays are never modified in place</b> &mdash; an
+        operation always creates new arrays and a new list and bumps the revision, like a
+        document getting a new version number.</p>
+        <p><i>Rejected: a two-level check.</i> A first version compared a quick key (revision,
+        spectra list identity, labels, selection, plot type; milliseconds) at every turn and the
+        signature only at every 5th turn. Changes the quick key did not include &mdash; plot
+        colours or axis settings &mdash; were then saved up to 25&nbsp;minutes late,
+        and you never know what such a summary leaves out. Certainty is worth half a second every
+        few minutes, so the signature runs at every turn.</p>
         <p>If you ever write code that changes <code>x_scale</code>/<code>y_scale</code> in place,
         you break both this and the snapshot de-duplication below: replace arrays, don't mutate
         them. (Loaded snapshot arrays are read-only, so in-place changes would fail loudly.)</p>
@@ -3481,14 +3480,13 @@ def _natural_sort_key(cls, label):
             failed in a real two-process test: the new instance got the <i>same</i> id as
             the crashed one, decided "that's me", and on its own normal close deleted the
             crashed work. Session ids are now <code>&lt;pid&gt;-&lt;random&gt;</code>.</li>
-            <li><b>Only when changed, cheaply:</b> first a quick key (operations revision,
-            active step, spectra list identity, labels, selection, plot type) &mdash;
-            milliseconds; at least every 5th turn a full signature: the state with every
-            array replaced by a fingerprint (shape, dtype, ends, sum of every 37th value,
-            cached per array object) and without the time stamp. The first version built
-            and hashed the whole snapshot on the GUI thread every turn: on a
-            21&nbsp;000-spectrum map that froze the window for 10&ndash;20&nbsp;s every
-            interval.</li>
+            <li><b>Only when changed, cheaply:</b> at every turn a full signature: the state
+            with every array replaced by a fingerprint (shape, dtype, ends, sum of every 37th
+            value, cached per array object) and without the time stamp. (An intermediate version
+            used a quick key and the signature only every 5th turn; settings changes were then
+            saved up to 25 minutes late, so it was dropped.) The first version built and hashed
+            the whole snapshot on the GUI thread every turn: on a 21&nbsp;000-spectrum map that
+            froze the window for 10&ndash;20&nbsp;s every interval.</li>
             <li><b>Never during an operation:</b> while a <code>QProgressDialog</code> is
             visible or a wait cursor is set, the save is postponed (retry after 20 s). A
             real case: the timer fired inside a peak-fit progress callback's
