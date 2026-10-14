@@ -180,7 +180,7 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
                       use_default_points=False, x_scale="linear", y_scale="linear",
                       grid_manager=None, legend_manager=None, axis_manager=None,
                       constrained_layout_manager=None, band_marker_manager=None,
-                      progress_callback=None, display_labels=None):
+                      progress_callback=None, display_labels=None, draw=True):
     """
     Sets up the 'Overlay Plot Mode' where all spectra are plotted on a single axis.
 
@@ -232,8 +232,13 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
     ax.set_xscale(x_scale)
     ax.set_yscale(y_scale)
 
-    # Plot each spectrum on the same axis with settings
+    # Plot each spectrum on the same axis with settings. The artists of each
+    # spectrum are collected (canvas.spectrum_artists, one list per
+    # spectrum) so a caller can draw them in portions (draw=False; see
+    # large_plot_controller.py).
+    spectrum_artists = []
     for i, spectrum in enumerate(spectra):
+        n_before = len(ax.lines)
         
         spectrum_label = spectrum.get('label', "Spectrum")
         if display_labels:
@@ -251,6 +256,7 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
             x_scale,
             y_scale
         )
+        spectrum_artists.append(list(ax.lines[n_before:]))
 
         # Every 50 spectra, not every single one — frequent enough that a
         # progress dialog's busy animation still looks smooth, infrequent
@@ -273,8 +279,10 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
     apply_all_plot_properties(ax, grid_manager, legend_manager, axis_manager,
                               band_marker_manager=band_marker_manager)
 
-    # Redraw the canvas
-    canvas.draw()
+    canvas.spectrum_artists = spectrum_artists
+    # Redraw the canvas (a caller drawing in portions does it itself)
+    if draw:
+        canvas.draw()
 
     return canvas, toolbar
 

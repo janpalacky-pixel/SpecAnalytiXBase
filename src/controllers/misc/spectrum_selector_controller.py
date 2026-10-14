@@ -5,6 +5,7 @@ from PyQt5.QtCore import Qt, QObject, QEvent
 from PyQt5.QtWidgets import QListWidgetItem, QListWidget, QDialog, QMessageBox, QAbstractItemView
 from src.controllers.misc.rename_spectra_controller import RenameSpectraController
 from src.views.dialogs.misc.spectra_selection_dialog import SpectraSelectionDialog
+from src.modules.utils.list_selection import select_rows
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key, spectrum_id
 logger = get_logger(__name__)
@@ -41,9 +42,8 @@ class _ShiftClickFilter(QObject):
             # Extend selection: keep existing, add the range
             self._sel.is_handling_selection = True
             try:
-                for row in range(lo, hi + 1):
-                    lw.item(row).setSelected(True)
-                    self._sel.selected_indices.add(row)
+                select_rows(lw, range(lo, hi + 1), mode='add')     # one call
+                self._sel.selected_indices.update(range(lo, hi + 1))
             finally:
                 self._sel.is_handling_selection = False
 
@@ -225,10 +225,9 @@ class SpectrumSelector:
         try:
             if interactive_mode:
                 # Restore previous selection when switching to interactive mode
-                self.controller.spectra_list_widget.clearSelection()
-                for idx in self.selected_indices:
-                    if idx < self.controller.spectra_list_widget.count():
-                        self.controller.spectra_list_widget.item(idx).setSelected(True)
+                # in one call: one setSelected per row froze the window for
+                # minutes with 21 000 selected spectra (see list_selection.py)
+                select_rows(self.controller.spectra_list_widget, self.selected_indices)
                 
                 # Update plot with restored selection
                 self.controller.selected_spectra = [
@@ -483,18 +482,15 @@ class SpectrumSelector:
                 self.controller.spectra_list_widget.clearSelection()
                 self.selected_indices.clear()
 
-            # Apply the selection changes
-            for idx in indices:
-                if idx < self.controller.spectra_list_widget.count():
-                    item = self.controller.spectra_list_widget.item(idx)
-                    
-                    if action == "select" or action == "add":
-                        item.setSelected(True)
-                        self.selected_indices.add(idx)
-                    elif action == "remove":
-                        item.setSelected(False)
-                        if idx in self.selected_indices:
-                            self.selected_indices.remove(idx)
+            # Apply the selection changes in one call (see list_selection.py)
+            count = self.controller.spectra_list_widget.count()
+            valid = [idx for idx in indices if 0 <= idx < count]
+            if action == "select" or action == "add":
+                select_rows(self.controller.spectra_list_widget, valid, mode='add')
+                self.selected_indices.update(valid)
+            elif action == "remove":
+                select_rows(self.controller.spectra_list_widget, valid, mode='remove')
+                self.selected_indices.difference_update(valid)
             
             # Update selected spectra
             if self.controller.interactive_mode_checkbox.isChecked():

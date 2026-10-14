@@ -262,7 +262,10 @@ def get_user_guide_help_content():
         </div>
 
         <p>Operations are applied incrementally and the full history is accessible
-        via the <strong>History</strong> button. Use <a href="#pipeline">→ Processing
+        via the <strong>History</strong> button. Next to <strong>Run</strong>, the
+        <strong>&#8630; Undo</strong> and <strong>Redo &#8631;</strong> buttons step one
+        operation back or forward in that history (the same as clicking the previous or
+        next row in the History window; hover over them to see which step they go to). Use <a href="#pipeline">→ Processing
         Pipeline details</a> for a complete description of each step.</p>
 
         <div class="screenshot">
@@ -342,6 +345,7 @@ def get_user_guide_help_content():
                     <li><a href="#pls">PLS / PLS-DA</a></li>
                     <li><a href="#kinetics-fitting">Kinetics Fitting</a></li>
                     <li><a href="#qc-outlier">QC / Outlier Detection</a></li>
+                    <li><a href="#group-statistics">Group Statistics</a></li>
                 </ul>
             </li>
             <li><a href="#legend">Legend</a></li>
@@ -518,7 +522,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Unselect All</strong></td><td>Deselect all spectra</td></tr>
             <tr><td><strong>Select spectra</strong></td><td>Open a dialog to select spectra by name pattern</td></tr>
             <tr><td><strong>Rename</strong></td><td>Rename the selected spectrum/spectra. The list is re-sorted afterward, since a new name can change where a spectrum belongs alphabetically.</td></tr>
-            <tr><td><strong>Copy spectra</strong></td><td>Create copies of the selected spectra with a <em>_copy</em> suffix (also <strong>Ctrl+C</strong> or <strong>Ctrl+V</strong> — see below). Useful for comparing a spectrum before and after an operation. The copy operation is recorded in the Operations History so it can be undone by jumping to the previous state. The list is re-sorted afterward and the copies are selected. No confirmation is asked — a copy never removes or changes anything, so there's nothing to confirm.</td></tr>
+            <tr><td><strong>Copy</strong> / <strong>Paste</strong></td><td>Copy and paste like anywhere else: <strong>Copy</strong> (<strong>Ctrl+C</strong>) only remembers the selected spectra (nothing is added yet); <strong>Paste</strong> (<strong>Ctrl+V</strong>) then adds their copies with a <em>_copy</em> suffix (paste again for another set). The menu shows how many copies Paste will add; it is greyed out until something has been copied. Useful for comparing a spectrum before and after an operation. The copy operation is recorded in the Operations History so it can be undone by jumping to the previous state. The list is re-sorted afterward and the copies are selected. No confirmation is asked — a copy never removes or changes anything, so there's nothing to confirm.</td></tr>
             <tr><td><strong>Delete spectra</strong></td><td>Remove the selected spectra from the list (also <strong>Ctrl+D</strong> or the <strong>Delete</strong> key — see below). Asks for confirmation first, since this visibly removes spectra from the list you're looking at — even though it's also recorded in the Operations History, so jumping to the previous state restores them if you ever need to.</td></tr>
         </table>
 
@@ -528,9 +532,9 @@ def get_user_guide_help_content():
             above the spectrum list, and <strong>Rename</strong>, <strong>Show Metadata</strong>,
             and <strong>Plot Properties</strong> sit in a row just below them — all five do
             exactly the same thing as their context-menu equivalents, just without needing a
-            right-click. <strong>Copy spectra</strong> and <strong>Delete spectra</strong> are
+            right-click. <strong>Copy</strong> / <strong>Paste</strong> and <strong>Delete spectra</strong> are
             <em>not</em> buttons — they're reached via keyboard shortcut instead
-            (<strong>Ctrl+C</strong>/<strong>Ctrl+V</strong> to copy,
+            (<strong>Ctrl+C</strong> to copy, then <strong>Ctrl+V</strong> to paste the copies,
             <strong>Ctrl+D</strong>/<strong>Delete</strong> to delete), or still available from
             the right-click context menu if you prefer.
         </div>
@@ -556,7 +560,7 @@ def get_user_guide_help_content():
         </div>
 
         <div class="tip">
-            <strong>Copy before processing:</strong> use Copy spectra (or Ctrl+C/Ctrl+V) before applying an
+            <strong>Copy before processing:</strong> use Copy and Paste (Ctrl+C, then Ctrl+V) before applying an
             operation to keep the original for comparison. Both the original and the copy
             will be available in the list simultaneously, so you can select both and use
             an overlay plot to compare before and after.
@@ -894,6 +898,13 @@ def get_user_guide_help_content():
         </div>
         <p>See the <a href="help://plot_controls">Interactive Update &amp; Legend
         Performance Guide</a> for a full decision table.</p>
+        <p><b>Thousands of selected spectra:</b> above 2&nbsp;000 (adjustable under
+        <b>View &rarr; Plotting many spectra&hellip;</b>), the Overlay, Grid and Waterfall
+        plots draw a preview of 1&nbsp;000 evenly spread spectra, with a note above the plot.
+        Your selection is not changed &mdash; analyses use all selected spectra. <b>Plot
+        all</b> on that note draws every spectrum (the Overlay plot in portions with a
+        progress window and <b>Stop</b>; Stop keeps what is drawn and switches Interactive
+        Update off).</p>
 
         <h3>Interactive Update</h3>
         <p>When <strong>Interactive Update</strong> is checked, the plot redraws
@@ -979,6 +990,14 @@ def get_user_guide_help_content():
         and so on. The currently active state is marked <strong>ACTIVE</strong> in
         green.</p>
 
+        <p><strong>Undo / Redo:</strong> the <strong>&#8630; Undo</strong> and
+        <strong>Redo &#8631;</strong> buttons next to <strong>Run</strong> in the main window
+        jump one step back or forward in this chain, without opening the dialog. Nothing
+        is lost by Undo: Redo brings the later step back. As with any jump in the
+        history, applying a <em>new</em> operation after Undo removes the later steps
+        (Redo is then greyed out). The buttons are greyed out when there is nothing to
+        undo or redo.</p>
+
         <div class="screenshot">
             <img src="$HISTORY_DIALOG" width="$HISTORY_DIALOG_W" height="$HISTORY_DIALOG_H" alt="Operations History dialog with a numbered chain of applied operations" />
             <p class="caption">The Operations History dialog: a numbered chain of every applied operation, with the active state highlighted in green.</p>
@@ -989,7 +1008,11 @@ def get_user_guide_help_content():
         <ul>
             <li>All processing operations (Normalization, Smoothing, Baseline, etc.)</li>
             <li><strong>Delete spectra</strong> — removing spectra is recorded; jump back to restore them</li>
-            <li><strong>Copy spectra</strong> — adding copies is recorded; jump back to remove them</li>
+            <li><strong>Copy / Paste</strong> — adding copies is recorded; jump back to remove them</li>
+            <li><strong>Import</strong> — spectra imported into an existing workspace (adding files,
+                not replacing the data) are recorded as an <em>Import</em> step; Undo or a jump
+                back removes them, Redo brings them back. The very first spectra of a session
+                are the Original State.</li>
         </ul>
 
         <div class="info">
@@ -1799,6 +1822,25 @@ def get_user_guide_help_content():
         test datasets (single-exponential decay, two-component global
         analysis) are available under
         <b>Help &rarr; Test datasets &rarr; Synthetic &rarr; Kinetics</b>.</p>
+
+        <h3 id="group-statistics">Group Statistics <a href="help://group_statistics" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
+        <p>Compares groups of spectra &mdash; e.g. treated against control &mdash; on one value per
+        spectrum and says whether the groups differ more than chance would explain, and by how
+        much (Analysis &amp; Visualization &rarr; Data Analysis &rarr; Group Statistics).</p>
+        <ul>
+            <li><b>Groups:</b> a Group column for the selected spectra, filled by typing, for
+                selected rows at once, from the names (the common root name, e.g.
+                <code>Chlorella</code> for <code>Chlorella [r24_c14]</code>; a text they contain;
+                or a part of the name such as <code>day3</code> in <code>cellA_day3_01</code>) or from a CSV/Excel table
+                of name &rarr; group. Remembered for the session.</li>
+            <li><b>Value:</b> intensity at x, mean / area / maximum over a range, or the ratio of
+                two band areas &mdash; from each spectrum's own x-axis.</li>
+            <li><b>Test:</b> Welch t-test or one-way ANOVA, or their non-parametric versions
+                (Mann&ndash;Whitney U, Kruskal&ndash;Wallis); with three or more groups every pair
+                too, Holm-corrected; effect sizes.</li>
+            <li><b>Results:</b> box plot with every spectrum as a dot, summary per group, the test,
+                the values; Export to Excel or CSV.</li>
+        </ul>
 
         <h3 id="qc-outlier">QC / Outlier Detection <a href="help://qc_outlier" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
 

@@ -80,6 +80,34 @@ def get_plot_controls_help_content():
         <li>Review the plot; adjust the selection if needed and press Refresh Plot again.</li>
     </ol>
 
+    <h2 id="many-spectra">Plotting thousands of spectra: preview, Plot all, Stop</h2>
+    <p>Drawing is the slow part of plotting many spectra: about 5&nbsp;s per 1&nbsp;000 spectra
+    of 1&nbsp;600 points on a typical computer, almost all of it one single drawing step that
+    cannot show progress or be interrupted. Therefore, when <b>more than 2&nbsp;000</b> spectra
+    are selected, the <b>Overlay</b>, <b>Grid</b> and <b>Waterfall</b> plots show a
+    <b>preview</b>: 1&nbsp;000 evenly spread spectra (always the first and the last). A line
+    above the plot says so, e.g. <i>"Preview: 1 000 of 21 000 selected spectra drawn (evenly
+    spread). Analyses use all 21 000."</i></p>
+    <ul>
+        <li><b>Your selection is not changed.</b> Every analysis and processing step uses all
+        selected spectra; only the picture shows fewer.</li>
+        <li><b>Plot all</b> (on that line) draws every selected spectrum. The Overlay plot is
+        then drawn in portions of 500 spectra with a progress window
+        (<i>"Plotting spectra… 3 500 / 21 000"</i>) and a <b>Stop</b> button.</li>
+        <li><b>Stop</b> keeps the spectra drawn so far, removes the rest from the plot and
+        switches <b>Interactive Update</b> off, so the next selection change does not start
+        a long drawing again. The line above the plot says how many were drawn; press
+        Refresh Plot or Plot all to draw again.</li>
+        <li><b>View &rarr; Plotting many spectra&hellip;</b> (also <b>Settings&hellip;</b> on
+        that line): the limit (default 2&nbsp;000), the preview size (default 1&nbsp;000), or
+        <i>Always plot all</i>. Remembered between sessions.</li>
+        <li>Not limited: <b>Heatmap</b> (one image, fast), <b>Mean&nbsp;&plusmn;&nbsp;SD</b> and
+        <b>Difference</b> (their mean must be the mean of all selected spectra) and
+        <b>Single spectrum</b>.</li>
+        <li>Zooming or panning a plot with all spectra redraws all of them at once again;
+        for exploring, the preview is much quicker.</li>
+    </ul>
+
     <!-- ═══════════════════════════════════════════════════════════ -->
     <h2>☰ Legend</h2>
 
@@ -148,6 +176,9 @@ def get_plot_controls_help_content():
         <tr><td>200–1000 spectra</td><td>⚠️ Off — use Refresh Plot</td><td>❌ Off</td></tr>
         <tr><td>&gt;1000 spectra</td><td>❌ Off — use Refresh Plot</td><td>❌ Off</td></tr>
     </table>
+    <p>Above 2&nbsp;000 selected spectra the Overlay, Grid and Waterfall plots show a preview
+    anyway (see <a href="#many-spectra">Plotting thousands of spectra</a>), so Interactive
+    Update stays quick enough to leave on.</p>
 
     <div class="tip">
         For more details on plot types and the full feature set, see the

@@ -53,6 +53,7 @@ import hashlib
 import pandas as pd
 import numpy as np
 
+from src.modules.utils.list_selection import select_rows
 from src.modules.utils.spectra_validation import axes_match
 from src.modules.utils.spectrum_identity import spectrum_id
 from src.modules.data_io.spc_data_writer import write_spc_data
@@ -1455,9 +1456,8 @@ class SaveManager:
                 main_controller.spectra_list_widget.addItem(item)
             if 'selected_indices' in state:
                 main_controller.spectrum_selector.selected_indices = set(state['selected_indices'])
-                for idx in state['selected_indices']:
-                    if idx < main_controller.spectra_list_widget.count():
-                        main_controller.spectra_list_widget.item(idx).setSelected(True)
+                select_rows(main_controller.spectra_list_widget,     # one call, see list_selection.py
+                            state['selected_indices'])
             main_controller.spectrum_selector.update_spectra_count_label()
         finally:
             main_controller.spectra_list_widget.blockSignals(False)

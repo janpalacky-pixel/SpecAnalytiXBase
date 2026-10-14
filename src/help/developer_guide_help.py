@@ -594,6 +594,30 @@ if (operation in self.current_parameters and
             at its definition in <code>MainController.initialize_attributes()</code>.
         </div>
 
+        <h3 id="undo-redo">Undo / Redo Buttons</h3>
+        <p>The main window's <strong>Undo</strong> / <strong>Redo</strong> buttons
+        (<code>OperationsController.undo_operation</code> / <code>redo_operation</code>) are
+        only shortcuts for <code>jump_to_operation_state(active &plusmn; 1)</code>; no second
+        undo mechanism exists. <code>undo_redo_targets()</code> says where each would go
+        (<code>None</code> at the ends). Their enabled state and tooltips are refreshed by a
+        400&nbsp;ms timer that compares (manager, chain length, active index), because the
+        active index is moved directly in many places (every commit, deletion, copy, snapshot
+        load); hooking each of them would be easy to miss in a new operation.</p>
+
+        <h3 id="import-step">Importing More Spectra Is a History Step</h3>
+        <p>An "Add" import into an existing workspace is recorded by
+        <code>OperationsController._register_import_step</code> as an
+        <code>Import</code> step (<code>apply_operation('Import', {'imported_count', 'files'},
+        new, new_state_spectra=current + new)</code>), like Copy. Previously the new spectra
+        went into <code>original_spectra</code> (<code>add_spectra_to_original</code>) and
+        into the output of the step active at the time of the import only (a bug): they were
+        present at Original State, at that step and later, but missing at the steps in between,
+        so whether they were there depended on where you jumped, and there was no proper way to
+        undo the import. Example: import, copy, copy, add a file &rarr; History #0 and #2 with
+        the new spectra, #1 without them. Only the first spectra of a session become Original State.
+        The Methods report mentions an Import step in one sentence (how many spectra, from which
+        files), without the "applied to n of N spectra" note.</p>
+
         <h3 id="snapshot-vs-delta">Why Full Snapshots, Not Diffs</h3>
         <p>There are two standard ways to build an undo/history system. This
         codebase deliberately picked the simpler of the two:</p>
@@ -2046,6 +2070,19 @@ widget.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
         — a rebuild-and-reselect step that "just" touches Qt widgets is not free at
         scale, and won't show up if you only profile the numerical part.</p>
 
+        <p><b>The same pattern came back (October 2026)</b> in eight other places that had
+        never gone through <code>_rebuild_spectra_list_with_selection()</code>: adding a dataset
+        while all 21&nbsp;000 spectra of a map were selected froze the window for ~40&nbsp;s
+        (<code>_process_added_spectra</code>: one <code>setSelected</code> per row, plus a
+        <code>label in list</code> test per spectrum &mdash; O(n&sup2;)); re-checking Interactive
+        Update, Select Spectra&hellip;, Shift+click ranges, Jump to state and loading a snapshot
+        had the same loop. All now use <code>src/modules/utils/list_selection.py</code>:
+        <code>select_rows(list_widget, rows, mode='replace'|'add'|'remove')</code> builds one
+        <code>QItemSelection</code> from merged row ranges. Measured: adding 28 spectra to
+        21&nbsp;000 selected went from 56.6&nbsp;s to 2.4&nbsp;s (of which 1.8&nbsp;s is drawing the
+        plot preview). <code>tests/test_add_to_large_selection.py</code> fails if a row is
+        selected one by one again. Use <code>select_rows</code> for any new list selection.</p>
+
         <h2 id="mcr-als-nnls-hybrid">MCR-ALS's Per-Column <code>nnls</code> Solves: Skip the
         Constraint When It Isn't Binding</h2>
 
@@ -3435,6 +3472,98 @@ def _natural_sort_key(cls, label):
             missing at first, and users could not tell what a fitted A/B map meant.</li>
             <li>Tests: <code>tests/test_peak_fit_map.py</code> (accuracy on synthetic bands,
             sub-data-point positions, cache, cancel, parallel = serial, manager, dialog).</li>
+        </ul>
+
+        <h2 id="group-statistics-design">Group Statistics</h2>
+        <ul>
+            <li><code>src/modules/visualization_analysis/group_statistics.py</code> (Qt-free):
+            groups (contains rules, part of the name, table file), values from each spectrum's
+            own axis (so different axes work), <code>compare()</code> with scipy's Welch t /
+            ANOVA / Mann&ndash;Whitney / Kruskal&ndash;Wallis, Holm-corrected pairs, effect sizes.
+            Tests check the p-values against scipy directly and Holm by hand.</li>
+            <li><code>src/views/dialogs/visualization_analysis/group_statistics_dialog.py</code>,
+            opened by <code>GroupStatisticsController</code>, which keeps the groups by spectrum
+            name for the session (not in the spectra's metadata: changing metadata dicts in
+            place would also change the Operations History states that share them).</li>
+            <li>Pitfall found by the automatic bug hunt: a dialog attribute named
+            <code>result</code> hides <code>QDialog.result()</code>; the comparison is stored as
+            <code>self.comparison</code>.</li>
+            <li>p-values are formatted as text such as "&lt; 0.0001": escape them before putting
+            them into HTML, or "&lt;" starts a tag and the value disappears.</li>
+            <li>"From names&hellip;" offers the common root name first
+            (<code>groups_from_root_name</code>), which reuses
+            <code>derive_root_name</code> from <code>spectra_selection_dialog.py</code>, so the
+            groups are exactly the roots the Select / Rename dialogs show.</li>
+            <li>Planned next: fitted peak values and PCA scores as values, a whole-spectrum
+            comparison, 2D-map regions as groups.</li>
+        </ul>
+
+        <h2 id="band-integration">Areas and Means over Ranges (<code>band_integration.py</code>)</h2>
+        <p>Integral, Mean and Baseline-corrected integral in the 2D Map, Band Ratio and Group
+        Statistics are computed by <code>src/modules/utils/band_integration.py</code>. The
+        earlier code ran the trapezoid rule over the points that fall inside the range, which
+        had four faults:</p>
+        <ul>
+            <li><b>Range edges:</b> the area began and ended at the first and last point
+            <em>inside</em> the range, so up to one point spacing was missing at each end
+            (on the Chlorella map with a 27&nbsp;cm<sup>&minus;1</sup> range: about 11&nbsp;%
+            too small; with a 9&nbsp;cm<sup>&minus;1</sup> range about 43&nbsp;%). The
+            spectrum is now interpolated exactly at the edges.</li>
+            <li><b>Several ranges / exclude mode:</b> the points of all parts were joined into
+            one list, so the trapezoid bridged each gap and counted the area under the bridge
+            (two 20&nbsp;cm<sup>&minus;1</sup> ranges 340&nbsp;cm<sup>&minus;1</sup> apart gave
+            about 9&times; the true area). Each part is now integrated on its own.</li>
+            <li><b>Mean:</b> the plain average of points over-weights densely sampled parts;
+            now mean = area / width.</li>
+            <li><b>Baseline-corrected integral:</b> the chord now joins the values at the range
+            edges, not the first and last point inside (with only two points inside, the old
+            value was always 0).</li>
+        </ul>
+        <p><b>Coverage:</b> a spectrum that does not completely cover the range (include
+        ranges; for Intensity at x the x-value) gets <em>no value</em>
+        (<code>covers()</code> / <code>covers_x()</code>, tolerance half a point spacing), for
+        every metric: a blank map pixel, "&mdash;" in Band Ratio with a red line naming the
+        spectra, left out and named in Group Statistics. Before, it got a value from the part it
+        had, which looked like a real, just smaller value (and Band Ratio's Intensity at x took
+        the nearest edge point even far outside the spectrum).</p>
+        <p>The point-based metrics
+        (Peak intensity, Peak position, FWHM, Variance) still use the points inside the range.
+        Not changed yet: Unit-area normalization, Peak Fitting areas and other tools with their
+        own <code>trapz</code> calls.</p>
+
+        <h2 id="many-spectra-plotting">Plotting Thousands of Spectra</h2>
+        <p>Measured (1&nbsp;600-point spectra, Agg, test VM): 1&nbsp;000 spectra take 0.3&nbsp;s to
+        create the <code>Line2D</code> objects and 5&nbsp;s for <code>canvas.draw()</code>;
+        5&nbsp;000 take 1.4&nbsp;s + 24&nbsp;s. About 95&nbsp;% is that one draw call, which can
+        neither report progress nor be interrupted; a single <code>LineCollection</code> or
+        switching off antialiasing gained nothing (the cost is rasterising millions of
+        segments). So a progress bar around the old code would not have moved.</p>
+        <ul>
+            <li><code>src/modules/visualization/large_selection.py</code> (Qt-free): above a
+            threshold (default 2&nbsp;000) the Overlay/Grid/Waterfall plots draw an evenly spread
+            preview (default 1&nbsp;000, ends included). Mean&nbsp;&plusmn;&nbsp;SD and Difference are
+            excluded because their mean must use all spectra. The selection
+            (<code>selected_spectra</code>) is never changed &mdash; only the local list in
+            <code>_plot_spectra_impl</code>.</li>
+            <li><code>src/controllers/visualization/large_plot_controller.py</code>: the note
+            above the plot (Plot all / Settings&hellip;), View &rarr; Plotting many
+            spectra&hellip; (Preferences key <code>large_plot_settings</code>), and drawing in
+            portions: <code>overlay_plot_mode(draw=False)</code> creates the lines and records
+            them per spectrum (<code>canvas.spectrum_artists</code>); they are hidden, one quick
+            <code>canvas.draw()</code> paints axes and legend, then portions of 500 are made
+            visible, painted with <code>ax.draw_artist()</code> and shown with
+            <code>canvas.blit()</code>, with <code>processEvents()</code> and a Stop check in
+            between. A pending <code>draw_idle()</code> (e.g. from a resize) is cancelled
+            (<code>canvas._draw_pending = False</code>), otherwise it would redraw everything
+            in one go in the middle; for the same reason the CD-quality shading does not call
+            <code>draw_idle()</code> in this mode.</li>
+            <li>Stop removes the undrawn artists and unchecks Interactive Update with signals
+            blocked: unchecking it normally clears the plot, but the user should keep what
+            was drawn.</li>
+            <li>Callers that pass their own <code>progress_callback</code> to
+            <code>plot_spectra()</code> (they show their own progress dialog) get a normal
+            draw.</li>
+            <li>Tests: <code>tests/test_large_plot.py</code>.</li>
         </ul>
 
         <h2 id="methods-report-design">Methods Report: Every New Operation Needs a Sentence</h2>

@@ -196,7 +196,7 @@ class BandRatioDialog(QDialog):
         self._metric_a.setToolTip(
             'Baseline-corrected integral: area above the drop-line baseline\n'
             'Integral: raw area under the curve (trapz)\n'
-            'Mean: average intensity in the band\n'
+            'Mean: average height in the band (area / width)\n'
             'Peak intensity: maximum y in the band\n'
             'Peak position: x at maximum y\n'
             'Variance: spread of intensities'
@@ -792,6 +792,15 @@ class BandRatioDialog(QDialog):
         if vals_r and op != 'A only':
             if stats: stats += '     '
             stats += _stat(vals_r, op)
+        missing = [r for r in results if r.get('missing')]
+        if missing:
+            names = ', '.join(r['label'] for r in missing[:5]) + (' …' if len(missing) > 5 else '')
+            stats = (f'\u26a0  No value for {len(missing)} spectr'
+                     f"{'um' if len(missing) == 1 else 'a'}: the band range (or x) is not "
+                     f'completely inside them — {names}' + ('\n' + stats if stats else ''))
+            self._stats_label.setStyleSheet(
+                'background-color: #FFF3E0; padding: 6px; border-radius: 4px; '
+                'font-family: monospace; color: #B71C1C;')
         self._stats_label.setText(stats)
 
     # ------------------------------------------------------------------ #

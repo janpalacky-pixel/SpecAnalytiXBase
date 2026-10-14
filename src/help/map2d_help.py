@@ -236,15 +236,19 @@ range and maps it as a pixel colour.</p>
 
 <table>
 <tr><th>Metric</th><th>Description</th></tr>
-<tr><td><b>Integral</b></td><td>Area under the range-filtered spectrum (trapezoidal rule). Best for concentration mapping.</td></tr>
-<tr><td><b>Mean</b></td><td>Average y-value over the range.</td></tr>
+<tr><td><b>Integral</b></td><td>Area under the spectrum over the range (trapezoidal rule), from exactly the start to exactly the end of the range (the spectrum is interpolated at the range edges). With several ranges, or an excluded part, each part is integrated on its own and the areas are added. Best for concentration mapping.</td></tr>
+<tr><td><b>Mean</b></td><td>Average height of the curve over the range: area divided by width, so unevenly spaced points (common in Raman maps) are weighted correctly.</td></tr>
 <tr><td><b>Variance</b></td><td>Spectral variance within the range. Highlights heterogeneous or broadened bands.</td></tr>
 <tr><td><b>Peak intensity</b></td><td>Maximum y-value in the range.</td></tr>
 <tr><td><b>Peak position</b></td><td>x-value at the intensity maximum. Maps band shift across the sample.</td></tr>
 <tr><td><b>FWHM</b></td><td>Full width at half maximum of the dominant peak. Returns blank/NaN for a pixel where the peak sits close enough to the edge of the selected range that the spectrum never actually descends to half-maximum on one side — rather than a falsely narrow width computed from an incomplete peak. Widen the range if too many pixels come back blank.</td></tr>
-<tr><td><b>Baseline-corrected integral</b></td><td>Area above the chord connecting the range endpoints.</td></tr>
+<tr><td><b>Baseline-corrected integral</b></td><td>Area above the straight line (chord) joining the spectrum's values exactly at the two range edges.</td></tr>
 <tr><td><b>Intensity at x</b></td><td>Interpolated intensity at a single x-value. Enter the x-value in the <b>x:</b> spinbox. No range configuration needed.</td></tr>
 </table>
+<p>A pixel whose spectrum does not <b>completely</b> cover the Band range (include ranges)
+gets no value (blank), for every metric, rather than a value from only the part of the range
+it has. In a normal map all pixels share one x-axis, so this matters only for spectra with
+different x-ranges.</p>
 
 <div class="note">
 <b>Range-based vs. single-point.</b> Every metric above except

@@ -79,6 +79,7 @@ _REGISTRY = {
     'cluster_analysis':       ('src.help.cluster_analysis_help', 'get_cluster_analysis_help_title', 'get_cluster_analysis_help_content'),
     'som':                     ('src.help.som_help', 'get_som_help_title', 'get_som_help_content'),
     'band_ratio':              ('src.help.band_ratio_help', 'get_band_ratio_help_title', 'get_band_ratio_help_content'),
+    'group_statistics':        ('src.help.group_statistics_help', 'get_group_statistics_help_title', 'get_group_statistics_help_content'),
     'reference_matching':     ('src.help.reference_matching_help', 'get_reference_matching_help_title', 'get_reference_matching_help_content'),
     'melting_curve':           ('src.help.melting_curve_help', 'get_melting_curve_help_title', 'get_melting_curve_help_content'),
     'isosbestic_point':        ('src.help.isosbestic_point_help', 'get_isosbestic_point_help_title', 'get_isosbestic_point_help_content'),
@@ -203,6 +204,7 @@ def _declare_help_modules_for_bundlers():
     import src.help.data_range_help  # noqa: F401
     import src.help.developer_guide_help  # noqa: F401
     import src.help.fft_denoising_help  # noqa: F401
+    import src.help.group_statistics_help  # noqa: F401
     import src.help.import_help  # noqa: F401
     import src.help.installation_help  # noqa: F401
     import src.help.interactive_subtraction_help  # noqa: F401

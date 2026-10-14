@@ -521,6 +521,23 @@ _DESCRIBERS: Dict[str, Callable] = {
     'Interactive subtraction': _describe_subtraction,
 }
 
+def _describe_import(p, ctx):
+    """More spectra imported into the workspace (an "Add" import), so later
+    steps may apply to a different set of spectra than earlier ones."""
+    n = p.get('imported_count')
+    files = p.get('files') or []
+    what = f"{n} further spectr{'um was' if n == 1 else 'a were'}" if n else "Further spectra were"
+    text = what + " imported"
+    if files:
+        text += " from " + _join_and(files[:5]) + (" and other files" if len(files) > 5 else '')
+    rows = [('number of spectra', str(n))] if n else []
+    if files:
+        rows.append(('files', ', '.join(files)))
+    return _Description(text + '.', rows or [('spectra', 'imported')])
+
+
+_DESCRIBERS['Import'] = _describe_import
+
 # Operations that change nothing a reader of a Methods section needs to know.
 _SKIPPED = {'Rename'}
 
@@ -789,7 +806,7 @@ def build_report(operations_chain: Sequence[dict], active_index: int,
         applied = f"{n_aff} of {previous_count}" if n_aff and previous_count and n_aff < previous_count \
             else (f"all {previous_count}" if previous_count else str(n_aff))
         sentence = _resolve_refs(d.sentence, order)
-        if n_aff and previous_count and n_aff < previous_count:
+        if n_aff and previous_count and n_aff < previous_count and op != 'Import':
             sentence = _add_note(sentence, f"applied to {n_aff} of {previous_count} spectra")
         steps.append(ReportStep(number, op, applied, sentence, d.rows))
         previous_count = len(output) or previous_count

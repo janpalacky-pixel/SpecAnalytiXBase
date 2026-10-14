@@ -4,6 +4,8 @@ import numpy as np
 from src.modules.visualization_analysis.peak_fit_map import (
     DEFAULT_SETTINGS as PEAK_FIT_DEFAULTS, FITTED_METRICS, PeakFitMapper)
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.band_integration import (
+    AREA_METRICS, covers, finite_sorted, integration_intervals, metric_value)
 from src.modules.utils.spectra_validation import axes_match, describe_axis_mismatch
 
 logger = get_logger(__name__)
@@ -276,10 +278,19 @@ class Map2DManager:
         include_ranges = include_ranges or []
         exclude_ranges = exclude_ranges or []
 
+        # A pixel whose spectrum does not cover every include range gets no
+        # value (blank), for every metric -- not a value from the part it
+        # has (see band_integration.py, point 5)
+        covered = [covers(finite_sorted(sp['x_scale'], sp['y_scale'])[0], include_ranges)
+                   for sp in spectra]
+        self.last_uncovered_count = covered.count(False)
+
         if metric in FITTED_METRICS:
+            empty = (np.array([]), np.array([]))
             windows = [self._apply_range_filter(
                 np.asarray(sp['x_scale'], dtype=float), np.asarray(sp['y_scale'], dtype=float),
-                x_min, x_max, include_ranges, exclude_ranges) for sp in spectra]
+                x_min, x_max, include_ranges, exclude_ranges) if ok else empty
+                for sp, ok in zip(spectra, covered)]
             values = self.peak_fit.values(metric, windows, self.peak_fit_settings,
                                           self.peak_fit_progress, self.peak_fit_status)
             return self._store_intensity_map(values, n_rows, n_cols, metric)
@@ -291,14 +302,19 @@ class Map2DManager:
             xf, yf = self._apply_range_filter(
                 x, y, x_min, x_max, include_ranges, exclude_ranges)
 
-            if len(yf) == 0:
+            if len(yf) == 0 or (not covered[i] and metric != "Intensity at x"):
                 values[i] = np.nan
                 continue
 
-            if metric == "Integral":
-                values[i] = _trapz(yf, xf) if len(xf) > 1 else yf[0]
-            elif metric == "Mean":
-                values[i] = np.mean(yf)
+            if metric in AREA_METRICS:
+                # Integral / Mean / Baseline-corrected integral: exact range
+                # edges, each range on its own, mean = area / width (see
+                # band_integration.py for what was wrong with trapz over
+                # the filtered points)
+                xs, ys = finite_sorted(x, y)
+                intervals = integration_intervals(
+                    xs, x_min, x_max, include_ranges or None, exclude_ranges or None)
+                values[i] = metric_value(xs, ys, metric, intervals)
             elif metric == "Variance":
                 values[i] = np.var(yf)
             elif metric == "Peak intensity":
@@ -307,8 +323,6 @@ class Map2DManager:
                 values[i] = float(xf[np.argmax(yf)]) if len(xf) > 0 else np.nan
             elif metric == "FWHM":
                 values[i] = self._compute_fwhm(xf, yf)
-            elif metric == "Baseline-corrected integral":
-                values[i] = self._baseline_corrected_integral(xf, yf)
             elif metric == "Intensity at x":
                 # Use the FULL x/y arrays (not range-clipped xf/yf) so that
                 # both Band A and Band B always interpolate from identical data.

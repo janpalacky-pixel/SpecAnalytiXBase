@@ -24,6 +24,8 @@ Operations:
 
 import numpy as np
 from src.modules.utils.app_logger import get_logger
+from src.modules.utils.band_integration import (
+    AREA_METRICS, covers, covers_x, finite_sorted, integration_intervals, metric_value)
 
 logger = get_logger(__name__)
 
@@ -115,6 +117,10 @@ class BandRatioManager:
                 'x_b':        x_b,
                 'y_b_raw':    y_b_raw,
                 'y_b_masked': y_b_masked,
+                # bands without a value (the spectrum does not cover the
+                # band range / x): shown by the dialog
+                'missing': [b for b, v in (('A', value_a), ('B', value_b))
+                            if v is None and (b == 'A' or band_b is not None)],
             })
 
         return results
@@ -138,6 +144,9 @@ class BandRatioManager:
             x_pos = band_def.get('x_pos', 0.0)
             if len(x) < 1:
                 return None, None, None, None
+            if not covers_x(finite_sorted(x, y)[0], x_pos):
+                # outside the spectrum: no value (was: the edge point's value)
+                return None, None, None, None
             idx   = int(np.argmin(np.abs(x - x_pos)))
             value = float(y[idx])
             return np.array([x[idx]]), np.array([y[idx]]), np.array([y[idx]]), value
@@ -153,7 +162,23 @@ class BandRatioManager:
         if len(x_r) < 2:
             return None, None, None, None
 
-        value = self._compute_metric(x_r, y_r, metric)
+        # Include ranges not completely inside the spectrum: no value (was:
+        # a value from the part it has; see band_integration.py, point 5).
+        # x_r / y_r are still returned, so the plot shows what the band sees.
+        if ranges and not is_exclude and not covers(finite_sorted(x, y)[0], ranges):
+            return x_r, y_r, y_r, None
+
+        if metric in AREA_METRICS:
+            # Integral / Mean / Baseline-corrected integral: exact range
+            # edges, each range on its own, mean = area / width (see
+            # band_integration.py); x_r / y_r above are still what is shown
+            xs, ys = finite_sorted(x, y)
+            intervals = integration_intervals(
+                xs, include=None if is_exclude else (ranges or None),
+                exclude=ranges if is_exclude else None)
+            value = metric_value(xs, ys, metric, intervals)
+        else:
+            value = self._compute_metric(x_r, y_r, metric)
         return x_r, y_r, y_r, value
 
     @staticmethod

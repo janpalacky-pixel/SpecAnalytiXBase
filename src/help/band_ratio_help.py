@@ -186,6 +186,10 @@ def get_band_ratio_help_content():
             listed ranges is used.  Useful for removing a known interference
             peak from a broad band.</li>
     </ul>
+    <p>A spectrum that does not <strong>completely</strong> cover a band's range (or, for
+    <em>Intensity at x</em>, the x-value) gets no value for that band: "&mdash;" in the
+    table, and a red line above the results names it. Earlier it got a value from only the
+    part of the range it had, which looked like a real, just smaller value.</p>
 
     <div class="screenshot">
         <img src="$RANGE_DIALOG" width="${RANGE_DIALOG_W}" height="${RANGE_DIALOG_H}" alt="Define Spectral Range dialog with Include/Exclude mode and a list of sub-ranges" />
@@ -199,23 +203,27 @@ def get_band_ratio_help_content():
         <tr><th>Metric</th><th>Description</th><th>When to use</th></tr>
         <tr>
             <td><strong>Baseline-corrected integral</strong></td>
-            <td>Area above a straight drop-line connecting the first and last
-                points of the band region, integrated with the trapezoidal
-                rule.</td>
+            <td>Area above a straight drop-line joining the spectrum's values
+                exactly at the two edges of the band region (trapezoidal
+                rule).</td>
             <td>Default for Raman and IR bands sitting on a sloped
                 background. Removes the contribution of the local baseline
                 without requiring a separate baseline correction step.</td>
         </tr>
         <tr>
             <td><strong>Integral</strong></td>
-            <td>Raw area under the curve (trapezoidal rule).
-                Includes any baseline offset.</td>
+            <td>Raw area under the curve (trapezoidal rule), from exactly the
+                start to exactly the end of the band region; with several
+                sub-ranges (or an excluded part) each part is integrated on its
+                own and the areas are added. Includes any baseline offset.</td>
             <td>Data already baseline-corrected, or when total intensity
                 is wanted rather than net peak area.</td>
         </tr>
         <tr>
             <td><strong>Mean</strong></td>
-            <td>Average y-value within the band region.</td>
+            <td>Average height of the curve within the band region (area
+                divided by width, so unevenly spaced points are weighted
+                correctly).</td>
             <td>Quick intensity comparison when band width is constant
                 across spectra.</td>
         </tr>

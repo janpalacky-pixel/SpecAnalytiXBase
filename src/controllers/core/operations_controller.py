@@ -1,9 +1,11 @@
 # src/controllers/core/operations_controller.py
 
+import re
 import uuid
 from PyQt5.QtWidgets import QDialog, QMessageBox, QProgressDialog, QApplication
 from src.views.dialogs.data_analysis.normalization_dialog import NormalizationDialog
 from src.views.dialogs.data_analysis.operations_summary_dialog import OperationsSummaryDialog
+from src.modules.utils.list_selection import select_rows
 from src.modules.data_analysis.incremental_operations_manager import IncrementalOperationsManager
 from src.views.dialogs.data_analysis.savitzky_golay_dialog import SavitzkyGolayDialog
 from PyQt5.QtWidgets import QListWidgetItem
@@ -400,6 +402,7 @@ class OperationsController:
         # Connect signals
         self.controller.view.parameters_operations_pushButton.clicked.connect(self.show_parameters_dialog)
         self.controller.view.summary_operations_pushButton.clicked.connect(self.show_operations_summary)
+        self._setup_undo_redo()
         # The main window's old generic "Apply" button and "Add as new"
         # checkbox were removed — every operation reachable from
         # available_operations_comboBox now commits via its own dialog's
@@ -445,33 +448,17 @@ class OperationsController:
         
         # Update the operations manager
         if hasattr(self, 'operations_manager'):
-            self.operations_manager.add_spectra_to_original(added_spectra)
-            
-            # After adding spectra to the operations manager, we need to ensure
-            # the operations_manager's active state is updated
-            if hasattr(self.operations_manager, 'active_operation_index'):
-                # Get the current active operation index
-                active_index = self.operations_manager.active_operation_index
-                
-                # If we're at the original state, the operations_manager's original_spectra should match
-                # the controller's original_spectra, but DON'T REINITIALIZE (this preserves import batches)
-                if active_index < 0:
-                    # Instead of reinitializing, just ensure the active_operation_index stays at -1
-                    self.operations_manager.active_operation_index = -1
-                else:
-                    # We need to update the output_spectra of the current active operation
-                    # to include the new spectra
-                    if 0 <= active_index < len(self.operations_manager.operations_chain):
-                        operation = self.operations_manager.operations_chain[active_index]
-                        if 'output_spectra' in operation:
-                            # Add the new spectra to the output_spectra of the current operation
-                            operation['output_spectra'].extend(added_spectra)
+            self._register_import_step(added_spectra)
 
             # Update our original_spectra reference in the main controller
             if hasattr(self.controller, 'original_spectra'):
+                # (a set: any() over the whole list per added spectrum was
+                # O(n*m), seconds when adding to a 21 000-spectrum map)
+                present = {s['label'] for s in self.controller.original_spectra}
                 for spectrum in added_spectra:
                     # Check if it's already in original_spectra
-                    if not any(s['label'] == spectrum['label'] for s in self.controller.original_spectra):
+                    if spectrum['label'] not in present:
+                        present.add(spectrum['label'])
                         # Create deep copy to avoid reference issues
                         spectrum_copy = {}
                         for key, value in spectrum.items():
@@ -503,13 +490,15 @@ class OperationsController:
                 # Block signals during update
                 self.controller.spectra_list_widget.blockSignals(True)
                 
-                # Remember currently selected items
-                selected_items = [item.text() for item in self.controller.spectra_list_widget.selectedItems()]
+                # Remember currently selected items (a set: looked up once per
+                # spectrum below -- a list made this O(n^2) on a 21 000-spectrum map)
+                selected_items = {item.text() for item in self.controller.spectra_list_widget.selectedItems()}
                 
                 try:
                     # Clear and repopulate the list widget
                     self.controller.spectra_list_widget.clear()
-                    for spectrum in self.controller.original_spectra:
+                    rows_to_select = []
+                    for row, spectrum in enumerate(self.controller.original_spectra):
                         item = QListWidgetItem(spectrum['label'])
                         # Make sure items are selectable and checkable
                         item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
@@ -518,10 +507,13 @@ class OperationsController:
                         # matters on every rebuild of this widget.
                         item.setData(Qt.UserRole, spectrum_id(spectrum))
                         self.controller.spectra_list_widget.addItem(item)
-
-                        # Restore selection for previously selected items
                         if spectrum['label'] in selected_items:
-                            item.setSelected(True)
+                            rows_to_select.append(row)
+
+                    # Restore the previous selection in ONE call (one
+                    # setSelected per item froze the window for ~40 s with
+                    # 21 000 selected spectra -- see list_selection.py).
+                    select_rows(self.controller.spectra_list_widget, rows_to_select)
                     
                     # Update spinbox maximum values
                     if hasattr(self.controller.view, 'number_of_rows_spinBox'):
@@ -571,6 +563,41 @@ class OperationsController:
                     # If there's a handle_selection_change method, call it
                     if hasattr(self.controller.spectrum_selector, 'handle_selection_change'):
                         self.controller.spectrum_selector.handle_selection_change(first_item)
+
+    def _register_import_step(self, added_spectra):
+        """Record spectra imported into an existing workspace ("Add" import)
+        as an "Import" step in the Operations History, like Copy or Rename:
+        the new state = the current spectra + the imported ones. Undo / a
+        jump to an earlier step removes them again; Redo brings them back.
+
+        (Before -- a bug: they were added to Original State and to the step
+        active at the time of the import only. So they were present at
+        Original State, at that step and at every later step, but missing
+        at the steps in between: whether they were there depended on where
+        you jumped, and there was no proper way to undo the import.)
+
+        The very first spectra of a session (nothing loaded yet) still
+        become Original State."""
+        mgr = self.operations_manager
+        current = list(getattr(self.controller, 'original_spectra', None) or [])
+        existing = {s['label'] for s in current}
+        new = [s for s in added_spectra if s.get('label') not in existing]
+        if not new:
+            return
+        if not mgr.original_spectra and not mgr.operations_chain:
+            mgr.initialize_with_spectra(current + new)
+            return
+        files = []
+        for s in new:
+            path = (s.get('metadata') or {}).get('file_path')
+            name = re.split(r'[\\/]', str(path))[-1] if path else ''   # Windows or / paths
+            if name and name not in files:
+                files.append(name)
+        parameters = {'imported_count': len(new)}
+        if files:
+            parameters['files'] = files
+        mgr.apply_operation('Import', parameters, new,
+                            new_state_spectra=current + new)
 
     def initialize_history(self):
         """Initialize the operations manager with the current original spectra."""
@@ -1884,6 +1911,102 @@ class OperationsController:
         
         dialog.exec_()
 
+    # ------------------------------------------------------------ undo/redo
+    # The main window's Undo / Redo buttons step ONE operation back /
+    # forward in the Operations History. They are just shortcuts for
+    # clicking the previous / next row there: both call
+    # jump_to_operation_state(), so nothing is lost: after Undo, Redo
+    # returns to the later state, until a NEW operation is applied (that
+    # cuts the later steps off, exactly like a jump in the History).
+    # The buttons' enabled state and tooltips are refreshed by a light
+    # timer (compares two numbers), because many places move the active
+    # index directly (every Apply / Add as New commit, snapshot loading,
+    # deletions, copies), and hooking each of them would be fragile.
+
+    def _setup_undo_redo(self):
+        view = self.controller.view
+        self._undo_button = getattr(view, 'undo_operations_pushButton', None)
+        self._redo_button = getattr(view, 'redo_operations_pushButton', None)
+        self._undo_redo_key = None
+        if self._undo_button is None or self._redo_button is None:
+            return
+        try:
+            self._undo_button.clicked.connect(self.undo_operation)
+            self._redo_button.clicked.connect(self.redo_operation)
+        except (AttributeError, TypeError):
+            return
+        from PyQt5.QtCore import QTimer
+        if QApplication.instance() is not None:
+            self._undo_redo_timer = QTimer()
+            self._undo_redo_timer.setInterval(400)
+            self._undo_redo_timer.timeout.connect(self.update_undo_redo_buttons)
+            self._undo_redo_timer.start()
+        self.update_undo_redo_buttons()
+
+    def undo_redo_targets(self):
+        """(undo_index, redo_index): the History index Undo / Redo would
+        jump to, or None when that step is not possible."""
+        mgr = self.operations_manager
+        chain = getattr(mgr, 'operations_chain', None) or []
+        active = getattr(mgr, 'active_operation_index', -1)
+        has_original = bool(getattr(mgr, 'original_spectra', None))
+        undo = active - 1 if active >= 0 and (active - 1 >= 0 or has_original) else None
+        redo = active + 1 if active + 1 < len(chain) else None
+        return undo, redo
+
+    def _step_name(self, index):
+        if index is None:
+            return ''
+        if index < 0:
+            return 'Original State'
+        op = self.operations_manager.get_operation_at_index(index) or {}
+        return op.get('type', f'step {index + 1}')
+
+    def update_undo_redo_buttons(self):
+        undo_btn = getattr(self, '_undo_button', None)
+        redo_btn = getattr(self, '_redo_button', None)
+        if undo_btn is None or redo_btn is None:
+            return
+        mgr = self.operations_manager
+        chain = getattr(mgr, 'operations_chain', None) or []
+        key = (id(mgr), len(chain), getattr(mgr, 'active_operation_index', -1),
+               bool(getattr(mgr, 'original_spectra', None)))
+        if key == self._undo_redo_key:
+            return
+        self._undo_redo_key = key
+        undo, redo = self.undo_redo_targets()
+        active = getattr(mgr, 'active_operation_index', -1)
+        undo_btn.setEnabled(undo is not None)
+        redo_btn.setEnabled(redo is not None)
+        if undo is not None:
+            undo_btn.setToolTip(f"Undo \u201c{self._step_name(active)}\u201d: go back to "
+                                f"\u201c{self._step_name(undo)}\u201d in the History")
+        else:
+            undo_btn.setToolTip("Nothing to undo (Go one operation back in the History)")
+        if redo is not None:
+            redo_btn.setToolTip(f"Redo \u201c{self._step_name(redo)}\u201d "
+                                f"(one operation forward in the History)")
+        else:
+            redo_btn.setToolTip("Nothing to redo (Go one operation forward in the History)")
+
+    def undo_operation(self):
+        """Main window Undo button: one operation back in the History."""
+        undo, _ = self.undo_redo_targets()
+        if undo is None:
+            return
+        self.jump_to_operation_state(undo)
+        self._undo_redo_key = None
+        self.update_undo_redo_buttons()
+
+    def redo_operation(self):
+        """Main window Redo button: one operation forward in the History."""
+        _, redo = self.undo_redo_targets()
+        if redo is None:
+            return
+        self.jump_to_operation_state(redo)
+        self._undo_redo_key = None
+        self.update_undo_redo_buttons()
+
     def jump_to_operation_state(self, index):
         """
         Jump to the state after the specified operation.
@@ -2005,12 +2128,13 @@ class OperationsController:
                     if items:
                         items[0].setSelected(True)
             
-            # Original logic for all other operations
+            # Original logic for all other operations (rows selected in one
+            # call, see list_selection.py)
             elif index >= 0 and affected_labels:
-                for i in range(self.controller.spectra_list_widget.count()):
-                    item = self.controller.spectra_list_widget.item(i)
-                    if item.text() in affected_labels:
-                        item.setSelected(True)
+                wanted = set(affected_labels)
+                lw = self.controller.spectra_list_widget
+                select_rows(lw, [i for i in range(lw.count()) if lw.item(i).text() in wanted],
+                            mode='add')
 
             # Original State has no operation-specific "affected" subset of
             # its own — restore whatever was selected the last time an
@@ -2018,10 +2142,10 @@ class OperationsController:
             # by label), rather than selecting everything or leaving the
             # selection empty.
             elif index < 0:
-                for i in range(self.controller.spectra_list_widget.count()):
-                    item = self.controller.spectra_list_widget.item(i)
-                    if item.text() in original_state_labels:
-                        item.setSelected(True)
+                wanted = set(original_state_labels)
+                lw = self.controller.spectra_list_widget
+                select_rows(lw, [i for i in range(lw.count()) if lw.item(i).text() in wanted],
+                            mode='add')
     
             # --- END of MODIFICATION ---
             

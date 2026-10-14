@@ -22,6 +22,7 @@ from src.controllers.visualization.grid_properties_controller import GridPropert
 from src.controllers.misc.import_settings_controller import ImportSettingsController
 from src.controllers.visualization.axis_properties_controller import AxisPropertiesController
 from src.controllers.visualization.custom_plot_properties_controller import CustomPlotPropertiesController
+from src.modules.utils.list_selection import select_rows
 from src.modules.visualization.plotting import grid_plot_mode, overlay_plot_mode, waterfall_plot_mode, mean_sd_plot_mode, difference_plot_mode, heatmap_plot_mode
 from src.modules.visualization.band_marker_manager import BandMarkerManager
 from src.controllers.visualization.cd_quality_controller import CDQualityController
@@ -177,6 +178,10 @@ class MainController(QMainWindow):
         # writes session files or asks the recovery question).
         self.autosave_controller = AutosaveController(self)
         self.cd_quality_controller = CDQualityController(self)
+        # Very large selections: preview / drawing in portions with Stop
+        # (View -> Plotting many spectra…)
+        from src.controllers.visualization.large_plot_controller import LargePlotController
+        self.large_plot_controller = LargePlotController(self)
         self._add_methods_report_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
@@ -200,6 +205,9 @@ class MainController(QMainWindow):
         self.nmf_controller = NMFController(self)
         self.mcr_als_controller = MCRALSController(self)
         self.two_d_correlation_controller = TwoDCorrelationController(self)
+        from src.controllers.visualization_analysis.group_statistics_controller import (
+            GroupStatisticsController)
+        self.group_statistics_controller = GroupStatisticsController(self)
         self.map2d_controller = Map2DController(self)
         self.interactive_subtraction_controller = InteractiveSubtractionController(self)
         
@@ -391,8 +399,14 @@ class MainController(QMainWindow):
 
         context_menu.addSeparator()
         rename_action = context_menu.addAction("Rename")
-        copy_action = context_menu.addAction("Copy spectra")
-        copy_action.setToolTip("Create copies of the selected spectra with a _copy suffix")
+        # Copy / Paste like anywhere else (same as Ctrl+C / Ctrl+V):
+        # Copy remembers the selected spectra, Paste adds their copies
+        copy_action = context_menu.addAction("Copy\tCtrl+C")
+        n_clip = len(getattr(self, 'spectra_clipboard', None) or [])
+        paste_action = context_menu.addAction(
+            f"Paste {n_clip} cop{'y' if n_clip == 1 else 'ies'}\tCtrl+V" if n_clip
+            else "Paste\tCtrl+V")
+        paste_action.setEnabled(bool(n_clip))
         context_menu.addSeparator()
         delete_action = context_menu.addAction("Delete spectra")
 
@@ -433,17 +447,59 @@ class MainController(QMainWindow):
             self.spectrum_selector.show_rename_dialog()
 
         elif action == copy_action:
-            self._copy_selected_spectra()
+            self.copy_spectra_to_clipboard()
+
+        elif action == paste_action:
+            self.paste_spectra_from_clipboard()
 
         elif action == delete_action:
             self.spectrum_selector.delete_selected_spectra()
 
-    def _copy_selected_spectra(self):
-        """Create copies of the selected spectra, append them to the list,
-        and register the operation in the history (same as deletion)."""
+    # ---- Ctrl+C / Ctrl+V on the spectra list (copy, then paste) ----
+    # Ctrl+C only remembers WHICH spectra were selected (references, no
+    # data is duplicated, so it is instant even for 20 000 spectra);
+    # Ctrl+V then makes the copies (_copy_selected_spectra with those
+    # spectra), like copy / paste anywhere else. Ctrl+V can be pressed
+    # again to make another set of copies. The right-click menu's Copy /
+    # Paste do the same.
+
+    def _status(self, text, ms=4000):
+        view = getattr(self, 'view', None)
+        if view is not None and hasattr(view, 'statusBar'):
+            try:
+                view.statusBar().showMessage(text, ms)
+            except Exception:
+                pass
+
+    def copy_spectra_to_clipboard(self):
+        """Ctrl+C: remember the selected spectra for a later Ctrl+V."""
+        selected = self.spectrum_selector.get_selected_spectra()
+        if not selected:
+            self._status("Nothing copied: no spectra selected")
+            return
+        self.spectra_clipboard = list(selected)
+        n = len(selected)
+        self._status(f"{n} spectr{'um' if n == 1 else 'a'} copied \u2014 press Ctrl+V "
+                     f"to add the copies")
+
+    def paste_spectra_from_clipboard(self):
+        """Ctrl+V: add copies of the spectra remembered by Ctrl+C."""
+        sources = list(getattr(self, 'spectra_clipboard', None) or [])
+        if not sources:
+            self._status("Nothing to paste: select spectra and press Ctrl+C first")
+            return
+        self._copy_selected_spectra(sources)
+        n = len(sources)
+        self._status(f"{n} cop{'y' if n == 1 else 'ies'} added (_copy)")
+
+    def _copy_selected_spectra(self, sources=None):
+        """Create copies of the selected spectra (or of `sources`, given
+        by Ctrl+V), append them to the list, and register the operation
+        in the history (same as deletion)."""
         import uuid
         from src.modules.utils.correction_history import append_correction_history
-        selected = self.spectrum_selector.get_selected_spectra()
+        selected = (list(sources) if sources is not None
+                    else self.spectrum_selector.get_selected_spectra())
         if not selected:
             return
 
@@ -571,13 +627,16 @@ class MainController(QMainWindow):
         self.spectra_list_widget.blockSignals(True)
         try:
             self.spectra_list_widget.clear()
-            for spectrum in self.original_spectra:
+            rows = []
+            for row, spectrum in enumerate(self.original_spectra):
                 item = QListWidgetItem(spectrum['label'])
                 item.setData(Qt.UserRole, spectrum_id(spectrum))
                 item.setFlags(item.flags() | Qt.ItemIsSelectable)
                 self.spectra_list_widget.addItem(item)
                 if select_new and spectrum_key(spectrum) in new_ids:
-                    item.setSelected(True)
+                    rows.append(row)
+            if rows:
+                select_rows(self.spectra_list_widget, rows)    # one call, see list_selection.py
         finally:
             self.spectra_list_widget.blockSignals(False)
 
@@ -844,17 +903,13 @@ class MainController(QMainWindow):
         unselect_all_shortcut = QShortcut(QKeySequence("Ctrl+U"), self.spectra_list_widget)
         unselect_all_shortcut.activated.connect(self.spectrum_selector.unselect_all_items)
 
-        # Ctrl+C / Ctrl+V both trigger Copy Spectra directly. Unlike text,
-        # copying a spectrum is a single atomic action — the duplicate is
-        # created immediately, with no separate "paste destination" step,
-        # so there's no real clipboard state to hold between the two
-        # keystrokes. Both are wired to the same action so the shortcut
-        # works regardless of which one habit reaches for first.
+        # Ctrl+C remembers the selected spectra, Ctrl+V makes the copies
+        # (common copy / paste; see copy_spectra_to_clipboard).
         copy_spectra_shortcut_c = QShortcut(QKeySequence("Ctrl+C"), self.spectra_list_widget)
-        copy_spectra_shortcut_c.activated.connect(self._copy_selected_spectra)
+        copy_spectra_shortcut_c.activated.connect(self.copy_spectra_to_clipboard)
 
         copy_spectra_shortcut_v = QShortcut(QKeySequence("Ctrl+V"), self.spectra_list_widget)
-        copy_spectra_shortcut_v.activated.connect(self._copy_selected_spectra)
+        copy_spectra_shortcut_v.activated.connect(self.paste_spectra_from_clipboard)
 
         # Ctrl+D and the Delete key both trigger Delete Spectra directly —
         # spectrum_selector.delete_selected_spectra() already asks for
@@ -1305,6 +1360,8 @@ class MainController(QMainWindow):
             lambda: self.run_visualization_analysis("QC / Outlier Detection"))
         self.view.actionMenuSOM.triggered.connect(
             lambda: self.run_visualization_analysis("SOM"))
+        self.view.actionMenuGroupStatistics.triggered.connect(
+            lambda: self.run_visualization_analysis("Group Statistics"))
 
     def run_visualization_analysis(self, method_name=None):
         """
@@ -1339,6 +1396,9 @@ class MainController(QMainWindow):
             self.mcr_als_controller.show_dialog(selected_spectra)
         elif raw == "2D Correlation":
             self.two_d_correlation_controller.show_dialog()
+        elif raw == "Group Statistics":
+            # One value per spectrum from its own x-axis: different axes are fine.
+            self.group_statistics_controller.show_dialog(selected_spectra)
         else:
             # Covers SVD analysis, Cluster analysis, and any other method
             # dispatched generically below — these run their computation
@@ -1401,6 +1461,7 @@ class MainController(QMainWindow):
         self.view.actionAutomatedBaselineHelp.triggered.connect(self.show_automated_baseline_help)
         self.view.actionSNIPBaselineHelp.triggered.connect(self.show_snip_baseline_help)
         self.view.actionBandRatioHelp.triggered.connect(self.show_band_ratio_help)
+        self.view.actionGroupStatisticsHelp.triggered.connect(self.show_group_statistics_help)
         self.view.actionFFTDenoisingHelp.triggered.connect(self.show_fft_denoising_help)
         self.view.actionXAxisAlignmentHelp.triggered.connect(self.show_x_axis_alignment_help)
         self.view.actionCDUnitConversionHelp.triggered.connect(self.show_cd_unit_conversion_help)
@@ -1753,6 +1814,11 @@ class MainController(QMainWindow):
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'reference_matching')
 
+    def show_group_statistics_help(self):
+        """Show help for Group Statistics."""
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'group_statistics')
+
     def show_band_ratio_help(self):
         """Show help for Band Ratio / Peak Area Calculator."""
         from src.help.help_window import open_help_topic
@@ -2060,6 +2126,15 @@ class MainController(QMainWindow):
     
         # Create a copy of selected spectra to avoid modifying original data
         plot_spectra = self.selected_spectra.copy()
+        # Thousands of selected spectra: Overlay/Grid/Waterfall draw a
+        # preview (an evenly spread subset), or, for "Plot all", the
+        # Overlay plot is drawn in portions with progress and Stop. The
+        # selection itself is never changed. See large_plot_controller.py.
+        large = getattr(self, 'large_plot_controller', None)
+        large_info = None
+        if large is not None and plot_type != "Single spectrum":
+            plot_spectra, large_info = large.choose(plot_spectra, plot_type, progress_callback)
+        progressive = bool(large_info and large_info.get('progressive'))
         plotted = plot_spectra      # what ends up in the figure (CD quality shading)
         
         plot_settings = self.custom_plot_properties_manager.spectrum_properties
@@ -2128,6 +2203,7 @@ class MainController(QMainWindow):
                                                                         band_marker_manager=self.band_marker_manager,
                                                                         progress_callback=progress_callback,
                                                                         display_labels=display_labels,
+                                                                        draw=not progressive,
                                                                         )
     
         elif plot_type == "Waterfall plot":
@@ -2223,7 +2299,8 @@ class MainController(QMainWindow):
         # Grey shading where CD is unreliable (see cd_quality.py)
         cd_quality = getattr(self, 'cd_quality_controller', None)
         if cd_quality is not None and getattr(self, 'static_canvas', None) is not None:
-            if cd_quality.decorate(self.static_canvas.figure, plotted, plot_type):
+            if cd_quality.decorate(self.static_canvas.figure, plotted, plot_type) \
+                    and not progressive:
                 self.static_canvas.draw_idle()
 
         # Set up the context menu for the canvas
@@ -2234,6 +2311,8 @@ class MainController(QMainWindow):
         # fig.tight_layout(pad=1.05)  # 5% padding around the subplot elements
 
         self.graphics_layout.addWidget(plot_widget)
+        if large_info is not None:
+            large.finish(plot_widget, self.static_canvas, large_info)
 
     def handle_mouse_click(self, event):
         """Handle mouse clicks on the canvas."""
@@ -2391,15 +2470,17 @@ class MainController(QMainWindow):
         try:
             # Clear and repopulate the list widget
             self.spectra_list_widget.clear()
-            for spectrum in self.original_spectra:
+            rows = []
+            for row, spectrum in enumerate(self.original_spectra):
                 item = QListWidgetItem(spectrum['label'])
                 item.setData(Qt.UserRole, spectrum_id(spectrum))
                 item.setFlags(item.flags() | Qt.ItemIsSelectable)
                 self.spectra_list_widget.addItem(item)
-
-                # Set selection state
                 if spectrum_key(spectrum) in selected_ids:
-                    item.setSelected(True)
+                    rows.append(row)
+            # Set the selection state in one call (see list_selection.py)
+            if rows:
+                select_rows(self.spectra_list_widget, rows)
 
             # Update the spectrum_selector's selected_indices
             self.spectrum_selector.selected_indices = {

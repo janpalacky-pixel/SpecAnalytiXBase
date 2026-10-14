@@ -522,6 +522,7 @@ class AnalysisTreeComboBox(OperationTreeComboBox):
             "Isosbestic Point Detection",
             "Kinetics Fitting",
             "QC / Outlier Detection",
+            "Group Statistics",
         ]),
     ]
 
@@ -1003,7 +1004,40 @@ class MainWindow(QMainWindow):
         self.parameters_operations_pushButton.setToolTip(
             "Open the settings dialog for the selected operation"
         )
-        self.gridLayout_9.addWidget(self.parameters_operations_pushButton, 2, 0, 1, 1)
+        # Run + Undo / Redo share row 2, column 0 (no extra row: the box
+        # keeps its height, so the plot area below does not shrink).
+        # Undo / Redo step one operation back / forward in the Operations
+        # History (OperationsController.undo_operation / redo_operation).
+        self.undo_operations_pushButton = QPushButton(self.groupBox_operations)
+        self.undo_operations_pushButton.setObjectName("undo_operations_pushButton")
+        self.undo_operations_pushButton.setText("\u21b6 Undo")
+        self.undo_operations_pushButton.setToolTip("Go one operation back in the History")
+        self.undo_operations_pushButton.setEnabled(False)
+        self.redo_operations_pushButton = QPushButton(self.groupBox_operations)
+        self.redo_operations_pushButton.setObjectName("redo_operations_pushButton")
+        self.redo_operations_pushButton.setText("Redo \u21b7")
+        self.redo_operations_pushButton.setToolTip("Go one operation forward in the History")
+        self.redo_operations_pushButton.setEnabled(False)
+        # Own colours so the two are told apart at a glance (Undo warm,
+        # Redo green); grey when there is nothing to undo / redo
+        self.undo_operations_pushButton.setStyleSheet(
+            "QPushButton { background-color: #FDEBD3; color: #9A4A00;"
+            " border: 1px solid #E5B98A; border-radius: 3px; padding: 3px 8px; }"
+            "QPushButton:hover { background-color: #FBDDB5; }"
+            "QPushButton:disabled { background-color: #F2F2F2; color: #A8A8A8;"
+            " border: 1px solid #D6D6D6; }")
+        self.redo_operations_pushButton.setStyleSheet(
+            "QPushButton { background-color: #DDF0E0; color: #22662A;"
+            " border: 1px solid #A5D3AB; border-radius: 3px; padding: 3px 8px; }"
+            "QPushButton:hover { background-color: #C9E7CE; }"
+            "QPushButton:disabled { background-color: #F2F2F2; color: #A8A8A8;"
+            " border: 1px solid #D6D6D6; }")
+        _run_row = QHBoxLayout()
+        _run_row.setSpacing(4)
+        _run_row.addWidget(self.parameters_operations_pushButton, 1)
+        _run_row.addWidget(self.undo_operations_pushButton)
+        _run_row.addWidget(self.redo_operations_pushButton)
+        self.gridLayout_9.addLayout(_run_row, 2, 0, 1, 1)
         
         # History button
         self.summary_operations_pushButton = QPushButton(self.groupBox_operations)
@@ -1338,6 +1372,10 @@ class MainWindow(QMainWindow):
         self.actionMenuQCOutlier.setObjectName("actionMenuQCOutlier")
         self.actionMenuQCOutlier.setText("QC / Outlier Detection")
 
+        self.actionMenuGroupStatistics = QAction(self)
+        self.actionMenuGroupStatistics.setObjectName("actionMenuGroupStatistics")
+        self.actionMenuGroupStatistics.setText("Group Statistics")
+
         self.menuAnalysisVisualizationData.addAction(self.actionMenuPeakFitting)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuBandRatio)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuReferenceMatching)
@@ -1345,6 +1383,7 @@ class MainWindow(QMainWindow):
         self.menuAnalysisVisualizationData.addAction(self.actionMenuIsosbesticPoint)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuKineticsFitting)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuQCOutlier)
+        self.menuAnalysisVisualizationData.addAction(self.actionMenuGroupStatistics)
 
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationViz)
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationData)
@@ -1500,6 +1539,10 @@ class MainWindow(QMainWindow):
         self.actionBandRatioHelp = QAction(self)
         self.actionBandRatioHelp.setObjectName("actionBandRatioHelp")
         self.actionBandRatioHelp.setText("Band Ratio")
+
+        self.actionGroupStatisticsHelp = QAction(self)
+        self.actionGroupStatisticsHelp.setObjectName("actionGroupStatisticsHelp")
+        self.actionGroupStatisticsHelp.setText("Group Statistics")
 
         self.actionReferenceMatchingHelp = QAction(self)
         self.actionReferenceMatchingHelp.setObjectName("actionReferenceMatchingHelp")
@@ -1833,6 +1876,7 @@ class MainWindow(QMainWindow):
         # Data Analysis submenu: Peak Fitting, Band Ratio, Reference Matching, Melting Curve Analysis
         self.menuHelpVizDataAnalysis.addAction(self.actionPeakFittingHelp)
         self.menuHelpVizDataAnalysis.addAction(self.actionBandRatioHelp)
+        self.menuHelpVizDataAnalysis.addAction(self.actionGroupStatisticsHelp)
         self.menuHelpVizDataAnalysis.addAction(self.actionReferenceMatchingHelpViz)
         self.menuHelpVizDataAnalysis.addAction(self.actionMeltingCurveHelp)
         self.menuHelpVizDataAnalysis.addAction(self.actionIsosbesticPointHelp)

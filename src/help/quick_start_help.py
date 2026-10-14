@@ -380,6 +380,10 @@ def get_quick_start_help_content():
                 are unusual (Hotelling T²) or don't fit the batch's
                 spectral shape at all (Q-residual)</td>
                 <td><a href="help://qc_outlier">Open help</a></td></tr>
+            <tr><td>Group Statistics</td><td>Compare groups of spectra (e.g.
+                treated vs control) on one value per spectrum: t-test / ANOVA or
+                Mann–Whitney / Kruskal–Wallis, effect sizes, box plots, export</td>
+                <td><a href="help://group_statistics">Open help</a></td></tr>
         </table>
         <p>Most of the tools above (PLS/PLS-DA, Band Ratio, Reference Library
         Matching, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier
