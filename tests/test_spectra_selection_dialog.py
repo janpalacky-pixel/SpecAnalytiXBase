@@ -125,3 +125,24 @@ def test_regex_search_invalid_pattern_raises_re_error():
     import re
     with pytest.raises(re.error):
         compute_text_search_indices(["a", "b"], "(unclosed", use_regex=True)
+
+
+# ── 2026-10-15: "<file> : anything" -> the file part ─────────────────────
+
+@pytest.mark.parametrize("label,expected", [
+    ("CD_melt_sample_1_heating : Absorbance [AU] T=10.04C", "CD_melt_sample_1_heating"),
+    ("CD_melt_sample_1_heating : CD [mdeg] T=81.49C", "CD_melt_sample_1_heating"),
+    ("CD_spectra_TBA : 0019", "CD_spectra_TBA"),
+    ("closed_dna_melting_2comp_clean : temp_01", "closed_dna_melting_2comp_clean"),
+    ("ratio 1:2 sample", "ratio 1:2 sample"),           # a colon without spaces is not cut
+])
+def test_derive_root_name_file_part(label, expected):
+    assert derive_root_name(label) == expected
+
+
+def test_three_files_give_three_groups():
+    labels = (["CD_melt_sample_1_heating : CD [mdeg] T=%d.00C" % t for t in (10, 15, 20)]
+              + ["CD_spectra_TBA : %04d" % i for i in (1, 2)]
+              + ["Raman_DNA_conc_dep : sp%03d" % i for i in (1, 2)])
+    assert {root for root, _ in group_by_root_name(labels)} == {
+        "CD_melt_sample_1_heating", "CD_spectra_TBA", "Raman_DNA_conc_dep"}

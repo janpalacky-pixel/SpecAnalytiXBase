@@ -36,11 +36,11 @@ Spectra can also be exported back out to text, Excel, and SPC.
 
 Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it on a new batch of spectra.
 
-## Analysis & Visualization Tools (16)
+## Analysis & Visualization Tools (17)
 
 **Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, Self-Organizing Map (SOM), 2D Map, 2D Correlation, PLS/PLS-DA
 
-**Data Analysis** — Peak Fitting, Band Ratio, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection
+**Data Analysis** — Peak Fitting, Band Ratio, Group Statistics, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection
 
 ## Other Features
 

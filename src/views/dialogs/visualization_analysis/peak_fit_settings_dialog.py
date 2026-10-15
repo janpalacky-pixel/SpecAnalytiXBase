@@ -36,15 +36,15 @@ def save_settings(settings):
 
 class PeakFitSettingsDialog(QDialog):
 
-    def __init__(self, settings=None, parent=None):
+    def __init__(self, settings=None, parent=None, intro=None):
         super().__init__(parent)
         self.setWindowTitle("Peak-fit settings")
         s = normalized_settings(settings)
         layout = QVBoxLayout(self)
-        intro = QLabel(
+        intro = QLabel(intro or (
             "In every pixel, one peak plus a background is fitted to the points in the "
             "Band range (Configure Band…). Choose a range that contains one band and some "
-            "background on both sides; exclude ranges can remove a neighbouring band.")
+            "background on both sides; exclude ranges can remove a neighbouring band."))
         intro.setWordWrap(True)
         layout.addWidget(intro)
 

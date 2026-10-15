@@ -1833,12 +1833,18 @@ def get_user_guide_help_content():
                 <code>Chlorella</code> for <code>Chlorella [r24_c14]</code>; a text they contain;
                 or a part of the name such as <code>day3</code> in <code>cellA_day3_01</code>) or from a CSV/Excel table
                 of name &rarr; group. Remembered for the session.</li>
-            <li><b>Value:</b> intensity at x, mean / area / maximum over a range, or the ratio of
-                two band areas &mdash; from each spectrum's own x-axis.</li>
+            <li><b>Value:</b> one band with the 2D Map / Band Ratio metrics (intensity at x,
+                also averaged or fitted over x &plusmn; w; area, baseline-corrected area, mean,
+                maximum, peak position, FWHM, variance, fitted peak values); two bands A and B,
+                each with its own metric, combined as A / B, A &minus; B, A + B, A &times; B,
+                (A &minus; B)/(A + B) or log&#8322;(A/B); or, for spectra with the same x-axis,
+                a whole-spectrum value (PCA score, SVD coefficient, correlation with or
+                distance from a reference group).</li>
             <li><b>Test:</b> Welch t-test or one-way ANOVA, or their non-parametric versions
                 (Mann&ndash;Whitney U, Kruskal&ndash;Wallis); with three or more groups every pair
                 too, Holm-corrected; effect sizes.</li>
-            <li><b>Results:</b> box plot with every spectrum as a dot, summary per group, the test,
+            <li><b>Results:</b> box plot, violin plot or points with mean &plusmn; 95&nbsp;% CI,
+                with every spectrum as a dot (Save plot&hellip;), summary per group, the test,
                 the values; Export to Excel or CSV.</li>
         </ul>
 

@@ -6,7 +6,8 @@
    from a table file.
 2. Value: one number per spectrum (intensity at x, mean / area / maximum
    over a range, band ratio).
-3. Compute: box plot with every value, summary per group, the test
+3. Compute: box / violin / mean ± CI plot with every value (Save plot…),
+   summary per group, the test
    (Welch t / ANOVA or Mann-Whitney / Kruskal-Wallis, with Holm-corrected
    pairs and effect sizes), the values table; Export to CSV or Excel.
 See src/modules/visualization_analysis/group_statistics.py.
@@ -20,16 +21,57 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QSplitter,
     QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.visualization_analysis import group_statistics as gs
+from src.modules.visualization_analysis import group_values as gv
+from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
+    PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
+    save_settings as save_peak_fit_settings)
 from src.views.dialogs.misc.fill_column_table import FillColumnTable
 
 logger = get_logger(__name__)
+
+_PLOT_TYPES = {
+    'box': "Box plot",
+    'violin': "Violin plot",
+    'ci': "Points with mean ± 95 % CI",
+}
+
+# One line under the value choice: what the chosen value is
+_VALUE_HINTS = {
+    'intensity_at_x': "The spectrum's intensity at one x-value.",
+    'area': "Area under the spectrum from exactly the start to exactly the end of the range.",
+    'bc_area': "Area above the straight line joining the spectrum at the two range edges "
+               "(the band without a sloping background).",
+    'mean': "Average height of the spectrum over the range (area / width).",
+    'max': "Highest intensity in the range.",
+    'peak_position': "x-position of the highest point (or parabola top) in the range — "
+                     "compares band shifts.",
+    'fwhm': "Width of the dominant band at half its height.",
+    'variance': "Spread of the intensities within the range.",
+    'fit_center': "Centre of a peak fitted to the range (between measured points, little "
+                  "affected by noise).",
+    'fit_fwhm': "Width (FWHM) of a peak fitted to the range.",
+    'fit_height': "Height of a peak fitted to the range, above the fitted background.",
+    'fit_area': "Area of a peak fitted to the range, without the fitted background.",
+    'fit_r2': "How well one peak plus background describes the range (1 = perfect).",
+    'ratio': "A value from band A and one from band B, combined — e.g. area A / area B, "
+             "independent of the overall intensity.",
+    'pca': "Score of each spectrum on a principal component of the selected spectra "
+           "(mean-centred): do the groups differ along a main direction of variation? "
+           "The sign of a component is arbitrary.",
+    'svd': "Coefficient of each spectrum on an SVD component (not mean-centred; "
+           "component 1 mostly follows the overall intensity).",
+    'corr_ref': "Pearson correlation of each spectrum with the mean spectrum of the "
+                "reference group (1 = the same shape).",
+    'dist_ref': "Root-mean-square difference between each spectrum and the mean spectrum "
+                "of the reference group (0 = identical).",
+}
 
 _GROUP_COLOURS = ['#1565C0', '#C62828', '#2E7D32', '#EF6C00', '#6A1B9A', '#00838F',
                   '#AD1457', '#5D4037', '#455A64', '#9E9D24']
@@ -48,7 +90,8 @@ class NamesToGroupsDialog(QDialog):
             "Group = the name without its numbering, e.g.\n"
             "  Chlorella [r24_c14]  \u2192 Chlorella\n"
             "  CD_spectra_TBA : 0019 \u2192 CD_spectra_TBA\n"
-            "  sample_012  \u2192 sample")
+            "  sample_012  \u2192 sample\n"
+            "  CD_melt_1 : CD [mdeg] T=45.00C \u2192 CD_melt_1")
         self.contains_radio = QRadioButton("Name contains a text")
         self.part_radio = QRadioButton("A part of the name")
         modes = QButtonGroup(self)
@@ -93,11 +136,56 @@ class NamesToGroupsDialog(QDialog):
                        self.root_radio.toggled):
             signal.connect(self._update_preview)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        help_button = QPushButton("Help")
+        help_button.setToolTip("What this window does, with examples")
+        help_button.setAutoDefault(False)
+        help_button.clicked.connect(self.show_help)
+        buttons.addButton(help_button, QDialogButtonBox.HelpRole)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.resize(480, 420)
         self._update_preview()
+
+    HELP_TEXT = (
+        "<h3>Groups from spectrum names</h3>"
+        "<p>Gives every spectrum in the table a group, worked out from its name, so you "
+        "do not have to type the groups by hand. The line at the bottom previews the "
+        "groups and how many spectra each gets; <b>OK</b> writes them into the Group "
+        "column (you can still edit them there, and Ctrl+Z undoes it).</p>"
+        "<p><b>Common root name</b> (one click) &mdash; the name without its numbering, "
+        "the same rule as <i>Select spectra</i> and <i>Rename</i> use:<br>"
+        "&nbsp;&nbsp;<code>Chlorella [r24_c14]</code> &rarr; <code>Chlorella</code><br>"
+        "&nbsp;&nbsp;<code>CD_spectra_TBA : 0019</code> &rarr; <code>CD_spectra_TBA</code><br>"
+        "&nbsp;&nbsp;<code>sample_012</code> &rarr; <code>sample</code><br>"
+        "&nbsp;&nbsp;<code>CD_melt_1 : CD [mdeg] T=45.00C</code> &rarr; <code>CD_melt_1</code> "
+        "(the file part before \u201c : \u201d)<br>"
+        "Best for spectra from several files or maps.</p>"
+        "<p><b>Name contains a text</b> &mdash; one rule per line, "
+        "<code>text = group</code>:<br>"
+        "&nbsp;&nbsp;<code>ctrl = Control</code><br>"
+        "&nbsp;&nbsp;<code>treat = Treated</code><br>"
+        "A spectrum whose name contains <i>ctrl</i> gets the group <i>Control</i>. The first "
+        "matching rule wins, upper/lower case does not matter, and a line with only a "
+        "text (e.g. <code>ctrl</code>) uses the text itself as the group.</p>"
+        "<p><b>A part of the name</b> &mdash; the name is cut at the separator "
+        "character(s) and one piece is used:<br>"
+        "&nbsp;&nbsp;<code>cellA_day3_01</code>, separator <code>_</code>, part 2 "
+        "&rarr; <code>day3</code><br>"
+        "&nbsp;&nbsp;<code>Raman_DNA : sp001</code>, separator <code>:</code>, part 1 "
+        "&rarr; <code>Raman_DNA</code><br>"
+        "Part &minus;1 is the last piece. Several characters in the box are all "
+        "separators (e.g. <code>_-</code>).</p>"
+        "<p>A spectrum that gets no group (no rule matches, or the name has too few "
+        "pieces) is left out of the statistics.</p>")
+
+    def show_help(self):
+        box = QMessageBox(self)
+        box.setWindowTitle("Help \u2013 Groups from spectrum names")
+        box.setTextFormat(Qt.RichText)
+        box.setText(self.HELP_TEXT)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec_()
 
     def rules(self):
         rules = []
@@ -131,7 +219,7 @@ class NamesToGroupsDialog(QDialog):
 
 class GroupStatisticsDialog(QDialog):
 
-    def __init__(self, spectra, parent=None, saved_groups=None):
+    def __init__(self, spectra, parent=None, saved_groups=None, saved_settings=None):
         super().__init__(parent)
         self.setWindowTitle("Group Statistics")
         # Maximize button in the title bar (a plain QDialog has only the
@@ -145,7 +233,11 @@ class GroupStatisticsDialog(QDialog):
         self.saved_groups = saved_groups if saved_groups is not None else {}
         self.comparison = None      # (not "result": that would hide QDialog.result())
         self.values = None
-        self.resize(1250, 780)
+        # value settings remembered for the session (by the controller)
+        self.remembered_settings = saved_settings if saved_settings is not None else {}
+        from src.modules.visualization_analysis.peak_fit_map import PeakFitMapper
+        self._fit_mapper = PeakFitMapper()          # keeps fits, e.g. for A and B
+        self.resize(1250, 820)
 
         layout = QVBoxLayout(self)
         intro = QLabel(
@@ -175,6 +267,11 @@ class GroupStatisticsDialog(QDialog):
         bottom.addWidget(close_btn)
         layout.addLayout(bottom)
         self._update_group_summary()
+        self._update_reference_choices()
+        self.set_value_settings(dict(self.remembered_settings))
+        j = self.plot_combo.findData(self.remembered_settings.get('plot'))
+        if j >= 0:
+            self.plot_combo.setCurrentIndex(j)
 
     # ------------------------------------------------------------------ groups
     def _build_groups_panel(self):
@@ -240,6 +337,8 @@ class GroupStatisticsDialog(QDialog):
     def _on_groups_changed(self):
         self._remember()
         self._update_group_summary()
+        if hasattr(self, 'reference_combo'):
+            self._update_reference_choices()
 
     def _table_menu(self, pos):
         from PyQt5.QtWidgets import QMenu
@@ -347,7 +446,7 @@ class GroupStatisticsDialog(QDialog):
         if not path:
             return
         try:
-            mapping = gs.read_group_table(path)
+            mapping = gs.read_group_table(path, labels=self.labels)
         except Exception as exc:
             logger.exception("Reading the group table failed")
             QMessageBox.warning(self, "Group Statistics", f"The table could not be read:\n{exc}")
@@ -355,8 +454,13 @@ class GroupStatisticsDialog(QDialog):
         groups = gs.groups_from_table(self.labels, mapping)
         found = sum(1 for g in groups if g)
         self._set_groups(groups)
-        QMessageBox.information(self, "Group Statistics",
-                                f"{found} of {len(groups)} spectra were found in the table.")
+        known = {l.strip().lower() for l in self.labels}
+        unmatched = [name for name in mapping if name.strip().lower() not in known]
+        text = f"{found} of {len(groups)} spectra were found in the table."
+        if unmatched:
+            text += (f"\n\n{len(unmatched)} name(s) in the table match no spectrum here, "
+                     f"e.g.:\n" + "\n".join(unmatched[:5]))
+        QMessageBox.information(self, "Group Statistics", text)
 
     # ------------------------------------------------------------------ value + results
     def _build_right_panel(self):
@@ -367,36 +471,141 @@ class GroupStatisticsDialog(QDialog):
 
         value_box = QGroupBox("2. Value per spectrum")
         form = QFormLayout(value_box)
+        self.value_form = form
+        self.same_axis = gv.same_x_axis(self.spectra)
         self.kind_combo = QComboBox()
-        for key, text in gs.VALUE_KINDS.items():
-            self.kind_combo.addItem(text, key)
+        self.kind_combo.setMaxVisibleItems(25)
+        self._fill_kind_combo()
         self.kind_combo.currentIndexChanged.connect(self._update_value_widgets)
         form.addRow("Value:", self.kind_combo)
         xmin, xmax = self._x_extent()
         self.has_common_range = self._common_range_exists()
         mid, quarter = (xmin + xmax) / 2, (xmax - xmin) / 8 or 1.0
-        # Default ranges: one range (mean / area / maximum) = the whole
-        # common x-range; band ratio = two neighbouring ranges either side
+        # Default ranges: one range (one band, whole spectrum) = the whole
+        # common x-range; two bands = two neighbouring ranges either side
         # of the middle (A and B use the same "from" / "to" boxes as the
         # single range, so _update_value_widgets swaps between the two
         # defaults as long as the user has not typed a range himself)
         self._single_default = (xmin, xmax)
         self._ratio_default = (mid - quarter, mid)
+
+        # x (Intensity at x): point / average / fit over x +- w
         self.x_spin = self._spin(mid, xmin, xmax)
+        self.x_mode_combo = QComboBox()
+        for key, text in gv.X_MODES.items():
+            self.x_mode_combo.addItem(text, key)
+        self.x_mode_combo.setToolTip(
+            "The interpolated point: the spectrum read at exactly x (one noisy point can\n"
+            "decide the value).\n"
+            "Average over x ± w: the mean height of the spectrum from x − w to x + w.\n"
+            "Polynomial fitted over x ± w: a parabola fitted to the points from x − w to\n"
+            "x + w and read at x (smooths the noise, keeps the shape).")
+        self.w_label = QLabel("w:")
+        self.w_spin = self._spin(max((xmax - xmin) / 100, 0.01), 0.0, xmax - xmin)
+        self.w_spin.setMinimum(0.0)
+        self.w_spin.setToolTip("Half-width of the window around x (x-axis units)")
         self.x_row = QWidget()
         xr = QHBoxLayout(self.x_row)
         xr.setContentsMargins(0, 0, 0, 0)
         xr.addWidget(self.x_spin)
+        xr.addWidget(QLabel("value:"))
+        xr.addWidget(self.x_mode_combo)
+        xr.addWidget(self.w_label)
+        xr.addWidget(self.w_spin)
         xr.addStretch(1)
         form.addRow("x:", self.x_row)
+        self.x_mode_combo.currentIndexChanged.connect(self._update_value_widgets)
+
+        # Peak intensity / position: highest point or parabola top
+        self.max_mode_combo = QComboBox()
+        for key, text in gv.MAX_MODES.items():
+            self.max_mode_combo.addItem(text, key)
+        self.max_mode_combo.setToolTip(
+            "The highest point: the largest measured value (a noise spike can win; the\n"
+            "position can only be a measured x).\n"
+            "Top of a parabola: a parabola through the highest points of the band (noise\n"
+            "matters less; the position can lie between measured points).")
+        self.max_row = QWidget()
+        mr = QHBoxLayout(self.max_row)
+        mr.setContentsMargins(0, 0, 0, 0)
+        mr.addWidget(self.max_mode_combo)
+        mr.addStretch(1)
+        form.addRow("Peak top:", self.max_row)
+
+        # whole spectrum: only within a range?
+        self.whole_range_check = QCheckBox("Use only the range below (otherwise the whole spectrum)")
+        self.whole_range_check.toggled.connect(self._update_value_widgets)
+        form.addRow(self.whole_range_check)
+
+        # ranges (+ the metric of each band for two bands)
         self.a_from, self.a_to = self._spin(mid - quarter, xmin, xmax), self._spin(mid, xmin, xmax)
         self.b_from, self.b_to = self._spin(mid, xmin, xmax), self._spin(mid + quarter, xmin, xmax)
-        self.range_a_row = self._range_row(self.a_from, self.a_to)
-        self.range_b_row = self._range_row(self.b_from, self.b_to)
+        self.metric_a_combo, self.metric_b_combo = QComboBox(), QComboBox()
+        for combo, default in ((self.metric_a_combo, 'Integral'),
+                               (self.metric_b_combo, 'Integral')):
+            combo.addItems(gv.BAND_METRICS)
+            combo.setCurrentText(default)
+            combo.setToolTip("What is taken from this band (the same metrics as in the 2D Map)")
+            combo.currentIndexChanged.connect(self._update_value_widgets)
+        self.range_a_row = self._range_row(self.a_from, self.a_to, self.metric_a_combo)
+        self.range_b_row = self._range_row(self.b_from, self.b_to, self.metric_b_combo)
         self.range_a_label = QLabel("Range:")
         self.range_b_label = QLabel("Range B:")
         form.addRow(self.range_a_label, self.range_a_row)
         form.addRow(self.range_b_label, self.range_b_row)
+        self.operation_combo = QComboBox()
+        self.operation_combo.addItems(gv.OPERATIONS)
+        self.operation_combo.setToolTip(
+            "A / B: ratio (independent of the overall intensity)\n"
+            "A − B, A + B, A × B: difference, sum, product\n"
+            "(A − B) / (A + B): normalised difference, always between −1 and 1\n"
+            "log₂(A / B): log ratio; doubling = +1, halving = −1 (symmetric)")
+        self.operation_row = QWidget()
+        orow = QHBoxLayout(self.operation_row)
+        orow.setContentsMargins(0, 0, 0, 0)
+        orow.addWidget(self.operation_combo)
+        orow.addStretch(1)
+        form.addRow("Combine:", self.operation_row)
+
+        # whole spectrum: component / reference group
+        self.component_spin = QSpinBox()
+        self.component_spin.setRange(1, 20)
+        self.component_spin.setToolTip("1 = the direction of the largest variation, 2 = the next, …")
+        self.component_row = QWidget()
+        crow = QHBoxLayout(self.component_row)
+        crow.setContentsMargins(0, 0, 0, 0)
+        crow.addWidget(self.component_spin)
+        crow.addStretch(1)
+        form.addRow("Component:", self.component_row)
+        self.reference_combo = QComboBox()
+        self.reference_combo.setToolTip(
+            "Each spectrum is compared with the mean spectrum of this group; a spectrum\n"
+            "of the group itself with the mean of the group's other spectra.")
+        self.reference_row = QWidget()
+        rrow = QHBoxLayout(self.reference_row)
+        rrow.setContentsMargins(0, 0, 0, 0)
+        rrow.addWidget(self.reference_combo)
+        rrow.addStretch(1)
+        form.addRow("Reference group:", self.reference_row)
+
+        # peak fit settings (fitted metrics)
+        self.fit_settings = load_peak_fit_settings()
+        self.fit_button = QPushButton("Fit settings…")
+        self.fit_button.setToolTip("Peak shape, background and rejection rules of the fit "
+                                   "(the same settings as the 2D Map's peak-fit maps)")
+        self.fit_button.setAutoDefault(False)
+        self.fit_button.clicked.connect(self.edit_fit_settings)
+        self.fit_summary = QLabel()
+        self.fit_summary.setStyleSheet("color:#555;")
+        self.fit_row = QWidget()
+        frow = QHBoxLayout(self.fit_row)
+        frow.setContentsMargins(0, 0, 0, 0)
+        frow.addWidget(self.fit_button)
+        frow.addWidget(self.fit_summary)
+        frow.addStretch(1)
+        form.addRow("Peak fit:", self.fit_row)
+        self._update_fit_summary()
+
         self.no_common_range_label = QLabel(
             "\u26a0 The selected spectra have no x-range in common. Spectra that do not "
             "completely cover the chosen x or range get no value and are left out.")
@@ -404,6 +613,10 @@ class GroupStatisticsDialog(QDialog):
         self.no_common_range_label.setStyleSheet("color:#9A4A00;")
         self.no_common_range_label.setVisible(False)
         form.addRow(self.no_common_range_label)
+        self.value_hint = QLabel()
+        self.value_hint.setWordWrap(True)
+        self.value_hint.setStyleSheet("color:#555;")
+        form.addRow(self.value_hint)
         controls.addWidget(value_box, 3)
 
         test_box = QGroupBox("3. Test")
@@ -432,7 +645,33 @@ class GroupStatisticsDialog(QDialog):
         self.tabs.setStyleSheet("QTabBar::tab { min-width: 70px; }")
         self.figure = Figure(figsize=(6, 4))
         self.canvas = FigureCanvas(self.figure)
-        self.tabs.addTab(self.canvas, "Box plot")
+        plot_tab = QWidget()
+        pl = QVBoxLayout(plot_tab)
+        pl.setContentsMargins(4, 4, 4, 4)
+        plot_row = QHBoxLayout()
+        plot_row.addWidget(QLabel("Plot:"))
+        self.plot_combo = QComboBox()
+        for key, text in _PLOT_TYPES.items():
+            self.plot_combo.addItem(text, key)
+        self.plot_combo.setToolTip(
+            "Box plot: median, middle half of the values (box), every spectrum as a dot, the\n"
+            "mean in orange.\n"
+            "Violin plot: the shape of each group's values (e.g. two clusters), with every\n"
+            "spectrum, the median and the mean; unreliable for groups with fewer than 10 values.\n"
+            "Points with mean ± 95 % CI: every spectrum, the mean and its 95 % confidence\n"
+            "interval — the plot that matches the t-test / ANOVA.")
+        self.plot_combo.currentIndexChanged.connect(self._on_plot_type_changed)
+        plot_row.addWidget(self.plot_combo)
+        self.save_plot_btn = QPushButton("Save plot…")
+        self.save_plot_btn.setToolTip("Save the plot as PNG, TIFF, SVG or PDF")
+        self.save_plot_btn.setAutoDefault(False)
+        self.save_plot_btn.setEnabled(False)
+        self.save_plot_btn.clicked.connect(self.save_plot)
+        plot_row.addWidget(self.save_plot_btn)
+        plot_row.addStretch(1)
+        pl.addLayout(plot_row)
+        pl.addWidget(self.canvas, 1)
+        self.tabs.addTab(plot_tab, "Plot")
         self.summary_table = QTableWidget(0, 7)
         self.summary_table.setHorizontalHeaderLabels(
             ["Group", "n", "Mean", "SD", "Median", "Min", "Max"])
@@ -463,15 +702,58 @@ class GroupStatisticsDialog(QDialog):
         return s
 
     @staticmethod
-    def _range_row(a, b):
+    def _range_row(a, b, metric_combo=None):
         w = QWidget()
         h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0)
         h.addWidget(a)
         h.addWidget(QLabel("to"))
         h.addWidget(b)
+        if metric_combo is not None:
+            h.addWidget(metric_combo)
         h.addStretch(1)
         return w
+
+    def _fill_kind_combo(self):
+        """The value choices in three sections (headers are not selectable);
+        whole-spectrum values are greyed out unless all spectra share one
+        x-axis."""
+        from PyQt5.QtGui import QFont
+        model = self.kind_combo.model()
+        first = None
+        for header, items in gv.VALUE_SECTIONS:
+            self.kind_combo.addItem(header)
+            head = model.item(self.kind_combo.count() - 1)
+            head.setEnabled(False)
+            font = QFont(head.font())
+            font.setBold(True)
+            head.setFont(font)
+            for key, text in items:
+                self.kind_combo.addItem(text, key)
+                item = model.item(self.kind_combo.count() - 1)
+                if gv.is_whole_spectrum(key) and not self.same_axis:
+                    item.setEnabled(False)
+                    item.setToolTip("Needs spectra with the same x-axis; the selected "
+                                    "spectra have different x-axes.")
+                if first is None:
+                    first = self.kind_combo.count() - 1
+        self.kind_combo.setCurrentIndex(first)
+
+    def _update_fit_summary(self):
+        s = self.fit_settings
+        self.fit_summary.setText(f"{s['shape']}, background {s['baseline'].lower()}")
+
+    def edit_fit_settings(self):
+        dlg = PeakFitSettingsDialog(
+            self.fit_settings, self,
+            intro="For every spectrum, one peak plus a background is fitted to the points "
+                  "of the range (the same fit as the 2D Map's peak-fit maps). Choose a range "
+                  "that contains one band and some background on both sides.")
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        self.fit_settings = dlg.settings()
+        save_peak_fit_settings(self.fit_settings)
+        self._update_fit_summary()
 
     @staticmethod
     def _extent_of(spectra):
@@ -510,39 +792,113 @@ class GroupStatisticsDialog(QDialog):
 
     def _update_value_widgets(self, *_):
         kind = self.kind_combo.currentData()
+        if kind is None:            # a section header (cannot normally be chosen)
+            return
+        two = kind in gv.TWO_BANDS
+        whole = gv.is_whole_spectrum(kind)
+        one_band = kind in gv.ONE_BAND and kind != 'intensity_at_x'
         # Swap the default range (only while it is still a default)
         current = (self.a_from.value(), self.a_to.value())
-        wanted = self._ratio_default if kind == 'ratio' else self._single_default
-        other = self._single_default if kind == 'ratio' else self._ratio_default
+        wanted = self._ratio_default if two else self._single_default
+        other = self._single_default if two else self._ratio_default
         if all(abs(c - o) < 1e-9 for c, o in zip(current, other)):
             self.a_from.setValue(wanted[0])
             self.a_to.setValue(wanted[1])
-        self.no_common_range_label.setVisible(not self.has_common_range)
-        self.x_row.setVisible(kind == 'intensity_at_x')
-        self.x_row.parentWidget().layout().labelForField(self.x_row).setVisible(
-            kind == 'intensity_at_x')
-        ranged = kind in ('mean', 'area', 'max', 'ratio')
-        self.range_a_row.setVisible(ranged)
-        self.range_a_label.setVisible(ranged)
-        self.range_a_label.setText("Range A:" if kind == 'ratio' else "Range:")
-        self.range_b_row.setVisible(kind == 'ratio')
-        self.range_b_label.setVisible(kind == 'ratio')
+        settings = self.value_settings()
+        self.no_common_range_label.setVisible(not self.has_common_range and not whole)
+
+        def show(row, visible):
+            row.setVisible(visible)
+            label = self.value_form.labelForField(row)
+            if label is not None:
+                label.setVisible(visible)
+
+        show(self.x_row, kind == 'intensity_at_x')
+        averaged = self.x_mode_combo.currentData() != 'point'
+        self.w_label.setVisible(averaged)
+        self.w_spin.setVisible(averaged)
+        show(self.max_row, gv.uses_max_mode(settings))
+        self.whole_range_check.setVisible(whole)
+        range_a = one_band or two or (whole and self.whole_range_check.isChecked())
+        self.range_a_row.setVisible(range_a)
+        self.range_a_label.setVisible(range_a)
+        self.range_a_label.setText("Range A:" if two else "Range:")
+        self.range_b_row.setVisible(two)
+        self.range_b_label.setVisible(two)
+        self.metric_a_combo.setVisible(two)
+        self.metric_b_combo.setVisible(two)
+        show(self.operation_row, two)
+        show(self.component_row, kind in ('pca', 'svd'))
+        show(self.reference_row, kind in ('corr_ref', 'dist_ref'))
+        show(self.fit_row, gv.uses_fit(settings))
+        self.value_hint.setText(_VALUE_HINTS.get(kind, ''))
+
+    def _update_reference_choices(self):
+        current = self.reference_combo.currentText()
+        names = [g for g in dict.fromkeys(self.groups()) if g]
+        self.reference_combo.blockSignals(True)
+        self.reference_combo.clear()
+        self.reference_combo.addItems(names)
+        if current in names:
+            self.reference_combo.setCurrentText(current)
+        self.reference_combo.blockSignals(False)
 
     def value_settings(self):
         return {'kind': self.kind_combo.currentData(), 'x0': self.x_spin.value(),
+                'x_mode': self.x_mode_combo.currentData(), 'x_halfwidth': self.w_spin.value(),
+                'max_mode': self.max_mode_combo.currentData(),
                 'range_a': (self.a_from.value(), self.a_to.value()),
-                'range_b': (self.b_from.value(), self.b_to.value())}
+                'range_b': (self.b_from.value(), self.b_to.value()),
+                'metric_a': self.metric_a_combo.currentText(),
+                'metric_b': self.metric_b_combo.currentText(),
+                'operation': self.operation_combo.currentText(),
+                'component': self.component_spin.value(),
+                'reference_group': self.reference_combo.currentText(),
+                'whole_use_range': self.whole_range_check.isChecked()}
+
+    def set_value_settings(self, v):
+        """Restore remembered settings (the same session, e.g. reopening)."""
+        if not v:
+            return
+        i = self.kind_combo.findData(v.get('kind'))
+        if i >= 0 and self.kind_combo.model().item(i).isEnabled():
+            self.kind_combo.setCurrentIndex(i)
+        for combo, key in ((self.x_mode_combo, 'x_mode'), (self.max_mode_combo, 'max_mode')):
+            j = combo.findData(v.get(key))
+            if j >= 0:
+                combo.setCurrentIndex(j)
+        for spin, key in ((self.x_spin, 'x0'), (self.w_spin, 'x_halfwidth')):
+            if v.get(key) is not None:
+                spin.setValue(float(v[key]))
+        for (lo, hi), key in (((self.a_from, self.a_to), 'range_a'),
+                              ((self.b_from, self.b_to), 'range_b')):
+            if v.get(key):
+                lo.setValue(float(v[key][0]))
+                hi.setValue(float(v[key][1]))
+        for combo, key in ((self.metric_a_combo, 'metric_a'), (self.metric_b_combo, 'metric_b'),
+                           (self.operation_combo, 'operation')):
+            if v.get(key) and combo.findText(v[key]) >= 0:
+                combo.setCurrentText(v[key])
+        self.component_spin.setValue(int(v.get('component', 1)))
+        self.whole_range_check.setChecked(bool(v.get('whole_use_range')))
+        if v.get('reference_group') and self.reference_combo.findText(v['reference_group']) >= 0:
+            self.reference_combo.setCurrentText(v['reference_group'])
+        self._update_value_widgets()
 
     def value_label(self):
-        v = self.value_settings()
-        k = v['kind']
-        if k == 'intensity_at_x':
-            return f"Intensity at {v['x0']:g}"
-        a = f"{min(v['range_a']):g}–{max(v['range_a']):g}"
-        if k == 'ratio':
-            b = f"{min(v['range_b']):g}–{max(v['range_b']):g}"
-            return f"Area {a} / area {b}"
-        return {'mean': 'Mean', 'area': 'Area', 'max': 'Maximum'}[k] + f" over {a}"
+        return gv.value_label(self.value_settings())
+
+    def _where_text(self, v):
+        """Where the value is taken from, for messages."""
+        ra = f"{min(v['range_a']):g}\u2013{max(v['range_a']):g}"
+        rb = f"{min(v['range_b']):g}\u2013{max(v['range_b']):g}"
+        if v['kind'] == 'intensity_at_x':
+            if v['x_mode'] == 'point':
+                return f"x = {v['x0']:g}"
+            return f"x = {v['x0']:g} \u00b1 {v['x_halfwidth']:g}"
+        if v['kind'] in gv.TWO_BANDS:
+            return f"range A {ra} or range B {rb}"
+        return f"the range {ra}"
 
     def compute(self):
         groups = self.groups()
@@ -552,8 +908,23 @@ class GroupStatisticsDialog(QDialog):
                                 "(column 'Group', or the buttons below the table).")
             return
         v = self.value_settings()
-        values = gs.spectrum_values(self.spectra, v['kind'], x0=v['x0'],
-                                    range_a=v['range_a'], range_b=v['range_b'])
+        if gv.is_whole_spectrum(v['kind']) and v['kind'] in ('corr_ref', 'dist_ref') \
+                and not v['reference_group']:
+            QMessageBox.warning(self, "Group Statistics", "Choose the reference group first.")
+            return
+        self.remembered_settings.update(v)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            values, info = gv.compute_values(self.spectra, groups, v,
+                                             fit_settings=self.fit_settings,
+                                             mapper=self._fit_mapper)
+        except Exception as exc:
+            logger.exception("Group statistics: computing the values failed")
+            QMessageBox.warning(self, "Group Statistics",
+                                f"The values could not be computed:\n{exc}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
         data = gs.collect(groups, values)
         parametric = self.test_combo.currentData() == 'parametric'
         result = gs.compare(data, parametric=parametric)
@@ -562,26 +933,44 @@ class GroupStatisticsDialog(QDialog):
         notes = []
         if result.get('test') is None:
             notes.append("No test was computed.")
+        if info.get('note'):
+            notes.append(info['note'])
+        if info.get('explained') is not None and np.isfinite(info['explained']):
+            notes.append(f"Component {v['component']} describes "
+                         f"{info['explained']:.1f} % of the variation.")
+        whole = gv.is_whole_spectrum(v['kind'])
+        reasons = []
+        if not whole:
+            reasons.append("the x or range is not completely inside them")
+        if gv.uses_fit(v):
+            reasons.append("the peak fit was rejected")
+        if v['kind'] in gv.TWO_BANDS and v['operation'] in ('A / B', 'log₂(A / B)',
+                                                            '(A − B) / (A + B)'):
+            reasons.append("the combination is undefined, e.g. division by zero")
+        if v['kind'] in ('corr_ref', 'dist_ref'):
+            reasons.append("a reference group of one spectrum has no other spectra to "
+                           "compare with")
+        reason = " or ".join(reasons) if reasons else "it could not be computed"
         # A whole group without values: say which, and where its spectra are
         # (typical when the groups were measured over different x-ranges)
         empty = [g for g in dict.fromkeys(groups) if g and g not in data]
         for g in empty:
             members = [sp for sp, gg in zip(self.spectra, groups) if gg == g]
             lo, hi = self._extent_of(members)
-            ra = f"{min(v['range_a']):g}\u2013{max(v['range_a']):g}"
-            rb = f"{min(v['range_b']):g}\u2013{max(v['range_b']):g}"
-            where = {'intensity_at_x': f"x = {v['x0']:g}",
-                     'ratio': f"range A {ra} or range B {rb}"}.get(v['kind'],
-                                                                  f"the range {ra}")
+            if whole or info.get('note'):
+                notes.append(f"Group \u201c{g}\u201d ({len(members)} spectra) has no value "
+                             f"and is not in the test.")
+                continue
             notes.append(f"Group \u201c{g}\u201d ({len(members)} spectra) has no value and is "
-                         f"not in the test: its spectra cover {lo:g}\u2013{hi:g}, outside "
-                         f"{where}.")
+                         f"not in the test: its spectra cover {lo:g}\u2013{hi:g}"
+                         + (f", outside {self._where_text(v)}" if not gv.uses_fit(v) else
+                            f" ({reason})") + ".")
         missing -= sum(1 for g in groups if g in empty)
         if missing:
             names = [lab for lab, g, val in zip(self.labels, groups, values)
                      if g and g not in empty and not np.isfinite(val)]
             notes.append(f"{missing} spectr{'um has' if missing == 1 else 'a have'} no value "
-                         f"(the x or range is not completely inside them) and "
+                         f"({reason}) and "
                          f"{'was' if missing == 1 else 'were'} left out: "
                          + ", ".join(names[:5]) + (" \u2026" if len(names) > 5 else "") + ".")
         if result['excluded']:
@@ -602,25 +991,87 @@ class GroupStatisticsDialog(QDialog):
         self._show_values(groups)
         self.export_btn.setEnabled(bool(data))
 
+    def _on_plot_type_changed(self, *_):
+        self.remembered_settings['plot'] = self.plot_combo.currentData()
+        if getattr(self, 'data', None) is not None:
+            self._show_box_plot()
+
+    def save_plot(self):
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Save plot", "group_statistics.png",
+            "PNG image (*.png);;TIFF image (*.tif);;SVG vector graphics (*.svg);;PDF (*.pdf)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += {'PNG': '.png', 'TIFF': '.tif', 'SVG': '.svg', 'PDF': '.pdf'}.get(
+                chosen.split()[0], '.png')
+        try:
+            self.figure.savefig(path, dpi=300, bbox_inches='tight')
+        except Exception as exc:
+            logger.exception("Group statistics: saving the plot failed")
+            QMessageBox.warning(self, "Save plot", f"The plot could not be saved:\n{exc}")
+
     def _show_box_plot(self):
+        """Draw the chosen plot type (box / violin / points with mean ± 95 % CI)."""
         fig = self.figure
         fig.clear()
         ax = fig.add_subplot(111)
         names = list(self.data)
-        values = [self.data[g] for g in names]
+        values = [np.asarray(self.data[g], dtype=float) for g in names]
+        kind = self.plot_combo.currentData()
+        footnote = ''
         if names:
-            ax.boxplot(values, showfliers=False, widths=0.5,
-                       medianprops={'color': 'black'})
+            colours = [_GROUP_COLOURS[i % len(_GROUP_COLOURS)] for i in range(len(names))]
+            positions = list(range(1, len(names) + 1))
+            if kind == 'box':
+                ax.boxplot(values, showfliers=False, widths=0.5,
+                           medianprops={'color': 'black'})
+            elif kind == 'violin':
+                drawable = [(p, v) for p, v in zip(positions, values)
+                            if len(v) >= 2 and np.ptp(v) > 0]
+                if drawable:
+                    parts = ax.violinplot([v for _, v in drawable],
+                                          positions=[p for p, _ in drawable], widths=0.7,
+                                          showextrema=False)
+                    for body, (p, _) in zip(parts['bodies'], drawable):
+                        body.set_facecolor(colours[p - 1])
+                        body.set_edgecolor(colours[p - 1])
+                        body.set_alpha(0.25)
+                for p, v in zip(positions, values):
+                    ax.plot([p - 0.18, p + 0.18], [np.median(v)] * 2, color='black',
+                            linewidth=1.5, zorder=4)
+                few = [g for g, v in zip(names, values) if len(v) < 10]
+                if few:
+                    footnote = ("Fewer than 10 values in " + ", ".join(few)
+                                + ": the violin shape is unreliable there.")
             rng = np.random.default_rng(0)
-            for i, v in enumerate(values, start=1):
+            for p, v, colour in zip(positions, values, colours):
                 jitter = rng.uniform(-0.12, 0.12, len(v))
-                ax.scatter(np.full(len(v), i) + jitter, v, s=14, alpha=0.7,
-                           color=_GROUP_COLOURS[(i - 1) % len(_GROUP_COLOURS)], zorder=3)
-                ax.plot([i - 0.25, i + 0.25], [np.mean(v)] * 2, color='#E65100', linewidth=1.5,
-                        zorder=4)
-            ax.set_xticks(range(1, len(names) + 1))
+                ax.scatter(np.full(len(v), p) + jitter, v, s=14, alpha=0.7,
+                           color=colour, zorder=3)
+                mean = float(np.mean(v))
+                if kind == 'ci':
+                    if len(v) >= 2:
+                        from scipy import stats as _stats
+                        half = (_stats.t.ppf(0.975, len(v) - 1) * np.std(v, ddof=1)
+                                / np.sqrt(len(v)))
+                        ax.errorbar(p + 0.25, mean, yerr=half, fmt='none', ecolor='black',
+                                    elinewidth=1.3, capsize=5, zorder=5)
+                    ax.plot([p + 0.12, p + 0.38], [mean] * 2, color='#E65100', linewidth=2,
+                            zorder=6)
+                else:
+                    ax.plot([p - 0.25, p + 0.25], [mean] * 2, color='#E65100', linewidth=1.5,
+                            zorder=4)
+            if kind == 'ci':
+                footnote = ("Orange: mean; black bar: 95 % confidence interval of the mean "
+                            "(t distribution).")
+            elif kind == 'violin':
+                footnote = ("Black: median; orange: mean. " + footnote).strip()
+            ax.set_xticks(positions)
             ax.set_xticklabels([f"{g}\n(n={len(self.data[g])})" for g in names], fontsize=8)
-        ax.set_ylabel(self.value_label(), fontsize=9)
+            ax.set_xlim(0.4, len(names) + 0.6)
+        import textwrap
+        ax.set_ylabel(textwrap.fill(self.value_label(), 48), fontsize=9)
         r = self.comparison
         if r and r['test']:
             left_out = getattr(self, 'left_out_groups', [])
@@ -629,8 +1080,15 @@ class GroupStatisticsDialog(QDialog):
                 title += ("\nnot in the test: group " if len(left_out) == 1
                           else "\nnot in the test: groups ") + ", ".join(left_out)
             ax.set_title(title, fontsize=9, color='#B71C1C' if left_out else 'black')
-        fig.tight_layout()
+        if footnote:
+            import textwrap as _tw
+            fig.text(0.01, 0.005, _tw.fill(footnote, 140), fontsize=7.5, color='#555555',
+                     va='bottom')
+            fig.tight_layout(rect=(0, 0.05, 1, 1))
+        else:
+            fig.tight_layout()
         self.canvas.draw_idle()
+        self.save_plot_btn.setEnabled(bool(names))
 
     def _show_summary(self):
         rows = gs.describe(self.data)
@@ -701,6 +1159,13 @@ class GroupStatisticsDialog(QDialog):
         except Exception as exc:
             logger.exception("Group statistics export failed")
             QMessageBox.warning(self, "Export failed", f"The file could not be written:\n{exc}")
+
+    def done(self, r):
+        try:
+            self.remembered_settings.update(self.value_settings())
+        except Exception:
+            logger.exception("Group statistics: remembering the settings failed")
+        super().done(r)
 
     def show_help(self):
         from src.help.help_window import open_help_topic

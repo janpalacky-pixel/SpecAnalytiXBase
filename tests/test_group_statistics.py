@@ -300,3 +300,32 @@ def test_a_group_left_out_of_a_computed_test_is_shown_in_red(monkeypatch):
     assert 'not in the test' in d.note.text()
     assert 'not in the test: group 2' in d.figure.axes[0].get_title()
     d.deleteLater()
+
+
+# --- 2026-10-15: table files with spaces in the names; help in "From names" -------
+
+def test_group_table_with_spaces_in_names_and_any_separator(tmp_path):
+    labels = [f'closed_dna_melting_2comp_clean : temp_{i:02d}' for i in range(1, 12)]
+    txt = tmp_path / 'g.txt'
+    txt.write_text('closed_dna_melting_2comp_clean : temp_01 group1\n'
+                   'closed_dna_melting_2comp_clean : temp_02\tgroup1\t\t\n'
+                   'closed_dna_melting_2comp_clean : temp_10;group 2\n'
+                   'closed_dna_melting_2comp_clean : temp_11, group 3\n', encoding='utf-8')
+    mapping = gs.read_group_table(str(txt), labels=labels)
+    assert gs.groups_from_table(labels, mapping) == (
+        ['group1', 'group1'] + [''] * 7 + ['group 2', 'group 3'])
+    # without the names known: the last word is the group
+    assert gs.read_group_table(str(txt))[labels[0]] == 'group1'
+
+
+def test_names_dialog_has_a_help_button(monkeypatch):
+    from src.views.dialogs.visualization_analysis.group_statistics_dialog import (
+        NamesToGroupsDialog)
+    from PyQt5.QtWidgets import QPushButton
+    d = NamesToGroupsDialog(['a_1', 'b_2'])
+    shown = []
+    monkeypatch.setattr(QMessageBox, 'exec_', lambda self: shown.append(self.text()))
+    button = [b for b in d.findChildren(QPushButton) if b.text() == 'Help'][0]
+    button.click()
+    assert shown and 'Common root name' in shown[0] and 'A part of the name' in shown[0]
+    d.deleteLater()

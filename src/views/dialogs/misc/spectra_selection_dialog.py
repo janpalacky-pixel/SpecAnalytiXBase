@@ -20,6 +20,7 @@ def derive_root_name(label: str) -> str:
 
         "Chlorella [r23_c24]"          -> "Chlorella"
         "Raman_DNA_conc_dep : sp001"   -> "Raman_DNA_conc_dep"
+        "CD_melt : CD [mdeg] T=45.00C" -> "CD_melt"
         "sample_012"                   -> "sample"
         "spectrum-3"                   -> "spectrum"
         "plain_unique_name"            -> "plain_unique_name"  (unchanged)
@@ -42,6 +43,15 @@ def derive_root_name(label: str) -> str:
     # 2) Trailing " : <id>" segment, where <id> is an optional short
     #    alphabetic prefix followed by digits (e.g. "sp001", "3", "id42")
     m = re.match(r'^(.*\S)\s*:\s*[A-Za-z]*\d+\s*$', s)
+    if m:
+        return m.group(1).strip()
+
+    # 2b) "<file> : <anything>" -- the multi-spectrum readers' "<file> :
+    #     <sub-id>" style when the sub-id is not a plain number, e.g.
+    #     "CD_melt_1_heating : CD [mdeg] T=45.00C" -> "CD_melt_1_heating"
+    #     (the file is the natural group). Only " : " with spaces around
+    #     the colon, so a colon inside a name (e.g. "10:30") is not cut.
+    m = re.match(r'^(.*?\S)\s+:\s+\S', s)
     if m:
         return m.group(1).strip()
 

@@ -8,8 +8,9 @@ on one value per spectrum. Qt-free.
                          (e.g. "sampleA_day3_01" -> part 2 -> "day3");
    groups_from_table     a table of name -> group (CSV/Excel), read with
                          read_group_table.
-2. Value -- one number per spectrum, from its own x-axis (spectra may have
-   different axes): VALUE_KINDS.
+2. Value -- one number per spectrum (group_values.py: one band with the
+   2D Map / Band Ratio metrics, two bands A and B combined, or a
+   whole-spectrum value): VALUE_KINDS, compute_values.
 3. Comparison -- describe() per group; compare():
    two groups:   Welch t-test (unequal variances) or Mann-Whitney U;
    three or more: one-way ANOVA or Kruskal-Wallis, plus every pair
@@ -28,13 +29,8 @@ from scipy import stats
 from src.modules.utils.band_integration import (
     band_area, band_mean, covers, integration_intervals)
 
-VALUE_KINDS = {
-    'intensity_at_x': "Intensity at x",
-    'mean': "Mean over a range",
-    'area': "Area over a range",
-    'max': "Maximum in a range",
-    'ratio': "Band ratio: area A / area B",
-}
+# All value choices (one band, two bands, whole spectrum): group_values.py
+from src.modules.visualization_analysis.group_values import VALUE_KINDS, VALUE_SECTIONS  # noqa: E402,F401
 
 TESTS = {
     'parametric': "Parametric: Welch t-test / one-way ANOVA",
@@ -102,21 +98,67 @@ def groups_from_table(labels, mapping):
     return [exact.get(label, loose.get(label.strip().lower(), NO_GROUP)) for label in labels]
 
 
-def read_group_table(path):
-    """{name: group} from a CSV/TXT or Excel file whose first two columns are
-    the spectrum name and the group (a header row is recognised and skipped
-    if its second cell is 'group')."""
-    import pandas as pd
+_HEADER_WORDS = ('group', 'groups', 'class')
+_TABLE_SEPARATORS = ' \t,;'
+
+
+def _split_table_line(line, known):
+    """(name, group) from one line of a text table, or None.
+
+    Spectrum names often contain spaces ("run : temp_01"), so a plain
+    "split at spaces" is wrong. Order of attempts:
+    1. a known spectrum name (`known`: {lower-case name: name}) at the start
+       of the line, followed by a separator -> the rest is the group (works
+       with any separator: space, tab, comma, semicolon);
+    2. tab-separated cells;  3. semicolon / comma;
+    4. spaces: the group is the last word, the name everything before it."""
+    s = line.rstrip('\r\n')
+    if not s.strip():
+        return None
+    low = s.lower()
+    if known:
+        cuts = [i for i, ch in enumerate(s) if ch in _TABLE_SEPARATORS] + [len(s)]
+        for i in sorted(set(cuts), reverse=True):         # longest name first
+            name = known.get(low[:i].strip().strip('"'))
+            if name is not None:
+                group = s[i:].strip(_TABLE_SEPARATORS + '"\'')
+                return name, group
+    cells = [c.strip().strip('"') for c in s.split('\t') if c.strip()]
+    if '\t' in s and len(cells) >= 2:
+        return cells[0], cells[1]
+    for sep in (';', ','):
+        cells = [c.strip().strip('"') for c in s.split(sep) if c.strip()]
+        if sep in s and len(cells) >= 2:
+            return cells[0], cells[1]
+    parts = s.strip().rsplit(None, 1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return None
+
+
+def read_group_table(path, labels=None):
+    """{name: group} from a CSV/TXT or Excel file: spectrum name and group
+    in the first two columns (a header row whose second cell is 'group' is
+    skipped). For text files `labels` (the spectrum names in the window)
+    lets names that contain spaces be recognised whatever the separator."""
     if path.lower().endswith(('.xlsx', '.xlsm', '.xls')):
+        import pandas as pd
         frame = pd.read_excel(path, header=None, dtype=str)
+        if frame.shape[1] < 2:
+            raise ValueError("The table needs two columns: spectrum name and group.")
+        frame = frame.iloc[:, :2].dropna(how='any')
+        rows = [(str(a).strip(), str(b).strip()) for a, b in frame.itertuples(index=False)]
     else:
-        frame = pd.read_csv(path, header=None, dtype=str, sep=None, engine='python')
-    if frame.shape[1] < 2:
-        raise ValueError("The table needs two columns: spectrum name and group.")
-    frame = frame.iloc[:, :2].dropna(how='any')
-    if len(frame) and str(frame.iloc[0, 1]).strip().lower() in ('group', 'groups', 'class'):
-        frame = frame.iloc[1:]
-    return {str(a).strip(): str(b).strip() for a, b in frame.itertuples(index=False)}
+        with open(path, encoding='utf-8-sig', errors='replace') as fh:
+            lines = fh.read().splitlines()
+        known = {str(l).strip().lower(): str(l) for l in (labels or [])}
+        rows = [r for r in (_split_table_line(line, known) for line in lines) if r]
+        rows = [(a, b) for a, b in rows if a and b]
+        if not rows:
+            raise ValueError("The table needs two columns: spectrum name and group.")
+    if rows and rows[0][1].strip().lower() in _HEADER_WORDS:
+        rows = rows[1:]
+    return {a: b for a, b in rows}
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +212,12 @@ def spectrum_value(spectrum, kind, x0=None, range_a=None, range_b=None):
             return np.nan
         b = area(range_b)
         return area(range_a) / b if b != 0 else np.nan
+    # the other one-band values (group_values.py), default options
+    from src.modules.visualization_analysis import group_values as gv
+    if kind in gv.ONE_BAND:
+        vals, _ = gv.compute_values([spectrum], ['g'], {'kind': kind, 'x0': x0,
+                                                        'range_a': range_a})
+        return float(vals[0])
     raise ValueError(f"unknown value kind {kind!r}")
 
 

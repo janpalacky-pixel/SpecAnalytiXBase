@@ -3490,6 +3490,18 @@ def _natural_sort_key(cls, label):
             <code>self.comparison</code>.</li>
             <li>p-values are formatted as text such as "&lt; 0.0001": escape them before putting
             them into HTML, or "&lt;" starts a tag and the value disappears.</li>
+            <li>Values: <code>group_values.py</code> (Qt-free). One band reuses the 2D Map
+            metrics (<code>band_integration.py</code> for areas / means,
+            <code>Map2DManager._compute_fwhm</code>, <code>PeakFitMapper</code> for the fitted
+            values, one mapper per dialog so Band A and B fits are cached); two bands combine
+            two band values; whole-spectrum values (PCA / SVD / reference group, leave-one-out
+            for the reference group's own spectra) only when <code>same_x_axis()</code>.
+            <code>compute_values(spectra, groups, settings)</code> returns (values, info);
+            the old <code>spectrum_value()</code> API stays for the original five kinds.
+            The dialog remembers the value settings in the controller for the session.</li>
+            <li>Table files: names often contain spaces ("run : temp_01"), so
+            <code>read_group_table(path, labels)</code> first looks for a known spectrum name
+            at the start of each line; only then tab / semicolon / comma / last word.</li>
             <li>"From names&hellip;" offers the common root name first
             (<code>groups_from_root_name</code>), which reuses
             <code>derive_root_name</code> from <code>spectra_selection_dialog.py</code>, so the
