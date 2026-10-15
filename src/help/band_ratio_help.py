@@ -77,6 +77,8 @@ def get_band_ratio_help_title():
 
 def get_band_ratio_help_content():
     images = _resolve_screenshot_uris()
+    from src.help.help_figures import figure_substitutions
+    images.update(figure_substitutions())
 
     # string.Template ($NAME placeholders) instead of str.format()/f-strings
     # on purpose: the CSS block below is full of literal { } braces, which
@@ -190,6 +192,7 @@ def get_band_ratio_help_content():
     <em>Intensity at x</em>, the x-value) gets no value for that band: "&mdash;" in the
     table, and a red line above the results names it. Earlier it got a value from only the
     part of the range it had, which looked like a real, just smaller value.</p>
+    $AREA_OVER_A_RANGE_FIGURE
 
     <div class="screenshot">
         <img src="$RANGE_DIALOG" width="${RANGE_DIALOG_W}" height="${RANGE_DIALOG_H}" alt="Define Spectral Range dialog with Include/Exclude mode and a list of sub-ranges" />

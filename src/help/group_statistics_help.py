@@ -57,7 +57,10 @@ def get_group_statistics_help_title():
 
 
 def get_group_statistics_help_content():
-    return Template(_HTML).safe_substitute(_figures())
+    from src.help.help_figures import figure_substitutions
+    values = _figures()
+    values.update(figure_substitutions())
+    return Template(_HTML).safe_substitute(values)
 
 
 _HTML = """
@@ -144,6 +147,8 @@ $GS_NAMES_FIGURE
 <p>The <b>Value</b> list has three parts. The one-band and two-band values work for any spectra
 (also with different x-axes); the whole-spectrum values need spectra with the same x-axis and
 are greyed out otherwise. A grey line under the choice says what the chosen value is.</p>
+
+$GROUP_VALUES_FIGURE
 
 <h3>One band (one range)</h3>
 <p>The same metrics as in the 2D Map and Band Ratio:</p>
@@ -327,7 +332,8 @@ x</i>; areas by the trapezoid rule from exactly the lower to exactly the upper l
 spectrum is interpolated at the limits), mean = area / width, maximum from the points with x
 between the limits. Shared with the 2D Map and Band Ratio
 (<code>src/modules/utils/band_integration.py</code>); the values are in
-<code>group_values.py</code>.</li>
+<code>group_values.py</code>.
+$AREA_OVER_A_RANGE_FIGURE</li>
 <li>Intensity at x &mdash; fitted: <code>numpy.polyfit</code> of degree 2 to the points within
 x &plusmn; w (at least 3), evaluated at x. Peak top &mdash; parabola: 5-point moving average,
 its maximum, the connected points above 70&nbsp;% of the way from the minimum to that maximum

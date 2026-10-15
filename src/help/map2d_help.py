@@ -122,6 +122,8 @@ def get_map2d_help_title():
 
 def get_map2d_help_content():
     images = _resolve_screenshot_uris()
+    from src.help.help_figures import figure_substitutions
+    images.update(figure_substitutions())
 
     # string.Template ($NAME placeholders), not str.format()/f-strings — the
     # CSS block below is full of literal { } braces that would collide with
@@ -249,6 +251,7 @@ range and maps it as a pixel colour.</p>
 gets no value (blank), for every metric, rather than a value from only the part of the range
 it has. In a normal map all pixels share one x-axis, so this matters only for spectra with
 different x-ranges.</p>
+$AREA_OVER_A_RANGE_FIGURE
 
 <div class="note">
 <b>Range-based vs. single-point.</b> Every metric above except

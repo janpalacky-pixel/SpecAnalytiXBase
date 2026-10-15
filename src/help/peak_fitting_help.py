@@ -79,6 +79,8 @@ def get_peak_fitting_help_title():
 def get_peak_fitting_help_content():
     """Return HTML content for comprehensive user guide help."""
     images = _resolve_screenshot_uris()
+    from src.help.help_figures import figure_substitutions
+    images.update(figure_substitutions())
 
     # string.Template ($NAME placeholders) instead of str.format()/f-strings
     # on purpose: the CSS block below is full of literal { } braces, which
@@ -104,7 +106,8 @@ def get_peak_fitting_help_content():
         <h1>Peak Fitting & Deconvolution Help</h1>
 
         <h2>Overview</h2>
-        <p>The Peak Fitting tool allows you to model peaks in your spectrum with mathematical functions (Gaussian, Lorentzian, Voigt, or Pseudo-Voigt). This is essential for deconvolving overlapping peaks and accurately quantifying their properties such as <b>Center</b>, <b>Height</b>, <b>Area</b>, and <b>Full Width at Half Maximum (FWHM)</b>.</p>
+        <p>The Peak Fitting tool allows you to model peaks in your spectrum with mathematical functions (Gaussian, Lorentzian, Voigt, or Pseudo-Voigt). This is essential for deconvolving overlapping peaks and accurately quantifying their properties such as <b>Center</b>, <b>Height</b>, <b>Area</b>, and <b>Full Width at Half Maximum (FWHM)</b>. FWHM and Area are calculated exactly from the fitted parameters for all four shapes (for Voigt: height divided by the profile's centre value; before version 1.5 the Voigt area was integrated numerically over a limited window and could be up to 0.6&nbsp;% too small for Lorentzian-like peaks).</p>
+        $VOIGT_AREA_FIGURE
         <p>Fitting is always performed on the <b>full spectrum</b>. You can use the <b>Zoom</b> (magnifying glass) and <b>Pan</b> (cross-arrows) tools from the plot's navigation toolbar to get a closer look at specific regions. Click the <b>Home</b> button (house icon) to reset the view.</p>
 
         <div class="screenshot">

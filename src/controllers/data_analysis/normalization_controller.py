@@ -167,6 +167,16 @@ class NormalizationController:
             skipped_names = self.oc._format_names_for_message(self.manager.skipped_labels)
             message += (f'\n\u26a0 {sn} {snoun} left unchanged (x-axis doesn\'t match): '
                         f'{skipped_names}.')
+        # A spectrum the normalization region is not completely inside is
+        # left unchanged (not normalized by the part it has, nor -- as
+        # before -- silently by its whole spectrum); see
+        # NormalizationManager.region_covers.
+        if getattr(self.manager, 'uncovered_labels', None):
+            un = len(self.manager.uncovered_labels)
+            unoun = 'spectrum' if un == 1 else 'spectra'
+            names = self.oc._format_names_for_message(self.manager.uncovered_labels)
+            message += (f'\n\u26a0 {un} {unoun} left unchanged (the normalization region is '
+                        f'not completely inside {"it" if un == 1 else "them"}): {names}.')
         return True, message
 
     # ------------------------------------------------------------------

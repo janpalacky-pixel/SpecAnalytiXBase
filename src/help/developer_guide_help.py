@@ -3499,6 +3499,8 @@ def _natural_sort_key(cls, label):
             <code>compute_values(spectra, groups, settings)</code> returns (values, info);
             the old <code>spectrum_value()</code> API stays for the original five kinds.
             The dialog remembers the value settings in the controller for the session.</li>
+            <li>What the refined values do, in one picture:
+            __GROUP_VALUES_FIGURE__</li>
             <li>Table files: names often contain spaces ("run : temp_01"), so
             <code>read_group_table(path, labels)</code> first looks for a known spectrum name
             at the start of each line; only then tab / semicolon / comma / last word.</li>
@@ -3538,10 +3540,23 @@ def _natural_sort_key(cls, label):
         spectra, left out and named in Group Statistics. Before, it got a value from the part it
         had, which looked like a real, just smaller value (and Band Ratio's Intensity at x took
         the nearest edge point even far outside the spectrum).</p>
+        __AREA_OVER_A_RANGE_FIGURE__
         <p>The point-based metrics
         (Peak intensity, Peak position, FWHM, Variance) still use the points inside the range.
-        Not changed yet: Unit-area normalization, Peak Fitting areas and other tools with their
-        own <code>trapz</code> calls.</p>
+        Since 2026-10-15 Normalization &ndash; Area uses the same code
+        (<code>NormalizationManager._get_unit_area_factor</code>), and every region-based
+        normalization leaves a spectrum the region is not completely inside unchanged
+        (<code>region_covers</code>, <code>REGION_MODES</code>; named via
+        <code>uncovered_labels</code> in the result message) &mdash; before, the
+        <code>if np.any(mask) else &lt;whole spectrum&gt;</code> fallbacks silently normalized
+        such a spectrum by its whole spectrum.</p>
+        <p><b>Peak Fitting, Voigt area:</b> <code>voigt()</code> is the area-normalized
+        profile V scaled to the fitted height, so the area is exactly
+        <code>amplitude / scipy.special.voigt_profile(0, &sigma;, &gamma;)</code>. Before, it
+        was integrated over &plusmn;50 FWHM, which cut off up to 0.64&nbsp;% of a
+        Lorentzian-like peak (the Lorentzian tails decay only as 1/x&sup2;). Gaussian, Lorentzian
+        and pseudo-Voigt areas were always exact (closed formulas).</p>
+        __VOIGT_AREA_FIGURE__
 
         <h2 id="many-spectra-plotting">Plotting Thousands of Spectra</h2>
         <p>Measured (1&nbsp;600-point spectra, Agg, test VM): 1&nbsp;000 spectra take 0.3&nbsp;s to
@@ -3984,4 +3999,8 @@ pytest tests/ -v
 """
     _content = _content.replace("__PROJECT_STRUCTURE_URL__", _project_structure_url)
     _content = _content.replace("__REQUIREMENTS_URL__", _requirements_url)
+    from src.help.help_figures import figure_html
+    _content = _content.replace("__AREA_OVER_A_RANGE_FIGURE__", figure_html('AREA_OVER_A_RANGE'))
+    _content = _content.replace("__VOIGT_AREA_FIGURE__", figure_html('VOIGT_AREA'))
+    _content = _content.replace("__GROUP_VALUES_FIGURE__", figure_html('GROUP_VALUES'))
     return _content

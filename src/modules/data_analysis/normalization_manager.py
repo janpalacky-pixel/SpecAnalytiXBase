@@ -6,6 +6,8 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import axes_match, describe_axis_mismatch
 from src.modules.utils.correction_history import append_correction_history
 from src.modules.utils.progress_utils import notify_progress
+from src.modules.utils.band_integration import (
+    band_area, band_mean, covers, finite_sorted, integration_intervals)
 try:
     from scipy import integrate
 except ImportError:
@@ -205,16 +207,48 @@ class NormalizationManager:
         return y_scale / norm if norm != 0 else y_scale.copy()
 
     def _get_unit_area_factor(self, x_scale, y_scale):
-        """Return the integral factor used by area normalization."""
-        mask = self._get_range_mask(x_scale)
-        if np.any(mask):
-            return _trapz(y_scale[mask], x_scale[mask])
-        return _trapz(y_scale, x_scale)
+        """Return the integral factor used by area normalization: the area
+        over the region from exactly its start to exactly its end, each
+        part of the region integrated on its own (shared with the 2D Map,
+        Band Ratio and Group Statistics: band_integration.py). Before, the
+        trapezoid ran over the points inside the region only (up to one
+        point spacing missing at each edge) and bridged the gaps between
+        several parts (counting the area under the bridge)."""
+        xs, ys = finite_sorted(x_scale, y_scale)
+        if self.x_ranges:
+            intervals = integration_intervals(
+                xs, include=None if self.is_exclude_mode else list(self.x_ranges),
+                exclude=list(self.x_ranges) if self.is_exclude_mode else None)
+        else:
+            intervals = integration_intervals(xs)
+        return band_area(xs, ys, intervals)
 
     def _normalize_unit_area(self, x_scale, y_scale):
         """Area normalization — divides by the integral over the selected region."""
         area = self._get_unit_area_factor(x_scale, y_scale)
-        return y_scale / area if area != 0 else y_scale.copy()
+        return y_scale / area if np.isfinite(area) and area != 0 else y_scale.copy()
+
+    # Modes that compute their factor from one spectrum's own points in the
+    # region; a spectrum that does not completely cover the region is left
+    # unchanged (see region_covers) instead of being normalized by the part
+    # it has -- or, when no point fell inside, silently by its WHOLE
+    # spectrum, which is what the "if np.any(mask) else ..." fallbacks of
+    # the methods below used to do.
+    REGION_MODES = ('vector', 'unit_area', 'max_peak', 'quantile', 'top_mean', 'min_max',
+                    'offset_correction', 'snv', 'mean_center', 'z_score', 'range_scaling',
+                    'robust_scaling', 'baseline_correction')
+
+    def region_covers(self, x_scale):
+        """True if the spectrum can be normalized over the region: no region
+        set, the include region(s) completely inside the spectrum (within
+        half a point spacing), or in exclude mode at least one point left."""
+        if not self.x_ranges:
+            return True
+        x = np.asarray(x_scale, dtype=float)
+        if self.is_exclude_mode:
+            return bool(np.any(self._get_range_mask(x)))
+        xs = np.sort(x[np.isfinite(x)])
+        return covers(xs, list(self.x_ranges))
 
     def _get_max_peak_factor(self, y_scale, x_scale):
         """Return the maximum factor used by peak-intensity normalization."""
@@ -384,8 +418,22 @@ class NormalizationManager:
         absorption spectra) and subtract its mean as a constant offset from
         the entire spectrum. Zeros the baseline without any scaling.
         """
-        mask = self._get_range_mask(x_scale)
-        offset = np.mean(y_scale[mask]) if np.any(mask) else np.mean(y_scale)
+        # Mean = area / width over the region (exact edges, each part on its
+        # own; band_integration.py) -- correct also for unevenly spaced
+        # points, where the plain average of the points over-weights the
+        # densely sampled parts. Same rule as Mean in the 2D Map, Band Ratio
+        # and Group Statistics.
+        xs, ys = finite_sorted(x_scale, y_scale)
+        if self.x_ranges:
+            intervals = integration_intervals(
+                xs, include=None if self.is_exclude_mode else list(self.x_ranges),
+                exclude=list(self.x_ranges) if self.is_exclude_mode else None)
+        else:
+            intervals = integration_intervals(xs)
+        offset = band_mean(xs, ys, intervals)
+        if not np.isfinite(offset):
+            mask = self._get_range_mask(x_scale)
+            offset = np.mean(y_scale[mask]) if np.any(mask) else np.mean(y_scale)
         return y_scale - offset
 
     def _normalize_mean_centering(self, y_scale, x_scale):
@@ -529,12 +577,23 @@ class NormalizationManager:
         # display/preview selection elsewhere.
         mean_factor = None
         factors_by_index: dict = {}
+        # Spectra the region is not completely inside: left unchanged and
+        # named by the caller (normalization_controller) -- see REGION_MODES
+        self.uncovered_labels = []
+        uncovered = set()
+        if mode in self.REGION_MODES:
+            for idx, spectrum in enumerate(spectra):
+                if len(spectrum['x_scale']) and not self.region_covers(spectrum['x_scale']):
+                    uncovered.add(idx)
+                    self.uncovered_labels.append(spectrum.get('label', '?'))
         if mode in self.RATIO_BASED_MODES:
             raw_factors = []
             for idx, spectrum in enumerate(spectra):
                 x_scale = spectrum['x_scale']
                 y_scale = spectrum['y_scale']
                 if len(x_scale) == 0 or len(y_scale) == 0 or len(x_scale) != len(y_scale):
+                    continue
+                if idx in uncovered:
                     continue
                 f = self._get_factor(mode, y_scale, x_scale, spectra=spectra)
                 factors_by_index[idx] = f
@@ -551,6 +610,9 @@ class NormalizationManager:
 
             if len(x_scale) == 0 or len(y_scale) == 0 or len(x_scale) != len(y_scale):
                 normalized_spectra.append(norm_s)
+                continue
+            if i in uncovered:
+                normalized_spectra.append(norm_s)          # unchanged, named in the message
                 continue
 
             if mode == 'vector':

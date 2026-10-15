@@ -95,6 +95,8 @@ def get_normalization_help_title():
 
 def get_normalization_help_content():
     images = _resolve_screenshot_uris()
+    from src.help.help_figures import figure_substitutions
+    images.update(figure_substitutions())
     help_template = Template("""
     <html>
     <head>
@@ -149,7 +151,11 @@ def get_normalization_help_content():
             From / To manually, then click <em>Add region</em>.
             Multiple regions are combined as a union (Include mode) or subtracted from
             the full range (Exclude mode). This section is expanded by default. Save
-            frequently-used region sets as <a href="#presets">presets</a> for reuse.</li>
+            frequently-used region sets as <a href="#presets">presets</a> for reuse.
+            A spectrum that the include region(s) are <em>not completely inside</em> (or, in
+            Exclude mode, with no point left) is <strong>left unchanged</strong>, and the result
+            message names it &mdash; it is not normalized by only the part of the region it has
+            (or, as before version 1.5, silently by its whole spectrum).</li>
         <li><strong>Choose a method</strong> — pick from the Intensity or Scatter correction tabs.</li>
         <li><strong>Choose result scaling</strong> (Intensity methods only) — see
             <a href="#scaling">Result scaling</a> below.</li>
@@ -614,9 +620,16 @@ def get_normalization_help_content():
     <div class="detail">
         <a name="det-area"></a>
         <h3>Area (integral) — algorithm</h3>
-        <p><strong>Step 1 — build the region mask</strong> (same as above).</p>
-        <p><strong>Step 2 — compute the area by the trapezoidal rule:</strong>
-        <span class="fm">A = numpy.trapezoid(y[mask], x[mask])</span><br>
+        <p><strong>Step 1 — the region:</strong> the include region(s), or the whole spectrum
+        without the exclude region(s), as a list of separate x-intervals.</p>
+        <p><strong>Step 2 — compute the area by the trapezoidal rule</strong>, for every
+        interval from <em>exactly</em> its start to <em>exactly</em> its end (the spectrum is
+        interpolated at the interval edges), and add the areas of the intervals. The gap
+        between two regions is not counted. (Before version 1.5 the trapezoid ran over the
+        points inside the region only &mdash; up to one point spacing was missing at each
+        edge &mdash; and bridged the gaps between regions with a straight line, counting the
+        area under it.) Shared with the 2D Map, Band Ratio and Group Statistics.<br>
+        $AREA_OVER_A_RANGE_FIGURE
         Each pair of adjacent points forms a trapezoid; their areas are summed.
         The trapezoidal rule is exact for linearly interpolated data and handles
         non-uniform x-axis spacing correctly (important for spectrometers with
@@ -723,8 +736,11 @@ def get_normalization_help_content():
         <p><strong>Step 1 — define the silent region</strong> using the normalization region
         controls (e.g. From&nbsp;=&nbsp;320, To&nbsp;=&nbsp;330&nbsp;nm for CD/absorption).</p>
         <p><strong>Step 2 — compute the mean over that region:</strong><br>
-        <span class="fm">offset = numpy.mean(y[mask])</span><br>
-        where <em>mask</em> selects points within the defined region.</p>
+        <span class="fm">offset = area of the region / width of the region</span><br>
+        &mdash; the average height of the spectrum over the region, from exactly its start to
+        exactly its end (the same calculation as Area, see the figure there). Unlike the plain
+        average of the points (used before version 1.5), it is not biased when the points are
+        unevenly spaced. For a flat region both give practically the same offset.</p>
         <p><strong>Step 3 — subtract the offset from the full spectrum:</strong><br>
         <span class="fm">y_norm = y &minus; offset</span><br>
         The same scalar is subtracted from every point. No division, no scaling.</p>

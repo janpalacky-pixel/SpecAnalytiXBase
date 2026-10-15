@@ -106,13 +106,20 @@ class PeakFittingManager:
             fwhm_l = 2 * gamma
             fwhm = 0.5346 * fwhm_l + np.sqrt(0.2166 * fwhm_l**2 + fwhm_g**2)
             properties['fwhm'] = fwhm
-            # No simple closed form for a height-normalized Voigt's area,
-            # so integrate numerically over a window wide enough that the
-            # tails are negligible on either side.
-            half_span = max(50 * fwhm, 20 * (sigma + gamma))
-            x_wide = np.linspace(center - half_span, center + half_span, 20001)
-            y_wide = voigt(x_wide, amplitude, center, sigma, gamma)
-            properties['area'] = float(_trapz(y_wide, x_wide))
+            # Exact: voigt() is the area-normalized Voigt profile V scaled
+            # to height `amplitude` at the centre, so its area is
+            # amplitude / V(0). (Before, it was integrated numerically over
+            # +-50 FWHM, which cut off the slowly decaying Lorentzian tails:
+            # up to 0.64 % too small for Lorentzian-like peaks.)
+            from scipy.special import voigt_profile
+            v0 = float(voigt_profile(0.0, sigma, gamma)) if (sigma > 0 or gamma > 0) else 0.0
+            if np.isfinite(v0) and v0 > 0:
+                properties['area'] = float(amplitude / v0)
+            else:
+                half_span = max(50 * fwhm, 20 * (sigma + gamma))
+                x_wide = np.linspace(center - half_span, center + half_span, 20001)
+                y_wide = voigt(x_wide, amplitude, center, sigma, gamma)
+                properties['area'] = float(_trapz(y_wide, x_wide))
         elif model_name == 'Pseudo-Voigt':
             amplitude, center, width, eta = params
             width = abs(width)
