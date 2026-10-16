@@ -473,3 +473,27 @@ def test_spectra_tab_outdated_hint(quiet):
     d.compute_spectra()
     assert not d.outdated_label.isVisibleTo(d) and 'FFE0B2' not in d.sp_compare_btn.styleSheet()
     d.deleteLater()
+
+
+def test_enter_does_not_open_set_group(quiet, monkeypatch):
+    """Enter in a table cell (not being edited) or in a number box must not
+    press a button: before, 'Set group of selected rows...' was the dialog's
+    default button and its window opened."""
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QInputDialog, QPushButton
+    from src.views.dialogs.visualization_analysis import group_statistics_dialog as gsd
+    calls = []
+    monkeypatch.setattr(QInputDialog, 'getItem',
+                        staticmethod(lambda *a, **k: (calls.append(1), ('x', False))[1]))
+    d = gsd.GroupStatisticsDialog(_spectra(), None, {}, {})
+    d.show()
+    assert not any(b.isDefault() for b in d.findChildren(QPushButton))
+    d.table.setFocus()
+    d.table.setCurrentCell(3, 2)
+    QTest.keyClick(d.table, Qt.Key_Return)
+    d.x_spin.setFocus()
+    QTest.keyClick(d.x_spin, Qt.Key_Return)
+    assert calls == []
+    d.close()
+    d.deleteLater()

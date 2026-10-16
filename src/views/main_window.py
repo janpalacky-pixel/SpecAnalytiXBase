@@ -901,6 +901,12 @@ class MainWindow(QMainWindow):
         self.automatic_line_colors_checkBox.setObjectName("automatic_line_colors_checkBox")
         self.automatic_line_colors_checkBox.setText("automatic line colors")
         self.gridLayout_3.addWidget(self.automatic_line_colors_checkBox, 1, 0, 1, 1)
+
+        # Show / hide the legend (its settings: the ☰ Legend button)
+        self.show_legend_checkBox = QCheckBox(self.groupBox_basic_plot_options)
+        self.show_legend_checkBox.setObjectName("show_legend_checkBox")
+        self.show_legend_checkBox.setText("show legend")
+        self.gridLayout_3.addWidget(self.show_legend_checkBox, 2, 0, 1, 1)
         
         self.gridLayout_4.addLayout(self.gridLayout_3, 0, 0, 1, 1)
         self.gridLayout_7.addWidget(self.groupBox_basic_plot_options, 1, 0, 1, 1)

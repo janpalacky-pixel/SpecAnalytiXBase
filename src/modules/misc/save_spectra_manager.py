@@ -1323,6 +1323,9 @@ class SaveManager:
                 mgr.current_settings.update(appearance.get(key) or {})
             except Exception:
                 logger.exception("Restoring the plot appearance (%s) failed", key)
+        sync = getattr(main_controller, 'sync_legend_checkbox', None)
+        if callable(sync):
+            sync()                      # the main window's 'Show legend' checkbox
 
     def _restore_group_statistics(self, main_controller, data: dict) -> None:
         """In place (an open window holds these dicts by reference)."""

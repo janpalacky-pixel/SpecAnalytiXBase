@@ -12,12 +12,17 @@ src/modules/visualization/large_selection.py for why and what).
   progress dialog and Stop. Stop keeps what is drawn, removes the rest
   from the plot and switches Interactive Update off -- the plot then stays
   as it is until Refresh Plot. Other plot types draw everything at once.
+* Legend with more entries than "Maximum Legend Items" (Legend window): an
+  evenly spread subset is listed (legend_properties_manager.py) and the
+  same strip above the plot says so, with Show all / Choose... / Settings...
+  (both notes share one strip).
 """
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QAction, QApplication, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
-    QProgressDialog, QPushButton, QRadioButton, QSizePolicy, QSpinBox, QVBoxLayout, QWidget)
+    QMessageBox, QProgressDialog, QPushButton, QRadioButton, QSizePolicy, QSpinBox,
+    QVBoxLayout, QWidget)
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.visualization.large_selection import (
@@ -27,6 +32,7 @@ logger = get_logger(__name__)
 
 PREFERENCES_KEY = 'large_plot_settings'
 PORTION = 500          # spectra drawn per step when drawing in portions
+LEGEND_ASK_ABOVE = 500  # "Show all" legend entries: ask first above this many
 
 
 def _preferences():
@@ -104,6 +110,9 @@ class LargePlotController:
         self.main = main
         self._plot_all_once = False
         self.last_info = None
+        self._plot_widget = None       # the plot on screen and its strip (note)
+        self._canvas = None
+        self._strip = None
         self._build_menu()
 
     # -- settings
@@ -167,10 +176,52 @@ class LargePlotController:
             except Exception:
                 logger.exception("Drawing the spectra in portions failed")
                 canvas.draw_idle()
-        if info.get('preview') or info.get('stopped_at') is not None:
-            layout = plot_widget.layout()
-            if layout is not None:
-                layout.insertWidget(0, self._banner(info), 0)
+        self._plot_widget, self._canvas, self._strip = plot_widget, canvas, None
+        self.update_banner()
+
+    def update_banner(self):
+        """(Re)build the strip above the plot: the preview / stopped note
+        and the legend note, whichever applies (also after the Legend window
+        or a strip button changed the legend)."""
+        widget = self._plot_widget
+        try:
+            layout = widget.layout() if widget is not None else None
+        except RuntimeError:                  # the plot widget was replaced
+            layout = None
+        if layout is None:
+            return
+        if self._strip is not None:
+            layout.removeWidget(self._strip)
+            self._strip.hide()
+            self._strip.setParent(None)       # gone at once, not only at the next event loop
+            self._strip.deleteLater()
+            self._strip = None
+        info = self.last_info or {}
+        legend = self.legend_info()
+        if not (info.get('preview') or info.get('stopped_at') is not None or legend):
+            return
+        self._strip = self._banner(info, legend)
+        layout.insertWidget(0, self._strip, 0)
+
+    def legend_info(self):
+        """{'total', 'shown', 'mode'} of the visible legend that lists only some
+        of its entries (the axes with the most entries), else None."""
+        canvas = self._canvas
+        best = None
+        try:
+            axes = canvas.figure.axes if canvas is not None else []
+        except RuntimeError:
+            axes = []
+        for ax in axes:
+            leg = ax.get_legend()
+            info = getattr(ax, '_legend_entries_info', None)
+            if leg is None or not leg.get_visible() or not info:
+                continue
+            if info['mode'] == 'all':
+                continue
+            if best is None or info['total'] > best['total']:
+                best = dict(info, ax=ax)
+        return best
 
     def _draw_in_portions(self, canvas, info):
         groups = getattr(canvas, 'spectrum_artists', None)
@@ -240,13 +291,22 @@ class LargePlotController:
         if button is not None:
             button.setVisible(True)
 
-    def _banner(self, info):
+    def _banner(self, info, legend=None):
         box = QWidget()
         box.setObjectName("largePlotBanner")
         box.setStyleSheet("#largePlotBanner { background:#FFF3E0; border:1px solid #FFB74D; }")
         box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)   # a thin line, not half the plot
-        row = QHBoxLayout(box)
-        row.setContentsMargins(6, 2, 6, 2)
+        rows = QVBoxLayout(box)
+        rows.setContentsMargins(6, 2, 6, 2)
+        rows.setSpacing(2)
+        if info.get('preview') or info.get('stopped_at') is not None:
+            rows.addLayout(self._plot_row(info))
+        if legend:
+            rows.addLayout(self._legend_row(legend))
+        return box
+
+    def _plot_row(self, info):
+        row = QHBoxLayout()
         n = info['n']
         if info.get('stopped_at') is not None:
             text = (f"Plotting stopped: {info['stopped_at']:,} of {n:,} spectra drawn. "
@@ -254,7 +314,7 @@ class LargePlotController:
         else:
             text = (f"Preview: {info['shown']:,} of {n:,} selected spectra drawn (evenly "
                     f"spread). Analyses use all {n:,}.")
-        label = QLabel(text.replace(',', ' '))
+        label = QLabel(text.replace(',', '\u202f'))
         label.setObjectName("largePlotBannerText")
         label.setWordWrap(True)
         row.addWidget(label, 1)
@@ -268,4 +328,110 @@ class LargePlotController:
         settings.setToolTip("View → Plotting many spectra…")
         settings.clicked.connect(self.edit_settings)
         row.addWidget(settings)
-        return box
+        return row
+
+    def _legend_row(self, legend):
+        row = QHBoxLayout()
+        what = ("drawn spectra" if (self.last_info or {}).get('preview') else "spectra")
+        how = "your choice" if legend['mode'] == 'chosen' else "evenly spread"
+        label = QLabel(f"Legend: {legend['shown']:,} of {legend['total']:,} {what} listed "
+                       f"({how}).".replace(',', '\u202f'))
+        label.setObjectName("legendBannerText")
+        label.setWordWrap(True)
+        row.addWidget(label, 1)
+        show_all = QPushButton("Show all")
+        show_all.setObjectName("legendShowAllButton")
+        show_all.setToolTip("List every entry in the legend (ticks \"Show All Legend Items\" "
+                            "in the Legend window, so it stays on)")
+        show_all.clicked.connect(self.legend_show_all)
+        row.addWidget(show_all)
+        choose = QPushButton("Choose…")
+        choose.setObjectName("legendChooseButton")
+        choose.setToolTip("Pick the spectra listed in the legend (by name, range or every "
+                          "n-th), for this plot")
+        choose.clicked.connect(self.legend_choose)
+        row.addWidget(choose)
+        if legend['mode'] == 'chosen':
+            auto = QPushButton("Evenly spread")
+            auto.setObjectName("legendAutoButton")
+            auto.setToolTip("Forget the choice: list an evenly spread subset again")
+            auto.clicked.connect(self.legend_clear_choice)
+            row.addWidget(auto)
+        settings = QPushButton("Settings…")
+        settings.setObjectName("legendSettingsButton")
+        settings.setToolTip("The Legend window (☰ Legend): maximum number of entries, "
+                            "position, font, …")
+        settings.clicked.connect(self._legend_settings)
+        row.addWidget(settings)
+        return row
+
+    # -- legend actions (strip buttons)
+    def _legend_manager(self):
+        return getattr(self.main, 'legend_manager', None)
+
+    def _reapply_legend(self):
+        manager = self._legend_manager()
+        canvas = self._canvas
+        if manager is None or canvas is None:
+            return
+        for ax in canvas.figure.axes:
+            manager.apply_settings_to_legend(ax)
+        canvas.draw_idle()
+        self.update_banner()
+
+    def legend_show_all(self):
+        manager = self._legend_manager()
+        legend = self.legend_info()
+        if manager is None:
+            return
+        total = legend['total'] if legend else 0
+        if total > LEGEND_ASK_ABOVE and QMessageBox.question(
+                self.main.view, "Show all legend entries",
+                f"The legend would list {total:,} entries. That takes long to draw and "
+                f"covers the plot. Show all of them?".replace(',', '\u202f'),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        manager.update_settings({'show_all_items': True})
+        manager.set_chosen(None, None)
+        self._reapply_legend()
+
+    def legend_choose(self):
+        manager = self._legend_manager()
+        legend = self.legend_info()
+        if manager is None or not legend:
+            return
+        _, labels = legend['ax'].get_legend_handles_labels()
+        from src.views.dialogs.misc.spectra_selection_dialog import SpectraSelectionDialog
+        dlg = SpectraSelectionDialog(parent=self.main.view, total_spectra=len(labels),
+                                     title="Spectra listed in the legend", labels=labels)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        params = dlg.get_selection_parameters() or {}
+        picked = [i for i in params.get('indices', []) if 0 <= i < len(labels)]
+        current = manager.chosen_indices(labels)
+        if current is None:
+            current = [labels.index(t) for t in self._listed_texts(legend['ax'])
+                       if t in labels]
+        action = params.get('action', 'select')
+        if action == 'add':
+            picked = sorted(set(current) | set(picked))
+        elif action == 'remove':
+            picked = sorted(set(current) - set(picked))
+        manager.set_chosen(labels, picked)
+        self._reapply_legend()
+
+    @staticmethod
+    def _listed_texts(ax):
+        leg = ax.get_legend()
+        return [t.get_text() for t in leg.get_texts()] if leg is not None else []
+
+    def legend_clear_choice(self):
+        manager = self._legend_manager()
+        if manager is not None:
+            manager.set_chosen(None, None)
+            self._reapply_legend()
+
+    def _legend_settings(self):
+        controller = getattr(self.main, 'legend_properties_controller', None)
+        if controller is not None:
+            controller.show_dialog()

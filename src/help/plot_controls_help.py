@@ -115,11 +115,13 @@ def get_plot_controls_help_content():
     spectrum by name. Useful for identifying individual lines when comparing a small
     number of spectra.</p>
 
-    <p><strong>Why it is off by default:</strong> generating a legend for hundreds of
-    spectra is slow — matplotlib must lay out, render, and position one text entry per
-    spectrum. With 500 spectra the legend generation alone can double the total
-    rendering time. Beyond ~50 entries a legend also becomes unreadable anyway, so the
-    performance cost produces no useful information.</p>
+    <p><strong>On by default (since 1.5):</strong> the legend lists at most <em>Maximum Legend
+    Items</em> entries (default 20), so it stays quick and readable also with thousands of
+    spectra (see <i>Limiting legend size</i> below). Only <em>Show all</em> with hundreds of
+    spectra is slow &mdash; matplotlib must lay out and draw one text entry per spectrum, and
+    beyond ~50 entries the legend is unreadable anyway. To switch it off: untick
+    <em>show legend</em> in <i>Basic plot options</i> (under <i>automatic line colors</i>; it
+    hides the legend at once, without plotting again); ☰ Legend opens its settings.</p>
 
     <h3>When to enable the legend</h3>
     <table>
@@ -138,12 +140,13 @@ def get_plot_controls_help_content():
         <tr>
             <td>Overlay / Waterfall, 20–50 spectra</td>
             <td>⚠️ Optional</td>
-            <td>Starting to get crowded; use Maximum Items to cap entries shown</td>
+            <td>Starting to get crowded; more than Maximum Items (20) are listed evenly spread</td>
         </tr>
         <tr>
             <td>Overlay / Waterfall, &gt;50 spectra</td>
-            <td>❌ Disable</td>
-            <td>Legend is unreadable and slows rendering significantly</td>
+            <td>✅ Fine (limited)</td>
+            <td>20 evenly spread entries are listed (quick); avoid <em>Show all</em> &mdash;
+                hundreds of entries are unreadable and slow</td>
         </tr>
         <tr>
             <td>Heatmap / Mean±SD / Difference</td>
@@ -161,10 +164,22 @@ def get_plot_controls_help_content():
     </div>
 
     <h3>Limiting legend size</h3>
-    <p>If you want a legend but have many spectra, open <strong>☰ Legend</strong>
-    and uncheck <em>Show All Legend Items</em>. Set <em>Maximum Legend Items</em> to
-    a manageable number (e.g. 20). Only the first N spectra will be labelled, keeping
-    rendering fast while still providing some identification.</p>
+    <p>The legend lists at most <em>Maximum Legend Items</em> entries (☰ Legend, default 20).
+    With more spectra it lists an <b>evenly spread</b> subset &mdash; the first, the last and
+    spectra evenly in between, like the preview of very many spectra &mdash; and the orange
+    strip above the plot says so, e.g. <i>Legend: 20 of 4&nbsp;675 spectra listed (evenly
+    spread)</i>, with these buttons:</p>
+    <ul>
+      <li><b>Show all</b> &mdash; list every entry. This ticks <em>Show All Legend Items</em>
+      in the ☰ Legend window, so it stays on for the next plots (untick it there to go back).
+      Above 500 entries it asks first: such a legend is slow to draw and covers the plot.</li>
+      <li><b>Choose…</b> &mdash; pick the spectra to list, in the same window as
+      <em>Select spectra</em> (by name, range or every n-th; Select / Add / Remove). The choice
+      is kept while the same spectra are plotted; <b>Evenly spread</b> forgets it.</li>
+      <li><b>Settings…</b> &mdash; the ☰ Legend window (maximum number, position, font, …).</li>
+    </ul>
+    <p>When a preview of very many spectra is drawn, the legend lists entries of the drawn
+    spectra only; both notes then share the strip.</p>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
     <h2>Combined recommendations by dataset size</h2>
@@ -172,9 +187,9 @@ def get_plot_controls_help_content():
     <table>
         <tr><th>Dataset size</th><th>Interactive Update</th><th>Legend</th></tr>
         <tr><td>&lt;50 spectra</td>  <td>✅ On</td> <td>✅ On (if needed)</td></tr>
-        <tr><td>50–200 spectra</td>  <td>✅ On</td> <td>⚠️ Off or limited</td></tr>
-        <tr><td>200–1000 spectra</td><td>⚠️ Off — use Refresh Plot</td><td>❌ Off</td></tr>
-        <tr><td>&gt;1000 spectra</td><td>❌ Off — use Refresh Plot</td><td>❌ Off</td></tr>
+        <tr><td>50–200 spectra</td>  <td>✅ On</td> <td>✅ On (limited to 20)</td></tr>
+        <tr><td>200–1000 spectra</td><td>⚠️ Off — use Refresh Plot</td><td>✅ On (limited to 20)</td></tr>
+        <tr><td>&gt;1000 spectra</td><td>❌ Off — use Refresh Plot</td><td>✅ On (limited to 20)</td></tr>
     </table>
     <p>Above 2&nbsp;000 selected spectra the Overlay, Grid and Waterfall plots show a preview
     anyway (see <a href="#many-spectra">Plotting thousands of spectra</a>), so Interactive

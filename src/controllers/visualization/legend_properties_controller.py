@@ -25,6 +25,9 @@ class LegendPropertiesController:
             settings = dialog.get_settings()
             self.legend_manager.update_settings(settings)
             self.apply_settings()
+            sync = getattr(self.controller, 'sync_legend_checkbox', None)
+            if callable(sync):
+                sync()
             
     def apply_settings(self):
         """Apply current settings to the plot."""
@@ -35,6 +38,10 @@ class LegendPropertiesController:
             
             # Redraw the canvas to show changes
             self.controller.static_canvas.draw()
+            # the note above the plot ("Legend: 20 of 4 675 spectra listed")
+            large = getattr(self.controller, 'large_plot_controller', None)
+            if large is not None:
+                large.update_banner()
             
     def reset_to_defaults(self):
         """Reset settings to defaults and apply them."""

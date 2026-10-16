@@ -37,7 +37,9 @@ class LegendManager:
             'show_all_items': False,
             'font_size': 10,
             'font_family': 'Arial',
-            'visible': False,          # Off by default — enable via ☰ Legend button
+            'visible': True,           # On by default (since 1.5): at most max_items
+                                       # entries, evenly spread -- quick also with
+                                       # thousands of spectra; off via ☰ Legend
             'position': 'upper right',
             'outside_plot': False,
             'use_pagination': False,
@@ -46,6 +48,11 @@ class LegendManager:
         
         # Current settings (starts with defaults)
         self.current_settings = self.default_settings.copy()
+        # Entries picked with "Choose..." (orange strip above the plot): the
+        # legend texts of the plot they were picked for and the picked
+        # positions. Dropped as soon as the plotted spectra differ. Not a
+        # setting (not saved), only for the plot on screen.
+        self.chosen = None
         self._initialized = True
     
     def apply_settings_to_legend(self, ax, settings=None):
@@ -65,6 +72,9 @@ class LegendManager:
         if legend is None and settings['visible']:
             handles, labels = ax.get_legend_handles_labels()
             if handles:  # Only create legend if there are items to show
+                # already limited: a legend of thousands of entries is slow to
+                # build even though it is replaced below
+                handles, labels, _ = self.limit_entries(handles, labels, settings)
                 legend = ax.legend(handles, labels, loc=settings['position'], ncol=settings['columns'])
         
         if legend:
@@ -84,12 +94,8 @@ class LegendManager:
                 
                 # Step 4: Handle legend items based on show_all_items setting
                 handles, labels = ax.get_legend_handles_labels()
-                
-                # Limit items only if show_all_items is False and we exceed max_items
-                if not settings['show_all_items']:
-                    if len(handles) > settings['max_items']:
-                        handles = handles[:settings['max_items']]
-                        labels = labels[:settings['max_items']]
+                handles, labels, info = self.limit_entries(handles, labels, settings)
+                ax._legend_entries_info = info      # for the note above the plot
                 
                 # Always recreate the legend to apply any changes
                 legend.remove()
@@ -101,6 +107,40 @@ class LegendManager:
                 
                 # Step 5: Set legend draggability
                 legend.set_draggable(settings['movable'])
+
+    def limit_entries(self, handles, labels, settings=None):
+        """The legend entries to list: all with 'Show all'; the ones picked
+        with Choose... (same plot only); otherwise, above the maximum, an
+        evenly spread subset (first and last included, like the plot
+        preview of very many spectra). Returns (handles, labels, info) with
+        info = {'total', 'shown', 'mode': 'all' | 'chosen' | 'spread'}."""
+        settings = settings if settings is not None else self.current_settings
+        total = len(handles)
+        mode = 'all'
+        keep = None
+        if not settings.get('show_all_items', False):
+            keep = self.chosen_indices(labels)
+            if keep is not None:
+                mode = 'chosen'
+            elif total > settings.get('max_items', 20):
+                from src.modules.visualization.large_selection import preview_indices
+                keep = preview_indices(total, settings.get('max_items', 20))
+                mode = 'spread'
+        if keep is not None:
+            handles = [handles[i] for i in keep]
+            labels = [labels[i] for i in keep]
+        return handles, labels, {'total': total, 'shown': len(handles), 'mode': mode}
+
+    def chosen_indices(self, labels):
+        """Positions picked with Choose... -- only for the same plotted
+        entries (the same legend texts in the same order)."""
+        if not self.chosen or tuple(labels) != self.chosen['labels']:
+            return None
+        return [i for i in self.chosen['indices'] if 0 <= i < len(labels)]
+
+    def set_chosen(self, labels, indices):
+        self.chosen = ({'labels': tuple(labels), 'indices': sorted(set(indices))}
+                       if indices else None)
 
     def reset_to_defaults(self):
         """Reset settings to default values."""

@@ -279,7 +279,7 @@ def get_user_guide_help_content():
             <tr><td>Menu bar</td><td>Top</td><td>File, View, Spectra processing, Analysis &amp; Visualization, Help access</td></tr>
             <tr><td>Spectrum list</td><td>Left panel</td><td>Select which spectra to view and process</td></tr>
             <tr><td>Plot canvas</td><td>Centre</td><td>Interactive plot of selected spectra</td></tr>
-            <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours</td></tr>
+            <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours, show legend</td></tr>
             <tr><td>Link axes</td><td>Bottom toolbar</td><td>Synchronise x/y axes across subplots (shown only in Grid plot mode)</td></tr>
             <tr><td>Spectra Analysis &amp; Visualization</td><td>Bottom toolbar</td><td>SVD, PCA, NMF, MCR-ALS, cluster analysis, reference matching, band ratio, 2D map, 2D correlation</td></tr>
             <tr><td>Spectra Processing</td><td>Bottom right</td><td>Select, configure and apply operations</td></tr>
@@ -787,6 +787,9 @@ def get_user_guide_help_content():
                 (Grid plot only &mdash; the Link axes box is hidden for other plot types)</li>
             <li><strong>Automatic line colors:</strong> Assign distinct colours automatically
                 (sits directly below the plot-type dropdown in Basic plot options)</li>
+            <li><strong>show legend:</strong> show or hide the legend (on by default; below
+                <em>automatic line colors</em>). Settings: <strong>☰ Legend</strong> &mdash; see
+                <a href="#legend">Legend</a>.</li>
         </ul>
 
         <h3 id="band-markers">Band Markers</h3>
@@ -879,6 +882,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
             <tr><td><strong>Axis properties</strong></td><td>Set axis labels, tick marks, and limits</td></tr>
             <tr><td><strong>Automatic Line Colors</strong></td><td>Toggle automatic colour assignment for plotted lines (✓ = enabled)</td></tr>
+            <tr><td><strong>Show Legend</strong></td><td>Show or hide the legend of the plot (✓ = shown, the default)</td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
         </table>
@@ -1911,8 +1915,10 @@ def get_user_guide_help_content():
              7. LEGEND
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="legend">7. Legend</h2>
-        <p>Open via the <strong>☰ Legend</strong> button below the spectrum list, or
-        via right-click on the plot → Legend.</p>
+        <p>Show or hide the legend with <strong>show legend</strong> in <i>Basic plot
+        options</i>, under <i>automatic line colors</i> (on by default). Its settings: the
+        <strong>☰ Legend</strong> button below the spectrum list, or right-click on the plot →
+        Legend.</p>
 
         <div class="screenshot">
             <img src="$LEGEND_DIALOG" width="$LEGEND_DIALOG_W" height="$LEGEND_DIALOG_H" alt="Legend Properties dialog with position, font, and item-limit settings" />
@@ -1921,19 +1927,18 @@ def get_user_guide_help_content():
 
         <table>
             <tr><th>Setting</th><th>Description</th></tr>
-            <tr><td>Show Legend</td><td>Enable/disable the legend entirely</td></tr>
             <tr><td>Position</td><td>Upper right, lower left, centre, etc.</td></tr>
             <tr><td>Movable Legend</td><td>Allow dragging the legend on the plot</td></tr>
             <tr><td>Font / Font Size</td><td>Legend text appearance</td></tr>
             <tr><td>Show All Items</td><td>When unchecked, limit to Maximum Items</td></tr>
-            <tr><td>Maximum Items</td><td>Cap number of entries shown</td></tr>
+            <tr><td>Maximum Items</td><td>Cap number of entries shown (above it: evenly spread)</td></tr>
             <tr><td>Number of Columns</td><td>Multi-column layout for compact display</td></tr>
         </table>
-        <p>Legend is <strong>off by default</strong>. Enable it deliberately when you
-        need to identify individual spectra. Key rule: always enable for Grid plot
-        (panels are otherwise unlabelled); keep disabled for large overlay/waterfall
-        datasets (&gt;50 spectra) where it slows rendering and adds no readable
-        information.</p>
+        <p>Legend is <strong>on by default</strong> (since 1.5). With more spectra than
+        <em>Maximum Items</em> (20) it lists an evenly spread subset, and the orange strip
+        above the plot offers <em>Show all</em>, <em>Choose…</em> and <em>Settings…</em>.
+        Untick <em>show legend</em> (Basic plot options) to switch it off; avoid <em>Show All Items</em> with
+        hundreds of spectra (slow and unreadable).</p>
         <p>See the <a href="help://plot_controls">Interactive Update &amp; Legend
         Performance Guide</a> for a full decision table by dataset size and plot type.</p>
 

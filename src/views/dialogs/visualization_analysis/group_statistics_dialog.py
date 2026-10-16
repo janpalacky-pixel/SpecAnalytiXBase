@@ -515,6 +515,12 @@ class GroupStatisticsDialog(QDialog):
         for w in self.value_form.parentWidget().findChildren(QCheckBox):
             w.toggled.connect(self._check_outdated)
         self.per_sample_check.toggled.connect(self._recompute_shown)
+        # No default button: Qt makes the first button ("Set group of selected
+        # rows...") the dialog's default, so Enter in a table cell that is not
+        # being edited, or in a number box, opened the Set group dialog.
+        for btn in self.findChildren(QPushButton):
+            btn.setAutoDefault(False)
+            btn.setDefault(False)
 
     # ------------------------------------------------------------------ groups
     def _build_groups_panel(self):

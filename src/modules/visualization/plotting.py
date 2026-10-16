@@ -268,7 +268,7 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
     # LegendManager.apply_settings_to_legend) — that function builds its
     # OWN legend from scratch when needed, using a fast fixed position
     # and truncating to max_items, and respects the visible setting
-    # (legends are off by default). A standalone ax.legend() here used
+    # (legends are on by default since 1.5, limited to max_items). A standalone ax.legend() here used
     # to run first regardless — with no loc specified, that defaults to
     # loc='best', which does an expensive collision-search that scales
     # badly with the number of lines/legend entries (matplotlib itself

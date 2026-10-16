@@ -33,9 +33,8 @@ class LegendPropertiesDialog(QDialog):
     def setup_ui(self):
         layout = QVBoxLayout()
         
-        # Visibility checkbox
-        self.visible_cb = QCheckBox("Show Legend")
-        layout.addWidget(self.visible_cb)
+        # Showing / hiding the legend: the 'Show legend' checkbox in the main
+        # window (next to this window's ☰ Legend button), not here.
         
         # Position selection
         position_layout = QHBoxLayout()
@@ -67,12 +66,17 @@ class LegendPropertiesDialog(QDialog):
         
         # Maximum items settings
         self.show_all_cb = QCheckBox("Show All Legend Items")
+        self.show_all_cb.setToolTip("List every plotted spectrum in the legend (slow and "
+                                    "crowded with hundreds of spectra)")
         layout.addWidget(self.show_all_cb)
         
         max_items_layout = QHBoxLayout()
         max_items_layout.addWidget(QLabel("Maximum Legend Items:"))
         self.max_items_spin = QSpinBox()
         self.max_items_spin.setRange(1, 100)
+        self.max_items_spin.setToolTip(
+            "With more spectra, an evenly spread subset is listed (first, last and evenly\n"
+            "in between); the strip above the plot then offers Show all / Choose…")
         max_items_layout.addWidget(self.max_items_spin)
         layout.addLayout(max_items_layout)
         
@@ -106,19 +110,22 @@ class LegendPropertiesDialog(QDialog):
 
     def reset_to_default(self):
         """Reset all settings to default values."""
-        # Tell the parent (controller) to reset settings
+        # Tell the parent (controller) to reset settings. Showing / hiding
+        # is the main window's checkbox: kept as it is.
+        visible = self.settings.get('visible', True)
         self.settings = {
             'movable': True,
             'max_items': 20,
             'show_all_items': False,
             'font_size': 10,
             'font_family': 'Arial',
-            'visible': False,
+            'visible': True,
             'position': 'upper right',
             'outside_plot': False,
             'use_pagination': False,
             'columns': 1,
         }
+        self.settings['visible'] = visible
         self.load_settings()   
 
     def toggle_max_items(self, state):
@@ -127,7 +134,6 @@ class LegendPropertiesDialog(QDialog):
 
     def load_settings(self):
         """Load current settings into the UI."""
-        self.visible_cb.setChecked(self.settings.get('visible', False))
         self.movable_cb.setChecked(self.settings.get('movable', True))
         self.show_all_cb.setChecked(self.settings.get('show_all_items', False))
         self.max_items_spin.setValue(self.settings.get('max_items', 20))
@@ -140,7 +146,7 @@ class LegendPropertiesDialog(QDialog):
     def get_settings(self):
         """Get the current settings from the dialog."""
         return {
-            'visible': self.visible_cb.isChecked(),
+            'visible': self.settings.get('visible', True),   # main-window checkbox
             'movable': self.movable_cb.isChecked(),
             'max_items': self.max_items_spin.value(),
             'show_all_items': self.show_all_cb.isChecked(),

@@ -655,10 +655,23 @@ class MainController(QMainWindow):
         self.refresh_plot_button.setVisible(False)  # Initially hidden since interactive mode is on
         layout.addWidget(self.refresh_plot_button)
 
+        # Show / hide the legend: 'show legend' in Basic plot options, under
+        # 'automatic line colors' (redraws only the legend); the ☰ Legend
+        # button opens its settings.
+        self.legend_checkbox = self.view.show_legend_checkBox
+        self.legend_checkbox.setChecked(
+            self.legend_manager.current_settings.get('visible', True)
+            if hasattr(self, 'legend_manager') else True)
+        self.legend_checkbox.setToolTip(
+            "Show or hide the legend of the plot.\n"
+            "With many spectra it lists at most 'Maximum Legend Items' (☰ Legend),\n"
+            "evenly spread; the strip above the plot then offers Show all / Choose…")
+        self.legend_checkbox.toggled.connect(self._toggle_legend)
+
         self.legend_properties_button = QPushButton("\u2630 Legend")
         self.legend_properties_button.setToolTip(
-            "Show / hide the legend and configure its appearance.\n"
-            "Tip: disable the legend when plotting many spectra to improve performance."
+            "Legend settings: position, font, number of columns,\n"
+            "maximum number of entries (more: evenly spread), show all."
         )
         self.legend_properties_button.setStyleSheet(
             "QPushButton {"
@@ -699,6 +712,28 @@ class MainController(QMainWindow):
         layout.addWidget(self.plot_controls_help_button)
 
         return layout
+
+    def _toggle_legend(self, checked):
+        """'Show legend' checkbox: the same setting the Legend window used to
+        have; applied to the plot on screen without plotting again."""
+        manager = getattr(self, 'legend_manager', None)
+        if manager is None:
+            return
+        manager.update_settings({'visible': bool(checked)})
+        controller = getattr(self, 'legend_properties_controller', None)
+        if controller is not None and getattr(self, 'static_canvas', None) is not None:
+            controller.apply_settings()
+
+    def sync_legend_checkbox(self):
+        """Show the legend setting in the checkbox (e.g. after loading a
+        snapshot or Reset to Default in the Legend window)."""
+        box = getattr(self, 'legend_checkbox', None)
+        manager = getattr(self, 'legend_manager', None)
+        if box is None or manager is None:
+            return
+        box.blockSignals(True)
+        box.setChecked(bool(manager.current_settings.get('visible', True)))
+        box.blockSignals(False)
 
     def _show_plot_controls_help(self):
         """Open the help window at the Interactive Update / Legend section."""
