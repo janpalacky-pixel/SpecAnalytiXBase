@@ -163,6 +163,17 @@ SYNTHETIC_TEST_DATASETS = [
     # class per spectrum and a step-by-step walkthrough.
     ('som', 'SOM — Raman multi-class demo (240 spectra)', 'som_raman_multiclass_demo.xlsx'),
     ('som', 'SOM — UV/Vis multi-class demo (250 spectra)', 'som_uvvis_multiclass_demo.xlsx'),
+
+    # For the Group Statistics tool (Analysis && Visualization -> Data
+    # Analysis -> Group Statistics): each workbook has a "Groups" sheet
+    # (Spectrum | Group [| Sample]) that the Group Statistics window loads
+    # automatically when it opens, plus an Info sheet with the story and
+    # what to try. See generate_group_statistics_test_datasets.py.
+    ('groupstats', 'Group Statistics — three treatment groups', 'group_stats_treatment_demo.xlsx'),
+    ('groupstats', 'Group Statistics — cells with several pixels (samples)', 'group_stats_cells_samples_demo.xlsx'),
+    ('groupstats', 'Group Statistics — paired before / after', 'group_stats_paired_demo.xlsx'),
+    ('groupstats', 'Group Statistics — skewed values (lipid in cells)', 'group_stats_skewed_demo.xlsx'),
+    ('groupstats', 'Group Statistics — map of one cell (ROI regions as groups)', 'group_stats_cell_map_demo.mat'),
 ]
 
 class OperationTreeComboBox(QWidget):
@@ -1634,6 +1645,7 @@ class MainWindow(QMainWindow):
             'qc':      'QC / Outlier Detection',
             'xaxis':   'X-Axis Alignment',
             'som':     'Self-Organizing Map (SOM)',
+            'groupstats': 'Group Statistics',
         }
 
         # label -> filename; the controller resolves the folder and imports it.

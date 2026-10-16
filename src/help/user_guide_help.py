@@ -1832,7 +1832,9 @@ def get_user_guide_help_content():
                 selected rows at once, from the names (the common root name, e.g.
                 <code>Chlorella</code> for <code>Chlorella [r24_c14]</code>; a text they contain;
                 or a part of the name such as <code>day3</code> in <code>cellA_day3_01</code>) or from a CSV/Excel table
-                of name &rarr; group. Remembered for the session.</li>
+                of name &rarr; group (&rarr; sample). Remembered for the session. Filled in
+                automatically when the data's Excel workbook has a sheet <i>Groups</i> or a file
+                <code>&lt;data file&gt;_groups.csv</code> lies next to the data.</li>
             <li><b>Value:</b> one band with the 2D Map / Band Ratio metrics (intensity at x,
                 also averaged or fitted over x &plusmn; w; area, baseline-corrected area, mean,
                 maximum, peak position, FWHM, variance, fitted peak values); two bands A and B,
@@ -1842,10 +1844,33 @@ def get_user_guide_help_content():
                 distance from a reference group).</li>
             <li><b>Test:</b> Welch t-test or one-way ANOVA, or their non-parametric versions
                 (Mann&ndash;Whitney U, Kruskal&ndash;Wallis); with three or more groups every pair
-                too, Holm-corrected; effect sizes.</li>
+                too, Holm-corrected; effect sizes. For more specific cases: Welch ANOVA +
+                Games&ndash;Howell (groups with different spread), Kruskal&ndash;Wallis + Dunn,
+                a permutation test, and paired tests (the same samples before / after).</li>
+            <li><b>Replicates:</b> an optional Sample column and <i>One value per sample</i> &mdash;
+                spectra of one sample (one map, one cuvette) are averaged so the test uses
+                independent samples; a warning appears when the Sample column gives several
+                spectra of a group the same sample (nothing changes while it is empty).</li>
+            <li><b>Also:</b> 95&nbsp;% confidence intervals of the difference and of Hedges' g,
+                checks of the test's assumptions with advice, possible outliers (marked, never
+                removed) and a results sentence ready to copy into a paper.</li>
+            <li><b>Spectra tab:</b> the groups compared at every point along x &mdash; mean
+                &plusmn; SD (or 95&nbsp;% CI) of each group, the test at every point with the
+                false-discovery-rate correction, the regions where the groups differ shaded,
+                and one overall PERMANOVA test of the whole spectra; with normalization (to a
+                band, unit area, SNV), Save plot and Export table.</li>
+            <li><b>2D map regions as groups:</b> in the 2D Map, ROI &rarr; <i>Compare ROI
+                regions in Group Statistics&hellip;</i> (e.g. nucleus vs cytoplasm of one
+                cell).</li>
             <li><b>Results:</b> box plot, violin plot or points with mean &plusmn; 95&nbsp;% CI,
                 with every spectrum as a dot (Save plot&hellip;), summary per group, the test,
                 the values; Export to Excel or CSV.</li>
+            <li><b>Help in the window:</b> small orange <b>?</b> buttons; demo datasets with
+                known effects under <b>Help &rarr; Test datasets &rarr; Synthetic &rarr; Group
+                Statistics</b> (three groups; cells with several pixels; paired before /
+                after; skewed values; a map of one cell) and a
+                <a href="help://group_statistics_tutorial">step-by-step tutorial</a> on
+                them.</li>
         </ul>
 
         <h3 id="qc-outlier">QC / Outlier Detection <a href="help://qc_outlier" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>

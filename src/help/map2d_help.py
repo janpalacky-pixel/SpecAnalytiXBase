@@ -1071,6 +1071,17 @@ is available.</p>
     <p class="caption">The ROI comparison statistics table.</p>
 </div>
 
+<h3>Compare ROI regions in Group Statistics…</h3>
+<p>Available when two or more regions exist (in every map mode). A small window asks for a
+name for each region (e.g. <i>nucleus</i>, <i>cytoplasm</i>; regions with the same name form
+one group; optionally the pixels in no region form one more group), and
+<a href="help://group_statistics#map-regions">Group Statistics</a> opens with the pixel
+spectra of the regions as groups: any value (band areas, ratios, peak positions, PCA
+scores), any test, and the comparison along the whole spectrum (Spectra tab). The regions are
+pixels of one map, so the result describes this map only. Demo: <i>Help &rarr; Test datasets
+&rarr; Synthetic &rarr; Group Statistics &rarr; map of one cell</i>; step by step in the
+<a href="help://group_statistics_tutorial#l6">Group Statistics tutorial</a>.</p>
+
 <h3>View ROI spectra…</h3>
 <p>Opens the ROI viewer showing all spectra in the current selection.
 Options include:</p>

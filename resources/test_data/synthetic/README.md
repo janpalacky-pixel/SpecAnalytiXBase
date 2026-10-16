@@ -205,3 +205,29 @@ essentially single-class (~99–100% of each node's members share the same
 `Ground_truth` class), and the Raman set's Mixed/Reference nodes are
 confirmed adjacent to 4 of the 5 pure-class regions. Regenerate both with
 `generate_som_test_datasets.py` in this folder.
+
+## Group Statistics demo datasets
+
+Five datasets for the **Group Statistics** tool (Analysis && Visualization
+-> Data Analysis -> Group Statistics), each with a `Spectra` sheet (import
+this), an `Info` sheet (the story and what to try) and a `Groups` sheet
+(`Spectrum | Group [| Sample]`). Open them from **Help -> Test datasets ->
+Synthetic -> Group Statistics**, select all spectra and open Group
+Statistics: the window finds the `Groups` sheet of the workbook the spectra
+came from and fills in the Group (and Sample) column by itself.
+
+| File | Design | True effect | What it shows |
+|---|---|---|---|
+| `group_stats_treatment_demo.xlsx` | control / low dose / high dose, 12 spectra each | 1655 band 0.70 / 1.00 / 1.35 (SD 0.04 / 0.04 / 0.16), 1585 band shift 1585.0 / 1585.6 / 1586.4, random intensity scale 0.7–1.3, outlier control_05 | area alone only weakly (p ≈ 0.03); two-band ratio separates the groups (p < 0.0001); unequal spread (Brown–Forsythe); band shift; outlier |
+| `group_stats_cells_samples_demo.xlsx` | wild type / mutant, 3 cells × 15 pixels | none (cells differ, SD 0.10) | 45 vs 45 pixels: tiny p + pseudoreplication warning; one value per sample: 3 vs 3, not significant |
+| `group_stats_paired_demo.xlsx` | 8 samples before / after | −0.05 in every sample, samples differ 0.6–1.4 | unpaired test not significant; paired t-test p < 0.001 |
+| `group_stats_skewed_demo.xlsx` | control / nitrogen starved, 15 cells each | lipid band 1745 about 3× higher, log-normal from cell to cell | t-test p ≈ 0.07; Mann–Whitney U p ≈ 0.006; t-test on log₂(A / B) p ≈ 0.005 |
+| `group_stats_cell_map_demo.mat` | a Raman map (40 × 30, WITec .mat) of one cell, no Groups sheet | nucleus: DNA bands 785 / 1095 / 1578; intensity drifts across the map | draw ROI regions in the 2D Map → *Compare ROI regions in Group Statistics*: DNA ratio p < 0.0001, protein ratio p ≈ 0.87; Spectra tab after normalizing to 1450: only the DNA bands |
+
+The same mechanism works for your own data: add a sheet `Groups` to the
+workbook, or put `<data file name>_groups.csv` next to the data file.
+These claims are checked by `tests/test_group_tables_and_demos.py` and
+`tests/test_group_statistics_tutorial.py`; the in-app *Group Statistics – Tutorial*
+help page walks through all five.
+Regenerate the files with `generate_group_statistics_test_datasets.py` in
+this folder.

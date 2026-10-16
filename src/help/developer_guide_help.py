@@ -3499,11 +3499,71 @@ def _natural_sort_key(cls, label):
             <code>compute_values(spectra, groups, settings)</code> returns (values, info);
             the old <code>spectrum_value()</code> API stays for the original five kinds.
             The dialog remembers the value settings in the controller for the session.</li>
+            <li>Tests: <code>group_tests.py</code> (Qt-free). <code>compare_with(data, method,
+            paired)</code> returns the dict of <code>group_statistics.compare</code> plus extras
+            (<code>df</code>, <code>ci</code>, <code>g_ci</code>, <code>checks</code>,
+            <code>outliers</code>, <code>sentence</code>); for 'parametric' / 'nonparametric' it
+            calls <code>compare()</code> itself, so those results stay exactly as before (a test
+            checks it). Added methods: Welch ANOVA + Games&ndash;Howell (studentized range),
+            Kruskal&ndash;Wallis + Dunn (tie-corrected, Holm), permutation (10&nbsp;000, seed 0),
+            paired t / Wilcoxon (pairs = the Sample column). Reference values in the tests come
+            from pingouin, scikit-posthocs and statsmodels (not dependencies of the app).
+            Replicates: <code>sample_means()</code> averages per (group, sample);
+            <code>shared_sample_warnings()</code> flags groups in which the Sample column gives
+            several spectra the same sample; the dialog warns only when the Sample column is
+            filled (empty = the window behaves exactly as before; no guessing from file or map
+            names). <code>replicate_warnings()</code> (&ge; 6 spectra from &le; 2 sources) is
+            kept in the module but not used by the window. The Sample column is a second
+            editable column of <code>FillColumnTable</code> (<code>extra_columns</code>; the
+            keyboard actions and the fill handle work on the current cell's column; the old API
+            acts on the Group column). <code>export_results(..., report=True)</code> adds a
+            Report sheet; without it the export is as before.</li>
             <li>What the refined values do, in one picture:
             __GROUP_VALUES_FIGURE__</li>
             <li>Table files: names often contain spaces ("run : temp_01"), so
             <code>read_group_table(path, labels)</code> first looks for a known spectrum name
-            at the start of each line; only then tab / semicolon / comma / last word.</li>
+            at the start of each line; only then tab / semicolon / comma / last word.
+            <code>read_group_sample_table()</code> also reads an optional third column, the
+            sample (Excel: the sheet "Groups" if present, else the first).</li>
+            <li>Automatic groups: <code>find_group_table(spectra)</code> uses each spectrum's
+            <code>metadata['file_path']</code> and looks for a sidecar
+            <code>&lt;stem&gt;_groups.csv/.txt/.xlsx</code> or a "Groups" sheet in the workbook
+            itself. The dialog loads it in <code>__init__</code> only when no spectrum has a group
+            (one undo step for both columns). <code>groups_from_own_table()</code> matches the
+            full name first, then &mdash; only for spectra from that data file &mdash; the part
+            after " : " (the column name), with case and punctuation ignored, because the
+            importer turns e.g. "[px01]" into "_px01_". Demo workbooks:
+            <code>resources/test_data/synthetic/generate_group_statistics_test_datasets.py</code>
+            (Spectra / Info / Groups sheets; listed in <code>SYNTHETIC_TEST_DATASETS</code>,
+            group 'groupstats'). Context help: <code>_help_button()</code> in the dialog (orange
+            "?", rich-text message box).</li>
+            <li>Spectra tab: <code>group_spectra.py</code> (Qt-free).
+            <code>compare_spectra(spectra, groups, samples, method, per_sample, normalization,
+            band, rng, correction)</code> puts the spectra on one grid
+            (<code>spectra_matrix</code>: the common axis, else interpolation onto the
+            coarsest spectrum's points in the common range), normalizes (a band is evaluated on
+            the whole common range, so it may lie outside the compared range), averages per
+            sample if asked, runs the test of box 3 at every point
+            (<code>pointwise_p</code>, vectorized; permutation 2&nbsp;000, Wilcoxon / Kruskal per
+            column), corrects (<code>adjust</code>: Benjamini&ndash;Hochberg or Holm) and returns
+            the regions (<code>significant_ranges</code>) and a PERMANOVA (<code>permanova</code>,
+            Euclidean, computed from group sums &mdash; identical to the distance-matrix formula,
+            checked in the tests). The tab sits in a QScrollArea so that its controls do not
+            raise the window's minimum height.</li>
+            <li>Map regions: <code>Map2DDialog.roi_groups(names, rest_name)</code> turns
+            <code>_roi_regions</code> into (spectra, {label: group}); the ROI menu action asks for
+            names and opens <code>GroupStatisticsDialog(..., source_note=...)</code>: the note
+            replaces the search for a group table and says that the groups are pixels of one
+            map.</li>
+            <li>Tutorial: help topic <code>group_statistics_tutorial</code>
+            (<code>group_statistics_tutorial_help.py</code>), six lessons on the five demo
+            datasets. Every number it quotes is asserted by
+            <code>tests/test_group_statistics_tutorial.py</code> &mdash; if a change to the values
+            or tests moves a number, that test fails and the text must be updated. Its
+            screenshots (<code>resources/images/help_screenshots/group_statistics_tutorial/</code>)
+            are made by <code>dev_notes/make_group_statistics_tutorial_figures.py</code>, which
+            runs the same steps offscreen and prints the results. Hedges' g interval: bootstrap
+            from 10 values per group, the Hedges&ndash;Olkin approximation below that.</li>
             <li>"From names&hellip;" offers the common root name first
             (<code>groups_from_root_name</code>), which reuses
             <code>derive_root_name</code> from <code>spectra_selection_dialog.py</code>, so the

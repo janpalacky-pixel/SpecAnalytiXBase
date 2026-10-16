@@ -996,6 +996,13 @@ class Map2DDialog(QDialog):
             "Show a table of mean ± std of the map value for each ROI region.\n"
             "Requires at least two regions and a computed map.")
 
+        self._act_roi_groups = roi_menu.addAction("Compare ROI regions in Group Statistics…")
+        self._act_roi_groups.setEnabled(False)
+        self._act_roi_groups.setToolTip(
+            "Open Group Statistics with the spectra of the ROI regions, each region a\n"
+            "group (e.g. nucleus vs cytoplasm): any value, any test, and the comparison\n"
+            "along the whole spectrum. Requires at least two regions.")
+
         self._act_roi_mode = roi_menu.addAction("Mode: Include  ◯")
         self._act_roi_mode.setEnabled(False)
         self._roi_exclude_mode = False
@@ -2070,6 +2077,7 @@ class Map2DDialog(QDialog):
         self._act_clear_roi.triggered.connect(self._clear_all_rois)
         self._act_view_roi.triggered.connect(self._open_roi_viewer)
         self._act_roi_stats.triggered.connect(self._show_roi_statistics)
+        self._act_roi_groups.triggered.connect(self._open_roi_group_statistics)
         self._act_roi_mode.triggered.connect(self._toggle_roi_mode)
         self._act_remove_roi.triggered.connect(self._activate_remove_roi)
         self._btn_arith_range_a.clicked.connect(
@@ -5579,6 +5587,8 @@ class Map2DDialog(QDialog):
         self._act_roi_stats.setEnabled(
             n_regions >= 2 and self._last_map_data is not None
             and not self._radio_rgb.isChecked())
+        # Group Statistics uses the spectra themselves, so any map mode works
+        self._act_roi_groups.setEnabled(n_regions >= 2)
 
     def _all_roi_labels(self):
         """Return deduplicated flat label list across all regions."""
@@ -6140,6 +6150,93 @@ class Map2DDialog(QDialog):
             self._act_roi_mode.setText("Mode: Include  ◯")
         # Update all counts immediately to reflect the new mode
         self._update_roi_count()
+
+    def roi_groups(self, names=None, rest_name=None):
+        """(spectra, {label: group}, n_overlap) for Group Statistics: every ROI
+        region is a group (names[i], default "Region i"); a pixel in several
+        regions belongs to the first. rest_name: the pixels in no region form
+        one more group of that name."""
+        names = list(names or [])
+        spectra, groups, overlap = [], {}, 0
+        by_label = {sp.get('label', ''): sp for sp in self.spectra}
+        for i, reg in enumerate(self._roi_regions):
+            name = (names[i] if i < len(names) and names[i].strip() else f"Region {i + 1}")
+            for lbl in reg['labels']:
+                if lbl in groups:
+                    overlap += 1
+                    continue
+                sp = by_label.get(lbl)
+                if sp is not None:
+                    groups[lbl] = name.strip()
+                    spectra.append(sp)
+        if rest_name:
+            for sp in self.spectra:
+                lbl = sp.get('label', '')
+                if lbl not in groups:
+                    groups[lbl] = rest_name.strip()
+                    spectra.append(sp)
+        return spectra, groups, overlap
+
+    def _ask_region_names(self):
+        """Small dialog: a name per ROI region (+ optionally the rest of the
+        map as a group). Returns (names, rest_name) or None if cancelled."""
+        from PyQt5.QtWidgets import QFormLayout, QLineEdit
+        dlg = QDialog(self)
+        dlg.setWindowTitle("ROI regions as groups")
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel("Name the groups (e.g. nucleus, cytoplasm). Regions with the same "
+                             "name form one group."))
+        form = QFormLayout()
+        edits = []
+        for i, reg in enumerate(self._roi_regions):
+            e = QLineEdit(f"Region {i + 1}")
+            edits.append(e)
+            form.addRow(f"Region {i + 1} ({reg['type']}, {len(reg['labels'])} pixels):", e)
+        lay.addLayout(form)
+        rest_check = QCheckBox("Also the rest of the map (pixels in no region) as a group:")
+        rest_edit = QLineEdit("rest of the map")
+        rest_edit.setEnabled(False)
+        rest_check.toggled.connect(rest_edit.setEnabled)
+        row = QHBoxLayout()
+        row.addWidget(rest_check)
+        row.addWidget(rest_edit)
+        lay.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        self._roi_names_dialog = dlg                 # for tests
+        if dlg.exec_() != QDialog.Accepted:
+            return None
+        return ([e.text() for e in edits],
+                rest_edit.text() if rest_check.isChecked() else None)
+
+    def _open_roi_group_statistics(self):
+        """ROI menu: open Group Statistics with the ROI regions as groups."""
+        if len(self._roi_regions) < 2:
+            return
+        asked = self._ask_region_names()
+        if asked is None:
+            return
+        names, rest = asked
+        spectra, groups, overlap = self.roi_groups(names, rest)
+        if not spectra:
+            return
+        from src.modules.visualization_analysis import group_statistics as gs
+        from src.views.dialogs.visualization_analysis.group_statistics_dialog import (
+            GroupStatisticsDialog)
+        root = gs.groups_from_root_name([sp.get('label', '') for sp in spectra[:1]])[0] or "the map"
+        note = (f"Groups = ROI regions of the map \u201c{root}\u201d ({len(spectra)} pixels). "
+                "They are pixels of one map: the test compares these regions within this "
+                "map; it says nothing about other cells or samples.")
+        if overlap:
+            note += (f" {overlap} pixel{'s' if overlap != 1 else ''} in more than one region "
+                     "counted for the first region only.")
+        if not hasattr(self, '_roi_group_settings'):
+            self._roi_group_settings = {}
+        self._roi_group_dialog = GroupStatisticsDialog(
+            spectra, self, groups, self._roi_group_settings, source_note=note)
+        self._roi_group_dialog.exec_()
 
     def _show_roi_statistics(self):
         """Show a comparison table of map value statistics per ROI region.

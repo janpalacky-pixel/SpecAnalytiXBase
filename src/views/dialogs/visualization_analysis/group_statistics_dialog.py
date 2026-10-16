@@ -29,12 +29,127 @@ from PyQt5.QtWidgets import (
 from src.modules.utils.app_logger import get_logger
 from src.modules.visualization_analysis import group_statistics as gs
 from src.modules.visualization_analysis import group_values as gv
+from src.modules.visualization_analysis import group_tests as gt
+from src.modules.visualization_analysis import group_spectra as gsp
 from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
     PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
     save_settings as save_peak_fit_settings)
 from src.views.dialogs.misc.fill_column_table import FillColumnTable
 
 logger = get_logger(__name__)
+
+def _help_button(parent, title, text, tooltip):
+    """Small orange '?' button (the app's context-help style) that shows
+    `text` (rich text) in a message box."""
+    btn = QPushButton('?')
+    btn.setFixedSize(22, 22)
+    btn.setAutoDefault(False)
+    btn.setStyleSheet(
+        'QPushButton { background-color:#F57C00; color:white; font-weight:bold; border:none; '
+        'border-radius:4px; }'
+        'QPushButton:hover { background-color:#E65100; }'
+        'QPushButton:pressed { background-color:#BF360C; }')
+    btn.setToolTip(tooltip)
+
+    def show():
+        box = QMessageBox(parent)
+        box.setWindowTitle(title)
+        box.setTextFormat(Qt.RichText)
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.Ok)
+        box.exec_()
+    btn.clicked.connect(show)
+    return btn
+
+
+_HELP_GROUPS = (
+    "<h3>Groups and samples</h3>"
+    "<p><b>Group</b>: what you compare (e.g. control / treated). A spectrum without a group is "
+    "left out.</p>"
+    "<p><b>Sample</b> (optional): which independent sample (specimen, culture, cuvette, map, "
+    "cell, &hellip;) a spectrum comes from. Needed when several spectra come from one sample "
+    "&mdash; they are not independent replicates (tick <i>One value per sample</i> in box 3) "
+    "&mdash; and for the paired tests (the same sample name in both groups).</p>"
+    "<p>Both columns work like a spreadsheet: type, drag the green square down, Ctrl+D, "
+    "Ctrl+C / Ctrl+V (also from Excel), Delete, Ctrl+Z; right-click for more.</p>"
+    "<p><b>Automatic:</b> if the data came from an Excel workbook with a sheet "
+    "<i>Groups</i>, or a file <i>&lt;data file&gt;_groups.csv</i> lies next to the data file "
+    "(columns: spectrum name, group, sample), the window fills both columns by itself when it "
+    "opens with no groups set. <b>From table file&hellip;</b> loads such a table by hand.</p>")
+_HELP_VALUE = (
+    "<h3>Value per spectrum</h3>"
+    "<p>The test compares <b>one number per spectrum</b>. The list has three parts:</p>"
+    "<ul><li><b>One band</b> &mdash; a metric over one range (area, mean, maximum, peak "
+    "position, FWHM, fitted peak values, &hellip;) or the intensity at x.</li>"
+    "<li><b>Two bands</b> &mdash; a value from range A and one from range B, combined "
+    "(A / B, log&#8322;(A/B), &hellip;). Ratios do not depend on the overall intensity "
+    "(focus, concentration).</li>"
+    "<li><b>Whole spectrum</b> &mdash; PCA score, SVD coefficient, correlation with or "
+    "distance from a reference group; only for spectra with the same x-axis.</li></ul>"
+    "<p>A spectrum that does not completely cover the range (or x) gets no value and is "
+    "named in red. Help (bottom right) explains every value.</p>")
+_HELP_TEST = (
+    "<h3>Which test?</h3><ul>"
+    "<li><b>Parametric</b> (default): compares means; Welch t-test, one-way ANOVA.</li>"
+    "<li><b>Non-parametric</b>: compares ranks; robust to outliers and skewed values.</li>"
+    "<li><b>Unequal spread</b>: Welch ANOVA + Games&ndash;Howell, when the groups clearly "
+    "differ in spread (Brown&ndash;Forsythe check in the Test tab).</li>"
+    "<li><b>Non-parametric + Dunn</b>: Kruskal&ndash;Wallis with its standard pairwise "
+    "follow-up.</li>"
+    "<li><b>Permutation test</b>: no distribution assumed; good for small groups.</li>"
+    "<li><b>Paired</b>: the <i>same</i> samples in two groups (before / after), matched by "
+    "the Sample column; finds small consistent changes that unpaired tests miss.</li></ul>"
+    "<p>With three or more groups every pair is tested too (corrected p).</p>")
+_HELP_REPLICATES = (
+    "<h3>One value per sample</h3>"
+    "<p>Many spectra of one sample (pixels of one map, temperatures of one melt, repeated "
+    "scans of one cuvette) are <b>not independent</b>. Testing them as if they were makes "
+    "the p-value far too small: 500 pixels of one map against 500 of another compares two "
+    "maps, not two treatments.</p>"
+    "<p>With this ticked, the spectra of each sample (Sample column) are averaged first, so "
+    "the test uses one value per independent sample. When the Sample column gives several "
+    "spectra of a group the same sample and this is not ticked, a red warning appears. With "
+    "an empty Sample column nothing changes.</p>")
+_HELP_SPECTRA = (
+    "<h3>Spectra: where along x do the groups differ?</h3>"
+    "<p>Instead of one value per spectrum, the groups are compared at <b>every point</b> of "
+    "the spectrum. The upper plot shows the mean spectrum of each group with a band "
+    "(mean &plusmn; SD, or the 95&nbsp;% CI of the mean); the lower plot the corrected "
+    "p-value at each point (&minus;log<sub>10</sub>: higher = stronger). Regions where the "
+    "groups differ significantly are shaded yellow.</p>"
+    "<ul><li>First line: <b>PERMANOVA</b>, one overall test of the whole spectra (do the "
+    "groups differ at all?).</li>"
+    "<li><b>Test</b> and <b>One value per sample</b> are taken from box 3.</li>"
+    "<li><b>Normalize</b>: spectra with different overall intensity should be normalized "
+    "first. <i>Divide by the maximum in a band</i> that does not change (e.g. a reference "
+    "band) is usually clearest; <i>Unit area</i> and <i>SNV</i> spread a change of one band "
+    "over the whole spectrum.</li>"
+    "<li><b>Correction</b>: hundreds of points are tested, so the p-values are corrected. "
+    "<i>False discovery rate</i> (default): about 5&nbsp;% of the shaded points may be chance "
+    "findings &mdash; read regions, not single points. <i>Holm</i> is stricter.</li>"
+    "<li>Spectra on different x-axes are interpolated onto the points of the coarsest one.</li>"
+    "</ul>")
+_HELP_PLOT = (
+    "<h3>Plot</h3><ul>"
+    "<li><b>Box plot</b>: median, middle half of the values, every spectrum as a dot, the "
+    "mean in orange.</li>"
+    "<li><b>Violin plot</b>: the shape of each group (e.g. two clusters); unreliable with "
+    "fewer than about 10 values.</li>"
+    "<li><b>Points with mean &plusmn; 95 % CI</b>: the mean and the range in which the true "
+    "mean probably lies &mdash; matches the t-test / ANOVA.</li></ul>"
+    "<p><b>Mark outliers</b> circles values outside 1.5 &times; the interquartile range; they "
+    "are not removed. <b>Save plot&hellip;</b>: PNG, TIFF, SVG, PDF.</p>")
+_HELP_RESULTS = (
+    "<h3>Reading the Test tab</h3><ul>"
+    "<li><b>p</b>: below 0.05 is usually read as a significant difference; it says nothing "
+    "about how large the difference is.</li>"
+    "<li><b>How large is the difference?</b>: the difference with its 95 % confidence "
+    "interval, and the effect size (Hedges' g) with its interval.</li>"
+    "<li><b>Checks of the test's assumptions</b>: bell shape and equal spread, with advice "
+    "&mdash; information only.</li>"
+    "<li><b>Possible outliers</b>: named, never removed.</li>"
+    "<li><b>Results sentence</b>: ready for a paper &mdash; <i>Copy results "
+    "sentence</i>.</li></ul>")
 
 _PLOT_TYPES = {
     'box': "Box plot",
@@ -73,6 +188,7 @@ _VALUE_HINTS = {
                 "of the reference group (0 = identical).",
 }
 
+BAND_TEXT = {'sd': "mean ± SD", 'ci': "mean ± 95 % CI"}
 _GROUP_COLOURS = ['#1565C0', '#C62828', '#2E7D32', '#EF6C00', '#6A1B9A', '#00838F',
                   '#AD1457', '#5D4037', '#455A64', '#9E9D24']
 
@@ -80,9 +196,9 @@ _GROUP_COLOURS = ['#1565C0', '#C62828', '#2E7D32', '#EF6C00', '#6A1B9A', '#00838
 class NamesToGroupsDialog(QDialog):
     """Groups from the spectrum names: 'contains' rules or a part of the name."""
 
-    def __init__(self, labels, parent=None):
+    def __init__(self, labels, parent=None, title="Groups from spectrum names"):
         super().__init__(parent)
-        self.setWindowTitle("Groups from spectrum names")
+        self.setWindowTitle(title)
         self.labels = list(labels)
         layout = QVBoxLayout(self)
         self.root_radio = QRadioButton("Common root name (as in Select / Rename)")
@@ -219,7 +335,11 @@ class NamesToGroupsDialog(QDialog):
 
 class GroupStatisticsDialog(QDialog):
 
-    def __init__(self, spectra, parent=None, saved_groups=None, saved_settings=None):
+    def __init__(self, spectra, parent=None, saved_groups=None, saved_settings=None,
+                 source_note=None):
+        # source_note (optional): where the groups came from when another
+        # window opens this one with its groups (e.g. ROI regions of a 2D map);
+        # shown under the table instead of looking for a group table file.
         super().__init__(parent)
         self.setWindowTitle("Group Statistics")
         # Maximize button in the title bar (a plain QDialog has only the
@@ -267,11 +387,21 @@ class GroupStatisticsDialog(QDialog):
         bottom.addWidget(close_btn)
         layout.addLayout(bottom)
         self._update_group_summary()
+        if source_note:
+            self.table_source.setText(source_note)
+            self.table_source.setVisible(True)
+        else:
+            self._load_own_group_table()
         self._update_reference_choices()
         self.set_value_settings(dict(self.remembered_settings))
         j = self.plot_combo.findData(self.remembered_settings.get('plot'))
         if j >= 0:
             self.plot_combo.setCurrentIndex(j)
+        j = self.test_combo.findData(self.remembered_settings.get('test'))
+        if j >= 0:
+            self.test_combo.setCurrentIndex(j)
+        self.per_sample_check.setChecked(bool(self.remembered_settings.get('per_sample')))
+        self.outliers_check.setChecked(bool(self.remembered_settings.get('mark_outliers')))
 
     # ------------------------------------------------------------------ groups
     def _build_groups_panel(self):
@@ -279,17 +409,26 @@ class GroupStatisticsDialog(QDialog):
         lay = QVBoxLayout(box)
         # Spreadsheet-like Group column: fill handle, Ctrl+D, copy/paste,
         # Delete, Ctrl+Z (see fill_column_table.py)
+        saved_samples = self.remembered_settings.setdefault('_samples', {})
         self.table = FillColumnTable(
             self.labels, [self.saved_groups.get(l, gs.NO_GROUP) for l in self.labels],
-            headers=("Spectrum", "Group"))
+            headers=("Spectrum", "Group"),
+            extra_columns=[("Sample (optional)", [saved_samples.get(l, '') for l in self.labels])])
+        self.table.horizontalHeaderItem(2).setToolTip(
+            "Optional: which independent sample (specimen, culture, cuvette, map, ...) a\n"
+            "spectrum comes from. Spectra of one sample are not independent replicates:\n"
+            "tick 'One value per sample' (box 3) to test sample means. The same sample\n"
+            "name in two groups pairs them for the paired tests (before / after).")
         # Both columns: width adjustable by dragging the header border;
         # the Group column also takes any spare width at the right
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Interactive)
         header.setSectionResizeMode(1, QHeaderView.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.Interactive)
         header.setStretchLastSection(True)
         self.table.setColumnWidth(0, 230)
         self.table.setColumnWidth(1, 120)
+        self.table.setColumnWidth(2, 110)
         self.table.valuesChanged.connect(self._on_groups_changed)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._table_menu)
@@ -308,7 +447,26 @@ class GroupStatisticsDialog(QDialog):
         set_btn.setToolTip("Select rows (click, Shift+click, Ctrl+click), then give them a group")
         set_btn.clicked.connect(self.set_group_of_selected)
         row1.addWidget(set_btn)
+        row1.addWidget(_help_button(self, "Groups and samples", _HELP_GROUPS,
+                                    "What the Group and Sample columns are, and how to fill "
+                                    "them"))
         lay.addLayout(row1)
+        row_s = QHBoxLayout()
+        sample_btn = QPushButton("Set sample of selected rows…")
+        sample_btn.setToolTip("Optional Sample column: which independent sample the selected "
+                              "spectra come from")
+        sample_btn.clicked.connect(self.set_sample_of_selected)
+        samples_names_btn = QPushButton("Samples from names…")
+        samples_names_btn.setToolTip("Sample column from the spectrum names (e.g. the file part "
+                                     "of the name)")
+        samples_names_btn.clicked.connect(self.samples_from_names)
+        clear_s_btn = QPushButton("Clear samples")
+        clear_s_btn.clicked.connect(
+            lambda: self.table.set_values([''] * len(self.labels), col=2))
+        row_s.addWidget(sample_btn)
+        row_s.addWidget(samples_names_btn)
+        row_s.addWidget(clear_s_btn)
+        lay.addLayout(row_s)
         row2 = QHBoxLayout()
         names_btn = QPushButton("From names…")
         names_btn.setToolTip("Groups from the spectrum names: a text they contain, or a part of the name")
@@ -323,6 +481,11 @@ class GroupStatisticsDialog(QDialog):
         row2.addWidget(table_btn)
         row2.addWidget(clear_btn)
         lay.addLayout(row2)
+        self.table_source = QLabel()
+        self.table_source.setWordWrap(True)
+        self.table_source.setStyleSheet("color:#2E7D32;")
+        self.table_source.setVisible(False)
+        lay.addWidget(self.table_source)
         self.group_summary = QLabel()
         self.group_summary.setWordWrap(True)
         lay.addWidget(self.group_summary)
@@ -330,6 +493,60 @@ class GroupStatisticsDialog(QDialog):
 
     def groups(self):
         return [v.strip() for v in self.table.values()]
+
+    def _load_own_group_table(self):
+        """If no group is set yet and the spectra's own data file has a group
+        table (sheet 'Groups' in the workbook, or '<data file>_groups.csv'
+        next to it), fill the Group / Sample columns from it (Ctrl+Z or
+        Clear removes them)."""
+        if any(self.groups()):
+            return
+        path = gs.find_group_table(self.spectra)
+        if not path:
+            return
+        try:
+            mapping, sample_map = gs.read_group_sample_table(path, labels=self.labels)
+        except Exception:
+            logger.exception("Reading the data file's group table failed")
+            return
+        groups = gs.groups_from_own_table(self.spectra, self.labels, path, mapping)
+        if not any(groups):
+            return
+        self._set_groups(groups)
+        if sample_map:
+            # same undo step as the groups: one Ctrl+Z removes both
+            self.table.set_values(
+                gs.groups_from_own_table(self.spectra, self.labels, path, sample_map),
+                record_undo=False, col=2)
+        where = (f"sheet \u201cGroups\u201d of {os.path.basename(path)}"
+                 if path.lower().endswith(('.xlsx', '.xlsm'))
+                 and not path.lower().endswith('_groups.xlsx') else os.path.basename(path))
+        self.table_source.setText(
+            f"Groups{' and samples' if sample_map else ''} filled in from the {where} "
+            f"(Ctrl+Z or Clear removes them).")
+        self.table_source.setVisible(True)
+        self.loaded_group_table = path
+
+    def samples(self):
+        """The optional Sample column ('' = not given)."""
+        return [v.strip() for v in self.table.values(2)]
+
+    def set_sample_of_selected(self):
+        rows = self.table.selected_rows()
+        if not rows:
+            QMessageBox.information(self, "Group Statistics",
+                                    "Select one or more rows in the table first.")
+            return
+        names = [s for s in dict.fromkeys(self.samples()) if s]
+        name, ok = QInputDialog.getItem(self, "Set sample", f"Sample for {len(rows)} spectra:",
+                                        names or ["Sample 1"], 0, True)
+        if ok:
+            self.table.set_rows(rows, name.strip(), col=2)
+
+    def samples_from_names(self):
+        dlg = NamesToGroupsDialog(self.labels, self, title="Samples from spectrum names")
+        if dlg.exec_() == QDialog.Accepted:
+            self.table.set_values(dlg.groups(), col=2)
 
     def _set_groups(self, groups):
         self.table.set_values(groups)          # one undo step; emits valuesChanged
@@ -399,6 +616,12 @@ class GroupStatisticsDialog(QDialog):
                 self.saved_groups[label] = g
             else:
                 self.saved_groups.pop(label, None)
+        saved_samples = self.remembered_settings.setdefault('_samples', {})
+        for label, smp in zip(self.labels, self.samples()):
+            if smp:
+                saved_samples[label] = smp
+            else:
+                saved_samples.pop(label, None)
 
     def _group_names(self):
         seen = []
@@ -420,6 +643,9 @@ class GroupStatisticsDialog(QDialog):
             text = f"{len(named)} group{'s' if len(named) != 1 else ''}: " + ", ".join(named)
         if none:
             text += f"<br>{none} spectr{'um' if none == 1 else 'a'} without a group (left out)."
+        n_samples = len({smp for smp in self.samples() if smp})
+        if n_samples:
+            text += f"<br>{n_samples} sample{'s' if n_samples != 1 else ''} named."
         self.group_summary.setText(text)
 
     def set_group_of_selected(self):
@@ -446,7 +672,7 @@ class GroupStatisticsDialog(QDialog):
         if not path:
             return
         try:
-            mapping = gs.read_group_table(path, labels=self.labels)
+            mapping, sample_map = gs.read_group_sample_table(path, labels=self.labels)
         except Exception as exc:
             logger.exception("Reading the group table failed")
             QMessageBox.warning(self, "Group Statistics", f"The table could not be read:\n{exc}")
@@ -454,9 +680,14 @@ class GroupStatisticsDialog(QDialog):
         groups = gs.groups_from_table(self.labels, mapping)
         found = sum(1 for g in groups if g)
         self._set_groups(groups)
+        if sample_map:
+            self.table.set_values(gs.groups_from_table(self.labels, sample_map),
+                                  record_undo=False, col=2)     # one undo step with the groups
         known = {l.strip().lower() for l in self.labels}
         unmatched = [name for name in mapping if name.strip().lower() not in known]
         text = f"{found} of {len(groups)} spectra were found in the table."
+        if sample_map:
+            text += " The Sample column was filled too."
         if unmatched:
             text += (f"\n\n{len(unmatched)} name(s) in the table match no spectrum here, "
                      f"e.g.:\n" + "\n".join(unmatched[:5]))
@@ -477,7 +708,13 @@ class GroupStatisticsDialog(QDialog):
         self.kind_combo.setMaxVisibleItems(25)
         self._fill_kind_combo()
         self.kind_combo.currentIndexChanged.connect(self._update_value_widgets)
-        form.addRow("Value:", self.kind_combo)
+        kind_row = QWidget()
+        kr = QHBoxLayout(kind_row)
+        kr.setContentsMargins(0, 0, 0, 0)
+        kr.addWidget(self.kind_combo, 1)
+        kr.addWidget(_help_button(self, "Value per spectrum", _HELP_VALUE,
+                                  "What the value choices mean"))
+        form.addRow("Value:", kind_row)
         xmin, xmax = self._x_extent()
         self.has_common_range = self._common_range_exists()
         mid, quarter = (xmin + xmax) / 2, (xmax - xmin) / 8 or 1.0
@@ -622,14 +859,33 @@ class GroupStatisticsDialog(QDialog):
         test_box = QGroupBox("3. Test")
         tl = QVBoxLayout(test_box)
         self.test_combo = QComboBox()
-        for key, text in gs.TESTS.items():
+        for key, text in gt.METHODS.items():
             self.test_combo.addItem(text, key)
         self.test_combo.setToolTip(
             "Parametric: compares means (Welch t-test for two groups, one-way ANOVA for more).\n"
             "Non-parametric: compares ranks, robust to outliers and skewed values\n"
             "(Mann–Whitney U for two groups, Kruskal–Wallis for more).\n"
-            "With three or more groups every pair is also tested (Holm-corrected p).")
-        tl.addWidget(self.test_combo)
+            "With three or more groups every pair is also tested (Holm-corrected p).\n"
+            "Unequal spread: Welch ANOVA + Games–Howell pairs (groups with different spread).\n"
+            "… + Dunn: Kruskal–Wallis with Dunn's pairwise test (its standard follow-up).\n"
+            "Permutation test: no distribution assumed; good for small groups.\n"
+            "Paired: the same samples in two groups (e.g. before / after), matched by the\n"
+            "Sample column.")
+        test_row = QHBoxLayout()
+        test_row.addWidget(self.test_combo, 1)
+        test_row.addWidget(_help_button(self, "Which test?", _HELP_TEST, "Which test to choose"))
+        tl.addLayout(test_row)
+        self.per_sample_check = QCheckBox("One value per sample (average its spectra)")
+        self.per_sample_check.setToolTip(
+            "Spectra of one sample (map, cuvette, culture, …) are not independent replicates;\n"
+            "testing them as if they were makes p far too small. With this ticked, the spectra\n"
+            "of each sample (Sample column) are averaged first, so the test uses one value per\n"
+            "independent sample. Spectra without a sample count as their own sample.")
+        sample_row = QHBoxLayout()
+        sample_row.addWidget(self.per_sample_check, 1)
+        sample_row.addWidget(_help_button(self, "One value per sample", _HELP_REPLICATES,
+                                          "Why spectra of one sample are not independent"))
+        tl.addLayout(sample_row)
         self.compute_btn = QPushButton("Compute")
         self.compute_btn.setStyleSheet("font-weight:bold;")
         self.compute_btn.clicked.connect(self.compute)
@@ -668,6 +924,13 @@ class GroupStatisticsDialog(QDialog):
         self.save_plot_btn.setEnabled(False)
         self.save_plot_btn.clicked.connect(self.save_plot)
         plot_row.addWidget(self.save_plot_btn)
+        self.outliers_check = QCheckBox("Mark outliers")
+        self.outliers_check.setToolTip("Circle the values outside 1.5 × the interquartile range "
+                                       "(Tukey's rule; they are not removed — the Test tab "
+                                       "names them)")
+        self.outliers_check.toggled.connect(self._on_plot_type_changed)
+        plot_row.addWidget(self.outliers_check)
+        plot_row.addWidget(_help_button(self, "Plot", _HELP_PLOT, "The plot types"))
         plot_row.addStretch(1)
         pl.addLayout(plot_row)
         pl.addWidget(self.canvas, 1)
@@ -678,12 +941,28 @@ class GroupStatisticsDialog(QDialog):
         self.summary_table.verticalHeader().setVisible(False)
         self.tabs.addTab(self.summary_table, "Summary")
         self.tests_view = QTextBrowser()
-        self.tabs.addTab(self.tests_view, "Test")
-        self.values_table = QTableWidget(0, 3)
-        self.values_table.setHorizontalHeaderLabels(["Spectrum", "Group", "Value"])
+        tests_tab = QWidget()
+        tt = QVBoxLayout(tests_tab)
+        tt.setContentsMargins(0, 0, 0, 0)
+        tt.addWidget(self.tests_view, 1)
+        copy_row = QHBoxLayout()
+        self.copy_sentence_btn = QPushButton("Copy results sentence")
+        self.copy_sentence_btn.setToolTip("Copy the sentence for a paper (test, statistic, p, "
+                                          "effect size with confidence interval, n)")
+        self.copy_sentence_btn.setEnabled(False)
+        self.copy_sentence_btn.clicked.connect(self.copy_results_sentence)
+        copy_row.addWidget(self.copy_sentence_btn)
+        copy_row.addWidget(_help_button(self, "Reading the Test tab", _HELP_RESULTS,
+                                        "How to read the results"))
+        copy_row.addStretch(1)
+        tt.addLayout(copy_row)
+        self.tabs.addTab(tests_tab, "Test")
+        self.values_table = QTableWidget(0, 4)
+        self.values_table.setHorizontalHeaderLabels(["Spectrum", "Group", "Value", "Sample"])
         self.values_table.verticalHeader().setVisible(False)
         self.values_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.tabs.addTab(self.values_table, "Values")
+        self._build_spectra_tab()
         lay.addWidget(self.tabs, 1)
         self.note = QLabel()
         self.note.setWordWrap(True)
@@ -691,6 +970,244 @@ class GroupStatisticsDialog(QDialog):
         lay.addWidget(self.note)
         self._update_value_widgets()
         return right
+
+    # ------------------------------------------------------------------ spectra tab
+    def _build_spectra_tab(self):
+        """Tab 'Spectra': the groups compared at every point along x."""
+        rs = self.remembered_settings
+        tab = QWidget()
+        tl = QVBoxLayout(tab)
+        tl.setContentsMargins(4, 4, 4, 4)
+        common = gsp.common_range(self.spectra)
+        lo, hi = common if common else (0.0, 1.0)
+        def small_spin(value):
+            sp = self._spin(value, lo, hi)
+            sp.setMaximumWidth(95)
+            return sp
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Range:"))
+        self.sp_from, self.sp_to = small_spin(lo), small_spin(hi)
+        for w in (self.sp_from, QLabel("to"), self.sp_to):
+            row1.addWidget(w)
+        row1.addSpacing(10)
+        row1.addWidget(QLabel("Correction:"))
+        self.sp_corr_combo = QComboBox()
+        for key, text in gsp.CORRECTIONS.items():
+            self.sp_corr_combo.addItem(text, key)
+        self.sp_corr_combo.setToolTip(
+            "Hundreds of points are tested, so the p-values are corrected.\n"
+            "FDR (false discovery rate, Benjamini–Hochberg): about 5 % of the shaded points\n"
+            "may be chance findings.  Holm: strict — the chance of even one false point is 5 %.")
+        row1.addWidget(self.sp_corr_combo)
+        row1.addWidget(QLabel("Show:"))
+        self.sp_show_combo = QComboBox()
+        for key, text in gsp.BANDS.items():
+            self.sp_show_combo.addItem(text, key)
+        row1.addWidget(self.sp_show_combo)
+        row1.addStretch(1)
+        tl.addLayout(row1)
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Normalize:"))
+        self.sp_norm_combo = QComboBox()
+        for key, text in gsp.NORMALIZATIONS.items():
+            self.sp_norm_combo.addItem(text, key)
+        self.sp_norm_combo.setToolTip(
+            "None: the spectra as they are\n"
+            "Divide by the maximum in a band: e.g. a reference band that does not change\n"
+            "Unit area: each spectrum divided by its area over the compared range\n"
+            "SNV: each spectrum (over the compared range) shifted to mean 0, scaled to SD 1")
+        row2.addWidget(self.sp_norm_combo)
+        band = rs.get('spectra_band') or (lo, hi)
+        self.sp_band_from, self.sp_band_to = small_spin(band[0]), small_spin(band[1])
+        self.sp_band_row = QWidget()
+        br = QHBoxLayout(self.sp_band_row)
+        br.setContentsMargins(0, 0, 0, 0)
+        for w in (self.sp_band_from, QLabel("to"), self.sp_band_to):
+            br.addWidget(w)
+        row2.addWidget(self.sp_band_row)
+        row2.addStretch(1)
+        tl.addLayout(row2)
+        row3 = QHBoxLayout()
+        self.sp_compare_btn = QPushButton("Compare spectra")
+        self.sp_compare_btn.setStyleSheet("font-weight:bold;")
+        self.sp_compare_btn.setAutoDefault(False)
+        self.sp_compare_btn.setToolTip("Compare the groups at every point (test and 'One value "
+                                       "per sample' from box 3)")
+        self.sp_compare_btn.clicked.connect(self.compute_spectra)
+        row3.addWidget(self.sp_compare_btn)
+        self.sp_save_btn = QPushButton("Save plot…")
+        self.sp_save_btn.setAutoDefault(False)
+        self.sp_save_btn.setEnabled(False)
+        self.sp_save_btn.clicked.connect(self.save_spectra_plot)
+        row3.addWidget(self.sp_save_btn)
+        self.sp_export_btn = QPushButton("Export table…")
+        self.sp_export_btn.setAutoDefault(False)
+        self.sp_export_btn.setEnabled(False)
+        self.sp_export_btn.setToolTip("x, mean, SD and n of each group, p and corrected p")
+        self.sp_export_btn.clicked.connect(self.export_spectra_table)
+        row3.addWidget(self.sp_export_btn)
+        row3.addWidget(_help_button(self, "Spectra", _HELP_SPECTRA,
+                                    "Comparing the groups along the whole spectrum"))
+        row3.addStretch(1)
+        tl.addLayout(row3)
+        self.sp_note = QLabel("Compare the groups at every point of the spectrum: choose the "
+                              "range and the normalization, then press Compare spectra." if common
+                              else "The spectra have no x-range in common: no comparison along "
+                              "the spectrum is possible.")
+        self.sp_note.setWordWrap(True)
+        self.sp_note.setStyleSheet("color:#555;")
+        self.sp_note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.sp_note.setMinimumHeight(self.sp_note.fontMetrics().lineSpacing() * 2 + 6)
+        tl.addWidget(self.sp_note)               # above the plot: always visible
+        self.sp_figure = Figure(figsize=(6, 4))
+        self.sp_canvas = FigureCanvas(self.sp_figure)
+        self.sp_canvas.setMinimumHeight(260)
+        tl.addWidget(self.sp_canvas, 1)
+        for combo, key in ((self.sp_norm_combo, 'spectra_norm'),
+                           (self.sp_corr_combo, 'spectra_correction'),
+                           (self.sp_show_combo, 'spectra_show')):
+            j = combo.findData(rs.get(key))
+            if j >= 0:
+                combo.setCurrentIndex(j)
+        self.sp_norm_combo.currentIndexChanged.connect(self._update_spectra_widgets)
+        self.sp_show_combo.currentIndexChanged.connect(self._draw_spectra)
+        self._update_spectra_widgets()
+        self.sp_compare_btn.setEnabled(common is not None)
+        self.spectra_result = None
+        # in a scroll area, so that this tab's controls do not make the whole
+        # window taller (the other tabs need less height)
+        from PyQt5.QtWidgets import QScrollArea, QFrame
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(tab)
+        scroll.setMinimumHeight(60)
+        self.tabs.addTab(scroll, "Spectra")
+
+    def _update_spectra_widgets(self):
+        self.sp_band_row.setVisible(self.sp_norm_combo.currentData() == 'band')
+
+    def spectra_settings(self):
+        return {'normalization': self.sp_norm_combo.currentData(),
+                'band': (self.sp_band_from.value(), self.sp_band_to.value()),
+                'rng': (self.sp_from.value(), self.sp_to.value()),
+                'correction': self.sp_corr_combo.currentData()}
+
+    def compute_spectra(self):
+        """Compare the groups at every point (button 'Compare spectra')."""
+        st = self.spectra_settings()
+        method = self.test_combo.currentData()
+        per_sample = self.per_sample_check.isChecked()
+        groups, samples = self.groups(), self.samples()
+        self.remembered_settings.update({'spectra_norm': st['normalization'],
+                                         'spectra_band': st['band'],
+                                         'spectra_correction': st['correction'],
+                                         'spectra_show': self.sp_show_combo.currentData()})
+        try:
+            r = gsp.compare_spectra(self.spectra, groups, samples, method, per_sample,
+                                    st['normalization'], st['band'], st['rng'],
+                                    st['correction'])
+        except ValueError as exc:
+            self.spectra_result = None
+            self.sp_figure.clear()
+            self.sp_canvas.draw_idle()
+            self.sp_note.setText(str(exc))
+            self.sp_note.setStyleSheet("color:#B71C1C;")
+            self.sp_save_btn.setEnabled(False)
+            self.sp_export_btn.setEnabled(False)
+            return
+        self.spectra_result = r
+        notes = [t for t in (gsp.overall_text(r), gsp.ranges_text(r)) if t] + r['notes']
+        warn = False
+        if not per_sample and method not in gt.PAIRED and any(samples):
+            shared = gt.shared_sample_warnings(groups, samples)
+            if shared:
+                warn = True
+                what = ", ".join(f"\u201c{g}\u201d {n} spectra from {k} sample"
+                                 f"{'s' if k != 1 else ''}" for g, n, k in shared)
+                notes.append(f"\u26a0 The spectra are not independent replicates ({what}, "
+                             f"Sample column): the regions are too wide / the p-values too "
+                             f"small \u2014 tick \u201cOne value per sample\u201d.")
+        if r['n_pairs'] is not None:
+            notes.append(f"{r['n_pairs']} pairs (Sample column).")
+        self.sp_note.setText(" ".join(notes))
+        self.sp_note.setStyleSheet("color:#B71C1C;" if warn else "color:#333;")
+        self._draw_spectra()
+        self.sp_save_btn.setEnabled(True)
+        self.sp_export_btn.setEnabled(True)
+
+    def _draw_spectra(self):
+        r = self.spectra_result
+        fig = self.sp_figure
+        fig.clear()
+        if r is None:
+            self.sp_canvas.draw_idle()
+            return
+        ax1 = fig.add_subplot(211)
+        ax2 = fig.add_subplot(212, sharex=ax1)
+        x = r['x']
+        show = self.sp_show_combo.currentData()
+        for i, g in enumerate(r['names']):
+            c = _GROUP_COLOURS[i % len(_GROUP_COLOURS)]
+            m = r['mean'][g]
+            w = r['sd'][g] if show == 'sd' else r['ci'][g]
+            ax1.plot(x, m, color=c, lw=1.4, label=f"{g} (n={r['n'][g]})")
+            ax1.fill_between(x, m - w, m + w, color=c, alpha=0.18, lw=0)
+        q = np.clip(np.asarray(r['q'], float), 1e-300, 1)
+        ax2.plot(x, -np.log10(q), color='#333', lw=1)
+        ax2.axhline(-np.log10(r['alpha']), color='#B71C1C', ls='--', lw=1)
+        for a, b, k, _m in r['ranges']:
+            half = (x[1] - x[0]) / 2 if len(x) > 1 else 0.5
+            for ax in (ax1, ax2):
+                ax.axvspan(a - half, b + half, color='#FFD54F', alpha=0.35, lw=0)
+        corr = 'FDR q' if r['correction'] == 'fdr' else 'Holm p'
+        ax1.set_title(f"{r['test']} at every point ({BAND_TEXT.get(show, show)}; yellow: "
+                      f"{corr} < {r['alpha']:g})", fontsize=9)
+        ylabel = {'none': "Intensity", 'band': "Intensity / band max",
+                  'area': "Intensity / area", 'snv': "SNV"}.get(r['normalization'], "Intensity")
+        ax1.set_ylabel(ylabel, fontsize=8)
+        ax1.legend(fontsize=7, loc='best')
+        ax2.set_ylabel(f"\u2212log\u2081\u2080({corr.split()[-1]})", fontsize=8)
+        ax2.set_xlabel("x", fontsize=8)
+        for ax in (ax1, ax2):
+            ax.tick_params(labelsize=7)
+        fig.tight_layout()
+        self.sp_canvas.draw_idle()
+
+    def save_spectra_plot(self):
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Save plot", "group_spectra.png",
+            "PNG image (*.png);;TIFF image (*.tif);;SVG vector graphics (*.svg);;PDF (*.pdf)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += {'PNG': '.png', 'TIFF': '.tif', 'SVG': '.svg', 'PDF': '.pdf'}.get(
+                chosen.split()[0], '.png')
+        try:
+            self.sp_figure.savefig(path, dpi=300, bbox_inches='tight')
+        except Exception as exc:
+            logger.exception("Group statistics: saving the spectra plot failed")
+            QMessageBox.warning(self, "Save plot", f"The plot could not be saved:\n{exc}")
+
+    def export_spectra_table(self):
+        if self.spectra_result is None:
+            return
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Export table", "group_spectra.xlsx",
+            "Excel workbook (*.xlsx);;CSV (*.csv)")
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += '.csv' if 'CSV' in chosen else '.xlsx'
+        try:
+            df = gsp.export_table(self.spectra_result)
+            if path.lower().endswith('.csv'):
+                df.to_csv(path, index=False)
+            else:
+                df.to_excel(path, index=False, sheet_name='Spectra comparison')
+        except Exception as exc:
+            logger.exception("Group statistics: exporting the spectra table failed")
+            QMessageBox.warning(self, "Export table", f"The table could not be saved:\n{exc}")
 
     @staticmethod
     def _spin(value, lo, hi):
@@ -925,9 +1442,31 @@ class GroupStatisticsDialog(QDialog):
             return
         finally:
             QApplication.restoreOverrideCursor()
-        data = gs.collect(groups, values)
-        parametric = self.test_combo.currentData() == 'parametric'
-        result = gs.compare(data, parametric=parametric)
+        method = self.test_combo.currentData()
+        per_sample = self.per_sample_check.isChecked()
+        samples = self.samples()
+        self.remembered_settings.update({'test': method, 'per_sample': per_sample})
+        # what each value in the plot / test stands for (spectrum or sample)
+        if per_sample:
+            g_used, s_used, v_used = gt.sample_means(groups, samples, values)
+            point_labels = [smp or '(single spectrum)' for smp in s_used]
+        else:
+            g_used, v_used = groups, list(values)
+            point_labels = list(self.labels)
+        data = gs.collect(g_used, v_used)
+        self.data_labels = {}
+        for g, lab, val in zip(g_used, point_labels, v_used):
+            if g and np.isfinite(val):
+                self.data_labels.setdefault(g, []).append(lab)
+        paired = None
+        if method in gt.PAIRED and len(data) == 2:
+            a, b = list(data)
+            paired = gt.paired_values(groups, samples, values, a, b)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            result = gt.compare_with(data, method, paired)
+        finally:
+            QApplication.restoreOverrideCursor()
         self.values, self.data, self.comparison = values, data, result
         missing = sum(1 for g, val in zip(groups, values) if g and not np.isfinite(val))
         notes = []
@@ -978,21 +1517,48 @@ class GroupStatisticsDialog(QDialog):
                          + ", ".join(result['excluded']) + ".")
         if result['note']:
             notes.append(result['note'])
+        # Pseudoreplication -- only when the user filled the Sample column (the
+        # new, optional feature): without it the window behaves exactly as before
+        if per_sample:
+            few = [(g, len(vv)) for g, vv in data.items() if len(vv) < 3]
+            if few:
+                notes.append("\u26a0 Few independent samples: " + ", ".join(
+                    f"\u201c{g}\u201d {n}" for g, n in few) + " \u2014 the test has little "
+                    "power; a non-significant result is not evidence of no difference.")
+            self.replicate_warned = False
+        else:
+            warned = (gt.shared_sample_warnings(groups, samples, values)
+                      if any(samples) and method not in gt.PAIRED else [])
+            if warned:
+                what = ", ".join(f"\u201c{g}\u201d {n} spectra from {k} sample"
+                                 f"{'s' if k != 1 else ''}" for g, n, k in warned)
+                notes.append(f"\u26a0 The spectra are not independent replicates ({what}, "
+                             f"Sample column): the p-value is too small \u2014 tick "
+                             f"\u201cOne value per sample\u201d.")
+            self.replicate_warned = bool(warned)
         self.note.setText(" ".join(notes))
         # Red whenever the test is not what was asked for: no test at all,
         # or a whole group left out (the test then compares fewer groups)
         self.left_out_groups = empty + [g for g in result.get('excluded', []) if g not in empty]
         self.note.setStyleSheet("color:#B71C1C;"
                                 if result.get('test') is None or self.left_out_groups
-                                or missing else "color:#555;")
+                                or missing or any(n.startswith("\u26a0") for n in notes)
+                                else "color:#555;")
         self._show_box_plot()
         self._show_summary()
         self._show_tests()
         self._show_values(groups)
         self.export_btn.setEnabled(bool(data))
+        self.copy_sentence_btn.setEnabled(bool(result.get('sentence')))
+
+    def copy_results_sentence(self):
+        text = (self.comparison or {}).get('sentence', '')
+        if text:
+            QApplication.clipboard().setText(text)
 
     def _on_plot_type_changed(self, *_):
         self.remembered_settings['plot'] = self.plot_combo.currentData()
+        self.remembered_settings['mark_outliers'] = self.outliers_check.isChecked()
         if getattr(self, 'data', None) is not None:
             self._show_box_plot()
 
@@ -1045,10 +1611,19 @@ class GroupStatisticsDialog(QDialog):
                     footnote = ("Fewer than 10 values in " + ", ".join(few)
                                 + ": the violin shape is unreliable there.")
             rng = np.random.default_rng(0)
+            mark = self.outliers_check.isChecked()
+            any_marked = False
             for p, v, colour in zip(positions, values, colours):
                 jitter = rng.uniform(-0.12, 0.12, len(v))
                 ax.scatter(np.full(len(v), p) + jitter, v, s=14, alpha=0.7,
                            color=colour, zorder=3)
+                if mark:
+                    idx = gt.outliers(v)
+                    if idx:
+                        any_marked = True
+                        ax.scatter((np.full(len(v), p) + jitter)[idx], v[idx], s=70,
+                                   facecolors='none', edgecolors='#D50000', linewidths=1.4,
+                                   zorder=7)
                 mean = float(np.mean(v))
                 if kind == 'ci':
                     if len(v) >= 2:
@@ -1065,6 +1640,9 @@ class GroupStatisticsDialog(QDialog):
             if kind == 'ci':
                 footnote = ("Orange: mean; black bar: 95 % confidence interval of the mean "
                             "(t distribution).")
+            if mark and any_marked:
+                footnote = (footnote + " Red circles: outside 1.5 × the interquartile range "
+                            "(possible outliers, not removed).").strip()
             elif kind == 'violin':
                 footnote = ("Black: median; orange: mean. " + footnote).strip()
             ax.set_xticks(positions)
@@ -1106,21 +1684,39 @@ class GroupStatisticsDialog(QDialog):
     def _tests_html(self):
         r = self.comparison
         if not r or not r['test']:
-            return f"<p>{(r or {}).get('note', '')}</p>"
-        parts = [f"<h3>{r['test']}</h3>",
+            return f"<p>{html.escape((r or {}).get('note', ''))}</p>"
+        stat_line = f"Statistic = {r['statistic']:.4g}"
+        df = r.get('df')
+        if isinstance(df, tuple):
+            stat_line += f" (df = {df[0]:.3g}, {df[1]:.3g})"
+        elif df is not None and np.isfinite(df):
+            stat_line += f" (df = {df:.3g})"
+        effect = (f", {r['effect_name']} = {r['effect']:.3g}"
+                  if r.get('effect_name') and np.isfinite(r.get('effect', np.nan)) else "")
+        parts = [f"<h3>{html.escape(r['test'])}</h3>",
                 f"<p>Value: {html.escape(self.value_label())}<br>"
-                f"Groups: {html.escape(', '.join(r['groups']))}</p>",
-                f"<p>Statistic = {r['statistic']:.4g}, <b>{html.escape(gs.p_text(r['p']))}</b>, "
-                f"{r['effect_name']} = {r['effect']:.3g}</p>"]
-        if len(r['groups']) > 2:
+                f"Groups: {html.escape(', '.join(r['groups']))}"
+                + (f"<br>Pairs of samples: {r['n_pairs']}" if r.get('n_pairs') else "")
+                + (" &mdash; one value per sample" if self.per_sample_check.isChecked() else "")
+                + "</p>",
+                f"<p>{stat_line}, <b>{html.escape(gs.p_text(r['p']))}</b>{effect}</p>"]
+        if len(r['groups']) > 2 and r.get('pairs'):
             centre = "means" if r['parametric'] else "medians"
-            parts.append(f"<h4>Pairs ({r['pair_test']}, p Holm-corrected)</h4>")
+            adjusted_by = r.get('pairs_adjusted_by')
+            with_ci = any('ci' in pr for pr in r['pairs'])
+            head = (f"Pairs ({r['pair_test']}, p adjusted)" if adjusted_by
+                    else f"Pairs ({r['pair_test']}, p Holm-corrected)")
+            parts.append(f"<h4>{html.escape(head)}</h4>")
             parts.append("<table border='1' cellspacing='0' cellpadding='3'>"
-                        f"<tr><th>Pair</th><th>Difference of {centre}</th><th>p</th>"
-                        f"<th>p (Holm)</th><th>{r['pair_effect_name']}</th></tr>")
+                        f"<tr><th>Pair</th><th>Difference of {centre}</th>"
+                        + ("<th>95 % CI</th>" if with_ci else "")
+                        + "<th>p</th>"
+                        f"<th>p ({'adjusted' if adjusted_by else 'Holm'})</th>"
+                        f"<th>{r['pair_effect_name']}</th></tr>")
             for pr in r['pairs']:
+                ci = (f"<td>{pr['ci'][0]:.4g} ; {pr['ci'][1]:.4g}</td>" if with_ci else "")
                 parts.append(f"<tr><td>{html.escape(pr['a'])} – {html.escape(pr['b'])}</td>"
-                            f"<td>{pr['difference']:.4g}</td>"
+                            f"<td>{pr['difference']:.4g}</td>{ci}"
                             f"<td>{html.escape(gs.format_p(pr['p']))}</td>"
                             f"<td><b>{html.escape(gs.format_p(pr['p_holm']))}</b></td>"
                             f"<td>{pr['effect']:.3g}</td></tr>")
@@ -1128,7 +1724,59 @@ class GroupStatisticsDialog(QDialog):
         parts.append("<p style='color:#555'>p below 0.05 is usually read as a statistically "
                     "significant difference. The effect size says how large the difference is; "
                     "see Help.</p>")
+        parts.extend(self._extra_html(r))
         return "".join(parts)
+
+    def _extra_html(self, r):
+        """Confidence intervals, assumption checks, outliers, results sentence."""
+        parts = []
+        ci, gci = r.get('ci'), r.get('g_ci')
+        if (ci and np.isfinite(ci[1])) or (gci and np.isfinite(gci[1])):
+            a, b = (r['groups'] + ['', ''])[:2]
+            parts.append("<h4>How large is the difference?</h4><ul>")
+            if ci and np.isfinite(ci[1]):
+                what = ("mean of the differences (pairs)" if r.get('n_pairs')
+                        else f"difference of means ({html.escape(a)} − {html.escape(b)})")
+                parts.append(f"<li>{what}: <b>{ci[0]:.4g}</b>, 95 % confidence interval "
+                             f"{ci[1]:.4g} to {ci[2]:.4g}</li>")
+            if gci and np.isfinite(gci[1]):
+                parts.append(f"<li>Hedges' g: <b>{gci[0]:.3g}</b>, 95 % confidence interval "
+                             f"{gci[1]:.3g} to {gci[2]:.3g} (bootstrap)</li>")
+            parts.append("</ul><p style='color:#555'>If the interval of the difference does "
+                         "not include 0, the difference is significant at 5 %; its width shows "
+                         "how precisely the difference is known.</p>")
+        checks = r.get('checks')
+        if checks:
+            parts.append("<h4>Checks of the test's assumptions (information only)</h4>"
+                         "<table border='1' cellspacing='0' cellpadding='3'>"
+                         "<tr><th>Group</th><th>n</th><th>Bell-shaped? Shapiro–Wilk p</th></tr>")
+            for g, n, p in checks['normality']:
+                parts.append(f"<tr><td>{html.escape(g)}</td><td>{n}</td>"
+                             f"<td>{html.escape(gs.format_p(p))}</td></tr>")
+            parts.append("</table>")
+            if np.isfinite(checks['equal_spread_p']):
+                parts.append(f"<p>Same spread in all groups? Brown–Forsythe "
+                             f"{html.escape(gs.p_text(checks['equal_spread_p']))}</p>")
+            if checks['advice']:
+                parts.append("<ul>" + "".join(f"<li>{html.escape(t)}</li>"
+                                              for t in checks['advice']) + "</ul>")
+            else:
+                parts.append("<p style='color:#555'>No sign of a problem with the "
+                             "assumptions.</p>")
+        flagged = []
+        for g, idx in (r.get('outliers') or {}).items():
+            labels = getattr(self, 'data_labels', {}).get(g, [])
+            names = [labels[i] for i in idx if i < len(labels)]
+            if names:
+                flagged.append(f"{html.escape(g)}: " + ", ".join(html.escape(n) for n in names))
+        if flagged:
+            parts.append("<h4>Possible outliers</h4><p>Outside 1.5 × the interquartile range "
+                         "(not removed; check them, e.g. with Mark outliers in the plot): "
+                         + "; ".join(flagged) + "</p>")
+        if r.get('sentence'):
+            parts.append("<h4>Results sentence</h4><p style='background:#F1F8E9; padding:6px;'>"
+                         + html.escape(r['sentence']) + "</p>")
+        return parts
 
     def _show_tests(self):
         self.tests_view.setHtml(self._tests_html())
@@ -1136,8 +1784,9 @@ class GroupStatisticsDialog(QDialog):
     def _show_values(self, groups):
         t = self.values_table
         t.setRowCount(len(self.labels))
-        for r, (label, g, v) in enumerate(zip(self.labels, groups, self.values)):
-            for c, text in enumerate((label, g, f"{v:.6g}" if np.isfinite(v) else "–")):
+        for r, (label, g, v, smp) in enumerate(zip(self.labels, groups, self.values,
+                                                   self.samples())):
+            for c, text in enumerate((label, g, f"{v:.6g}" if np.isfinite(v) else "–", smp)):
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 t.setItem(r, c, item)
@@ -1155,7 +1804,7 @@ class GroupStatisticsDialog(QDialog):
             path += '.csv' if 'CSV' in chosen else '.xlsx'
         try:
             export_results(path, self.labels, self.groups(), self.values, self.data, self.comparison,
-                           self.value_label())
+                           self.value_label(), samples=self.samples(), report=True)
         except Exception as exc:
             logger.exception("Group statistics export failed")
             QMessageBox.warning(self, "Export failed", f"The file could not be written:\n{exc}")
@@ -1172,11 +1821,16 @@ class GroupStatisticsDialog(QDialog):
         open_help_topic(self, 'group_statistics')
 
 
-def export_results(path, labels, groups, values, data, result, value_label):
+def export_results(path, labels, groups, values, data, result, value_label, samples=None,
+                   report=False):
     """Write the values, the summary and the tests to an Excel workbook
-    (three sheets) or a CSV file (the three tables one after another)."""
+    (three sheets) or a CSV file (the tables one after another). With
+    report=True (the window's Export) also a 'Report' sheet / table with the
+    confidence intervals, assumption checks and the results sentence."""
     import pandas as pd
     values_df = pd.DataFrame({'Spectrum': labels, 'Group': groups, value_label: values})
+    if samples is not None and any(samples):
+        values_df['Sample'] = list(samples)
     summary_df = pd.DataFrame(gs.describe(data)).rename(columns={
         'group': 'Group', 'n': 'n', 'mean': 'Mean', 'sd': 'SD', 'median': 'Median',
         'min': 'Min', 'max': 'Max'})
@@ -1189,9 +1843,30 @@ def export_results(path, labels, groups, values, data, result, value_label):
                      'Effect size': result['pair_effect_name'], 'Effect': pr['effect'],
                      'Difference': pr['difference']})
     tests_df = pd.DataFrame(rows)
+    report_rows = []
+    ci, gci = result.get('ci'), result.get('g_ci')
+    if ci and np.isfinite(ci[1]):
+        report_rows += [('Difference of means', ci[0]), ('95 % CI low', ci[1]), ('95 % CI high', ci[2])]
+    if gci and np.isfinite(gci[1]):
+        report_rows += [("Hedges' g", gci[0]), ("Hedges' g 95 % CI low", gci[1]),
+                   ("Hedges' g 95 % CI high", gci[2])]
+    checks = result.get('checks') or {}
+    for g, n, p in checks.get('normality', []):
+        report_rows.append((f"Shapiro–Wilk p, {g} (n = {n})", p))
+    if np.isfinite(checks.get('equal_spread_p', np.nan)):
+        report_rows.append(("Brown–Forsythe p", checks['equal_spread_p']))
+    for t in checks.get('advice', []):
+        report_rows.append(("Advice", t))
+    if result.get('sentence'):
+        report_rows.append(("Results sentence", result['sentence']))
+    report_df = (pd.DataFrame(report_rows, columns=['Item', 'Value'])
+                 if report and report_rows else None)
     if path.lower().endswith('.csv'):
         with open(path, 'w', encoding='utf-8-sig', newline='') as fh:
-            for title, df in (('Values', values_df), ('Summary', summary_df), ('Tests', tests_df)):
+            for title, df in (('Values', values_df), ('Summary', summary_df), ('Tests', tests_df),
+                              ('Report', report_df)):
+                if df is None:
+                    continue
                 fh.write(f"{title}\n")
                 df.to_csv(fh, index=False)
                 fh.write("\n")
@@ -1200,3 +1875,5 @@ def export_results(path, labels, groups, values, data, result, value_label):
             values_df.to_excel(writer, sheet_name='Values', index=False)
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
             tests_df.to_excel(writer, sheet_name='Tests', index=False)
+            if report_df is not None:
+                report_df.to_excel(writer, sheet_name='Report', index=False)

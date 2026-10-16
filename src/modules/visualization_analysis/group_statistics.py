@@ -161,6 +161,140 @@ def read_group_table(path, labels=None):
     return {a: b for a, b in rows}
 
 
+def read_group_sample_table(path, labels=None):
+    """({name: group}, {name: sample}) from a table file: spectrum name,
+    group and an optional third column, the sample. Excel: the sheet named
+    'Groups' if there is one, else the first sheet. Text: like
+    read_group_table; the sample column needs a tab, semicolon or comma
+    between the columns (with spaces only, everything after the name is
+    the group)."""
+    groups, samples = {}, {}
+    if path.lower().endswith(('.xlsx', '.xlsm', '.xls')):
+        import pandas as pd
+        book = pd.read_excel(path, sheet_name=None, header=None, dtype=str)
+        sheet = next((df for name, df in book.items() if str(name).strip().lower() == 'groups'),
+                     next(iter(book.values())))
+        if sheet.shape[1] < 2:
+            raise ValueError("The table needs two columns: spectrum name and group.")
+        rows = [[('' if (isinstance(c, float) or c is None or str(c) == 'nan') else str(c).strip())
+                 for c in r] for r in sheet.itertuples(index=False)]
+        if rows and rows[0][1].lower() in _HEADER_WORDS:
+            rows = rows[1:]
+        for r in rows:
+            if r[0] and r[1]:
+                groups[r[0]] = r[1]
+                if len(r) > 2 and r[2]:
+                    samples[r[0]] = r[2]
+        return groups, samples
+    with open(path, encoding='utf-8-sig', errors='replace') as fh:
+        lines = fh.read().splitlines()
+    known = {str(l).strip().lower(): str(l) for l in (labels or [])}
+    first = True
+    for line in lines:
+        pair = _split_table_line(line, known)
+        if not pair:
+            continue
+        name, rest = pair
+        rest = rest.strip(_TABLE_SEPARATORS + '"\'')
+        sep = next((c for c in ('\t', ';', ',') if c in rest), None)
+        if sep is None:
+            # the plain split may have cut "group<TAB>sample" already
+            raw = line.rstrip('\r\n')
+            sep_raw = next((c for c in ('\t', ';', ',') if c in raw), None)
+            cells = ([c.strip().strip('"') for c in raw.split(sep_raw)] if sep_raw else [])
+            cells = [c for c in cells if c]
+            if not known and len(cells) >= 3:
+                name, group, sample = cells[0], cells[1], cells[2]
+            else:
+                group, sample = rest, ''
+        else:
+            cells = [c.strip().strip('"') for c in rest.split(sep)]
+            group = cells[0]
+            sample = cells[1] if len(cells) > 1 else ''
+        if first:
+            first = False
+            if group.strip().lower() in _HEADER_WORDS:
+                continue
+        if name and group:
+            groups[name] = group
+            if sample:
+                samples[name] = sample
+    if not groups:
+        raise ValueError("The table needs two columns: spectrum name and group.")
+    return groups, samples
+
+
+GROUP_TABLE_SUFFIXES = ('_groups.csv', '_groups.txt', '_groups.xlsx')
+
+
+def find_group_table(spectra):
+    """A group table that belongs to the spectra's own data file(s): a sheet
+    'Groups' in the Excel workbook they were imported from, or a file
+    '<data file name>_groups.csv / .txt / .xlsx' next to it. Returns the
+    path or None."""
+    import os
+    seen = []
+    for sp in spectra:
+        path = (sp.get('metadata') or {}).get('file_path')
+        if path and path not in seen:
+            seen.append(path)
+    for path in seen:
+        stem, ext = os.path.splitext(path)
+        for suffix in GROUP_TABLE_SUFFIXES:
+            if os.path.isfile(stem + suffix):
+                return stem + suffix
+        if ext.lower() in ('.xlsx', '.xlsm') and os.path.isfile(path):
+            try:
+                import openpyxl
+                book = openpyxl.load_workbook(path, read_only=True)
+                names = [n.strip().lower() for n in book.sheetnames]
+                book.close()
+                if 'groups' in names:
+                    return path
+            except Exception:
+                continue
+    return None
+
+
+def _name_key(name):
+    """Loose key of a spectrum name: case, spaces and punctuation ignored
+    (the importer turns e.g. "cell1 [px01]" into "cell1__px01_")."""
+    import re
+    return re.sub(r'[^0-9a-z]+', '_', str(name).strip().lower()).strip('_')
+
+
+def groups_from_own_table(spectra, labels, table_path, mapping):
+    """Like groups_from_table, for the group table that belongs to the
+    spectra's own data file (see find_group_table): there the table names
+    the spectra by their column name in that file ("control_01"), while in
+    the window they are called "<file> : control_01". So, after the full
+    name, the part after " : " is matched too -- only for the spectra that
+    came from that data file."""
+    import os
+    result = groups_from_table(labels, mapping)
+    by_key = {}
+    for k, v in mapping.items():
+        by_key.setdefault(_name_key(k), str(v).strip())
+    t_stem = os.path.splitext(os.path.abspath(table_path))[0]
+    for i, (sp, label) in enumerate(zip(spectra, labels)):
+        if result[i]:
+            continue
+        fp = (sp.get('metadata') or {}).get('file_path')
+        if not fp:
+            continue
+        d_stem = os.path.splitext(os.path.abspath(fp))[0]
+        if t_stem not in (d_stem, d_stem + '_groups'):
+            continue
+        names = [label, (sp.get('metadata') or {}).get('original_label') or '']
+        for name in names:
+            short = str(name).rsplit(' : ', 1)[-1]
+            hit = by_key.get(_name_key(short))
+            if hit:
+                result[i] = hit
+                break
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Values
 # ---------------------------------------------------------------------------
