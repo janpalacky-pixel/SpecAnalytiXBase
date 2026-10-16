@@ -91,6 +91,25 @@ def shared_sample_warnings(groups, samples, values=None):
     return [(g, n, len(names)) for g, (n, names) in per.items() if len(names) < n]
 
 
+
+def repeated_sample_names(groups, samples, values=None):
+    """Which sample names are given to several spectra of one group: an
+    ordered {group: [(sample, n_spectra), ...]} with only the names used more
+    than once (order of first appearance). Same rule as
+    shared_sample_warnings(), which only counts them."""
+    per = {}
+    for i, (g, smp) in enumerate(zip(groups, samples)):
+        if g == gs.NO_GROUP or not smp or (values is not None and not np.isfinite(values[i])):
+            continue
+        counts = per.setdefault(g, {})
+        counts[smp] = counts.get(smp, 0) + 1
+    out = {}
+    for g, counts in per.items():
+        rep = [(smp, n) for smp, n in counts.items() if n > 1]
+        if rep:
+            out[g] = rep
+    return out
+
 # --- confidence intervals, checks ---------------------------------------------------------
 
 def mean_difference_ci(a, b, level=0.95):
@@ -284,6 +303,25 @@ def paired_values(groups, samples, values, group_a, group_b):
     return (keep, np.array([np.mean(per[s][group_a]) for s in keep]),
             np.array([np.mean(per[s][group_b]) for s in keep]))
 
+
+
+def unpaired_samples(groups, samples, values, group_a, group_b):
+    """What a paired test of group_a and group_b leaves out (same rule as
+    paired_values): sample names found in only one of the two groups, as
+    ({name: group}, in order of first appearance), and the number of spectra
+    of the two groups without a sample name. values may be None (all count)."""
+    per, no_name = {}, 0
+    for i, (g, s) in enumerate(zip(groups, samples)):
+        if g not in (group_a, group_b):
+            continue
+        if values is not None and not np.isfinite(values[i]):
+            continue
+        if not s:
+            no_name += 1
+            continue
+        per.setdefault(s, set()).add(g)
+    only = {s: next(iter(gr)) for s, gr in per.items() if len(gr) == 1}
+    return only, no_name
 
 # --- one entry point ----------------------------------------------------------------------
 

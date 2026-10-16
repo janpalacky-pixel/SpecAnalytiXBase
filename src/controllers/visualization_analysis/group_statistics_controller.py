@@ -1,14 +1,16 @@
 # src/controllers/visualization_analysis/group_statistics_controller.py
 """Opens Group Statistics for the selected spectra and remembers the group
-of every spectrum (by name) for the rest of the session, so reopening the
-window keeps the groups -- and the chosen value, ranges and options."""
+of every spectrum (by its unique_id, not its name) for the rest of the
+session, so reopening the window keeps the groups -- and the chosen value,
+ranges and options. Spectra imported again are new spectra (new unique_id)
+and start without the old groups."""
 
 
 class GroupStatisticsController:
 
     def __init__(self, main_controller):
         self.controller = main_controller
-        self.saved_groups = {}          # spectrum name -> group, for this session
+        self.saved_groups = {}          # spectrum unique_id -> group, for this session
         self.saved_settings = {}        # the value / range choices, for this session
         self.dialog = None
 

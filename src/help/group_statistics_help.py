@@ -119,7 +119,7 @@ can be combined:</p>
   <li><b>Ctrl+V</b> pastes a column of values, e.g. copied from Excel, starting at the first
   selected row; one copied value pasted into several selected rows fills them all;</li>
   <li><b>Ctrl+C</b>, <b>Ctrl+X</b>, <b>Delete</b> copy, cut and clear; <b>Ctrl+Z</b> undoes the
-  last change (also a fill, paste or Clear);</li>
+  last change (also a fill, paste or "Clear all groups"), from anywhere in the window;</li>
   <li>right-click: the same actions, plus <b>Select spectra&hellip;</b> (by name, range or every
   n-th, as in the main window) to select rows before giving them a group.</li>
   </ul></li>
@@ -155,7 +155,9 @@ separated by a tab, comma, semicolon or space, and the names may contain spaces 
 start of each line. The message afterwards says how many spectra were found and lists table
 names that match no spectrum. Useful for larger studies: keep the
 table with your data and reuse it.</li>
-<li><b>Clear</b> removes all groups.</li>
+<li><b>Clear all groups</b> removes the groups of all spectra. To remove only some, select
+their rows and press <b>Delete</b> (or right-click &rarr; <i>Remove group of selected
+rows</i>); in the Sample column the same clears the samples.</li>
 <li><b>Automatically</b> &mdash; when the window opens and no spectrum has a group yet, it looks
 for a group table that belongs to the spectra's own data file: a sheet named <i>Groups</i> in
 the Excel workbook they were imported from, or a file <code>&lt;data file name&gt;_groups.csv</code>
@@ -167,8 +169,21 @@ the Excel workbook they were imported from, or a file <code>&lt;data file name&g
 from; one Ctrl+Z (or right-click &rarr; Undo) removes them again. So you can prepare the groups once, next to the
 data, and they are there every time you open the tool.</li>
 </ul>
-<p>The groups are remembered for the rest of the session (by spectrum name), so you can close
-the window and come back. The window can be maximized, and the widths of the
+<p>When the groups, the samples or the value are changed after Compute, an orange line under
+the results says so and the Compute button turns orange until you press it &mdash; the results
+on screen then still belong to the old settings. The same after <b>Compare spectra</b> in the
+Spectra tab: when the groups or samples change, the orange line says so and the Compare spectra
+button turns orange. Group names that differ only in upper/lower
+case or spaces ("Control" and "control") are flagged in red under the table: they count as
+separate groups.</p>
+<p>The Group cells are tinted with the group's colour in the plot (and the Spectra tab); the
+Sample cells get a light colour per sample, so the spectra of one sample &mdash; or the two
+measurements of a pair &mdash; are easy to spot. The group names under the table and in the
+Summary and Values tabs use the same colours.</p>
+<p>The groups and samples are remembered for the rest of the session (and in a snapshot), so
+you can close the window and come back. They belong to the spectra themselves, not to their
+names: a renamed spectrum keeps its group, while data imported again (even the same file) are
+new spectra and start without the old groups. The window can be maximized, and the widths of the
 <b>Spectrum</b> and <b>Group</b> columns can be changed by dragging the border between
 their headers.</p>
 $GS_NAMES_FIGURE
@@ -329,7 +344,13 @@ heating, or two conditions on each specimen. Fill the <b>Sample</b> column with 
 for the two measurements of one sample (several spectra of one sample in a group are averaged
 first). Pairing removes the differences <i>between</i> samples, so a small but consistent
 change is found that the unpaired test misses. Paired t-test: Cohen's d<sub>z</sub> and the
-95&nbsp;% interval of the mean difference; Wilcoxon: matched-pairs rank-biserial r.</li>
+95&nbsp;% interval of the mean difference; Wilcoxon: matched-pairs rank-biserial r. The paired
+tests can only be chosen when there are exactly two groups and at least 3 samples appear in
+both of them (greyed out otherwise, the tooltip says why; if one was chosen, the window switches
+to Parametric and says so). The note under the plot says how many pairs were used and which
+samples were left out because they have no partner with the same name in the other group
+(e.g. &ldquo;6 pairs. Left out: s5, s6 (only in &lsquo;before&rsquo;); s66 (only in
+&lsquo;after&rsquo;)&rdquo;).</li>
 </ul>
 <p><b>Which one?</b> The parametric tests are the usual choice and the most sensitive when the
 values in each group are roughly bell-shaped. Use the non-parametric ones when a group
@@ -338,6 +359,16 @@ they only use the order of the values.</p>
 <p><b>Several groups:</b> testing every pair separately would find "significant" differences
 by chance far too often (with 5 groups there are 10 pairs). The pair p-values are therefore
 <b>Holm-corrected</b>; use the corrected p (column "p (Holm)").</p>
+<p><b>Compute and changing the test:</b> press <b>Compute</b> after choosing the groups and the
+value. Afterwards, changing the test or <i>One value per sample</i> recomputes the results by
+itself (the values of the spectra are kept, so this is fast even for peak fits of many
+spectra); the Spectra tab too, if it shows a result.</p>
+<p><b>Very small p-values</b> are shown as "p &lt; 0.0001" (the usual way to report them), with
+the exact value in brackets in the Test tab, e.g. "p &lt; 0.0001 (p = 6.1 &times; 10&#8315;&#8312;)",
+so different tests can be told apart. For the permutation test the smallest possible p is 1 /
+10&nbsp;001. Note: when many spectra come from few samples (see
+<a href="#replicates">replicates</a>), every test gives a tiny p &mdash; the problem is then the
+data, not the test.</p>
 $GS_TEST_FIGURE
 
 <h2>Reading the results</h2>
@@ -411,7 +442,13 @@ common root name = the file or map).</li>
 so the test uses one value per independent sample. The plot, the summary and n then count
 samples. Spectra without a sample count as their own sample.</li>
 <li>When this is not ticked and the Sample column gives several spectra of a group the same
-sample (e.g. 15 spectra of one cell), a red warning says that the p-value is too small. With an
+sample name (e.g. 15 spectra of one cell), a red warning names them: the program takes them as
+measurements of one sample, but the test counts every spectrum as a separate sample. The
+warning comes from the names only &mdash; it does not check the spectra or the p-value. With
+real repeated measurements of one sample the test is usually too sure (the p-value too small);
+if the spectra are in fact different samples, just give them different names. The same name
+in <i>different</i> groups (s7 before / s7 after) is fine and gives no warning: it marks one
+sample measured in both groups (used by the paired tests). With an
 empty Sample column there is no such warning &mdash; the window works exactly as without this
 feature.</li>
 <li>With few samples per group the test has little power &mdash; a warning says so. Then a
@@ -435,7 +472,8 @@ the groups differ significantly are shaded yellow and listed above the plot.</li
 groups differ at all?" &mdash; a permutation test on the distances between whole spectra
 (Euclidean, 10&nbsp;000 permutations; not for the paired tests). Like ANOVA it also reacts to
 groups that differ only in their spread.</li>
-<li><b>Test</b> and <b>One value per sample</b> come from box 3 (Welch t-test / ANOVA, Welch
+<li><b>Test</b> and <b>One value per sample</b> come from box 3 (changing them recomputes the
+tab; Welch t-test / ANOVA, Welch
 ANOVA, Mann&ndash;Whitney U / Kruskal&ndash;Wallis, permutation, paired t-test, Wilcoxon).</li>
 <li><b>Normalize</b>: compare raw spectra only if their overall intensity is comparable.
 <i>Divide by the maximum in a band</i> that does not change (e.g. the CH&#8322; band at
@@ -570,7 +608,11 @@ positively dependent tests, as neighbouring points are); regions = runs of point
 q &lt; 0.05. PERMANOVA (Anderson 2001): pseudo-F = [SS<sub>between</sub>/(k&minus;1)] /
 [SS<sub>within</sub>/(N&minus;k)] from squared Euclidean distances (computed from the group
 means, which is the same for this distance), p = (count of permuted F &ge; observed + 1) /
-10&nbsp;000, 9&nbsp;999 random relabellings, seed 0.</li>
+10&nbsp;000, 9&nbsp;999 random relabellings, seed 0. For very large data (more than 10 million
+numbers = spectra &times; points, e.g. every pixel of a big map) 1&nbsp;999, above 50 million
+999 relabellings (fixed by the size, so the result is the same on every computer; the text
+says how many); the relabellings run in batches as one matrix product, so even 20&nbsp;000
+spectra of 1&nbsp;600 points take a few seconds.</li>
 <li>Checks: <code>scipy.stats.shapiro</code> (3 &le; n &le; 5000), <code>levene(center="median")</code>
 (Brown&ndash;Forsythe); outliers: Tukey's fences Q1 &minus; 1.5&nbsp;IQR, Q3 + 1.5&nbsp;IQR (n &ge; 4).
 Module: <code>group_tests.py</code>.</li>

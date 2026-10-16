@@ -51,7 +51,9 @@ class FillColumnTable(QTableWidget):
         self.blockSignals(True)
         for r, (name, value) in enumerate(zip(names, values)):
             item = QTableWidgetItem(name)
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            # the names can be neither edited nor selected: a selection then
+            # covers only the cells that Delete, copy, paste and the menu act on
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable & ~Qt.ItemIsSelectable)
             self.setItem(r, 0, item)
             self.setItem(r, VALUE_COLUMN, QTableWidgetItem(value))
         for i, (_, col_values) in enumerate(extra_columns):

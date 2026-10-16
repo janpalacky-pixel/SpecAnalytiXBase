@@ -144,23 +144,62 @@ def _f_columns(mats):
         return (ssb / dfb) / (ssw / dfw)
 
 
+def permutations_for(n_spectra, n_points, full):
+    """Fewer permutations for very large data (e.g. every pixel of a big map),
+    so that the comparison stays fast (a few seconds): the full number up to
+    10 million numbers (spectra x points), 1 999 up to 50 million, 999 above.
+    Fixed by the size (not by the time taken), so the result is the same on
+    every computer."""
+    size = n_spectra * n_points
+    if size <= 1e7:
+        return full
+    if size <= 5e7:
+        return min(full, 1999)
+    return min(full, 999)
+
+
+def _permuted_group_sums(Yc, labels, k, n_perm, seed=0, batch=64):
+    """Group sums (k x points) for n_perm random relabellings, several at a
+    time as one matrix product (fast, multithreaded). The relabellings are the
+    same sequence as drawing rng.permutation(labels) one after another."""
+    rng = np.random.default_rng(seed)
+    N = len(Yc)
+    cols = np.arange(N)
+    done = 0
+    while done < n_perm:
+        b = min(batch, n_perm - done)
+        H = np.zeros((b * k, N))
+        for j in range(b):
+            H[j * k + rng.permutation(labels), cols] = 1.0
+        yield (H @ Yc).reshape(b, k, -1)
+        done += b
+
+
+def _stat_from_sums(sums, sizes, sst_col):
+    """Per point: |difference of means| (2 groups) or the ANOVA F, from the
+    group sums of the centred data (sums: (..., k, points))."""
+    n = np.asarray(sizes, float)[:, None]
+    if len(sizes) == 2:
+        return np.abs(sums[..., 0, :] / n[0] - sums[..., 1, :] / n[1])
+    k, N = len(sizes), float(np.sum(sizes))
+    ssb = (sums ** 2 / n).sum(axis=-2)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        return (ssb / (k - 1)) / ((sst_col - ssb) / (N - k))
+
+
 def _permutation_columns(mats, n_perm=N_PERMUTATIONS, seed=0):
     """Permutation p at every point: |difference of means| (2 groups) or F."""
-    allv = np.vstack(mats)
+    Y = np.vstack(mats)
     sizes = [len(M) for M in mats]
-    labels = np.repeat(np.arange(len(mats)), sizes)
-
-    def stat(lab):
-        parts = [allv[lab == g] for g in range(len(mats))]
-        if len(parts) == 2:
-            return np.abs(parts[0].mean(axis=0) - parts[1].mean(axis=0))
-        return _f_columns(parts)
-
-    obs = stat(labels)
-    rng = np.random.default_rng(seed)
-    count = np.zeros(allv.shape[1])
-    for _ in range(n_perm):
-        count += stat(rng.permutation(labels)) >= obs - 1e-12
+    k = len(mats)
+    labels = np.repeat(np.arange(k), sizes)
+    Yc = Y - Y.mean(axis=0)
+    sst_col = (Yc ** 2).sum(axis=0)
+    obs_sums = np.stack([Yc[labels == g].sum(axis=0) for g in range(k)])
+    obs = _stat_from_sums(obs_sums, sizes, sst_col)
+    count = np.zeros(Y.shape[1])
+    for S in _permuted_group_sums(Yc, labels, k, n_perm, seed):
+        count += (_stat_from_sums(S, sizes, sst_col) >= obs - 1e-12).sum(axis=0)
     return (count + 1) / (n_perm + 1)
 
 
@@ -184,7 +223,11 @@ def pointwise_p(mats, method='parametric', paired=None):
     k = len(mats)
     with np.errstate(divide='ignore', invalid='ignore'):
         if method == 'permutation':
-            return _permutation_columns(mats), "Permutation test"
+            n_perm = permutations_for(sum(len(M) for M in mats), mats[0].shape[1],
+                                      N_PERMUTATIONS)
+            name = ("Permutation test" if n_perm == N_PERMUTATIONS
+                    else f"Permutation test ({n_perm} permutations)")
+            return _permutation_columns(mats, n_perm), name
         if method in ('nonparametric', 'dunn'):
             if k == 2:
                 return (stats.mannwhitneyu(mats[0], mats[1], axis=0).pvalue,
@@ -211,8 +254,9 @@ def permanova(mats, n_perm=N_PERMANOVA, seed=0):
     """PERMANOVA (Anderson 2001) on whole spectra with the Euclidean
     distance: pseudo-F = [SS_between / (k - 1)] / [SS_within / (N - k)],
     p = (count of permuted F >= observed + 1) / (n_perm + 1).
-    One overall answer to "do the spectra of the groups differ?". Returns
-    (F, p)."""
+    One overall answer to "do the spectra of the groups differ?". With the
+    Euclidean distance SS_between comes from the group sums, so the
+    permutations run as matrix products. Returns (F, p)."""
     Y = np.vstack(mats)
     sizes = np.array([len(M) for M in mats])
     k, N = len(mats), len(Y)
@@ -222,18 +266,18 @@ def permanova(mats, n_perm=N_PERMANOVA, seed=0):
     Yc = Y - Y.mean(axis=0)
     sst = float((Yc ** 2).sum())
 
-    def f_of(lab):
-        onehot = np.zeros((k, N))
-        onehot[lab, np.arange(N)] = 1.0
-        sums = onehot @ Yc
-        ssb = float(((sums ** 2).sum(axis=1) / sizes).sum())
+    def f_of(sums):
+        ssb = (np.asarray(sums) ** 2).sum(axis=-1) / sizes      # (..., k)
+        ssb = ssb.sum(axis=-1)
         ssw = sst - ssb
-        return (ssb / (k - 1)) / (ssw / (N - k)) if ssw > 0 else np.inf
+        with np.errstate(divide='ignore', invalid='ignore'):
+            return np.where(ssw > 0, (ssb / (k - 1)) / (ssw / (N - k)), np.inf)
 
-    f_obs = f_of(labels)
-    rng = np.random.default_rng(seed)
-    count = sum(f_of(rng.permutation(labels)) >= f_obs - 1e-12 for _ in range(n_perm))
-    return float(f_obs), (count + 1) / (n_perm + 1)
+    f_obs = float(f_of(np.stack([Yc[labels == g].sum(axis=0) for g in range(k)])))
+    count = 0
+    for S in _permuted_group_sums(Yc, labels, k, n_perm, seed):
+        count += int((f_of(S) >= f_obs - 1e-12).sum())
+    return f_obs, (count + 1) / (n_perm + 1)
 
 
 def significant_ranges(x, q, alpha=0.05):
@@ -328,8 +372,10 @@ def compare_spectra(spectra, groups, samples=None, method='parametric', per_samp
         paired = (np.vstack([np.mean(per[s][a], axis=0) for s in both]) if both else np.empty((0, len(x))),
                   np.vstack([np.mean(per[s][b], axis=0) for s in both]) if both else np.empty((0, len(x))))
     p, test = pointwise_p([mats[g] for g in names], method, paired)
-    overall = (permanova([mats[g] for g in names]) if paired is None
-               else (np.nan, np.nan))
+    n_perm = permutations_for(sum(n for n in (len(mats[g]) for g in names)), len(x),
+                              N_PERMANOVA)
+    overall = (permanova([mats[g] for g in names], n_perm) + (n_perm,) if paired is None
+               else (np.nan, np.nan, 0))
     q = adjust(p, correction)
     mean = {g: mats[g].mean(axis=0) for g in names}
     sd = {g: mats[g].std(axis=0, ddof=1) for g in names}
@@ -347,11 +393,11 @@ def compare_spectra(spectra, groups, samples=None, method='parametric', per_samp
 
 def overall_text(result):
     """The PERMANOVA sentence (empty for the paired tests)."""
-    F, p = result.get('permanova', (np.nan, np.nan))
+    F, p, n_perm = (tuple(result.get('permanova', (np.nan, np.nan))) + (N_PERMANOVA,))[:3]
     if not np.isfinite(p):
         return ''
-    smallest = 1 / (N_PERMANOVA + 1)
-    ptxt = (f"p = {smallest:.4f} (the smallest possible with {N_PERMANOVA + 1} permutations)"
+    smallest = 1 / (n_perm + 1)
+    ptxt = (f"p = {smallest:.4g} (the smallest possible with {n_perm + 1} permutations)"
             if p <= smallest * 1.0001 else f"p = {p:.4f}")
     return (f"Whole spectrum (PERMANOVA, Euclidean distance): pseudo-F = {F:.3g}, {ptxt}.")
 

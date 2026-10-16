@@ -21,6 +21,10 @@ class Map2DController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.manager = Map2DManager()
+        # ROI regions per map (roi_key(): from the spectra's unique_ids and
+        # their number -> roi_state()), for the session and in snapshots
+        # (save_spectra_manager)
+        self.saved_rois = {}
         # See show_dialog()'s use of this -- the operations manager's
         # revision at the point this controller last trusted self.manager's
         # cached fit as still matching the current spectra.
@@ -374,3 +378,19 @@ class Map2DController:
             spectra=selected_spectra,
         )
         dialog.exec_()
+        self.remember_rois(dialog)
+
+    def remember_rois(self, dialog):
+        """Keep the dialog's ROI regions for this map (by its spectra's
+        unique_ids, not their names) for the next time it is opened -- and for snapshots. Removing all
+        regions is remembered too."""
+        try:
+            state = dialog.roi_state()
+            key = dialog.roi_key()
+        except Exception:
+            logger.exception("Remembering the ROI regions failed")
+            return
+        if state['regions']:
+            self.saved_rois[key] = state
+        else:
+            self.saved_rois.pop(key, None)

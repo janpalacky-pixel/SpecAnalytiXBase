@@ -96,3 +96,17 @@ def test_typing_is_reported_and_undoable(table):
 
 def test_names_are_read_only(table):
     assert not (table.item(0, 0).flags() & Qt.ItemIsEditable)
+
+
+def test_names_cannot_be_selected(table):
+    """The Spectrum column is not part of a selection: selecting whole rows
+    (or all) marks only the Group cells, and the rows are still known."""
+    assert not (table.item(0, 0).flags() & Qt.ItemIsSelectable)
+    table.selectAll()
+    assert {i.column() for i in table.selectedIndexes()} == {1}
+    table.clearSelection()
+    table.selectRow(0)
+    assert table.selected_rows() == [0]
+    assert {i.column() for i in table.selectedIndexes()} == {1}
+    table.clear_values()                     # Delete still clears the Group of that row
+    assert table.values()[:2] == ['', 'B']

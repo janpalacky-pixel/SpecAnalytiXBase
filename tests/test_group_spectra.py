@@ -184,3 +184,46 @@ def test_permanova_equals_the_distance_matrix_formula():
     assert gsp.compare_spectra(same, groups0)['permanova'][1] > 0.05
     samples = [f's{i % 10}' for i in range(20)]
     assert gsp.overall_text(gsp.compare_spectra(sp, groups, samples, method='paired_t')) == ''
+
+
+def test_batched_permutations_equal_the_plain_loop():
+    rng = np.random.default_rng(5)
+    mats = [rng.normal(0, 1, (7, 6)), rng.normal(0.4, 1, (5, 6)), rng.normal(0, 1, (6, 6))]
+    for ms in (mats[:2], mats):
+        allv = np.vstack(ms)
+        labels = np.repeat(np.arange(len(ms)), [len(M) for M in ms])
+
+        def stat(lab):
+            parts = [allv[lab == g] for g in range(len(ms))]
+            if len(parts) == 2:
+                return np.abs(parts[0].mean(axis=0) - parts[1].mean(axis=0))
+            return gsp._f_columns(parts)
+        obs, r, count = stat(labels), np.random.default_rng(0), np.zeros(6)
+        for _ in range(150):
+            count += stat(r.permutation(labels)) >= obs - 1e-12
+        assert gsp._permutation_columns(ms, 150) == pytest.approx((count + 1) / 151)
+
+
+def test_fewer_permutations_only_for_very_large_data():
+    assert gsp.permutations_for(36, 1201, 9999) == 9999
+    assert gsp.permutations_for(10000, 1600, 9999) == 1999
+    assert gsp.permutations_for(40000, 1600, 9999) == 999
+    assert gsp.permutations_for(10000, 1600, 2000) == 1999
+
+
+def test_window_spectra_tab_recovers_after_a_failed_test(quiet):
+    from src.views.dialogs.visualization_analysis.group_statistics_dialog import (
+        GroupStatisticsDialog)
+    sp, groups = _groups_data()
+    groups = groups[:7] + ['c'] * 6 + groups[13:]       # three groups
+    d = GroupStatisticsDialog(sp, None, {}, {})
+    d.table.set_values(groups)
+    d.test_combo.setCurrentIndex(d.test_combo.findData('paired_t'))
+    d.compute_spectra()
+    assert d.spectra_result is None and 'exactly two groups' in d.sp_note.text()
+    assert 'Choose another test' in d.sp_note.text()
+    d.test_combo.setCurrentIndex(d.test_combo.findData('parametric'))   # recomputes
+    assert d.spectra_result is not None and d.spectra_result['test'] == 'One-way ANOVA'
+    assert 'exactly two groups' not in d.sp_note.text()
+    assert len(d.sp_figure.axes) == 2                                   # the spectra are drawn
+    d.deleteLater()

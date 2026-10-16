@@ -1218,6 +1218,25 @@ class SomeController:
         dedup logic). <code>load_snapshot()</code> is the reverse: read the file,
         then restore each of those pieces back onto a live
         <code>main_controller</code>.</p>
+        <p>Also kept, each written only when there is something to keep and
+        restored in place only when its key is in the file (an older file leaves
+        the current state alone): <code>melting_curve_saved_fits</code>,
+        <code>map2d_rois</code> (2D Map ROI regions per map),
+        <code>band_markers</code> (<code>BandMarkerManager.to_dict()</code>),
+        <code>plot_appearance</code> (axis / legend / grid-line / layout manager
+        settings that differ from the defaults; a kind missing from the block is
+        reset to its defaults), <code>group_statistics</code> (saved groups,
+        samples and window settings), <code>dialog_settings</code> (the
+        <code>_last_settings</code> of the CD-unit, mean-centering, x-unit and
+        x-axis-alignment controllers, without the preview caches; missing
+        controllers are created on load) and, in the operations block,
+        <code>last_selection_hash</code> plus <code>last_op_settings</code>
+        (only the entries that differ from <code>current_parameters</code>; the
+        names of the equal ones in <code>last_op_settings_same</code>) &mdash;
+        without these two the windows ignored the saved
+        <code>current_parameters</code> after loading. Tests:
+        <code>tests/test_snapshot_more_state.py</code>,
+        <code>tests/test_map2d_roi_memory.py</code>.</p>
 
         <div style="background:#FFFFFF; border:1px solid #D0D3DA; border-radius:6px; padding:10px; margin:12px 0; overflow-x:auto;">
         <svg viewBox="0 0 900 1100" xmlns="http://www.w3.org/2000/svg" style="width:100%; height:auto; font-family:Arial,sans-serif;">
@@ -3550,6 +3569,15 @@ def _natural_sort_key(cls, label):
             Euclidean, computed from group sums &mdash; identical to the distance-matrix formula,
             checked in the tests). The tab sits in a QScrollArea so that its controls do not
             raise the window's minimum height.</li>
+            <li>Remembered ROI regions: <code>Map2DDialog.roi_state()</code> (plain data:
+            type, geometry, pixel labels, lasso vertices, name; rows, cols, exclude mode) /
+            <code>restore_roi_state()</code> (same size and every label present, else
+            skipped). <code>Map2DController.saved_rois</code> maps
+            "&lt;map root name&gt;|&lt;number of spectra&gt;" to it; filled after the dialog
+            closes (<code>remember_rois</code>), restored in the dialog's
+            <code>__init__</code> and after a dimensions change to the saved size. Snapshots
+            store it as <code>map2d_rois</code> (written only when not empty; loaded in place;
+            a file without the key leaves the current regions alone).</li>
             <li>Map regions: <code>Map2DDialog.roi_groups(names, rest_name)</code> turns
             <code>_roi_regions</code> into (spectra, {label: group}); the ROI menu action asks for
             names and opens <code>GroupStatisticsDialog(..., source_note=...)</code>: the note

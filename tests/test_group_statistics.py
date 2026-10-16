@@ -329,3 +329,33 @@ def test_names_dialog_has_a_help_button(monkeypatch):
     button.click()
     assert shown and 'Common root name' in shown[0] and 'A part of the name' in shown[0]
     d.deleteLater()
+
+
+def _with_id(label, uid, height=1.0):
+    sp = _spectrum(label, height)
+    sp['metadata'] = {'unique_id': uid}
+    return sp
+
+
+def test_groups_follow_the_spectrum_not_its_name(monkeypatch):
+    """Groups and samples are remembered by unique_id: a renamed spectrum
+    keeps them; the same names imported again (new ids) start empty."""
+    for name in ('information', 'warning', 'critical'):
+        monkeypatch.setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.Ok))
+    from src.views.dialogs.visualization_analysis.group_statistics_dialog import (
+        GroupStatisticsDialog)
+    spectra = [_with_id('a', 'id-a'), _with_id('b', 'id-b')]
+    saved, settings = {}, {}
+    d = GroupStatisticsDialog(spectra, None, saved, settings)
+    d.table.item(0, 1).setText('control')
+    d.table.item(0, 2).setText('cell1')
+    d._remember()
+    assert saved == {'id-a': 'control'} and settings['_samples'] == {'id-a': 'cell1'}
+    renamed = [_with_id('a renamed', 'id-a'), _with_id('b', 'id-b')]
+    again = GroupStatisticsDialog(renamed, None, saved, settings)
+    assert again.groups()[0] == 'control' and again.samples()[0] == 'cell1'
+    reimported = [_with_id('a', 'new-a'), _with_id('b', 'new-b')]
+    fresh = GroupStatisticsDialog(reimported, None, saved, settings)
+    assert fresh.groups()[0] == '' and fresh.samples()[0] == ''
+    for w in (d, again, fresh):
+        w.deleteLater()

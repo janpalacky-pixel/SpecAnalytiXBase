@@ -98,8 +98,13 @@ def get_save_help_content():
     <p>
         Saves the <b>complete application state</b> — not just the spectrum
         data, but also which spectra are selected, the full operations history
-        (baseline correction, normalisation, data range, etc.), and all plot
-        settings. The file extension is <code>.snapx</code>.
+        (baseline correction, normalisation, data range, etc.), all plot
+        settings (also the band markers, axis titles and fonts, legend and grid
+        lines), the last settings of the processing and analysis windows, the
+        groups and samples of Group Statistics, the Saved Fits of Melting Curve
+        Analysis and the ROI regions drawn in the 2D Map. The file extension is
+        <code>.snapx</code>. (Computed results such as NMF or cluster maps are
+        not stored &mdash; they are recomputed from the spectra.)
     </p>
     <p>
         Use a snapshot when you want to continue working from exactly the

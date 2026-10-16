@@ -20,6 +20,7 @@ import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
@@ -189,6 +190,34 @@ _VALUE_HINTS = {
 }
 
 BAND_TEXT = {'sd': "mean ± SD", 'ci': "mean ± 95 % CI"}
+# light colours for the Sample column (one per sample name)
+_SAMPLE_TINTS = ['#FFF3B0', '#D7EEFF', '#E8DAFF', '#DDF3D2', '#FFE0CC', '#F7D6EA',
+                 '#D2F2EE', '#F0F0C4', '#E2E2FF', '#FFD9D9', '#E6EEF5', '#F2E2CF']
+
+
+def _tint(colour, strength=0.28):
+    """A light version of a plot colour for a table cell (text stays readable)."""
+    c = QColor(colour)
+    mix = lambda v: int(round(255 - (255 - v) * strength))
+    return QColor(mix(c.red()), mix(c.green()), mix(c.blue())).name()
+_SUPERSCRIPT = str.maketrans("0123456789-", "⁰¹²³⁴⁵⁶⁷⁸⁹⁻")
+
+
+def _exact_p(p, method=None):
+    """' (p = 6.1 × 10⁻⁸)' when p is shown as '< 0.0001', so that tests can be
+    told apart; for the permutation test the smallest possible p instead."""
+    try:
+        p = float(p)
+    except (TypeError, ValueError):
+        return ''
+    if not np.isfinite(p) or p >= 1e-4:
+        return ''
+    if method == 'permutation':
+        return f" (the smallest possible with {gt.N_PERMUTATIONS} permutations)"
+    if p <= 0:
+        return " (p < 10⁻³⁰⁰)"
+    mant, exp = f"{p:.1e}".split('e')
+    return f" (p = {mant} × 10{str(int(exp)).translate(_SUPERSCRIPT)})"
 _GROUP_COLOURS = ['#1565C0', '#C62828', '#2E7D32', '#EF6C00', '#6A1B9A', '#00838F',
                   '#AD1457', '#5D4037', '#455A64', '#9E9D24']
 
@@ -333,6 +362,65 @@ class NamesToGroupsDialog(QDialog):
         self.preview.setText(text)
 
 
+def repeated_samples_text(groups, samples, values=None, what="this test"):
+    """The warning for a sample name given to several spectra of ONE group,
+    or '' if there is none. Says which names, what the program assumes and
+    what to do -- not what happens to the p-value (that depends on the data).
+    The same name in different groups is fine (it pairs them) and is said so
+    when it occurs."""
+    rep = gt.repeated_sample_names(groups, samples, values)
+    if not rep:
+        return ""
+    parts = []
+    for g, names in rep.items():
+        shown = ", ".join(f"{smp} ({n} spectra)" for smp, n in names[:3])
+        if len(names) > 3:
+            shown += f" and {len(names) - 3} more"
+        parts.append(f"\u201c{g}\u201d: {shown}")
+    one = len(rep) == 1 and len(next(iter(rep.values()))) == 1
+    text = ("\u26a0 A sample name is used more than once within a group \u2014 "
+            + "; ".join(parts) + ". Spectra with the same sample name in one group are taken as "
+            + ("one sample measured more than once" if one else "measurements of one sample")
+            + " (not independent replicates), but " + what + " counts every spectrum "
+            "as a separate sample. If they are measurements of one sample, tick "
+            "\u201cOne value per sample\u201d; if they are different samples, give them "
+            "different sample names.")
+    # a name in two groups (s7 before / s7 after) is not a problem: say so
+    in_groups = {}
+    for i, (g, smp) in enumerate(zip(groups, samples)):
+        if g != gs.NO_GROUP and smp and (values is None or np.isfinite(values[i])):
+            in_groups.setdefault(smp, [])
+            if g not in in_groups[smp]:
+                in_groups[smp].append(g)
+    shared = [(smp, gr) for smp, gr in in_groups.items() if len(gr) > 1]
+    if shared:
+        smp, gr = shared[0]
+        text += (f" (The same name in different groups, e.g. {smp} in \u201c{gr[0]}\u201d "
+                 f"and \u201c{gr[1]}\u201d, is fine: it marks one sample measured in both "
+                 "groups.)")
+    return text
+
+
+def paired_note(n_pairs, groups, samples, values, group_a, group_b):
+    """'N pairs (Sample column).' plus what the paired test left out: sample
+    names found in only one of the two groups, and spectra without a name."""
+    only, no_name = gt.unpaired_samples(groups, samples, values, group_a, group_b)
+    text = f"{n_pairs} pair{'s' if n_pairs != 1 else ''} (Sample column)."
+    parts = []
+    for g in (group_a, group_b):
+        names = [smp for smp, grp in only.items() if grp == g]
+        if names:
+            shown = ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5
+                                             else "")
+            parts.append(f"{shown} (only in \u201c{g}\u201d)")
+    if no_name:
+        parts.append(f"{no_name} spectr{'um' if no_name == 1 else 'a'} without a sample name")
+    if parts:
+        text += (" Left out \u2014 no partner with the same sample name in the other group: "
+                 + "; ".join(parts) + ".")
+    return text
+
+
 class GroupStatisticsDialog(QDialog):
 
     def __init__(self, spectra, parent=None, saved_groups=None, saved_settings=None,
@@ -350,6 +438,13 @@ class GroupStatisticsDialog(QDialog):
                             & ~Qt.WindowMinimizeButtonHint)
         self.spectra = list(spectra)
         self.labels = [s.get('label', f'Spectrum {i + 1}') for i, s in enumerate(self.spectra)]
+        # The groups / samples are remembered by the spectrum's identity
+        # (metadata unique_id), not its name: a renamed spectrum keeps its
+        # group, and the same file imported again starts without the old
+        # groups (its own Groups sheet fills them in again). Spectra without
+        # a unique_id (only possible outside the normal import) use the name.
+        self.keys = [(s.get('metadata') or {}).get('unique_id') or lab
+                     for s, lab in zip(self.spectra, self.labels)]
         self.saved_groups = saved_groups if saved_groups is not None else {}
         self.comparison = None      # (not "result": that would hide QDialog.result())
         self.values = None
@@ -400,8 +495,26 @@ class GroupStatisticsDialog(QDialog):
         j = self.test_combo.findData(self.remembered_settings.get('test'))
         if j >= 0:
             self.test_combo.setCurrentIndex(j)
+        self._update_test_choices(opening=True)
+        self._colour_table()
         self.per_sample_check.setChecked(bool(self.remembered_settings.get('per_sample')))
         self.outliers_check.setChecked(bool(self.remembered_settings.get('mark_outliers')))
+        # Changing the test or 'One value per sample' recomputes what is shown
+        # (the values themselves are reused, see _values_cache), so a result on
+        # screen never belongs to another test.
+        self._values_cache = None
+        self.test_combo.currentIndexChanged.connect(self._recompute_shown)
+        # results on screen that no longer match the groups / samples / value
+        self._result_state = None
+        for w in self.value_form.parentWidget().findChildren(QComboBox):
+            w.currentIndexChanged.connect(self._check_outdated)
+        for w in self.value_form.parentWidget().findChildren(QDoubleSpinBox):
+            w.valueChanged.connect(self._check_outdated)
+        for w in self.value_form.parentWidget().findChildren(QSpinBox):
+            w.valueChanged.connect(self._check_outdated)
+        for w in self.value_form.parentWidget().findChildren(QCheckBox):
+            w.toggled.connect(self._check_outdated)
+        self.per_sample_check.toggled.connect(self._recompute_shown)
 
     # ------------------------------------------------------------------ groups
     def _build_groups_panel(self):
@@ -411,9 +524,9 @@ class GroupStatisticsDialog(QDialog):
         # Delete, Ctrl+Z (see fill_column_table.py)
         saved_samples = self.remembered_settings.setdefault('_samples', {})
         self.table = FillColumnTable(
-            self.labels, [self.saved_groups.get(l, gs.NO_GROUP) for l in self.labels],
+            self.labels, [self.saved_groups.get(k, gs.NO_GROUP) for k in self.keys],
             headers=("Spectrum", "Group"),
-            extra_columns=[("Sample (optional)", [saved_samples.get(l, '') for l in self.labels])])
+            extra_columns=[("Sample (optional)", [saved_samples.get(k, '') for k in self.keys])])
         self.table.horizontalHeaderItem(2).setToolTip(
             "Optional: which independent sample (specimen, culture, cuvette, map, ...) a\n"
             "spectrum comes from. Spectra of one sample are not independent replicates:\n"
@@ -474,8 +587,9 @@ class GroupStatisticsDialog(QDialog):
         table_btn = QPushButton("From table file…")
         table_btn.setToolTip("A CSV or Excel file with two columns: spectrum name, group")
         table_btn.clicked.connect(self.groups_from_table_file)
-        clear_btn = QPushButton("Clear")
-        clear_btn.setToolTip("Remove all groups (Ctrl+Z brings them back)")
+        clear_btn = QPushButton("Clear all groups")
+        clear_btn.setToolTip("Remove the groups of all spectra (Ctrl+Z brings them back). To remove\n"
+                             "only some, select their rows and press Delete (or right-click).")
         clear_btn.clicked.connect(lambda: self._set_groups([gs.NO_GROUP] * len(self.labels)))
         row2.addWidget(names_btn)
         row2.addWidget(table_btn)
@@ -523,7 +637,7 @@ class GroupStatisticsDialog(QDialog):
                  and not path.lower().endswith('_groups.xlsx') else os.path.basename(path))
         self.table_source.setText(
             f"Groups{' and samples' if sample_map else ''} filled in from the {where} "
-            f"(Ctrl+Z or Clear removes them).")
+            f"(Ctrl+Z or \u201cClear all groups\u201d removes them).")
         self.table_source.setVisible(True)
         self.loaded_group_table = path
 
@@ -556,6 +670,99 @@ class GroupStatisticsDialog(QDialog):
         self._update_group_summary()
         if hasattr(self, 'reference_combo'):
             self._update_reference_choices()
+        if hasattr(self, 'test_combo'):
+            self._update_test_choices()
+        self._colour_table()
+        self._check_outdated()
+
+    def _paired_pairs(self):
+        """Samples (Sample column) that appear in both groups -- only when
+        there are exactly two groups."""
+        groups, samples = self.groups(), self.samples()
+        names = list(dict.fromkeys(g for g in groups if g))
+        if len(names) != 2:
+            return 0
+        per = {}
+        for g, smp in zip(groups, samples):
+            if g and smp:
+                per.setdefault(smp, set()).add(g)
+        return sum(1 for gs_ in per.values() if len(gs_) == 2)
+
+    def _update_test_choices(self, opening=False):
+        """The paired tests need exactly two groups and at least 3 samples
+        measured in both (the same name in the Sample column): grey them out
+        otherwise, with the reason as tooltip. If one of them is chosen and
+        there are more than two groups -- or the window opens with it
+        remembered from other data -- switch to the parametric test and say
+        so. (While the groups and samples are being typed, a chosen paired
+        test is kept: Compute then says what is missing.)"""
+        n = len({g for g in self.groups() if g})
+        pairs = self._paired_pairs() if n == 2 else 0
+        ok = n == 2 and pairs >= 3
+        if n != 2:
+            why = (f"A paired test compares exactly two groups; there are {n}.\n"
+                   "Give only two groups (e.g. before / after) to use it.")
+        else:
+            why = ("A paired test needs the same samples measured in both groups:\n"
+                   "the same name in the Sample column (e.g. s1 before / s1 after),\n"
+                   f"at least 3 such samples; here {pairs}.")
+        model = self.test_combo.model()
+        for i in range(self.test_combo.count()):
+            if self.test_combo.itemData(i) in gt.PAIRED:
+                item = model.item(i)
+                item.setEnabled(ok)
+                item.setToolTip("" if ok else why)
+        if not ok and self.test_combo.currentData() in gt.PAIRED and (n > 2 or (opening and n == 2)):
+            # kept until a result shows it (compute() clears it); shown right
+            # away too, also when nothing has been computed yet
+            self.test_switched_note = (
+                (f"The paired test compares exactly two groups (there are {n})"
+                 if n > 2 else
+                 f"The paired test needs at least 3 samples measured in both groups "
+                 f"(the same name in the Sample column; here {pairs})")
+                + ": switched to Parametric.")
+            if hasattr(self, 'note'):
+                self.note.setText(self.test_switched_note)
+                self.note.setStyleSheet("color:#E65100;")
+            self.test_combo.setCurrentIndex(self.test_combo.findData('parametric'))
+
+    # ------------------------------------------------------------------ colours
+    def group_colours(self):
+        """{group: colour}: the same colour for a group in the table, the plot
+        and the Spectra tab. A group keeps its colour while the window is open
+        (a new group -- e.g. a typo -- gets the next free colour instead of
+        shifting the colours of the others)."""
+        order = list(dict.fromkeys(g for g in self.groups() if g))
+        assigned = self.__dict__.setdefault('_colour_assign', {})
+        for g in order:
+            if g not in assigned:
+                used = {assigned[h] for h in order if h in assigned}
+                free = [c for c in _GROUP_COLOURS if c not in used]
+                assigned[g] = free[0] if free else _GROUP_COLOURS[len(assigned) % len(_GROUP_COLOURS)]
+        return {g: assigned[g] for g in order}
+
+    def _colour_table(self):
+        """Group cells tinted with their group's plot colour; Sample cells with
+        a light colour per sample (the same sample -- e.g. a pair -- the same
+        colour). Signals blocked: a colour is not an edit (no undo step)."""
+        t = self.table
+        cmap = self.group_colours()
+        samples = self.samples()
+        smap = {smp: _SAMPLE_TINTS[i % len(_SAMPLE_TINTS)]
+                for i, smp in enumerate(dict.fromkeys(x for x in samples if x))}
+        empty = QBrush()
+        t.blockSignals(True)
+        try:
+            for r, (g, smp) in enumerate(zip(self.groups(), samples)):
+                it = t.item(r, 1)
+                if it is not None:
+                    it.setBackground(QBrush(QColor(_tint(cmap[g]))) if g in cmap else empty)
+                it = t.item(r, 2)
+                if it is not None:
+                    it.setBackground(QBrush(QColor(smap[smp])) if smp in smap else empty)
+        finally:
+            t.blockSignals(False)
+        t.viewport().update()
 
     def _table_menu(self, pos):
         from PyQt5.QtWidgets import QMenu
@@ -566,7 +773,9 @@ class GroupStatisticsDialog(QDialog):
         menu.addSeparator()
         copy_action = menu.addAction("Copy (Ctrl+C)")
         paste_action = menu.addAction("Paste (Ctrl+V)")
-        clear_action = menu.addAction("Clear (Delete)")
+        clear_action = menu.addAction(
+            "Clear sample of selected rows (Delete)" if self.table.active_column() == 2
+            else "Remove group of selected rows (Delete)")
         menu.addSeparator()
         select_action = menu.addAction("Select spectra…")
         undo_action = menu.addAction("Undo (Ctrl+Z)")
@@ -604,24 +813,24 @@ class GroupStatisticsDialog(QDialog):
         selection = QItemSelection()
         for r in params.get('indices', []):
             if 0 <= r < self.table.rowCount():
-                selection.select(model.index(r, 0), model.index(r, 1))
+                selection.select(model.index(r, 1), model.index(r, 1))   # Group cell
         mode = {'select': QItemSelectionModel.ClearAndSelect, 'add': QItemSelectionModel.Select,
                 'remove': QItemSelectionModel.Deselect}.get(params.get('action', 'select'),
                                                             QItemSelectionModel.ClearAndSelect)
         self.table.selectionModel().select(selection, mode)
 
     def _remember(self):
-        for label, g in zip(self.labels, self.groups()):
+        for key, g in zip(self.keys, self.groups()):
             if g:
-                self.saved_groups[label] = g
+                self.saved_groups[key] = g
             else:
-                self.saved_groups.pop(label, None)
+                self.saved_groups.pop(key, None)
         saved_samples = self.remembered_settings.setdefault('_samples', {})
-        for label, smp in zip(self.labels, self.samples()):
+        for key, smp in zip(self.keys, self.samples()):
             if smp:
-                saved_samples[label] = smp
+                saved_samples[key] = smp
             else:
-                saved_samples.pop(label, None)
+                saved_samples.pop(key, None)
 
     def _group_names(self):
         seen = []
@@ -635,7 +844,9 @@ class GroupStatisticsDialog(QDialog):
         counts = {}
         for g in groups:
             counts[g] = counts.get(g, 0) + 1
-        named = [f"<b>{g}</b> ({n})" for g, n in counts.items() if g != gs.NO_GROUP]
+        cmap = self.group_colours() if hasattr(self, 'table') else {}
+        named = [f"<b><span style='color:{cmap.get(g, '#000')}'>{html.escape(g)}</span></b> ({n})"
+                 for g, n in counts.items() if g != gs.NO_GROUP]
         none = counts.get(gs.NO_GROUP, 0)
         if not named:
             text = "No groups yet."
@@ -646,6 +857,17 @@ class GroupStatisticsDialog(QDialog):
         n_samples = len({smp for smp in self.samples() if smp})
         if n_samples:
             text += f"<br>{n_samples} sample{'s' if n_samples != 1 else ''} named."
+        # 4) names that are probably meant to be the same group
+        same = {}
+        for g in counts:
+            if g != gs.NO_GROUP:
+                same.setdefault(" ".join(g.lower().split()), []).append(g)
+        for names in same.values():
+            if len(names) > 1:
+                text += ("<br><span style='color:#B71C1C'>\u26a0 "
+                         + " and ".join(f"\u201c{html.escape(n)}\u201d" for n in names)
+                         + " differ only in upper/lower case or spaces \u2014 they count as "
+                         + f"{len(names)} separate groups.</span>")
         self.group_summary.setText(text)
 
     def set_group_of_selected(self):
@@ -866,8 +1088,10 @@ class GroupStatisticsDialog(QDialog):
             "Non-parametric: compares ranks, robust to outliers and skewed values\n"
             "(Mann–Whitney U for two groups, Kruskal–Wallis for more).\n"
             "With three or more groups every pair is also tested (Holm-corrected p).\n"
-            "Unequal spread: Welch ANOVA + Games–Howell pairs (groups with different spread).\n"
-            "… + Dunn: Kruskal–Wallis with Dunn's pairwise test (its standard follow-up).\n"
+            "Unequal spread: Welch ANOVA + Games–Howell pairs (groups with different spread);\n"
+            "with two groups it is the Welch t-test.\n"
+            "… + Dunn: Kruskal–Wallis with Dunn's pairwise test (its standard follow-up);\n"
+            "with two groups it is the Mann–Whitney U test.\n"
             "Permutation test: no distribution assumed; good for small groups.\n"
             "Paired: the same samples in two groups (e.g. before / after), matched by the\n"
             "Sample column.")
@@ -889,6 +1113,9 @@ class GroupStatisticsDialog(QDialog):
         self.compute_btn = QPushButton("Compute")
         self.compute_btn.setStyleSheet("font-weight:bold;")
         self.compute_btn.clicked.connect(self.compute)
+        self.compute_btn.setToolTip(
+            "Compute the values and the test. Needed after changing the groups or the value;\n"
+            "a change of the test or of 'One value per sample' recomputes by itself.")
         tl.addWidget(self.compute_btn)
         tl.addStretch(1)
         controls.addWidget(test_box, 2)
@@ -964,6 +1191,13 @@ class GroupStatisticsDialog(QDialog):
         self.tabs.addTab(self.values_table, "Values")
         self._build_spectra_tab()
         lay.addWidget(self.tabs, 1)
+        self.outdated_label = QLabel(
+            "Groups, samples or the value changed since the last Compute \u2014 press Compute "
+            "(or Compare spectra) to update the results.")
+        self.outdated_label.setWordWrap(True)
+        self.outdated_label.setStyleSheet("color:#E65100; font-style:italic;")
+        self.outdated_label.setVisible(False)
+        lay.addWidget(self.outdated_label)
         self.note = QLabel()
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color:#555;")
@@ -1095,6 +1329,9 @@ class GroupStatisticsDialog(QDialog):
 
     def compute_spectra(self):
         """Compare the groups at every point (button 'Compare spectra')."""
+        self._spectra_requested = True
+        # the groups / samples the Spectra tab now shows (for the outdated hint)
+        self._spectra_state = (tuple(self.groups()), tuple(self.samples()))
         st = self.spectra_settings()
         method = self.test_combo.currentData()
         per_sample = self.per_sample_check.isChecked()
@@ -1103,37 +1340,45 @@ class GroupStatisticsDialog(QDialog):
                                          'spectra_band': st['band'],
                                          'spectra_correction': st['correction'],
                                          'spectra_show': self.sp_show_combo.currentData()})
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             r = gsp.compare_spectra(self.spectra, groups, samples, method, per_sample,
                                     st['normalization'], st['band'], st['rng'],
                                     st['correction'])
+            error = None
         except ValueError as exc:
+            r, error = None, exc
+        finally:
+            QApplication.restoreOverrideCursor()
+        if error is not None:
             self.spectra_result = None
             self.sp_figure.clear()
             self.sp_canvas.draw_idle()
-            self.sp_note.setText(str(exc))
+            hint = (" Choose another test in box 3 \u2014 the tab is then recomputed by itself."
+                    if self.test_combo.currentData() in gt.PAIRED else "")
+            self.sp_note.setText(str(error) + hint)
             self.sp_note.setStyleSheet("color:#B71C1C;")
             self.sp_save_btn.setEnabled(False)
             self.sp_export_btn.setEnabled(False)
+            self._check_outdated()
             return
         self.spectra_result = r
         notes = [t for t in (gsp.overall_text(r), gsp.ranges_text(r)) if t] + r['notes']
         warn = False
         if not per_sample and method not in gt.PAIRED and any(samples):
-            shared = gt.shared_sample_warnings(groups, samples)
-            if shared:
+            text = repeated_samples_text(groups, samples, what="this comparison")
+            if text:
                 warn = True
-                what = ", ".join(f"\u201c{g}\u201d {n} spectra from {k} sample"
-                                 f"{'s' if k != 1 else ''}" for g, n, k in shared)
-                notes.append(f"\u26a0 The spectra are not independent replicates ({what}, "
-                             f"Sample column): the regions are too wide / the p-values too "
-                             f"small \u2014 tick \u201cOne value per sample\u201d.")
+                notes.append(text)
         if r['n_pairs'] is not None:
-            notes.append(f"{r['n_pairs']} pairs (Sample column).")
+            two = list(dict.fromkeys(g for g in groups if g != gs.NO_GROUP))
+            notes.append(paired_note(r['n_pairs'], groups, samples, None, two[0], two[1])
+                         if len(two) == 2 else f"{r['n_pairs']} pairs (Sample column).")
         self.sp_note.setText(" ".join(notes))
         self.sp_note.setStyleSheet("color:#B71C1C;" if warn else "color:#333;")
         self._draw_spectra()
         self.sp_save_btn.setEnabled(True)
+        self._check_outdated()
         self.sp_export_btn.setEnabled(True)
 
     def _draw_spectra(self):
@@ -1147,8 +1392,9 @@ class GroupStatisticsDialog(QDialog):
         ax2 = fig.add_subplot(212, sharex=ax1)
         x = r['x']
         show = self.sp_show_combo.currentData()
+        cmap = self.group_colours()
         for i, g in enumerate(r['names']):
-            c = _GROUP_COLOURS[i % len(_GROUP_COLOURS)]
+            c = cmap.get(g, _GROUP_COLOURS[i % len(_GROUP_COLOURS)])
             m = r['mean'][g]
             w = r['sd'][g] if show == 'sd' else r['ci'][g]
             ax1.plot(x, m, color=c, lw=1.4, label=f"{g} (n={r['n'][g]})")
@@ -1271,6 +1517,7 @@ class GroupStatisticsDialog(QDialog):
         self.fit_settings = dlg.settings()
         save_peak_fit_settings(self.fit_settings)
         self._update_fit_summary()
+        self._check_outdated()
 
     @staticmethod
     def _extent_of(spectra):
@@ -1417,6 +1664,76 @@ class GroupStatisticsDialog(QDialog):
             return f"range A {ra} or range B {rb}"
         return f"the range {ra}"
 
+    def keyPressEvent(self, event):
+        """Ctrl+Z undoes the last change of the table also when the table does
+        not have the focus -- e.g. right after pressing 'Clear' or 'Set group of
+        selected rows...' (the button then has the focus). A text field or
+        number box keeps its own Ctrl+Z (it handles the key before it gets here)."""
+        from PyQt5.QtGui import QKeySequence
+        if event.matches(QKeySequence.Undo):
+            self.table.undo()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _current_state(self):
+        return (tuple(self.groups()), tuple(self.samples()),
+                repr(sorted(self.value_settings().items())), repr(self.fit_settings))
+
+    def _check_outdated(self, *_):
+        """Show 'changed - press Compute' (and an orange Compute button) while
+        the results on screen belong to other groups, samples or value."""
+        if not hasattr(self, 'outdated_label'):
+            return
+        stale = (self.comparison is not None and self._result_state is not None
+                 and self._current_state() != self._result_state)
+        # the Spectra tab depends on the groups and samples only (its own
+        # settings are applied with Compare spectra)
+        sp_state = getattr(self, '_spectra_state', None)
+        sp_stale = (sp_state is not None
+                    and (tuple(self.groups()), tuple(self.samples())) != sp_state)
+        if stale:
+            self.outdated_label.setText(
+                "Groups, samples or the value changed since the last Compute \u2014 press "
+                "Compute" + (" and Compare spectra" if sp_stale else " (or Compare spectra)")
+                + " to update the results.")
+        elif sp_stale:
+            self.outdated_label.setText(
+                "Groups or samples changed since the last Compare spectra \u2014 press "
+                "Compare spectra (Spectra tab) to update it.")
+        self.outdated_label.setVisible(stale or sp_stale)
+        self.compute_btn.setStyleSheet(
+            "font-weight:bold; background-color:#FFE0B2;" if stale else "font-weight:bold;")
+        if hasattr(self, 'sp_compare_btn'):
+            self.sp_compare_btn.setStyleSheet(
+                "font-weight:bold; background-color:#FFE0B2;" if sp_stale
+                else "font-weight:bold;")
+
+    def _recompute_shown(self, *_):
+        """Test or 'One value per sample' changed: recompute the results that
+        are on screen (nothing happens before the first Compute)."""
+        if self.comparison is not None:
+            self.compute()
+        # also when the last comparison failed (e.g. a paired test with three
+        # groups): the new test may work, and the old message must not stay
+        if getattr(self, '_spectra_requested', False):
+            self.compute_spectra()
+
+    def _cached_values(self, groups, v):
+        """The values of the spectra for these value settings -- computed once
+        and reused while only the test or the per-sample choice changes (a
+        peak fit of thousands of spectra takes a while). Whole-spectrum values
+        depend on the groups too, so they are part of the key there."""
+        key = (repr(sorted(v.items())), repr(self.fit_settings),
+               tuple(groups) if gv.is_whole_spectrum(v['kind']) else None)
+        if self._values_cache is not None and self._values_cache[0] == key:
+            return self._values_cache[1], self._values_cache[2]
+        values, info = gv.compute_values(self.spectra, groups, v,
+                                         fit_settings=self.fit_settings,
+                                         mapper=self._fit_mapper)
+        self._values_cache = (key, values, info)
+        return values, info
+
     def compute(self):
         groups = self.groups()
         if len([g for g in set(groups) if g]) < 2:
@@ -1432,9 +1749,7 @@ class GroupStatisticsDialog(QDialog):
         self.remembered_settings.update(v)
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            values, info = gv.compute_values(self.spectra, groups, v,
-                                             fit_settings=self.fit_settings,
-                                             mapper=self._fit_mapper)
+            values, info = self._cached_values(groups, v)
         except Exception as exc:
             logger.exception("Group statistics: computing the values failed")
             QMessageBox.warning(self, "Group Statistics",
@@ -1470,8 +1785,17 @@ class GroupStatisticsDialog(QDialog):
         self.values, self.data, self.comparison = values, data, result
         missing = sum(1 for g, val in zip(groups, values) if g and not np.isfinite(val))
         notes = []
+        switched = bool(getattr(self, 'test_switched_note', ''))
+        if switched:
+            notes.append(self.test_switched_note)
+            self.test_switched_note = ''
         if result.get('test') is None:
             notes.append("No test was computed.")
+        elif len(result.get('groups') or []) == 2 and method in ('welch_gh', 'dunn'):
+            notes.append("With two groups this is the "
+                         + ("Welch t-test (Games\u2013Howell" if method == 'welch_gh'
+                            else "Mann\u2013Whitney U test (Dunn")
+                         + " only adds the pairs when there are three or more groups).")
         if info.get('note'):
             notes.append(info['note'])
         if info.get('explained') is not None and np.isfinite(info['explained']):
@@ -1517,6 +1841,8 @@ class GroupStatisticsDialog(QDialog):
                          + ", ".join(result['excluded']) + ".")
         if result['note']:
             notes.append(result['note'])
+        if paired is not None and result.get('test') is not None:
+            notes.append(paired_note(len(paired[0]), groups, samples, values, a, b))
         # Pseudoreplication -- only when the user filled the Sample column (the
         # new, optional feature): without it the window behaves exactly as before
         if per_sample:
@@ -1527,15 +1853,11 @@ class GroupStatisticsDialog(QDialog):
                     "power; a non-significant result is not evidence of no difference.")
             self.replicate_warned = False
         else:
-            warned = (gt.shared_sample_warnings(groups, samples, values)
-                      if any(samples) and method not in gt.PAIRED else [])
-            if warned:
-                what = ", ".join(f"\u201c{g}\u201d {n} spectra from {k} sample"
-                                 f"{'s' if k != 1 else ''}" for g, n, k in warned)
-                notes.append(f"\u26a0 The spectra are not independent replicates ({what}, "
-                             f"Sample column): the p-value is too small \u2014 tick "
-                             f"\u201cOne value per sample\u201d.")
-            self.replicate_warned = bool(warned)
+            text = (repeated_samples_text(groups, samples, values)
+                    if any(samples) and method not in gt.PAIRED else "")
+            if text:
+                notes.append(text)
+            self.replicate_warned = bool(text)
         self.note.setText(" ".join(notes))
         # Red whenever the test is not what was asked for: no test at all,
         # or a whole group left out (the test then compares fewer groups)
@@ -1543,12 +1865,15 @@ class GroupStatisticsDialog(QDialog):
         self.note.setStyleSheet("color:#B71C1C;"
                                 if result.get('test') is None or self.left_out_groups
                                 or missing or any(n.startswith("\u26a0") for n in notes)
+                                else "color:#E65100;" if switched   # the switch, as before Compute
                                 else "color:#555;")
         self._show_box_plot()
         self._show_summary()
         self._show_tests()
         self._show_values(groups)
         self.export_btn.setEnabled(bool(data))
+        self._result_state = self._current_state()
+        self._check_outdated()
         self.copy_sentence_btn.setEnabled(bool(result.get('sentence')))
 
     def copy_results_sentence(self):
@@ -1587,7 +1912,9 @@ class GroupStatisticsDialog(QDialog):
         kind = self.plot_combo.currentData()
         footnote = ''
         if names:
-            colours = [_GROUP_COLOURS[i % len(_GROUP_COLOURS)] for i in range(len(names))]
+            cmap = self.group_colours()
+            colours = [cmap.get(g, _GROUP_COLOURS[i % len(_GROUP_COLOURS)])
+                       for i, g in enumerate(names)]
             positions = list(range(1, len(names) + 1))
             if kind == 'box':
                 ax.boxplot(values, showfliers=False, widths=0.5,
@@ -1658,6 +1985,12 @@ class GroupStatisticsDialog(QDialog):
                 title += ("\nnot in the test: group " if len(left_out) == 1
                           else "\nnot in the test: groups ") + ", ".join(left_out)
             ax.set_title(title, fontsize=9, color='#B71C1C' if left_out else 'black')
+        elif r:
+            # values and summary are shown, but no p-value: say why in the title
+            import textwrap as _tw0
+            reason = (r.get('note') or '').strip() or "see the note below the plot"
+            ax.set_title(_tw0.fill("No test \u2014 " + reason, 110), fontsize=9,
+                         color='#B71C1C')
         if footnote:
             import textwrap as _tw
             fig.text(0.01, 0.005, _tw.fill(footnote, 140), fontsize=7.5, color='#555555',
@@ -1675,9 +2008,12 @@ class GroupStatisticsDialog(QDialog):
         for r, row in enumerate(rows):
             cells = [row['group'], str(row['n'])] + [f"{row[k]:.6g}" if np.isfinite(row[k]) else "–"
                                                        for k in ('mean', 'sd', 'median', 'min', 'max')]
+            cmap = self.group_colours()
             for c, text in enumerate(cells):
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if c == 0 and row['group'] in cmap:
+                    item.setBackground(QBrush(QColor(_tint(cmap[row['group']]))))
                 t.setItem(r, c, item)
         t.resizeColumnsToContents()
 
@@ -1699,7 +2035,8 @@ class GroupStatisticsDialog(QDialog):
                 + (f"<br>Pairs of samples: {r['n_pairs']}" if r.get('n_pairs') else "")
                 + (" &mdash; one value per sample" if self.per_sample_check.isChecked() else "")
                 + "</p>",
-                f"<p>{stat_line}, <b>{html.escape(gs.p_text(r['p']))}</b>{effect}</p>"]
+                f"<p>{stat_line}, <b>{html.escape(gs.p_text(r['p']))}</b>"
+                f"{html.escape(_exact_p(r['p'], r.get('method')))}{effect}</p>"]
         if len(r['groups']) > 2 and r.get('pairs'):
             centre = "means" if r['parametric'] else "medians"
             adjusted_by = r.get('pairs_adjusted_by')
@@ -1718,7 +2055,8 @@ class GroupStatisticsDialog(QDialog):
                 parts.append(f"<tr><td>{html.escape(pr['a'])} – {html.escape(pr['b'])}</td>"
                             f"<td>{pr['difference']:.4g}</td>{ci}"
                             f"<td>{html.escape(gs.format_p(pr['p']))}</td>"
-                            f"<td><b>{html.escape(gs.format_p(pr['p_holm']))}</b></td>"
+                            f"<td><b>{html.escape(gs.format_p(pr['p_holm']))}</b>"
+                            f"{html.escape(_exact_p(pr['p_holm'], r.get('method')))}</td>"
                             f"<td>{pr['effect']:.3g}</td></tr>")
             parts.append("</table>")
         parts.append("<p style='color:#555'>p below 0.05 is usually read as a statistically "
@@ -1783,12 +2121,15 @@ class GroupStatisticsDialog(QDialog):
 
     def _show_values(self, groups):
         t = self.values_table
+        cmap = self.group_colours()
         t.setRowCount(len(self.labels))
         for r, (label, g, v, smp) in enumerate(zip(self.labels, groups, self.values,
                                                    self.samples())):
             for c, text in enumerate((label, g, f"{v:.6g}" if np.isfinite(v) else "–", smp)):
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if c == 1 and g in cmap:
+                    item.setBackground(QBrush(QColor(_tint(cmap[g]))))
                 t.setItem(r, c, item)
 
     # ------------------------------------------------------------------ export / help

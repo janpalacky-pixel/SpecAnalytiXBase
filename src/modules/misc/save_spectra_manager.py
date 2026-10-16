@@ -616,20 +616,88 @@ class SaveManager:
                     state['operations']['original_spectra'] = ops_baseline
                 if hasattr(op.operations_manager, 'import_batches'):
                     state['operations']['import_batches'] = op.operations_manager.import_batches
+                # The windows of the operations pre-fill their last settings
+                # only for the same selection (last_selection_hash), and some
+                # read last_op_settings rather than current_parameters --
+                # without these two, the current_parameters saved above were
+                # never used after loading. last_op_settings is usually the
+                # same as current_parameters[name]: store only the names then.
+                last = getattr(op, 'last_op_settings', None) or {}
+                cur = op.current_parameters or {}
+                same = [k for k, v in last.items()
+                        if k in cur and self._values_equal(v, cur[k])]
+                differ = {k: v for k, v in last.items() if k not in same}
+                if last:
+                    state['operations']['last_op_settings_same'] = same
+                    if differ:
+                        state['operations']['last_op_settings'] = differ
+                if getattr(op, 'last_selection_hash', None):
+                    state['operations']['last_selection_hash'] = op.last_selection_hash
 
         # Melting Curve Analysis' "Saved Fits" -- a named container of
         # complete result snapshots (curve, fit, thermodynamics) the user
         # explicitly asked to keep around for comparison via "Save Current
-        # Fit", independent of whatever curve is currently active. Unlike
-        # the many small "last dialog settings" caches elsewhere in this
-        # app (never snapshotted -- they're throwaway conveniences), this
-        # one holds content the user deliberately chose to keep, so losing
-        # it on every snapshot load defeats its own purpose. Only written
+        # Fit", independent of whatever curve is currently active. It holds
+        # content the user deliberately chose to keep, so losing it on every
+        # snapshot load defeats its own purpose. (Since 2026-10-16 the
+        # windows' last settings, band markers, plot appearance, Group
+        # Statistics groups and 2D Map ROI regions are kept too -- see
+        # below -- so reopening a snapshot continues the work.) Only written
         # when there's actually something in it, same reasoning as the
         # None-filtering on plot_settings above.
         mcc = getattr(main_controller, 'melting_curve_controller', None)
         if mcc is not None and getattr(mcc, 'saved_fits', None):
             state['melting_curve_saved_fits'] = mcc.saved_fits
+
+        # 2D Map ROI regions the user drew (per map) -- also deliberate work
+        # worth keeping, like the saved fits above. Plain data: region type,
+        # geometry, pixel labels, optional name. Only written when present.
+        m2d = getattr(main_controller, 'map2d_controller', None)
+        if m2d is not None and getattr(m2d, 'saved_rois', None):
+            state['map2d_rois'] = m2d.saved_rois
+
+        # Band markers drawn on the main plot (Band markers... button).
+        bm = getattr(main_controller, 'band_marker_manager', None)
+        try:
+            if bm is not None and len(bm):
+                state['band_markers'] = bm.to_dict()
+        except Exception:
+            logger.warning("Snapshot: could not store the band markers", exc_info=True)
+
+        # Plot appearance set in the properties dialogs: axis titles and
+        # fonts, legend, grid lines, layout -- only what differs from the
+        # defaults.
+        appearance = {}
+        for key, attr in _APPEARANCE_MANAGERS:
+            mgr = getattr(main_controller, attr, None)
+            cur = getattr(mgr, 'current_settings', None)
+            if isinstance(cur, dict) and cur != getattr(mgr, 'default_settings', None):
+                appearance[key] = dict(cur)
+        if appearance:
+            state['plot_appearance'] = appearance
+
+        # Group Statistics: the groups / samples typed for the spectra (by
+        # unique_id, which the snapshot keeps) and the window's choices
+        # (value, test, Spectra tab).
+        gsc = getattr(main_controller, 'group_statistics_controller', None)
+        if gsc is not None and (getattr(gsc, 'saved_groups', None)
+                                or getattr(gsc, 'saved_settings', None)):
+            state['group_statistics'] = {'groups': gsc.saved_groups,
+                                         'settings': gsc.saved_settings}
+
+        # Last settings of the processing windows that keep their own (not
+        # current_parameters): without the preview caches (keys starting
+        # with '_', large arrays), except the x-axis alignment's reference.
+        dialog_settings = {}
+        for attr in _DIALOG_SETTINGS_CONTROLLERS:
+            last = getattr(getattr(main_controller, attr, None), '_last_settings', None)
+            if last:
+                kept = {k: v for k, v in last.items()
+                        if not str(k).startswith('_') or k == '_cached_reference_key'}
+                if kept:
+                    dialog_settings[attr] = kept
+        if dialog_settings:
+            state['dialog_settings'] = dialog_settings
 
         return state
 
@@ -1005,6 +1073,17 @@ class SaveManager:
                 self._restore_melting_curve_saved_fits(
                     main_controller, state['melting_curve_saved_fits'])
 
+            if 'map2d_rois' in state:
+                self._restore_map2d_rois(main_controller, state['map2d_rois'])
+            if 'band_markers' in state:
+                self._restore_band_markers(main_controller, state['band_markers'])
+            if 'plot_appearance' in state:
+                self._restore_plot_appearance(main_controller, state['plot_appearance'])
+            if 'group_statistics' in state:
+                self._restore_group_statistics(main_controller, state['group_statistics'])
+            if 'dialog_settings' in state:
+                self._restore_dialog_settings(main_controller, state['dialog_settings'])
+
             if hasattr(main_controller, 'spectrum_selector'):
                 self._report_progress(progress_callback, 5, "Restoring spectrum selection…")
                 self._restore_spectrum_selection(main_controller, state)
@@ -1222,6 +1301,76 @@ class SaveManager:
             # operations, selection) has been restored, so the grid/plot
             # isn't rebuilt multiple times over the course of one load.
 
+    def _restore_band_markers(self, main_controller, data: dict) -> None:
+        try:
+            bm = getattr(main_controller, 'band_marker_manager', None)
+            if bm is not None:
+                bm.from_dict(data or {})
+        except Exception:
+            logger.exception("Restoring the band markers failed")
+
+    def _restore_plot_appearance(self, main_controller, appearance: dict) -> None:
+        """Axis titles/fonts, legend, grid lines, layout: each starts from
+        its defaults, then the saved values (a snapshot that has none of a
+        kind resets that kind to the defaults -- it was not changed then)."""
+        for key, attr in _APPEARANCE_MANAGERS:
+            try:
+                mgr = getattr(main_controller, attr, None)
+                if mgr is None or not isinstance(getattr(mgr, 'current_settings', None), dict):
+                    continue
+                mgr.current_settings.clear()
+                mgr.current_settings.update(dict(mgr.default_settings))
+                mgr.current_settings.update(appearance.get(key) or {})
+            except Exception:
+                logger.exception("Restoring the plot appearance (%s) failed", key)
+
+    def _restore_group_statistics(self, main_controller, data: dict) -> None:
+        """In place (an open window holds these dicts by reference)."""
+        try:
+            gsc = getattr(main_controller, 'group_statistics_controller', None)
+            if gsc is None:
+                return
+            for attr, key in (('saved_groups', 'groups'), ('saved_settings', 'settings')):
+                target = getattr(gsc, attr)
+                target.clear()
+                target.update(data.get(key) or {})
+        except Exception:
+            logger.exception("Restoring the Group Statistics groups failed")
+
+    def _restore_dialog_settings(self, main_controller, data: dict) -> None:
+        """The windows' last settings; their controllers are created on first
+        use, so create the missing ones here (same as the operations do)."""
+        import importlib
+        for attr, settings in (data or {}).items():
+            spec = _DIALOG_SETTINGS_CONTROLLERS.get(attr)
+            if spec is None:
+                continue
+            try:
+                ctrl = getattr(main_controller, attr, None)
+                if ctrl is None:
+                    module, cls = spec
+                    ctrl = getattr(importlib.import_module(module), cls)(main_controller)
+                    setattr(main_controller, attr, ctrl)
+                ctrl._last_settings = dict(settings)
+            except Exception:
+                logger.exception("Restoring the last settings of %s failed", attr)
+
+    def _restore_map2d_rois(self, main_controller, saved_rois: dict) -> None:
+        """Restore the 2D Map's remembered ROI regions (see _build_state).
+        In place, like the saved fits; a snapshot without the key (older, or
+        no regions drawn) leaves the current ones untouched -- they are only
+        drawn again on a map whose pixels (labels) and size match anyway."""
+        try:
+            m2d = getattr(main_controller, 'map2d_controller', None)
+            if m2d is None:
+                return
+            if not hasattr(m2d, 'saved_rois'):
+                m2d.saved_rois = {}
+            m2d.saved_rois.clear()
+            m2d.saved_rois.update(saved_rois)
+        except Exception:
+            logger.exception("Restoring the 2D Map ROI regions failed")
+
     def _restore_melting_curve_saved_fits(self, main_controller, saved_fits: dict) -> None:
         """Restore Melting Curve Analysis' "Saved Fits" container (see
         _build_state's comment on why this -- unlike every other dialog's
@@ -1420,6 +1569,17 @@ class SaveManager:
                 logger.warning(
                     "Snapshot: failed restoring current_parameters",
                     exc_info=True)
+        try:
+            if 'last_op_settings_same' in ops or 'last_op_settings' in ops:
+                cur = op.current_parameters or {}
+                last = {k: cur[k] for k in ops.get('last_op_settings_same', []) if k in cur}
+                last.update(ops.get('last_op_settings') or {})
+                op.last_op_settings = last
+            if ops.get('last_selection_hash'):
+                op.last_selection_hash = ops['last_selection_hash']
+        except Exception:
+            logger.warning("Snapshot: failed restoring the windows' last settings",
+                           exc_info=True)
         if 'import_batches' in ops and hasattr(mgr, 'import_batches'):
             try:
                 mgr.import_batches = ops['import_batches']
@@ -1504,3 +1664,23 @@ import re   # needed by _safe_filename – import at module level
 
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
+
+# snapshot key -> main_controller attribute of the plot-appearance managers
+_APPEARANCE_MANAGERS = (
+    ('axis', 'axis_manager'),
+    ('legend', 'legend_manager'),
+    ('grid_lines', 'grid_manager'),
+    ('layout', 'constrained_layout_manager'),
+)
+# controllers that keep their window's last settings in _last_settings
+_DIALOG_SETTINGS_CONTROLLERS = {
+    'cd_unit_conversion_controller': (
+        'src.controllers.data_analysis.cd_unit_conversion_controller', 'CDUnitConversionController'),
+    'mean_centering_controller': (
+        'src.controllers.data_analysis.mean_centering_controller', 'MeanCenteringController'),
+    'xaxis_unit_conversion_controller': (
+        'src.controllers.data_analysis.xaxis_unit_conversion_controller',
+        'XAxisUnitConversionController'),
+    'xaxis_alignment_controller': (
+        'src.controllers.data_analysis.xaxis_alignment_controller', 'XAxisAlignmentController'),
+}

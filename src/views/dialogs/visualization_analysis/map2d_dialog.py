@@ -802,6 +802,96 @@ class Map2DDialog(QDialog):
                 spin.blockSignals(False)
         except Exception:
             pass
+        # ROI regions drawn the last time this map was open (remembered by
+        # the controller for the session and saved in snapshots)
+        self._restore_saved_rois()
+
+    # ── Remembered ROI regions ──────────────────────────────────────────
+    @staticmethod
+    def _pixel_id(sp):
+        """A pixel's identity: its spectrum's unique_id (never its name, which
+        can be renamed), else -- only outside the normal import -- its name."""
+        return (sp.get('metadata') or {}).get('unique_id') or sp.get('label', '')
+
+    def roi_key(self):
+        """Which map this is: its spectra (their unique_ids, in map order) and
+        their number. Renamed spectra are still the same map; the same file
+        imported again is a new map (new unique_ids) without old regions."""
+        import hashlib
+        ids = "\n".join(self._pixel_id(sp) for sp in self.spectra)
+        return f"{hashlib.sha1(ids.encode('utf-8')).hexdigest()[:16]}|{self.n_spectra}"
+
+    def roi_state(self):
+        """The ROI regions as plain data (no artists, no spectra): enough to
+        draw them again on the same map later or after loading a snapshot."""
+        regions = []
+        id_of = {sp.get('label', ''): self._pixel_id(sp) for sp in self.spectra}
+        for reg in self._roi_regions:
+            # 'ids' identify the pixels; 'labels' (their names now) only for reading
+            d = {'type': reg['type'], 'labels': list(reg['labels']),
+                 'ids': [id_of.get(l, l) for l in reg['labels']]}
+            for key in ('bounds', 'cx', 'cy', 'a', 'b', 'name'):
+                if reg.get(key) is not None:
+                    v = reg[key]
+                    d[key] = [float(x) for x in v] if key == 'bounds' else (
+                        v if key == 'name' else float(v))
+            if reg['type'] == 'lasso':
+                verts = reg.get('verts')
+                if verts is None and reg.get('patch') is not None:
+                    verts = reg['patch'].get_path().vertices
+                if verts is None:
+                    continue
+                d['verts'] = [[float(a), float(b)] for a, b in verts]
+            regions.append(d)
+        return {'n_rows': self._rows_spin.value(), 'n_cols': self._cols_spin.value(),
+                'exclude_mode': bool(self._roi_exclude_mode), 'regions': regions}
+
+    def restore_roi_state(self, state):
+        """Draw remembered ROI regions again -- only if the map has the same
+        size and every pixel of a region still exists (else that region is
+        skipped). Returns the number of regions restored."""
+        if not state or self._roi_regions:
+            return 0
+        if (state.get('n_rows'), state.get('n_cols')) != (self._rows_spin.value(),
+                                                          self._cols_spin.value()):
+            return 0
+        # by the pixels' identity (unique_id): a renamed pixel is still found
+        by_id = {self._pixel_id(sp): sp for sp in self.spectra}
+        by_label = {sp.get('label', ''): sp for sp in self.spectra}
+        n = 0
+        for d in state.get('regions', []):
+            if 'ids' in d:
+                found = [by_id.get(i) for i in d['ids']]
+            else:                               # a state without ids: by name
+                found = [by_label.get(l) for l in d.get('labels', [])]
+            if not found or any(sp is None for sp in found):
+                continue
+            labels = [sp.get('label', '') for sp in found]
+            reg = {'type': d['type'], 'labels': labels,
+                   'spectra': found, 'patch': None,
+                   'bounds': tuple(int(round(v)) for v in d['bounds'])
+                   if d.get('bounds') is not None else None}
+            for key in ('cx', 'cy', 'a', 'b', 'name'):
+                if key in d:
+                    reg[key] = d[key]
+            if d['type'] == 'lasso':
+                reg['verts'] = np.asarray(d.get('verts', []), dtype=float)
+            self._roi_regions.append(reg)
+            n += 1
+        if n:
+            if bool(state.get('exclude_mode')) != self._roi_exclude_mode:
+                self._toggle_roi_mode()
+            self._redraw_roi_patches()
+            self._map_canvas.draw_idle()
+            self._update_roi_count()
+            self._act_remove_roi.setEnabled(True)
+            self._act_clear_roi.setEnabled(True)
+        return n
+
+    def _restore_saved_rois(self):
+        saved = getattr(self.controller, 'saved_rois', None)
+        if saved:
+            self.restore_roi_state(saved.get(self.roi_key()))
 
     def _make_info_button(self, title, text):
         """Small orange '?' button — same style used throughout the rest
@@ -2534,6 +2624,9 @@ class Map2DDialog(QDialog):
         # n_rows/n_cols, so only this handler clears ROIs — see
         # _invalidate_map for the mode-switch case this used to also do.
         self._clear_all_rois()
+        # ... but if the new size is the one the remembered regions were drawn
+        # on (e.g. a text map whose size is typed in), bring them back
+        self._restore_saved_rois()
         n_rows  = self._rows_spin.value()
         n_cols  = self._cols_spin.value()
         is_fast = (self._radio_intensity.isChecked()
@@ -6021,7 +6114,8 @@ class Map2DDialog(QDialog):
                 )
                 ax.add_patch(artist)
             elif kind == 'lasso':
-                verts = reg['patch'].get_path().vertices
+                verts = (reg['verts'] if reg.get('verts') is not None
+                         else reg['patch'].get_path().vertices)
                 artist = PathPatch(
                     MPath(verts),
                     linewidth=1.5, edgecolor='white', facecolor='none',
@@ -6189,7 +6283,7 @@ class Map2DDialog(QDialog):
         form = QFormLayout()
         edits = []
         for i, reg in enumerate(self._roi_regions):
-            e = QLineEdit(f"Region {i + 1}")
+            e = QLineEdit(reg.get('name') or f"Region {i + 1}")
             edits.append(e)
             form.addRow(f"Region {i + 1} ({reg['type']}, {len(reg['labels'])} pixels):", e)
         lay.addLayout(form)
@@ -6219,6 +6313,9 @@ class Map2DDialog(QDialog):
         if asked is None:
             return
         names, rest = asked
+        for reg, name in zip(self._roi_regions, names):
+            if name.strip():
+                reg['name'] = name.strip()         # remembered with the regions
         spectra, groups, overlap = self.roi_groups(names, rest)
         if not spectra:
             return
@@ -6234,8 +6331,11 @@ class Map2DDialog(QDialog):
                      "counted for the first region only.")
         if not hasattr(self, '_roi_group_settings'):
             self._roi_group_settings = {}
+        # Group Statistics keeps groups by spectrum identity (unique_id)
+        keyed = {((sp.get('metadata') or {}).get('unique_id') or sp.get('label', '')):
+                 groups[sp.get('label', '')] for sp in spectra}
         self._roi_group_dialog = GroupStatisticsDialog(
-            spectra, self, groups, self._roi_group_settings, source_note=note)
+            spectra, self, keyed, self._roi_group_settings, source_note=note)
         self._roi_group_dialog.exec_()
 
     def _show_roi_statistics(self):
