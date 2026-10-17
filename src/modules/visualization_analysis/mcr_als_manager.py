@@ -475,6 +475,7 @@ class MCRALSManager:
             converged = False
             iterations_used = 0
 
+            denom = None
             for it in range(max_iterations):
                 # Solve for C given ST. nnls(ST.T, D[i, :]) for every
                 # row i reduces to solving nnls(ST.T, D.T[:, i]) for every
@@ -544,9 +545,18 @@ class MCRALSManager:
                 if self.references_fixed:
                     ST = _impose_refs(ST)
 
-                D_hat = C @ ST
-                denom = np.sum(D ** 2)
-                lof = 100.0 * np.sqrt(np.sum((D - D_hat) ** 2) / denom) if denom > 0 else 0.0
+                # ||D - C ST||^2 without forming the (n_spectra x n_points)
+                # products every iteration (270 MB each for a 21 000-spectrum
+                # map): ||D||^2 - 2 sum(C * D ST^T) + sum((C^T C) * (ST ST^T))
+                if denom is None:
+                    denom = float(np.einsum('ij,ij->', D, D))
+                resid2 = (denom - 2.0 * float(np.sum(C * (D @ ST.T)))
+                          + float(np.sum((C.T @ C) * (ST @ ST.T))))
+                if resid2 < 1e-4 * denom:
+                    # a nearly perfect fit: the short formula loses digits
+                    # (it subtracts nearly equal numbers) -- compute directly
+                    resid2 = float(np.sum((D - C @ ST) ** 2))
+                lof = 100.0 * np.sqrt(max(resid2, 0.0) / denom) if denom > 0 else 0.0
                 iterations_used = it + 1
 
                 if prev_lof is not None and abs(prev_lof - lof) < tol:

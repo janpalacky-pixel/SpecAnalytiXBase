@@ -126,43 +126,43 @@ class NMFController:
 
         X, W0, H0 = ref.X_nn, ref.W, ref.H
         m = X.shape[0]
-        residuals = X - W0 @ H0
+        model = W0 @ H0
+        residuals = X - model
         rng = np.random.RandomState(random_state)
+        # the rows every replicate draws, in the same order as before
+        row_indices = [rng.randint(0, m, size=m) for _ in range(n_resamples)]
+
+        # The replicates are independent refits: they run in several
+        # processes when that pays off (see parallel_bootstrap.py); replicate
+        # b is refitted with random_state=b either way.
+        from src.modules.utils.parallel_bootstrap import run_replicates
+        common = {'model': np.asarray(model, float),
+                  'residuals': np.asarray(residuals, float),
+                  'H0': np.asarray(H0, float),
+                  'x_axis': np.asarray(ref.x_axis, float),
+                  'labels': list(ref.labels),
+                  'settings': {'n_components': n_components, 'init': init,
+                               'max_iter': max_iter, 'references': references,
+                               'fix_references': fix_references}}
+        done = run_replicates(
+            lambda c, b, rows: _nmf_bootstrap_replicate(c, b, rows, ctrl=self),
+            common, row_indices, progress_callback=progress_callback,
+            cancel_check=cancel_check, table_bytes=X.nbytes,
+            worker_fn=_nmf_bootstrap_replicate)
 
         H_samples, W_samples = [], []
         n_failed = 0
         first_failure_reason = None
-        for b in range(n_resamples):
-            if cancel_check is not None and cancel_check():
-                break
-            if progress_callback is not None:
-                progress_callback(b, n_resamples)
-            row_idx = rng.randint(0, m, size=m)
-            X_b = W0 @ H0 + residuals[row_idx, :]
-            synth_spectra = [
-                {'label': ref.labels[i], 'x_scale': ref.x_axis,
-                 'y_scale': X_b[i, :], 'metadata': {}}
-                for i in range(m)
-            ]
-            trial_mgr, ok = self.compute_trial(
-                synth_spectra, n_components=n_components, init=init,
-                max_iter=max_iter, random_state=b, references=references,
-                fix_references=fix_references, init_H=H0)
+        for _b, ok, res, err in done:
             if ok:
-                H_samples.append(trial_mgr.H)
-                W_samples.append(trial_mgr.W)
+                H_samples.append(res[0])
+                W_samples.append(res[1])
             else:
                 n_failed += 1
-                # Bug found in practice: every failed replicate's own
-                # last_error (e.g. a shape mismatch, a non-overlapping
-                # range) used to be thrown away the moment ok=False --
-                # the dialog and the log both ended up with nothing but
-                # "All N bootstrap resamples failed to fit.", with no way
-                # to tell why even a single one failed. Keep the FIRST
-                # one (later ones are typically the same root cause
-                # repeating) and fold it into ref.last_error below.
+                # keep the FIRST failure's reason (later ones are typically
+                # the same root cause repeating) for ref.last_error below
                 if first_failure_reason is None:
-                    first_failure_reason = trial_mgr.last_error
+                    first_failure_reason = err
 
         if not H_samples:
             ref.last_error = (
@@ -357,3 +357,22 @@ class NMFController:
         except Exception as e:
             logger.error(f"Could not persist NMF settings: {e}")
         self.dialog = None
+
+
+def _nmf_bootstrap_replicate(common, b, row_idx, ctrl=None):
+    """One NMF bootstrap replicate (top-level, so worker processes can run
+    it): refit model + resampled residuals, warm-started from the reference
+    H, with random_state=b. Returns (ok, (H, W), error)."""
+    X_b = np.asarray(common['model']) + np.asarray(common['residuals'])[row_idx, :]
+    x_axis = np.asarray(common['x_axis'])
+    labels = common['labels']
+    synth_spectra = [{'label': labels[i], 'x_scale': x_axis, 'y_scale': X_b[i, :],
+                      'metadata': {}} for i in range(X_b.shape[0])]
+    s = common['settings']
+    trial_mgr, ok = (ctrl or NMFController(None)).compute_trial(
+        synth_spectra, n_components=s['n_components'], init=s['init'],
+        max_iter=s['max_iter'], random_state=b, references=s['references'],
+        fix_references=s['fix_references'], init_H=np.asarray(common['H0']))
+    if ok:
+        return True, (trial_mgr.H, trial_mgr.W), None
+    return False, None, trial_mgr.last_error

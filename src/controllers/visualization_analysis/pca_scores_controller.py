@@ -99,6 +99,13 @@ class PcaScoresController:
 
         recon = U0 @ np.diag(s0) @ Vt0
         residuals = X0 - recon
+        # Each replicate resamples whole spectra (columns). Gathering
+        # columns of an (n_wl x n_spectra) array is slow (2 s for a
+        # 1 600 x 21 000 map); the transposed, row-contiguous copies make it
+        # a fast row gather (0.1 s), and the SVD of the transposed
+        # replicate gives the same components (U and Vt swap).
+        recon_T = np.ascontiguousarray(recon.T)
+        residuals_T = np.ascontiguousarray(residuals.T)
         rng = np.random.RandomState(random_state)
 
         U_samples, Vt_samples = [], []
@@ -110,11 +117,14 @@ class PcaScoresController:
             if progress_callback is not None:
                 progress_callback(b, n_resamples)
             col_idx = rng.randint(0, n_spectra, size=n_spectra)
-            X_b = recon + residuals[:, col_idx]
+            X_b_T = recon_T + residuals_T[col_idx]       # = (recon + residuals[:, col_idx]).T
             try:
-                U_b, s_b, Vt_b = np.linalg.svd(X_b, full_matrices=False)
-                U_b = U_b[:, :n_components].copy()
-                Vt_b = Vt_b[:n_components, :].copy()
+                # only the first n_components are needed: for a large
+                # table leading_svd() is ~4 x faster than a full SVD
+                from src.modules.visualization_analysis.factor_diagnostics import leading_svd
+                Uz, s_b, Vtz = leading_svd(X_b_T, n_components)
+                U_b = np.array(Vtz.T, copy=True)
+                Vt_b = np.array(Uz.T, copy=True)
 
                 # Sign alignment -- see SVDAnalysisController.
                 # compute_bootstrap_uncertainty's docstring for the full

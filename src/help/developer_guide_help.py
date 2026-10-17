@@ -3579,6 +3579,21 @@ def _natural_sort_key(cls, label):
             spectra&hellip;) via <code>large_selection.dialog_subset()</code> /
             <code>subset_for_dialog()</code> / <code>annotate_shown()</code>. 3 000 spectra: FFT
             Denoising opened in ~9 s &rarr; ~1 s, X-axis alignment ~7 s &rarr; ~2 s.</li>
+            <li><code>src/modules/utils/parallel_bootstrap.py</code>: <code>run_replicates()</code> for
+            the NMF / MCR-ALS bootstrap (also used by the 2D Map). The first replicate runs in-process
+            and is timed; if the rest would take &ge; 4 s and more than one worker is sensible, they run
+            in spawn processes (BLAS 1 thread each; workers = cores &minus; 1, limited by free memory
+            ~250 MB + 4 &times; table size each). A table larger than 64&nbsp;MB (e.g. a whole
+            map) is never sent to workers: each worker would hold copies of it (a 20-core PC ran out
+            of memory), and one refit of such a table already uses all cores through BLAS. Shared arrays go once to a temp folder (np.load
+            mmap); replicate b keeps random_state=b and the rows are drawn in the same order, so
+            the result is identical to the serial run. The in-process path calls the controller's own
+            <code>compute_trial</code> (tests can patch it); workers use the top-level
+            <code>_nmf_bootstrap_replicate</code> / <code>_mcr_bootstrap_replicate</code>. SVD / PCA
+            bootstrap replicates are a single SVD (already multi-threaded BLAS), so they are not
+            sent to processes; <code>factor_diagnostics.leading_svd()</code> computes only the
+            needed leading components (~4 &times; faster for 1 600 &times; 3 000). Tests:
+            <code>tests/test_parallel_bootstrap.py</code>.</li>
         </ul>
 
         <h2 id="group-statistics-design">Group Statistics</h2>

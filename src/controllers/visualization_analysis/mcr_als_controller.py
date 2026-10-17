@@ -125,42 +125,45 @@ class MCRALSController:
 
         D, C0, ST0 = ref.D, ref.C, ref.ST
         m = D.shape[0]
-        residuals = D - C0 @ ST0
+        model = C0 @ ST0
+        residuals = D - model
         rng = np.random.RandomState(random_state)
+        # the rows every replicate draws, in the same order as before
+        row_indices = [rng.randint(0, m, size=m) for _ in range(n_resamples)]
+
+        # The replicates are independent refits: they run in several
+        # processes when that pays off (see parallel_bootstrap.py); replicate
+        # b is refitted with random_state=b either way.
+        from src.modules.utils.parallel_bootstrap import run_replicates
+        common = {'model': np.asarray(model, float),
+                  'residuals': np.asarray(residuals, float),
+                  'ST0': np.asarray(ST0, float),
+                  'x_axis': np.asarray(ref.x_axis, float),
+                  'labels': list(ref.labels),
+                  'settings': {'n_components': n_components,
+                               'max_iterations': max_iterations, 'tol': tol,
+                               'c_nonneg': c_nonneg, 'st_nonneg': st_nonneg,
+                               'normalize_spectra': normalize_spectra,
+                               'closure': closure, 'references': references,
+                               'fix_references': fix_references}}
+        done = run_replicates(
+            lambda c, b, rows: _mcr_bootstrap_replicate(c, b, rows, ctrl=self),
+            common, row_indices, progress_callback=progress_callback,
+            cancel_check=cancel_check, table_bytes=D.nbytes,
+            worker_fn=_mcr_bootstrap_replicate)
 
         ST_samples, C_samples = [], []
         n_failed = 0
         first_failure_reason = None
-        for b in range(n_resamples):
-            if cancel_check is not None and cancel_check():
-                break
-            if progress_callback is not None:
-                progress_callback(b, n_resamples)
-            row_idx = rng.randint(0, m, size=m)
-            D_b = C0 @ ST0 + residuals[row_idx, :]
-            synth_spectra = [
-                {'label': ref.labels[i], 'x_scale': ref.x_axis,
-                 'y_scale': D_b[i, :], 'metadata': {}}
-                for i in range(m)
-            ]
-            trial_mgr, ok = self.compute_trial(
-                synth_spectra, n_components=n_components, init='svd',
-                max_iterations=max_iterations, tol=tol,
-                c_nonneg=c_nonneg, st_nonneg=st_nonneg,
-                normalize_spectra=normalize_spectra, closure=closure,
-                random_state=b, references=references,
-                fix_references=fix_references, init_ST=ST0)
+        for _b, ok, res, err in done:
             if ok:
-                ST_samples.append(trial_mgr.ST)
-                C_samples.append(trial_mgr.C)
+                ST_samples.append(res[0])
+                C_samples.append(res[1])
             else:
                 n_failed += 1
-                # Same bug fixed in NMFController.compute_bootstrap_uncertainty:
-                # each failed replicate's own last_error was discarded the
-                # moment ok=False, leaving no way to tell why even one
-                # resample failed. Keep the first one.
+                # keep the FIRST failure's reason for ref.last_error below
                 if first_failure_reason is None:
-                    first_failure_reason = trial_mgr.last_error
+                    first_failure_reason = err
 
         if not ST_samples:
             ref.last_error = (
@@ -346,3 +349,25 @@ class MCRALSController:
         except Exception as e:
             logger.error(f"Could not persist MCR-ALS settings: {e}")
         self.dialog = None
+
+
+def _mcr_bootstrap_replicate(common, b, row_idx, ctrl=None):
+    """One MCR-ALS bootstrap replicate (top-level, so worker processes can
+    run it): refit model + resampled residuals, warm-started from the
+    reference ST, with random_state=b. Returns (ok, (ST, C), error)."""
+    D_b = np.asarray(common['model']) + np.asarray(common['residuals'])[row_idx, :]
+    x_axis = np.asarray(common['x_axis'])
+    labels = common['labels']
+    synth_spectra = [{'label': labels[i], 'x_scale': x_axis, 'y_scale': D_b[i, :],
+                      'metadata': {}} for i in range(D_b.shape[0])]
+    s = common['settings']
+    trial_mgr, ok = (ctrl or MCRALSController(None)).compute_trial(
+        synth_spectra, n_components=s['n_components'], init='svd',
+        max_iterations=s['max_iterations'], tol=s['tol'],
+        c_nonneg=s['c_nonneg'], st_nonneg=s['st_nonneg'],
+        normalize_spectra=s['normalize_spectra'], closure=s['closure'],
+        random_state=b, references=s['references'],
+        fix_references=s['fix_references'], init_ST=np.asarray(common['ST0']))
+    if ok:
+        return True, (trial_mgr.ST, trial_mgr.C), None
+    return False, None, trial_mgr.last_error

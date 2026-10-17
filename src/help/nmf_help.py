@@ -445,6 +445,17 @@ def get_nmf_help_content():
 
     <hr>
     <h2 id="bootstrap-uncertainty">Bootstrap Uncertainty</h2>
+    <div class="tip"><b>Speed: several processor cores.</b> Every resample is a complete
+    refit, and the resamples are independent of each other. When they would take more
+    than a few seconds one after the other, they run in parallel worker processes, one
+    per processor core except one (fewer if there is little free memory) &mdash; like
+    Automated Baseline. Starting the workers takes a few seconds, so short jobs simply
+    run one after the other. A very large table (more than 64&nbsp;MB, e.g. a whole 2D map
+    of 21&nbsp;000 spectra) is always refitted one resample after the other: every worker would
+    need its own copy of the table, and a single refit of such a table already uses all
+    processor cores. The result is exactly the same either way; Cancel keeps the
+    resamples finished so far.</div>
+
     <p><strong>"Bootstrap Uncertainty&hellip;"</strong> (next to "Run N
     times, keep best" in the settings panel) answers a different
     question from that button — same idea as MCR-ALS's own Bootstrap

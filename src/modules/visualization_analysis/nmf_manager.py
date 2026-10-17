@@ -523,19 +523,32 @@ class NMFManager:
         prev_err = None
         iters = max_iter
         converged = False
+        # Never form an (n_spectra x n_points) product inside the loop: for
+        # a 21 000-spectrum map each one is a 270 MB array. (W H) H^T is
+        # computed as W (H H^T), and the error from
+        #   ||X - W H||^2 = ||X||^2 - 2 sum(H * W^T X) + sum((W^T W) * (H H^T)),
+        # reusing W^T X from the H update -- the same values, ~3 x faster.
+        norm_x2 = float(np.einsum('ij,ij->', X, X))
         for it in range(max_iter):
             # W update (W is always free)
-            W = W * ((X @ H.T) / ((W @ H) @ H.T + eps))
+            W = W * ((X @ H.T) / (W @ (H @ H.T) + eps))
             W = np.clip(W, eps, None)
 
             # H update — the fixed rows are simply not updated
-            H_new = H * ((W.T @ X) / ((W.T @ W) @ H + eps))
+            WtX = W.T @ X
+            WtW = W.T @ W
+            H_new = H * (WtX / (WtW @ H + eps))
             if fix:
                 for j in fixed_idx:
                     H_new[j] = H[j]
             H = np.clip(H_new, eps, None)
 
-            err = float(np.linalg.norm(X - W @ H))
+            err2 = norm_x2 - 2.0 * float(np.sum(H * WtX)) + float(np.sum(WtW * (H @ H.T)))
+            if err2 < 1e-4 * norm_x2:
+                # a nearly perfect fit: the short formula loses digits
+                # (it subtracts nearly equal numbers) -- compute directly
+                err2 = float(np.sum((X - W @ H) ** 2))
+            err = float(np.sqrt(max(err2, 0.0)))
             if prev_err is not None and prev_err > 0 \
                     and abs(prev_err - err) / prev_err < 1e-6:
                 iters = it + 1

@@ -98,3 +98,53 @@ def noise_limit(s):
     clear = clear_count(s, plateau, n)
     return {'n': n, 'clear': clear, 'plateau': plateau, 'factor': NOISE_FACTOR,
             'clear_factor': CLEAR_FACTOR}
+
+
+GRAM_MIN_SIZE = 400
+
+
+def _top_eigh(G, k):
+    """Eigenvalues / vectors of the symmetric G: only the k largest when k
+    is small compared with its size (LAPACK computes just those -- several
+    times faster than all of them), otherwise all."""
+    m = G.shape[0]
+    if k < m // 4:
+        try:
+            import scipy.linalg
+            return scipy.linalg.eigh(G, subset_by_index=[m - k, m - 1], driver='evx')
+        except Exception:
+            pass
+    return np.linalg.eigh(G)
+
+
+def leading_svd(X, k):
+    """The first k singular triplets of X: (U[:, :k], s[:k], Vt[:k, :]), as
+    np.linalg.svd(X, full_matrices=False) would give them (up to the sign
+    of each component).
+
+    For a large table (both sides >= GRAM_MIN_SIZE) the eigen-decomposition
+    of the smaller Gram matrix is used: about 4 x faster than the full SVD
+    for 1 600 x 3 000 (used by the SVD / PCA bootstrap, which repeats it for
+    every replicate). Its precision for component j is ~ machine precision
+    x (s_1 / s_j)^2, so if the k-th value is very small compared with the
+    first, the full SVD is used instead."""
+    X = np.asarray(X, dtype=float)
+    n_r, n_c = X.shape
+    k = int(min(k, n_r, n_c))
+    if min(n_r, n_c) >= GRAM_MIN_SIZE:
+        if n_c <= n_r:
+            w, V = _top_eigh(X.T @ X, k)
+            order = np.argsort(w)[::-1][:k]
+            s = np.sqrt(np.clip(w[order], 0, None))
+            if s[0] > 0 and s[-1] > 1e-4 * s[0]:
+                V = V[:, order]
+                return (X @ V) / s, s, V.T
+        else:
+            w, U = _top_eigh(X @ X.T, k)
+            order = np.argsort(w)[::-1][:k]
+            s = np.sqrt(np.clip(w[order], 0, None))
+            if s[0] > 0 and s[-1] > 1e-4 * s[0]:
+                U = U[:, order]
+                return U, s, (U.T @ X) / s[:, None]
+    U, s, Vt = np.linalg.svd(X, full_matrices=False)
+    return U[:, :k], s[:k], Vt[:k, :]

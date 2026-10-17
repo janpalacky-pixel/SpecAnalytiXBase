@@ -3058,14 +3058,26 @@ class SVDAnalysisDialog(QDialog):
                 'doesn\u2019t produce one on its own.')
             return
         max_components = manager.U.shape[1]
-        default_components = self._last_n_bootstrap_components or self.controller.suggest_bootstrap_n_components()
+        # Suggested number of signal components: those above the noise
+        # (the noise limit of the Diagnostics tab). The 95 % explained
+        # variance used before is far too many for noisy data (a Raman map:
+        # 472 of 1 600 instead of 13), which made every replicate slow and
+        # the stored replicates huge.
+        from src.modules.visualization_analysis.factor_diagnostics import noise_limit
+        noise = noise_limit(manager.s) if manager.s is not None else None
+        suggested = (noise['n'] if noise is not None
+                     else self.controller.suggest_bootstrap_n_components())
+        default_components = self._last_n_bootstrap_components or suggested
         default_components = max(1, min(default_components, max_components))
+        why = ('components above the noise' if noise is not None
+               else 'components for 95 % of the variance')
 
         from PyQt5.QtWidgets import QInputDialog
         n_components, ok = QInputDialog.getInt(
             self, 'Bootstrap Uncertainty',
             'Number of leading components to treat as "signal"\n'
-            f'(the rest define the noise to resample; 1\u2013{max_components}):',
+            f'(the rest define the noise to resample; 1\u2013{max_components};\n'
+            f'suggested: {max(1, min(suggested, max_components))} = {why}):',
             value=default_components, min=1, max=max_components)
         if not ok:
             return
@@ -3078,6 +3090,22 @@ class SVDAnalysisDialog(QDialog):
         if not ok:
             return
         self._last_n_bootstrap = n_resamples   # remembered and pre-filled next time
+
+        # every replicate keeps its n_components subspectra and coefficient
+        # rows: warn before that needs a lot of memory
+        n_pts, n_sp = manager.U.shape[0], manager.Vt.shape[1]
+        need_gb = n_resamples * n_components * (n_pts + n_sp) * 8 * 2 / 1e9
+        if need_gb > 1.0:
+            answer = QMessageBox.question(
+                self, 'Bootstrap Uncertainty',
+                f'{n_resamples} resamples of {n_components} components of '
+                f'{n_sp:,} spectra need about {need_gb:.1f} GB of memory and '
+                f'can take long.\n\nContinue? (Fewer components \u2014 e.g. '
+                f'the {max(1, min(suggested, max_components))} {why} \u2014 '
+                f'are much faster.)'.replace(',', '\u202f'),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return
 
         self._run_bootstrap_uncertainty(n_components, n_resamples)
 
