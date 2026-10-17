@@ -1736,8 +1736,8 @@ def get_user_guide_help_content():
         <h3 id="2d-map">2D Spectral Map <a href="help://map2d" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
         
         <p>Visualises spatially-resolved spectra as a false-colour 2D map. Colour
-        can represent any band metric, an SVD/PCA/NMF/MCR-ALS component, or a
-        cluster label &mdash; PCA here is mean-centered SVD, computed independently
+        can represent any band metric, an SVD/PCA/NMF/MCR-ALS component, an unmixing
+        abundance (endmembers), or a cluster label &mdash; PCA here is mean-centered SVD, computed independently
         of the standalone <a href="#pca-scores">PCA Scores &amp; Loadings</a> tool.
         Requires selecting exactly Rows &times; Cols spectra (laid out
         row-by-row) &mdash; a MAT/WITec map import already carries its own
@@ -1752,6 +1752,14 @@ def get_user_guide_help_content():
         the metric, the band or Fit settings does not start it). In <b>Map arithmetic</b> a fitted
         metric fits Band A and Band B separately in every pixel and combines the two values, e.g.
         the ratio of two fitted band areas; clicking a pixel shows both fits. Details:
+        <a href="help://map2d">2D Map help</a>.</p>
+        <p><b>Unmixing (endmembers).</b> Map Type <i>Unmixing</i> finds the purest pixels of the
+        map (VCA or N-FINDR) &mdash; their measured spectra are the endmembers &mdash; and maps how
+        much of each endmember every pixel contains (non-negative abundances, optionally fractions
+        that sum to 1). <b>Suggest number</b> estimates how many endmembers the data contain, white
+        circles mark the endmember pixels, a <b>fit-error map</b> shows where something is left
+        unexplained, and the endmember spectra can be added to the spectra list. Demo: Help &rarr;
+        Test datasets &rarr; Synthetic &rarr; Endmember unmixing. Details:
         <a href="help://map2d">2D Map help</a>.</p>
         <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, 2D Map peak
         fitting). Large jobs run in several worker processes. The <b>Workers</b> slider goes from 1

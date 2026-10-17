@@ -643,7 +643,14 @@ class Map2DDialog(QDialog):
     ]
     INTERPOLATIONS = ['nearest', 'bilinear', 'bicubic', 'lanczos', 'spline16']
     # RGB overlay mode (see _build_rgb_panel / _compose_rgb_overlay)
-    _RGB_KIND_LABELS = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}
+    _RGB_KIND_LABELS = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS',
+                        'em': 'Unmixing'}
+    # names of the decomposition kinds (see _decomp_kind); 'em' = endmember
+    # unmixing (VCA / N-FINDR, endmember_unmixing.py)
+    _KIND_LABELS = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS',
+                    'em': 'Unmixing'}
+    _KIND_TITLES = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF',
+                    'mcr': 'MCR-ALS', 'em': 'Unmixing'}
     _RGB_CHANNEL_NAMES = ('Red', 'Green', 'Blue')
     _RGB_CHANNEL_COLORS = ('#C62828', '#2E7D32', '#1565C0')
 
@@ -672,6 +679,8 @@ class Map2DDialog(QDialog):
         self._nmf_is_exclude     = False
         self._mcr_ranges         = []   # MCR-ALS mode — independent from the other two
         self._mcr_is_exclude     = False
+        self._em_ranges          = []   # Unmixing mode
+        self._em_is_exclude      = False
         self._cluster_ranges     = []   # Cluster mode
         self._cluster_is_exclude = False
         # Arithmetic Band B
@@ -702,7 +711,7 @@ class Map2DDialog(QDialog):
         # display silently as if it were current). Cleared right after
         # each successful fit in _compute_map.
         self._decomp_needs_refit = {'svd': False, 'pca': False,
-                                     'nmf': False, 'mcr': False}
+                                     'nmf': False, 'mcr': False, 'em': False}
         # Which decomposition kind ('svd'/'pca') produced it, if any —
         # lets _export_map add the unit-normalized-coefficient note only
         # when it's actually relevant (not for intensity/arithmetic/cluster
@@ -1264,6 +1273,11 @@ class Map2DDialog(QDialog):
         self._radio_pca       = QRadioButton("PCA")
         self._radio_nmf       = QRadioButton("NMF")
         self._radio_mcr       = QRadioButton("MCR-ALS")
+        self._radio_em        = QRadioButton("Unmixing")
+        self._radio_em.setToolTip(
+            "Endmember unmixing (VCA / N-FINDR): finds the purest pixels -- their\n"
+            "measured spectra are the endmembers -- and maps how much of each\n"
+            "endmember every pixel contains (abundance maps).")
         self._radio_arith     = QRadioButton("Map arithmetic")
         self._radio_cluster   = QRadioButton("Cluster overlay")
         self._radio_rgb       = QRadioButton("RGB overlay")
@@ -1286,10 +1300,12 @@ class Map2DDialog(QDialog):
         self._radio_group.addButton(self._radio_mcr,       5)
         self._radio_group.addButton(self._radio_pca,       6)
         self._radio_group.addButton(self._radio_rgb,       7)
+        self._radio_group.addButton(self._radio_em,        8)
         radio_row1.addWidget(self._radio_intensity)
         radio_row1.addWidget(self._radio_svd)
         radio_row1.addWidget(self._radio_pca)
         radio_row1.addWidget(self._radio_nmf)
+        radio_row1.addWidget(self._radio_em)
         radio_row1.addStretch()
         radio_row2.addWidget(self._radio_mcr)
         radio_row2.addWidget(self._radio_arith)
@@ -1306,6 +1322,11 @@ class Map2DDialog(QDialog):
             "convention); NMF and MCR-ALS need the number of components "
             "chosen first, then Update Map fits and shows component 1. All "
             "four colour each pixel by one component's per-pixel score.\n\n"
+            "Unmixing: finds the purest pixels of the map (VCA or N-FINDR) -- "
+            "their measured spectra are the endmembers -- and maps how much of "
+            "each endmember every pixel contains (non-negative abundances, "
+            "optionally fractions that sum to 1). Choose the number of endmembers "
+            "('Suggest' estimates it), then Update Map.\n\n"
             "Map arithmetic: combines two independently configured bands "
             "(A and B) pixel-wise — ratio, difference, sum or product.\n\n"
             "Cluster overlay: runs k-means directly on the map spectra and "
@@ -1511,6 +1532,89 @@ class Map2DDialog(QDialog):
         self._mcr_settings_widget.setVisible(False)
         svlay.addWidget(self._mcr_settings_widget)
 
+        # ── Unmixing-only settings: method, fractions, helpers ─────────
+        self._em_settings_widget = QWidget()
+        em_v = QVBoxLayout(self._em_settings_widget)
+        em_v.setContentsMargins(0, 0, 0, 0)
+        em_v.setSpacing(2)
+        em_row1 = QHBoxLayout()
+        em_row1.setSpacing(4)
+        lbl_em_method = QLabel("Method:")
+        lbl_em_method.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        em_row1.addWidget(lbl_em_method)
+        self._em_method_combo = QComboBox()
+        self._em_method_combo.addItem("VCA", 'vca')
+        self._em_method_combo.addItem("N-FINDR", 'nfindr')
+        self._em_method_combo.setToolTip(
+            "How the purest pixels (endmembers) are found:\n"
+            "VCA (default): fast -- repeatedly takes the most extreme pixel in a\n"
+            "  direction not yet covered by the endmembers found so far.\n"
+            "N-FINDR: the pixels spanning the largest simplex (started from VCA,\n"
+            "  then improved by swapping) -- slower, more thorough; a good cross-check.\n"
+            "Both compare the spectra's shapes, so brighter pixels are not preferred.")
+        em_row1.addWidget(self._em_method_combo)
+        self._em_sum_to_one_cb = QCheckBox("Fractions (sum to 1)")
+        self._em_sum_to_one_cb.setChecked(False)
+        self._em_sum_to_one_cb.setToolTip(
+            "Off (default): non-negative amounts that keep the intensity -- a\n"
+            "weaker spot gives smaller amounts.\n"
+            "On: the amounts of every pixel add up to 1 (fractions, independent\n"
+            "of intensity) -- fully constrained unmixing. With intensity\n"
+            "differences between pixels the fit is then worse (see Lack of fit).")
+        em_row1.addWidget(self._em_sum_to_one_cb)
+        self._btn_em_suggest = QPushButton("Suggest number")
+        self._btn_em_suggest.setToolTip(
+            "Estimate how many endmembers the data contain: the number of\n"
+            "components clearly above the noise (singular values of the spectra\n"
+            "in the chosen range, compared with what pure noise of the estimated\n"
+            "level gives). Sets the Endmembers box; press Update Map afterwards.")
+        em_row1.addWidget(self._btn_em_suggest)
+        em_row1.addStretch()
+        em_row1.addWidget(self._make_info_button(
+            "About Unmixing",
+            "Endmember unmixing assumes that every pixel is a mixture of a few "
+            "pure substances and that, for each of them, the map contains at least "
+            "one (nearly) pure pixel. It finds these purest pixels -- their measured "
+            "spectra are the endmembers (not fitted shapes as in NMF / MCR-ALS) -- "
+            "and then calculates for every pixel how much of each endmember it "
+            "contains: non-negative least squares, optionally with the amounts "
+            "summing to 1 (fractions).\n\n"
+            "Browse endmember: shows the abundance map of one endmember; its "
+            "spectrum is overlaid on the clicked-pixel spectrum below. The white "
+            "markers show where the endmember pixels are.\n\n"
+            "Fit-error map: how well each pixel is explained by the endmembers "
+            "(RMS of the residual). Bright regions contain something the "
+            "endmembers do not -- often a sign that one more endmember is needed.\n\n"
+            "If a substance never occurs pure in the map, its endmember is a "
+            "mixture; NMF or MCR-ALS can then resolve it better."))
+        em_v.addLayout(em_row1)
+        em_row2 = QHBoxLayout()
+        em_row2.setSpacing(6)
+        self._em_markers_cb = QCheckBox("Mark endmember pixels")
+        self._em_markers_cb.setChecked(True)
+        self._em_markers_cb.setToolTip(
+            "White circles with numbers on the map: the pixel each endmember\n"
+            "spectrum comes from (the browsed one larger). Click it to see\n"
+            "its spectrum.")
+        em_row2.addWidget(self._em_markers_cb)
+        self._em_error_map_cb = QCheckBox("Show fit-error map")
+        self._em_error_map_cb.setChecked(False)
+        self._em_error_map_cb.setToolTip(
+            "Show how well each pixel is explained by the endmembers (RMS of\n"
+            "the residual, in intensity units) instead of an abundance map.\n"
+            "Bright places contain something the endmembers do not.")
+        em_row2.addWidget(self._em_error_map_cb)
+        self._btn_em_add = QPushButton("Add to spectra list…")
+        self._btn_em_add.setEnabled(False)
+        self._btn_em_add.setToolTip(
+            "Add the endmember spectra as new spectra to the main spectra list\n"
+            "(e.g. for Reference Matching), recorded in the Operations History.")
+        em_row2.addWidget(self._btn_em_add)
+        em_row2.addStretch()
+        em_v.addLayout(em_row2)
+        self._em_settings_widget.setVisible(False)
+        svlay.addWidget(self._em_settings_widget)
+
         comp_label_row = QHBoxLayout()
         comp_label_row.setSpacing(4)
         self._decomp_n_label = QLabel("Components to fit:")
@@ -1536,6 +1640,7 @@ class Map2DDialog(QDialog):
         lbl_comp = QLabel("Browse component:")
         lbl_comp.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         comp_label_row.addWidget(lbl_comp)
+        self._browse_label = lbl_comp           # "Browse endmember:" in Unmixing mode
         self._component_combo = QComboBox()
         self._component_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self._component_combo.setMinimumWidth(80)
@@ -1846,7 +1951,7 @@ class Map2DDialog(QDialog):
             row1 = QHBoxLayout()
             row1.addWidget(QLabel("Source:"))
             kind_combo = QComboBox()
-            for k in ('svd', 'pca', 'nmf', 'mcr'):
+            for k in ('svd', 'pca', 'nmf', 'mcr', 'em'):
                 kind_combo.addItem(self._RGB_KIND_LABELS[k], k)
             row1.addWidget(kind_combo, stretch=1)
             blay.addLayout(row1)
@@ -2147,6 +2252,14 @@ class Map2DDialog(QDialog):
         self._mcr_closure_cb.toggled.connect(
             lambda *_: self._on_fit_settings_changed('mcr'))
         self._ref_autorecompute_cb.toggled.connect(self._on_ref_autorecompute_toggled)
+        self._em_method_combo.currentIndexChanged.connect(
+            lambda *_: self._on_fit_settings_changed('em'))
+        self._em_sum_to_one_cb.toggled.connect(
+            lambda *_: self._on_fit_settings_changed('em'))
+        self._btn_em_suggest.clicked.connect(self._suggest_n_endmembers)
+        self._em_markers_cb.toggled.connect(self._redraw_em_view)
+        self._em_error_map_cb.toggled.connect(self._redraw_em_view)
+        self._btn_em_add.clicked.connect(self._add_endmembers_to_list)
         self._cmap_combo.currentTextChanged.connect(
             self._on_cmap_interp_changed)
         self._interp_combo.currentTextChanged.connect(
@@ -2217,6 +2330,8 @@ class Map2DDialog(QDialog):
             return 'nmf'
         if self._radio_mcr.isChecked():
             return 'mcr'
+        if self._radio_em.isChecked():
+            return 'em'
         return None
 
     def _is_decomp_mode(self):
@@ -2236,6 +2351,8 @@ class Map2DDialog(QDialog):
             return self._nmf_ranges, self._nmf_is_exclude
         elif self._radio_mcr.isChecked():
             return self._mcr_ranges, self._mcr_is_exclude
+        elif self._radio_em.isChecked():
+            return self._em_ranges, self._em_is_exclude
         elif self._radio_cluster.isChecked():
             return self._cluster_ranges, self._cluster_is_exclude
         elif self._radio_arith.isChecked():
@@ -2257,6 +2374,9 @@ class Map2DDialog(QDialog):
         elif self._radio_mcr.isChecked():
             self._mcr_ranges     = ranges
             self._mcr_is_exclude = is_exclude
+        elif self._radio_em.isChecked():
+            self._em_ranges     = ranges
+            self._em_is_exclude = is_exclude
         elif self._radio_cluster.isChecked():
             self._cluster_ranges     = ranges
             self._cluster_is_exclude = is_exclude
@@ -2273,7 +2393,8 @@ class Map2DDialog(QDialog):
         is_pca     = self._radio_pca.isChecked()
         is_nmf     = self._radio_nmf.isChecked()
         is_mcr     = self._radio_mcr.isChecked()
-        is_decomp  = is_svd or is_pca or is_nmf or is_mcr
+        is_em      = self._radio_em.isChecked()
+        is_decomp  = is_svd or is_pca or is_nmf or is_mcr or is_em
         is_arith   = self._radio_arith.isChecked()
         is_int     = self._radio_intensity.isChecked()
         is_cluster = self._radio_cluster.isChecked()
@@ -2312,8 +2433,11 @@ class Map2DDialog(QDialog):
         self._svd_panel.setVisible(is_decomp)
         # Components-to-fit row only applies to NMF/MCR-ALS — SVD gets
         # every component from one fit and has no such setting.
-        self._decomp_n_label.setVisible(is_nmf or is_mcr)
-        self._decomp_n_spin.setVisible(is_nmf or is_mcr)
+        self._decomp_n_label.setVisible(is_nmf or is_mcr or is_em)
+        self._decomp_n_spin.setVisible(is_nmf or is_mcr or is_em)
+        self._decomp_n_label.setText("Endmembers:" if is_em else "Components to fit:")
+        self._browse_label.setText("Browse endmember:" if is_em else "Browse component:")
+        self._em_settings_widget.setVisible(is_em)
         # Fit-control rows: each algorithm's own settings, SVD has none
         # (it's a single deterministic np.linalg.svd call).
         self._nmf_settings_row_widget.setVisible(is_nmf)
@@ -2323,7 +2447,7 @@ class Map2DDialog(QDialog):
         # SVD's single deterministic decomposition.
         self._btn_decomp_run_n.setVisible(is_nmf or is_mcr)
         self._decomp_run_n_caption.setVisible(is_nmf or is_mcr)
-        self._decomp_status_label.setVisible(is_nmf or is_mcr)
+        self._decomp_status_label.setVisible(is_nmf or is_mcr or is_em)
         self._btn_run_bootstrap_map.setVisible(is_nmf or is_mcr)
         self._show_bootstrap_band_cb.setVisible(is_nmf or is_mcr)
         self._show_uncertainty_map_cb.setVisible(is_nmf or is_mcr)
@@ -2366,8 +2490,9 @@ class Map2DDialog(QDialog):
         # component" while looking at an NMF or MCR-ALS map.
         self._show_bands_cb.setVisible(is_int or is_arith or is_cluster)
         if is_decomp:
-            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
-            self._show_svd_cb.setText(f"Show {kind_label} component")
+            kind_label = self._KIND_LABELS[self._decomp_kind()]
+            self._show_svd_cb.setText("Show endmember spectrum" if self._decomp_kind() == 'em'
+                                      else f"Show {kind_label} component")
             self._show_svd_cb.setToolTip(
                 f"Overlay the {kind_label} component's own spectral shape\n"
                 "(orange dashed) on the clicked-pixel spectrum.")
@@ -2387,7 +2512,7 @@ class Map2DDialog(QDialog):
 
         if is_decomp:
             kind = self._decomp_kind()
-            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+            kind_label = self._KIND_LABELS[kind]
             # Switching modes alone should never force an expensive
             # re-fit: if this kind is already computed AND nothing that
             # would invalidate that fit (range, component count,
@@ -2508,7 +2633,7 @@ class Map2DDialog(QDialog):
 
         # Labels per mode
         if is_decomp:
-            kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label = self._KIND_LABELS[self._decomp_kind()]
             self._btn_configure_ranges.setText(f"Configure {kind_label} range…")
             self._band_a_header.setText(f"{kind_label} computation range")
         elif is_cluster:
@@ -2903,7 +3028,7 @@ class Map2DDialog(QDialog):
         at least one component. It's never disabled again afterward —
         a kind's cache is only ever replaced, not cleared to empty
         once populated (see Map2DManager)."""
-        available = [k for k in ('svd', 'pca', 'nmf', 'mcr')
+        available = [k for k in ('svd', 'pca', 'nmf', 'mcr', 'em')
                      if self.controller.get_n_components(k) > 0]
         if available and not self._radio_rgb.isEnabled():
             self._radio_rgb.setEnabled(True)
@@ -3331,7 +3456,7 @@ class Map2DDialog(QDialog):
                         # combo's own enabled-state doesn't keep lying
                         # about whether it's safe to touch.
                         self._component_combo.setEnabled(False)
-                        kind_label = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+                        kind_label = self._KIND_LABELS[self._decomp_kind()]
                         self._spectrum_title_label.setText(
                             f"{kind_label} range changed — press 'Update Map' to recompute")
                         self._spectrum_canvas.ax.cla()
@@ -3615,6 +3740,26 @@ class Map2DDialog(QDialog):
                     f"\n\n{specific}" if specific else
                     "\nEnsure all spectra have the same number of data "
                     "points in the selected range.")
+            elif kind == 'em':
+                from PyQt5.QtWidgets import QApplication
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    map_data = self.controller.compute_em_map(
+                        self.spectra, n_rows, n_cols,
+                        n_components=self._decomp_n_spin.value(),
+                        component_index=comp_idx,
+                        x_min=None, x_max=None,
+                        include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
+                        method=self._em_method_combo.currentData(),
+                        sum_to_one=self._em_sum_to_one_cb.isChecked(),
+                    )
+                finally:
+                    QApplication.restoreOverrideCursor()
+                specific = self.controller.manager.get_last_decomp_error('em')
+                fail_msg = "Unmixing failed." + (
+                    f"\n\n{specific}" if specific else
+                    "\nEnsure all spectra have the same number of data "
+                    "points in the selected range.")
             else:  # 'mcr'
                 refs, fix_refs = self._reference_settings()
                 map_data = self.controller.compute_mcr_map(
@@ -3662,7 +3807,7 @@ class Map2DDialog(QDialog):
             ev     = (ev_arr[comp_idx]
                       if ev_arr is not None and comp_idx < len(ev_arr)
                       else 0.0)
-            kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+            kind_title = self._KIND_TITLES[kind]
             title  = (f"{kind_title} map – component {comp_idx + 1}  "
                       f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
             self._map_canvas.update_map(
@@ -3672,6 +3817,8 @@ class Map2DDialog(QDialog):
                 title=title,
                 equal_aspect=self._equal_aspect_cb.isChecked(),
             )
+            if kind == 'em':
+                self._after_em_draw(comp_idx)
             # Freshly (re)fit — the panel below is about to fall back to
             # its default spectrum-0 preview, so a previous click's pixel
             # is no longer what's being shown; drop it rather than let
@@ -3717,7 +3864,7 @@ class Map2DDialog(QDialog):
             # active, but guard anyway in case a signal still fires
             # programmatically.
             return
-        kind_label = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_label = self._KIND_LABELS[kind]
         self._invalidate_map()
         self._decomp_needs_refit[kind] = True
         self._component_combo.setEnabled(False)
@@ -3746,9 +3893,9 @@ class Map2DDialog(QDialog):
         """
         self._rebuild_reference_rows()
         kind = self._decomp_kind()
-        if kind not in ('nmf', 'mcr'):
+        if kind not in ('nmf', 'mcr', 'em'):
             return
-        kind_label = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_label = self._KIND_LABELS[kind]
         self._invalidate_map()
         self._decomp_needs_refit[kind] = True
         self._component_combo.setEnabled(False)
@@ -3979,6 +4126,141 @@ class Map2DDialog(QDialog):
 
     # ── NMF/MCR-ALS: fit-quality status + robustness re-run ─────────────
 
+    # ── Unmixing (endmembers) ───────────────────────────────────────────
+
+    def _after_em_draw(self, comp_idx):
+        """After an Unmixing map was drawn (fit, cached redraw, browsing an
+        endmember): show the abundance map with its own title -- or the
+        fit-error map -- and mark the endmember pixels."""
+        res = self.controller.get_em_result()
+        if res is None:
+            return
+        from src.modules.visualization_analysis.endmember_unmixing import METHODS
+        n_rows, n_cols = self._rows_spin.value(), self._cols_spin.value()
+        try:
+            if self._em_error_map_cb.isChecked():
+                data = np.asarray(res.residual_rms, float).reshape(n_rows, n_cols)
+                title = (f"Unmixing fit error (RMS of the residual) – "
+                         f"{METHODS.get(res.method, res.method)}, "
+                         f"{len(res.endmember_indices)} endmembers  ({n_rows} × {n_cols})")
+            else:
+                k = max(0, min(comp_idx, res.W.shape[1] - 1))
+                data = res.W[:, k].reshape(n_rows, n_cols)
+                ev = res.explained_variance[k]
+                title = (f"Unmixing ({METHODS.get(res.method, res.method)}) – "
+                         f"{'fraction' if res.sum_to_one else 'abundance'} of endmember "
+                         f"{k + 1}  (EV={ev:.2f}%)  ({n_rows} × {n_cols})")
+        except ValueError:
+            return
+        self._last_map_data = data
+        self._map_canvas.update_map(
+            data,
+            cmap=self._cmap_combo.currentText(),
+            interpolation=self._interp_combo.currentText(),
+            title=title,
+            equal_aspect=self._equal_aspect_cb.isChecked(),
+        )
+        if self._em_markers_cb.isChecked():
+            self._draw_endmember_markers(res, comp_idx, n_cols)
+        try:
+            self._map_canvas.enable_hover(self._last_map_data, self.spectra, n_cols)
+        except Exception:
+            logger.exception("Hover for the unmixing map failed")
+        self._btn_em_add.setEnabled(True)
+
+    def _draw_endmember_markers(self, res, comp_idx, n_cols):
+        """White numbered circles at the endmember pixels (the browsed
+        one larger), without changing the map's limits."""
+        from matplotlib import patheffects
+        ax = self._map_canvas.ax
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        outline = [patheffects.withStroke(linewidth=3, foreground='black')]
+        for k, pix in enumerate(res.endmember_indices):
+            r, c = divmod(int(pix), n_cols)
+            big = (k == comp_idx and not self._em_error_map_cb.isChecked())
+            ax.plot(c, r, 'o', ms=13 if big else 9, mfc='none', mec='white',
+                    mew=2.0 if big else 1.4, zorder=6, path_effects=outline)
+            ax.annotate(str(k + 1), (c, r), xytext=(6, 5), textcoords='offset points',
+                        color='white', fontsize=9 if big else 8, fontweight='bold',
+                        zorder=7, path_effects=outline)
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
+        self._map_canvas.draw_idle()
+
+    def _redraw_em_view(self, *_):
+        """'Mark endmember pixels' / 'Show fit-error map' toggled."""
+        if self._decomp_kind() != 'em' or self._decomp_needs_refit.get('em', False):
+            return
+        if self.controller.get_em_result() is None:
+            return
+        self._on_component_changed(max(0, self._component_combo.currentIndex()))
+
+    def _suggest_n_endmembers(self):
+        """Suggest the number of endmembers: components clearly above noise."""
+        from PyQt5.QtWidgets import QApplication
+        ranges, is_excl = self._active_range_state()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            est = self.controller.estimate_n_endmembers(
+                self.spectra, include_ranges=[] if is_excl else ranges,
+                exclude_ranges=ranges if is_excl else [])
+        finally:
+            QApplication.restoreOverrideCursor()
+        if est is None:
+            QMessageBox.warning(
+                self, "Suggest number",
+                "The spectra cannot be compared in the chosen range (different "
+                "x-axes or missing values).")
+            return
+        n = max(self._decomp_n_spin.minimum(), min(est['n'], self._decomp_n_spin.maximum()))
+        s = est['singular_values']
+        shown = ", ".join(f"{v:.3g}" for v in s[:min(len(s), est['n'] + 3)])
+        QMessageBox.information(
+            self, "Suggest number",
+            f"Suggested: {est['n']} endmembers.\n\n"
+            f"That many components of the spectra are clearly above the noise "
+            f"(estimated noise level {est['sigma']:.3g}; pure noise would give "
+            f"values below {est['threshold']:.3g}). The largest values: {shown}.\n\n"
+            "Take it as a starting point: a substance present in only a few pixels "
+            "can be missed (look at the fit-error map), and a background or "
+            "intensity change can count as one more component.")
+        self._decomp_n_spin.setValue(n)
+
+    def _add_endmembers_to_list(self):
+        """Add the endmember spectra to the main spectra list."""
+        from PyQt5.QtWidgets import QInputDialog
+        res = self.controller.get_em_result()
+        if res is None:
+            return
+        base, ok = QInputDialog.getText(
+            self, "Add endmembers to the spectra list",
+            f"{len(res.endmember_indices)} endmember spectra will be added as\n"
+            "<name>_1, <name>_2, … Name:", text="Endmember")
+        if not ok:
+            return
+        base = base.strip() or "Endmember"
+        from src.modules.visualization_analysis.endmember_unmixing import METHODS
+        new = []
+        for k, pix in enumerate(res.endmember_indices):
+            src = self.spectra[int(pix)]
+            new.append({
+                'label': f"{base}_{k + 1}",
+                'x_scale': np.array(res.x_axis, dtype=float),
+                'y_scale': np.array(res.H[k], dtype=float),
+                'metadata': {
+                    'source': 'Endmember (Unmixing, 2D Map)',
+                    'method': METHODS.get(res.method, res.method),
+                    'endmember': k + 1,
+                    'n_endmembers': len(res.endmember_indices),
+                    'pixel_spectrum': src.get('label', ''),
+                    'fractions': bool(res.sum_to_one),
+                },
+            })
+        count = self.controller.send_spectra_to_main_list(
+            new, label_prefix=base, source_spectra=self.spectra)
+        QMessageBox.information(self, "Added",
+                                f"{count} spectrum(s) added to the main spectra list.")
+
     def _update_decomp_status_label(self, kind):
         """Show lack-of-fit / iterations (and, after a best-of-n run,
         the consensus info) for NMF/MCR-ALS — SVD has no equivalent
@@ -3987,6 +4269,21 @@ class Map2DDialog(QDialog):
         # press Update Map" styling _on_decomp_n_changed may have set.
         self._decomp_status_label.setStyleSheet(
             "font-size:8pt; color:#2E7D32;")
+        if kind == 'em':
+            res = self.controller.get_em_result()
+            if res is None:
+                self._decomp_status_label.setText("")
+                return
+            from src.modules.visualization_analysis.endmember_unmixing import METHODS
+            n_cols = max(1, self._cols_spin.value())
+            # 1-based, as "Row 14, Col 31" above the spectrum panel
+            where = ", ".join(f"E{k + 1}: row {int(i) // n_cols + 1}, col {int(i) % n_cols + 1}"
+                              for k, i in enumerate(res.endmember_indices))
+            parts = [f"{METHODS.get(res.method, res.method)}, {len(res.endmember_indices)} "
+                     f"endmembers" + (", fractions" if res.sum_to_one else ""),
+                     f"Lack of fit: {res.lof:.3f}%", f"pixels: {where}"]
+            self._decomp_status_label.setText("  |  ".join(parts))
+            return
         if kind not in ('nmf', 'mcr'):
             self._decomp_status_label.setText("")
             return
@@ -4169,7 +4466,7 @@ class Map2DDialog(QDialog):
         comp_idx = max(0, self._component_combo.currentIndex())
         n_rows = self._rows_spin.value()
         n_cols = self._cols_spin.value()
-        kind_title = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = self._KIND_LABELS[kind]
 
         if self._show_uncertainty_map_cb.isChecked():
             umap = self.controller.get_component_uncertainty_map(
@@ -4293,7 +4590,7 @@ class Map2DDialog(QDialog):
         ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[comp_idx]
                   if ev_arr is not None and comp_idx < len(ev_arr) else 0.0)
-        kind_title = {'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = self._KIND_LABELS[kind]
         title  = (f"{kind_title} map – component {comp_idx + 1}  "
                   f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
         self._map_canvas.update_map(
@@ -4368,7 +4665,7 @@ class Map2DDialog(QDialog):
             else:  # "Explained var.(%)"
                 ev  = (ev_arr[i]
                        if ev_arr is not None and i < len(ev_arr) else 0.0)
-                lbl = f"C{i + 1}  (EV={ev:.3f}%)"
+                lbl = f"{'E' if kind == 'em' else 'C'}{i + 1}  (EV={ev:.3f}%)"
             self._component_combo.addItem(lbl)
         idx = min(keep_index, max(0, n - 1))
         self._component_combo.setCurrentIndex(idx)
@@ -4410,7 +4707,7 @@ class Map2DDialog(QDialog):
         ev     = (ev_arr[comp_idx]
                   if ev_arr is not None and comp_idx < len(ev_arr)
                   else 0.0)
-        kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = self._KIND_TITLES[kind]
         title  = (f"{kind_title} map – component {comp_idx + 1}  "
                   f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
         self._map_canvas.update_map(
@@ -4420,6 +4717,8 @@ class Map2DDialog(QDialog):
             title=title,
             equal_aspect=self._equal_aspect_cb.isChecked(),
         )
+        if kind == 'em':
+            self._after_em_draw(comp_idx)
         self._last_clicked_pixel = None
         self._update_subspectrum_in_panel(comp_idx)
         self._update_decomp_status_label(kind)
@@ -4512,7 +4811,7 @@ class Map2DDialog(QDialog):
         ev_arr = self.controller.get_component_explained_variance(kind)
         ev     = (ev_arr[index]
                   if ev_arr is not None and index < len(ev_arr) else 0.0)
-        kind_title = {'svd': 'SVD coeff.', 'pca': 'PCA coeff.', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[kind]
+        kind_title = self._KIND_TITLES[kind]
         title  = (f"{kind_title} map – component {index + 1}  "
                   f"(EV={ev:.2f}%)  ({n_rows} × {n_cols})")
         self._map_canvas.update_map(
@@ -4522,6 +4821,8 @@ class Map2DDialog(QDialog):
             title=title,
             equal_aspect=self._equal_aspect_cb.isChecked(),
         )
+        if kind == 'em':
+            self._after_em_draw(index)
         self._sync_uncertainty_map_toggle(kind)
 
         # If a pixel was clicked, refresh using its spectrum; otherwise show reference.
@@ -5330,7 +5631,7 @@ class Map2DDialog(QDialog):
             title_plot = f"Cluster preview: {label}  [k={k}, {method}]"
             panel_title = "Click a pixel to see its spectrum and cluster assignment"
         elif self._is_decomp_mode():
-            kind_label  = {'svd': 'SVD', 'pca': 'PCA', 'nmf': 'NMF', 'mcr': 'MCR-ALS'}[self._decomp_kind()]
+            kind_label  = self._KIND_LABELS[self._decomp_kind()]
             title_plot  = f"{kind_label} range preview: {label}"
             panel_title = f"Click a pixel — showing: {label}"
         elif self._radio_rgb.isChecked():

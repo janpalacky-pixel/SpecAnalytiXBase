@@ -231,3 +231,24 @@ These claims are checked by `tests/test_group_tables_and_demos.py` and
 help page walks through all five.
 Regenerate the files with `generate_group_statistics_test_datasets.py` in
 this folder.
+
+## Endmember unmixing demo map
+
+`unmixing_cell_map_demo.mat` — for **2D Map → Map Type "Unmixing"** (VCA /
+N-FINDR). Open it under **Help → Test datasets → Synthetic → Endmember
+unmixing (2D Map)**; the 2D Map opens with 40 × 50 filled in.
+
+| Substance | Bands (cm⁻¹) | Where it is pure |
+|---|---|---|
+| glass | broad hump ~1100, sloping baseline | around the cell |
+| protein | 1003, 1250, 1450, 1655 | middle of the cytoplasm |
+| nucleus (DNA-rich) | 785, 1095, 1340, 1578 (+ some protein) | middle of the nucleus |
+| lipid | 1065, 1300, 1440, 1660, 1745 | middle of the three droplets |
+
+Every pixel is a mixture of the four (fractions summing to 1, smooth
+borders), times a smooth intensity drift (±10 %), plus noise (SD 0.012).
+**Suggest number** gives 4; VCA and N-FINDR then find one pure pixel of each
+substance (endmember spectra correlate > 0.95 with the true ones). With only
+3 endmembers the lipid droplets are missed and light up in the fit-error map.
+Generator: `generate_unmixing_test_dataset.py` (also `true_spectra()` and
+`true_fractions()`).

@@ -3493,6 +3493,30 @@ def _natural_sort_key(cls, label):
             sub-data-point positions, cache, cancel, parallel = serial, manager, dialog).</li>
         </ul>
 
+        <h2 id="unmixing-design">2D Map: endmember unmixing</h2>
+        <ul>
+            <li><code>src/modules/visualization_analysis/endmember_unmixing.py</code> (Qt-free):
+            <code>vca()</code> (Nascimento &amp; Bioucas-Dias 2005; projective projection at high
+            SNR, otherwise the affine one), <code>nfindr()</code> (Winter 1999; data reduced to p&minus;1
+            principal components of the sum-normalised spectra, so brightness does not count;
+            started from VCA; each swap evaluates every pixel at once through the cofactors of
+            the replaced column), <code>abundances()</code> (NNLS per pixel on the p&times;p Gram system
+            via Cholesky &mdash; fast; sum-to-one by a heavily weighted extra equation),
+            <code>estimate_n_endmembers()</code> (noise from robust second differences; singular
+            values above 1.2&middot;&sigma;(&radic;N + &radic;L)).</li>
+            <li><code>EndmemberManager</code> has NMFManager's attributes (<code>W</code> abundances,
+            <code>H</code> endmember spectra, <code>x_axis</code>, <code>explained_variance</code>,
+            <code>lof</code>, <code>last_error</code>) plus <code>endmember_indices</code> and
+            <code>residual_rms</code>, so <code>Map2DManager</code>'s unified accessors handle kind
+            <code>'em'</code> like 'nmf'. The dialog adds the radio, the settings row and
+            <code>_after_em_draw()</code> (title, fit-error map, markers) at the three places a
+            decomposition map is drawn (fit, cached redraw, browsing).</li>
+            <li>Tests: <code>tests/test_endmember_unmixing.py</code> (methods, abundances,
+            sum-to-one, brightness, suggestion, fit error, errors) and
+            <code>tests/test_map2d_unmixing.py</code> (window, demo map
+            <code>unmixing_cell_map_demo.mat</code> with known truth, RGB, add to list).</li>
+        </ul>
+
         <h2 id="group-statistics-design">Group Statistics</h2>
         <ul>
             <li><code>src/modules/visualization_analysis/group_statistics.py</code> (Qt-free):

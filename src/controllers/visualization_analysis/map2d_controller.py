@@ -150,6 +150,15 @@ class Map2DController:
             fix_references=fix_references,
         )
 
+    def compute_em_map(self, spectra, n_rows, n_cols, n_components, **kwargs):
+        return self.manager.compute_em_map(spectra, n_rows, n_cols, n_components, **kwargs)
+
+    def get_em_result(self):
+        return self.manager.get_em_result()
+
+    def estimate_n_endmembers(self, spectra, **kwargs):
+        return self.manager.estimate_n_endmembers(spectra, **kwargs)
+
     def get_component_lof(self, kind):
         return self.manager.get_component_lof(kind)
 

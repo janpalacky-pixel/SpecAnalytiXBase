@@ -49,6 +49,9 @@ _SCREENSHOT_FILES = {
     "PEAK_FIT_MAP":        "peak_fit_map_result.png",
     "PEAK_FIT_PIXEL":      "peak_fit_pixel_fit.png",
     "PEAK_FIT_TWO_BANDS":  "peak_fit_two_bands.png",
+    "UNMIX_MAP":           "unmixing_abundance.png",
+    "UNMIX_ERROR":         "unmixing_fit_error.png",
+    "UNMIX_TRUTH":         "unmixing_demo_spectra.png",
 }
 
 # Screenshots shown only once the file exists, so a newly documented
@@ -63,6 +66,19 @@ _OPTIONAL_FIGURES = {
     "PEAK_FIT_PIXEL":    ("Fitted band of one pixel",
                           "Clicking a pixel shows its spectrum zoomed to the band, with the fitted "
                           "curve, the background and the fit's centre, FWHM and R²."),
+    "UNMIX_MAP": ("Unmixing: abundance map of one endmember",
+                  "Unmixing of the demo map (4 endmembers, VCA): the abundance map of "
+                  "endmember 4 (lipid droplets); the white circles mark the four endmember "
+                  "pixels. Below: the clicked endmember pixel's spectrum with the "
+                  "endmember spectrum (orange)."),
+    "UNMIX_ERROR": ("Unmixing: fit-error map",
+                    "Fit-error map with only 3 endmembers: the lipid droplets light up "
+                    "-- they contain a substance the three endmembers do not explain."),
+    "UNMIX_TRUTH": ("The four pure spectra of the demo map",
+                    "The demo map is made of these four spectra (Gaussian bands at typical "
+                    "Raman positions of glass, protein, DNA and lipids; the heights and widths "
+                    "are invented): every pixel is a mixture of them. Unmixing should find "
+                    "them again as its endmembers."),
     "PEAK_FIT_TWO_BANDS": ("Fits of Band A and Band B in Map arithmetic",
                            "Map arithmetic with a Fitted metric: clicking a pixel shows the fit "
                            "of Band A (dark blue) and of Band B (dark red), each with its dashed "
@@ -212,8 +228,8 @@ Double-clicking or pressing OK applies the chosen pair immediately.</p>
 
 <p>Select a map type using the radio buttons. Switching between
 <b>Intensity metric</b>, <b>Map arithmetic</b>, and <b>Cluster overlay</b>
-redraws the map instantly. <b>SVD</b>, <b>PCA</b>, <b>NMF</b> and
-<b>MCR-ALS</b> redraw instantly too when you switch to (or back to) a kind
+redraws the map instantly. <b>SVD</b>, <b>PCA</b>, <b>NMF</b>,
+<b>MCR-ALS</b> and <b>Unmixing</b> redraw instantly too when you switch to (or back to) a kind
 that has already been fitted for the current settings — the existing fit
 is simply redrawn from cache, with no re-fit and no need to press
 <b>Update Map</b>. Fitting is only needed the first time a kind is used,
@@ -747,6 +763,70 @@ now.</p>
 </div>
 </div>
 
+<h3 id="unmixing">◉ Unmixing (endmembers)</h3>
+<div class="cat">
+<p><b>The idea.</b> In a map, some pixels are (almost) pure &mdash; e.g. a pixel with nearly
+only lipid, another with nearly only protein &mdash; and every other pixel is a mixture of
+them. <b>Unmixing</b> finds these purest pixels; their <i>measured</i> spectra are the
+<b>endmembers</b>. Then every pixel is explained as a mixture of the endmembers, and for
+each endmember you get an <b>abundance map</b>: where it is and how much. Unlike NMF and
+MCR-ALS, the endmembers are real spectra from the map, not fitted shapes.</p>
+
+<p><b>Steps.</b> Choose <b>Unmixing</b>, set the number of <b>Endmembers</b> (or press
+<b>Suggest number</b>), press <b>Update Map</b>, and browse the endmembers with
+<b>Browse endmember</b>. As for the other decompositions, <b>Configure Unmixing range…</b>
+limits the spectral range used.</p>
+
+<ul>
+  <li><b>Method</b> &mdash; how the purest pixels are found.
+    <b>VCA</b> (Vertex Component Analysis, default): fast; repeatedly takes the most extreme
+    pixel in a direction not yet covered by the endmembers found so far.
+    <b>N-FINDR</b>: the pixels that span the largest simplex (a triangle for 3 endmembers,
+    a tetrahedron for 4, …), started from the VCA result and improved by swapping one
+    endmember at a time &mdash; slower, more thorough, a good cross-check. Both compare the
+    spectra's <i>shapes</i>, so brighter pixels (better focus) are not preferred.</li>
+  <li><b>Fractions (sum to 1)</b> &mdash; off (default): the abundances are non-negative
+    amounts that keep the intensity (a weaker spot gives smaller amounts). On: the amounts of
+    every pixel add up to 1 (fractions, independent of the intensity; "fully constrained"
+    unmixing). With intensity differences between pixels the fit is then worse &mdash; the
+    status line shows the <b>Lack of fit</b>.</li>
+  <li><b>Suggest number</b> &mdash; how many components of the spectra are clearly above the
+    noise: the singular values of the spectra are compared with the largest value pure noise
+    of the estimated level would give. Take it as a starting point: a substance present in
+    only a few pixels can be missed, and a background or intensity change can count as one
+    more component.</li>
+  <li><b>Mark endmember pixels</b> &mdash; white numbered circles on the map show where each
+    endmember comes from (the browsed one larger); click one to see its spectrum. The status
+    line lists the rows and columns.</li>
+  <li><b>Show fit-error map</b> &mdash; instead of an abundance map, how well each pixel is
+    explained by the endmembers (RMS of the residual, in intensity units). Bright places
+    contain something the endmembers do not &mdash; usually a sign that one more endmember
+    is needed.</li>
+  <li><b>Add to spectra list…</b> &mdash; adds the endmember spectra to the main spectra list
+    (named &lt;name&gt;_1, _2, …; recorded in the Operations History), e.g. for Reference
+    Matching or Peak Fitting.</li>
+</ul>
+
+<p>The component tools work as for NMF / MCR-ALS: <b>Show endmember spectrum</b> overlays the
+endmember on the clicked pixel's spectrum, <b>Show reconstr. spectrum</b> shows the pixel
+rebuilt from the endmembers, and the abundance maps can be combined in <b>RGB overlay</b>.</p>
+
+$UNMIX_MAP_FIGURE
+$UNMIX_ERROR_FIGURE
+
+<div class="note">
+<b>When it works, and when NMF / MCR-ALS are better.</b> Unmixing assumes that every
+substance occurs (nearly) pure in at least one pixel. If a substance is always mixed with
+others (e.g. a nucleus never free of protein), its endmember is a mixture, and NMF or
+MCR-ALS can resolve it better. Noise in the single endmember pixel goes into the endmember
+spectrum; a light smoothing or a narrower range helps. Try it on <b>Help → Test datasets →
+Synthetic → Endmember unmixing (2D Map)</b>: a cell made of glass, protein, nucleus and lipid
+droplets &mdash; <i>Suggest number</i> gives 4, and both methods find one pure pixel of
+each.</div>
+
+$UNMIX_TRUTH_FIGURE
+</div>
+
 <h3>◉ Cluster overlay</h3>
 <div class="cat">
 <p>Runs k-means clustering directly on the map spectra and colours each pixel
@@ -798,8 +878,8 @@ maps.</p>
 
 <div class="note">
 <b>Grayed out until a decomposition is computed.</b> The <b>RGB overlay</b>
-radio button stays disabled until at least one SVD, PCA, NMF or MCR-ALS
-map has been computed for the current dimensions — there is nothing yet
+radio button stays disabled until at least one SVD, PCA, NMF, MCR-ALS or
+Unmixing map has been computed for the current dimensions — there is nothing yet
 to combine. Compute any one of them first (any kind, any number of
 components), and the radio becomes selectable immediately, without
 needing to switch away and back.
@@ -809,7 +889,7 @@ needing to switch away and back.
 column, exactly like SVD or Cluster overlay get their own panel — three
 boxes labelled <b>Red</b>, <b>Green</b> and <b>Blue</b>, each with an
 <b>Enable</b> checkbox, a <b>Source</b> dropdown (SVD / PCA / NMF /
-MCR-ALS) and a <b>Component</b> dropdown. All three channels start
+MCR-ALS / Unmixing) and a <b>Component</b> dropdown. All three channels start
 disabled; enable the ones you want. A kind that hasn't actually been
 computed yet simply leaves its Component dropdown empty for that
 channel. Sources can be mixed freely — for example an NMF component in
@@ -1207,6 +1287,17 @@ they work regardless of whether spectra share an axis.
   <li>If a component looks noisy or redundant, refit with a different
       <b>Components to fit</b> count rather than looking for an Invert-style
       fix — NMF/MCR-ALS components are non-negative by construction.</li>
+</ol>
+</div>
+
+<div class="cat">
+<h3>Unmixing (endmember) map</h3>
+<ol>
+  <li>Switch to <b>Unmixing</b>; optionally set a range via <b>Configure Unmixing range…</b>.</li>
+  <li>Press <b>Suggest number</b> (or set <b>Endmembers</b> yourself) and <b>Update Map</b>.</li>
+  <li>Browse the endmembers; the circles show their pixels. Check the <b>fit-error map</b>:
+      bright regions → try one more endmember.</li>
+  <li>Cross-check with <b>N-FINDR</b>; add the endmember spectra to the list if needed.</li>
 </ol>
 </div>
 

@@ -88,6 +88,10 @@ class Map2DManager:
         # call was a plain single fit (n_runs=1) — see _pick_best_of_n.
         self._nmf_run_info = None
         self._mcr_run_info = None
+        # Endmember unmixing (VCA / N-FINDR, see endmember_unmixing.py):
+        # an EndmemberManager with the NMFManager-like W (abundances) / H
+        # (endmember spectra) -- kind 'em' in the accessors below.
+        self._em_manager = None
 
         # Peak-fit metrics ("Fitted peak position", ... -- see
         # peak_fit_map.py). The dialog sets the settings and, for a
@@ -1024,6 +1028,63 @@ class Map2DManager:
             mgr.explained_variance[component_index])
         return self.map_data
 
+    def compute_em_map(self, spectra, n_rows, n_cols, n_components,
+                       component_index=0,
+                       x_min=None, x_max=None,
+                       include_ranges=None, exclude_ranges=None,
+                       method='vca', sum_to_one=False, random_state=0):
+        """Endmember unmixing: find the n_components purest pixels (VCA or
+        N-FINDR) in the range-filtered spectra and map the abundance of
+        endmember component_index. Same pattern as compute_nmf_map (filter,
+        delegate to EndmemberManager, reshape). Returns the (n_rows, n_cols)
+        map or None (get_last_decomp_error('em') says why)."""
+        from src.modules.visualization_analysis.endmember_unmixing import EndmemberManager
+        if not self.validate_dimensions(len(spectra), n_rows, n_cols):
+            logger.error("Map2DManager: dimension mismatch %d × %d ≠ %d",
+                         n_rows, n_cols, len(spectra))
+            return None
+        filtered = self._filter_spectra_for_decomposition(
+            spectra, x_min, x_max, include_ranges or [], exclude_ranges or [])
+        mgr = EndmemberManager()
+        if filtered is None:
+            mgr.last_error = ("The spectra do not share one x-axis in the chosen range, "
+                              "or no points remain.")
+            self._em_manager = mgr
+            return None
+        if not mgr.compute(filtered, n_components, method=method,
+                           sum_to_one=sum_to_one, random_state=random_state):
+            logger.error("Map2DManager: unmixing failed: %s", mgr.last_error)
+            self._em_manager = mgr
+            return None
+        self._em_manager = mgr
+        component_index = max(0, min(component_index, mgr.W.shape[1] - 1))
+        self.map_data = mgr.W[:, component_index].reshape(n_rows, n_cols)
+        self.n_rows = n_rows
+        self.n_cols = n_cols
+        self.map_mode = "em"
+        return self.map_data
+
+    def get_em_result(self):
+        """The EndmemberManager of the last unmixing (endmember_indices,
+        residual_rms, method, sum_to_one, ...) or None."""
+        mgr = self._em_manager
+        return mgr if mgr is not None and mgr.W is not None else None
+
+    def estimate_n_endmembers(self, spectra, x_min=None, x_max=None,
+                              include_ranges=None, exclude_ranges=None):
+        """Suggested number of endmembers (components above the noise) for
+        the range-filtered spectra -- see endmember_unmixing.estimate_n_endmembers.
+        Returns its dict, or None if the spectra cannot be compared."""
+        from src.modules.visualization_analysis.endmember_unmixing import estimate_n_endmembers
+        filtered = self._filter_spectra_for_decomposition(
+            spectra, x_min, x_max, include_ranges or [], exclude_ranges or [])
+        if filtered is None:
+            return None
+        Y = np.vstack([np.asarray(s['y_scale'], dtype=float) for s in filtered])
+        if not np.all(np.isfinite(Y)):
+            return None
+        return estimate_n_endmembers(Y)
+
     # ------------------------------------------------------------------ #
     # Accessors                                                            #
     # ------------------------------------------------------------------ #
@@ -1087,7 +1148,7 @@ class Map2DManager:
     # currently active" uses these instead of three separate,
     # near-identical branches.
 
-    _KNOWN_KINDS = ('svd', 'nmf', 'mcr', 'pca')
+    _KNOWN_KINDS = ('svd', 'nmf', 'mcr', 'pca', 'em')
 
     def get_n_components(self, kind):
         """Number of available components for *kind* (0 if not computed)."""
@@ -1101,6 +1162,9 @@ class Map2DManager:
             return 0 if mgr is None or mgr.C is None else mgr.C.shape[1]
         if kind == 'pca':
             return 0 if self._pca_U is None else self._pca_U.shape[1]
+        if kind == 'em':
+            mgr = self._em_manager
+            return 0 if mgr is None or mgr.W is None else mgr.W.shape[1]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_subspectrum(self, kind, component_index):
@@ -1128,6 +1192,12 @@ class Map2DManager:
                 return None, None
             ci = max(0, min(component_index, self._pca_U.shape[1] - 1))
             return self._pca_x_axis, self._pca_U[:, ci]
+        if kind == 'em':
+            mgr = self._em_manager
+            if mgr is None or mgr.H is None:
+                return None, None
+            ci = max(0, min(component_index, mgr.H.shape[0] - 1))
+            return mgr.x_axis, mgr.H[ci, :]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_coefficients(self, kind, component_index):
@@ -1156,6 +1226,12 @@ class Map2DManager:
                 return None
             ci = max(0, min(component_index, self._pca_Vt.shape[0] - 1))
             return self._pca_Vt[ci, :]
+        if kind == 'em':
+            mgr = self._em_manager
+            if mgr is None or mgr.W is None:
+                return None
+            ci = max(0, min(component_index, mgr.W.shape[1] - 1))
+            return mgr.W[:, ci]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_reconstructed_spectrum(self, kind, pixel_index, n_components):
@@ -1208,6 +1284,13 @@ class Map2DManager:
             pi = max(0, min(pixel_index, mgr.C.shape[0] - 1))
             y  = mgr.C[pi, :n] @ mgr.ST[:n, :]
             return mgr.x_axis, y
+        if kind == 'em':
+            mgr = self._em_manager
+            if mgr is None or mgr.W is None or mgr.H is None:
+                return None, None
+            n  = max(1, min(n_components, mgr.H.shape[0]))
+            pi = max(0, min(pixel_index, mgr.W.shape[0] - 1))
+            return mgr.x_axis, mgr.W[pi, :n] @ mgr.H[:n, :]
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_component_explained_variance(self, kind):
@@ -1220,6 +1303,8 @@ class Map2DManager:
             return None if self._mcr_manager is None else self._mcr_manager.explained_variance
         if kind == 'pca':
             return self._pca_explained_variance
+        if kind == 'em':
+            return None if self._em_manager is None else self._em_manager.explained_variance
         raise ValueError(f"Unknown decomposition kind: {kind!r}")
 
     def get_last_decomp_error(self, kind):
@@ -1234,6 +1319,8 @@ class Map2DManager:
             return None if self._nmf_manager is None else self._nmf_manager.last_error
         if kind == 'mcr':
             return None if self._mcr_manager is None else self._mcr_manager.last_error
+        if kind == 'em':
+            return None if self._em_manager is None else self._em_manager.last_error
         return None
 
     def get_component_lof(self, kind):
@@ -1243,6 +1330,8 @@ class Map2DManager:
             return None if self._nmf_manager is None else self._nmf_manager.lof
         if kind == 'mcr':
             return None if self._mcr_manager is None else self._mcr_manager.lof
+        if kind == 'em':
+            return None if self._em_manager is None else self._em_manager.lof
         return None
 
     def get_component_iterations(self, kind):

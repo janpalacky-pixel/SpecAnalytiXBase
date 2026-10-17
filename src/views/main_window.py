@@ -174,6 +174,12 @@ SYNTHETIC_TEST_DATASETS = [
     ('groupstats', 'Group Statistics — paired before / after', 'group_stats_paired_demo.xlsx'),
     ('groupstats', 'Group Statistics — skewed values (lipid in cells)', 'group_stats_skewed_demo.xlsx'),
     ('groupstats', 'Group Statistics — map of one cell (ROI regions as groups)', 'group_stats_cell_map_demo.mat'),
+
+    # For endmember unmixing (2D Map -> Map Type "Unmixing"): a map of one
+    # cell made of four substances with known spectra (glass, protein,
+    # nucleus, lipid droplets), each also present (nearly) pure somewhere.
+    # See generate_unmixing_test_dataset.py.
+    ('unmixing', 'Unmixing — cell map with 4 substances (2D Map)', 'unmixing_cell_map_demo.mat'),
 ]
 
 class OperationTreeComboBox(QWidget):
@@ -1652,6 +1658,7 @@ class MainWindow(QMainWindow):
             'xaxis':   'X-Axis Alignment',
             'som':     'Self-Organizing Map (SOM)',
             'groupstats': 'Group Statistics',
+            'unmixing': 'Endmember unmixing (2D Map)',
         }
 
         # label -> filename; the controller resolves the folder and imports it.
