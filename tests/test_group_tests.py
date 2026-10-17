@@ -345,15 +345,22 @@ def test_switch_from_a_remembered_paired_test_is_shown_when_the_window_opens(qui
 def test_ctrl_z_works_after_pressing_a_button(quiet):
     from PyQt5.QtCore import Qt
     from PyQt5.QtTest import QTest
-    from PyQt5.QtWidgets import QPushButton
+    from PyQt5.QtWidgets import QApplication, QPushButton
     from src.views.dialogs.visualization_analysis import group_statistics_dialog as gsd
     d = gsd.GroupStatisticsDialog(_spectra(), None, {}, {})
     d.table.set_values(['a'] * 12 + ['b'] * 12)
     clear = [b for b in d.findChildren(QPushButton) if b.text() == 'Clear all groups'][0]
+    # as after a real click: the window is the active one and the button has the
+    # focus (otherwise a window left open by an earlier test can keep the focus
+    # on Windows and receive the Ctrl+Z)
+    d.show()
+    QApplication.setActiveWindow(d)
+    clear.setFocus()
     clear.click()                                    # removes all groups
     assert not any(d.groups())
     QTest.keyClick(clear, Qt.Key_Z, Qt.ControlModifier)   # the button has the focus
     assert d.groups() == ['a'] * 12 + ['b'] * 12
+    d.close()
     d.deleteLater()
 
 
