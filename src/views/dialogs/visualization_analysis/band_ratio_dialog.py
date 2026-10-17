@@ -41,6 +41,7 @@ from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_display_text_delegate, shorten_spectra_labels,
     make_shorten_names_checkbox,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -1152,7 +1153,7 @@ class _PreviewCanvas(FigureCanvas):
                 f'from its own data regardless of this.',
                 ha='center', fontsize=7, color='#C62828')
         ax.grid(True, linestyle='--', alpha=0.35)
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
 # ======================================================================
@@ -1256,5 +1257,5 @@ class _ResultsPlotsCanvas(FigureCanvas):
                 [_fmt(labels[i]) for i in range(0, len(labels), step)],
                 rotation=label_rotation, ha=ha, fontsize=7)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()

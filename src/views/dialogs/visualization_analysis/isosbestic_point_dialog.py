@@ -44,6 +44,7 @@ from src.modules.utils.label_shortening import (
 from src.modules.visualization_analysis.isosbestic_point_manager import (
     DEFAULT_MIN_PROMINENCE_PCT, DEFAULT_MIN_SIGNAL_PCT, DEFAULT_MAX_CANDIDATES,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -721,5 +722,5 @@ class _IsosbesticPlotCanvas(FigureCanvas):
         ax2.set_ylabel('Std across\nspectra', fontsize=9)
         ax2.grid(True, linestyle='--', alpha=0.35)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()

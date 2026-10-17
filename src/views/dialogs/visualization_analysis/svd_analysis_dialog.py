@@ -16,6 +16,7 @@ from matplotlib.figure import Figure
 import os
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import compute_distinguishing_labels, make_shorten_names_checkbox
+from src.modules.visualization.safe_layout import safe_tight_layout
 logger = get_logger(__name__)
 
 def _svd_dialog_help_html():
@@ -352,7 +353,7 @@ class SVDSingularValuesWindow(QDialog):
                     ax.set_xlabel('Component Number')
                     ax.grid(True, alpha=0.3)
             
-            self.figure.tight_layout()
+            safe_tight_layout(self.figure)
             self.canvas.draw()
             
         except Exception as e:
@@ -577,7 +578,7 @@ class InteractiveSVDAnalysisCanvas(FigureCanvas):
             ax.axis('off')
         
         # Use better spacing parameters
-        self.fig.tight_layout(pad=1.5, h_pad=2.0, w_pad=1.5)
+        safe_tight_layout(self.fig, pad=1.5, h_pad=2.0, w_pad=1.5)
         self.draw()
 
     def _get_bootstrap_result(self):
@@ -1395,7 +1396,7 @@ class SVDDiagnosticsDialog(QWidget):
             self._plot_compare()
         else:
             self._plot_overview()
-        self.fig.tight_layout(pad=1.5)
+        safe_tight_layout(self.fig, pad=1.5)
         self.canvas.draw()
 
     def _get_x_for_key(self, key):

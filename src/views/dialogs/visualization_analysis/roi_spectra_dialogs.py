@@ -41,6 +41,7 @@ import numpy as np
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectra_validation import axes_match
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -822,7 +823,7 @@ class _ROISpectraDialog(QDialog):
         ax_bot.tick_params(labelsize=7)
 
         self._axes.append(ax_bot)
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
 
     def _plot_overlay(self, sel_spectra, colors, orig_indices):
         ax = self._fig.add_subplot(111)
@@ -886,7 +887,7 @@ class _ROISpectraDialog(QDialog):
 
         # Axis linking
         self._apply_axis_linking(axes, nrows, ncols, link_y)
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
 
     def _apply_axis_linking(self, axes, nrows, ncols, link_y):
         """Link y-axes according to the combo selection.

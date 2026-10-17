@@ -65,6 +65,7 @@ from src.modules.utils.spectra_validation import axes_match, describe_axis_misma
 from src.views.dialogs.visualization_analysis.roi_spectra_dialogs import (
     _RemoveROIDialog, _ROISpectraDialog,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -533,7 +534,7 @@ class _SpectrumCanvas(FigureCanvas):
         self.ax.set_xlabel(xlabel, fontsize=8)
         self.ax.set_ylabel(ylabel, fontsize=8)
         self.ax.tick_params(labelsize=7)
-        self.fig.tight_layout()
+        safe_tight_layout(self.fig)
         # Use draw() not draw_idle() so the canvas is fully rendered before
         # _draw_range_bands adds patches on top.
         self.draw()
@@ -3230,7 +3231,7 @@ class Map2DDialog(QDialog):
         self._map_canvas.ax.set_title(title, fontsize=9)
         self._map_canvas.ax.set_xlabel("Column index", fontsize=8)
         self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
-        self._map_canvas.fig.tight_layout()
+        safe_tight_layout(self._map_canvas.fig)
         self._redraw_roi_patches()
         self._map_canvas.draw()
 
@@ -3488,7 +3489,7 @@ class Map2DDialog(QDialog):
         self._map_canvas.ax.set_title(title, fontsize=9)
         self._map_canvas.ax.set_xlabel("Column index", fontsize=8)
         self._map_canvas.ax.set_ylabel("Row index",    fontsize=8)
-        self._map_canvas.fig.tight_layout()
+        safe_tight_layout(self._map_canvas.fig)
         self._redraw_roi_patches()
         self._map_canvas.draw()
 
@@ -5741,7 +5742,7 @@ class Map2DDialog(QDialog):
         twin.set_ylabel("Component amplitude", fontsize=7, color='#E65100')
         twin.tick_params(axis='y', labelcolor='#E65100', labelsize=6)
         self._spectrum_canvas._twin_ax = twin
-        self._spectrum_canvas.fig.tight_layout()
+        safe_tight_layout(self._spectrum_canvas.fig)
         self._spectrum_canvas.draw_idle()
 
     def _clear_reconstructed_overlay(self):
@@ -5838,7 +5839,7 @@ class Map2DDialog(QDialog):
                         label=f"Reconstructed ({n_components} comp.)")
         self._spectrum_canvas._recon_line = line
         ax.legend(handles=[line], fontsize=6, loc='upper right', framealpha=0.7)
-        self._spectrum_canvas.fig.tight_layout()
+        safe_tight_layout(self._spectrum_canvas.fig)
         self._spectrum_canvas.draw_idle()
 
     # ── Spectrum / subspectrum panel helpers ────────────────────────────
@@ -7455,7 +7456,7 @@ class _MultiMapDialog(QDialog):
             ax_spec.set_ylabel("U amplitude", fontsize=7)
             ax_spec.tick_params(labelsize=6)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self._canvas.draw_idle()
 
     # ------------------------------------------------------------------ #

@@ -42,6 +42,7 @@ from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, compute_distinguishing_labels, shorten_spectra_labels,
     make_shorten_names_checkbox,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -1134,7 +1135,7 @@ class _ComparisonCanvas(FigureCanvas):
         _plot_spectra_on_ax(ax, originals, color_map, ref_label,
                             legend_visible, 'Spectra (run preview to align)')
         ax.set_xlabel('x', fontsize=9)
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
     def plot_comparison(self, originals, aligned, ref_label=None,
@@ -1195,7 +1196,7 @@ class _ComparisonCanvas(FigureCanvas):
                                     legend_visible, f'After alignment ({len(aligned)} spectra)')
             ax_bot.set_xlabel('x', fontsize=9)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
 
@@ -1257,5 +1258,5 @@ class _ShiftPlotCanvas(FigureCanvas):
         self._ax.set_title('X-axis shift per spectrum', fontsize=10)
         self._ax.legend(fontsize=8, loc='best')
         self._ax.grid(True, axis='y', linestyle='--', alpha=0.4)
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()

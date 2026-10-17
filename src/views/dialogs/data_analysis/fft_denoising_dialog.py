@@ -41,6 +41,7 @@ from matplotlib.figure import Figure
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -867,7 +868,7 @@ class _PowerCanvas(FigureCanvas):
         )
         if legend_visible or has_bands:
             ax.legend(fontsize=7, loc='upper right')
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
     def plot_subplots(self, power_data: list, settings: dict, legend_visible: bool):
@@ -892,7 +893,7 @@ class _PowerCanvas(FigureCanvas):
         self._fig.suptitle(
             f'Power spectra — {_n_spectra_label(n)} (subplots)', fontsize=9, y=1.0
         )
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
 
@@ -968,5 +969,5 @@ class _SignalCanvas(FigureCanvas):
                     ax.legend(fontsize=7, loc='best')
             ax_bot.set_xlabel('x', fontsize=9)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()

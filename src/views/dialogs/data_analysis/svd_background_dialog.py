@@ -20,6 +20,7 @@ from src.help.svd_background_help import (
 )
 from src.help.help_window import show_help_window
 from src.modules.utils.app_logger import get_logger
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -143,7 +144,7 @@ class SVDSingularValuesWindow(QDialog):
             else:
                 _residual(self.figure.add_subplot(111))
 
-            self.figure.tight_layout()
+            safe_tight_layout(self.figure)
             self.canvas.draw()
         except Exception as exc:
             logger.error(f"Error plotting SVD data: {exc}")
@@ -304,7 +305,7 @@ class SVDPreviewWindow(QDialog):
                         ax.legend()
                 ax2.set_xlabel('Wavenumber')
 
-            self.figure.tight_layout()
+            safe_tight_layout(self.figure)
             self.canvas.draw()
         except Exception as exc:
             logger.error(f"Error plotting preview: {exc}")
@@ -401,7 +402,7 @@ class InteractiveSVDCanvas(FigureCanvas):
 
         self.ax_subspectra   = self.fig.add_subplot(211)
         self.ax_coefficients = self.fig.add_subplot(212)
-        self.fig.tight_layout(pad=3.0)
+        safe_tight_layout(self.fig, pad=3.0)
 
         self.svd_controller      = None
         self.current_subspectrum = 0
@@ -548,7 +549,7 @@ class InteractiveSVDCanvas(FigureCanvas):
                 self.ax_coefficients.set_title(f"Coefficients for Subspectrum {index + 1}")
                 self.ax_coefficients.grid(True, alpha=0.3)
 
-        self.fig.tight_layout(pad=3.0)
+        safe_tight_layout(self.fig, pad=3.0)
         self.draw()
         self._restore_or_autoscale(index)
 
@@ -616,7 +617,7 @@ class InteractiveSVDCanvas(FigureCanvas):
                 self.ax_coefficients.set_title(f"Coefficients for Subspectrum {index + 1}")
                 self.ax_coefficients.grid(True, alpha=0.3)
 
-        self.fig.tight_layout(pad=3.0)
+        safe_tight_layout(self.fig, pad=3.0)
         self.draw()
         self._restore_or_autoscale(index)
 

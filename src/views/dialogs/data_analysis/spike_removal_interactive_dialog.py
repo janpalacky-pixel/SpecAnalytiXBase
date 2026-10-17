@@ -11,6 +11,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 
 class SpikeRemovalInteractiveDialog(QDialog):
@@ -507,7 +508,7 @@ class SpikeRemovalInteractiveDialog(QDialog):
         ax.set_ylabel('Intensity')
         ax.legend(fontsize=8)
         ax.grid(True, alpha=0.3)
-        self.fig.tight_layout()
+        safe_tight_layout(self.fig)
 
         if saved_xlim is not None:
             ax.set_xlim(saved_xlim)

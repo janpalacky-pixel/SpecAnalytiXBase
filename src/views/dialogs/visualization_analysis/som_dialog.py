@@ -21,6 +21,7 @@ from matplotlib.patches import Rectangle
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.progress_utils import OperationCancelled
 from src.modules.utils.label_shortening import make_shorten_names_checkbox
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -284,7 +285,7 @@ class SOMCanvas(FigureCanvas):
         ax.set_xlabel('Node column')
         ax.set_ylabel('Node row')
 
-        self.fig.tight_layout()
+        safe_tight_layout(self.fig)
         self.draw()
 
     def _plot_sample_map(self, manager):
@@ -344,7 +345,7 @@ class SOMCanvas(FigureCanvas):
         ax.set_xlabel('Node column')
         ax.set_ylabel('Node row')
 
-        self.fig.tight_layout()
+        safe_tight_layout(self.fig)
         self.draw()
 
 
@@ -1134,7 +1135,7 @@ class SOMDialog(QDialog):
         ax.set_ylabel('Intensity')
         if len(member_labels) <= 15:
             ax.legend(fontsize=7, loc='best')
-        fig.tight_layout()
+        safe_tight_layout(fig)
 
         layout.addWidget(toolbar)
         layout.addWidget(canvas)

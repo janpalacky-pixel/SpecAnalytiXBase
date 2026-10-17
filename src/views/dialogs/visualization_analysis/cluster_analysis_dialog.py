@@ -15,6 +15,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shorten_names_checkbox
+from src.modules.visualization.safe_layout import safe_tight_layout
 logger = get_logger(__name__)
 
 
@@ -455,7 +456,7 @@ class ClusterAnalysisCanvas(FigureCanvas):
                 
             # tight_layout conflicts with dendrogram's subplots_adjust — skip it
             if self.visualization_mode != 'dendrogram':
-                self.fig.tight_layout()
+                safe_tight_layout(self.fig)
             self.draw()
             
         except Exception as e:

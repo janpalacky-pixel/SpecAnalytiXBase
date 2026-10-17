@@ -22,6 +22,7 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, compute_distinguishing_labels, make_shorten_names_checkbox,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -435,5 +436,5 @@ class _PreviewCanvas(FigureCanvas):
             ax_bot.set_ylabel('Intensity', fontsize=9)
             ax_bot.grid(True, linestyle='--', alpha=0.4)
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()

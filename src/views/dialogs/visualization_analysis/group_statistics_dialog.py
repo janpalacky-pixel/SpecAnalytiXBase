@@ -36,6 +36,7 @@ from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
     PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
     save_settings as save_peak_fit_settings)
 from src.views.dialogs.misc.fill_column_table import FillColumnTable
+from src.modules.visualization.safe_layout import safe_tight_layout
 
 logger = get_logger(__name__)
 
@@ -1423,7 +1424,7 @@ class GroupStatisticsDialog(QDialog):
         ax2.set_xlabel("x", fontsize=8)
         for ax in (ax1, ax2):
             ax.tick_params(labelsize=7)
-        fig.tight_layout()
+        safe_tight_layout(fig)
         self.sp_canvas.draw_idle()
 
     def save_spectra_plot(self):
@@ -2001,9 +2002,9 @@ class GroupStatisticsDialog(QDialog):
             import textwrap as _tw
             fig.text(0.01, 0.005, _tw.fill(footnote, 140), fontsize=7.5, color='#555555',
                      va='bottom')
-            fig.tight_layout(rect=(0, 0.05, 1, 1))
+            safe_tight_layout(fig, rect=(0, 0.05, 1, 1))
         else:
-            fig.tight_layout()
+            safe_tight_layout(fig)
         self.canvas.draw_idle()
         self.save_plot_btn.setEnabled(bool(names))
 

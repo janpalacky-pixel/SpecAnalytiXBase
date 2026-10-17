@@ -36,6 +36,7 @@ from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_display_text_delegate,
     compute_distinguishing_labels, make_shorten_names_checkbox,
 )
+from src.modules.visualization.safe_layout import safe_tight_layout
 logger = get_logger(__name__)
 
 _MATCH_COLORS = ['#E65100','#1565C0','#2E7D32','#6A1B9A','#00838F']
@@ -1527,7 +1528,7 @@ class _PreviewCanvas(FigureCanvas):
                     ha='center', va='bottom', transform=ax.transAxes,
                     fontsize=8, color='#C62828',
                     bbox=dict(boxstyle='round', facecolor='#FFEBEE', edgecolor='#C62828', alpha=0.9))
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
 
     def plot_multi(self, pairs, n_total, max_subplots, normalization='none', display_labels=None):
@@ -1707,5 +1708,5 @@ class _ScoresCanvas(FigureCanvas):
                 f'— increase Max subplots to see more',
                 ha='center', fontsize=7, color='#888')
 
-        self._fig.tight_layout()
+        safe_tight_layout(self._fig)
         self.draw_idle()
