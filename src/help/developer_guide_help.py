@@ -3506,8 +3506,9 @@ def _natural_sort_key(cls, label):
             <code>noise_plateau()</code> fits a straight line to log&nbsp;s between 5&nbsp;% and
             50&nbsp;% of the components &mdash; the noise level read from the data, so it also holds
             for heteroscedastic Raman noise; <code>n</code> = leading values above 1.15 &times;
-            plateau; <code>bend_point()</code> = the point farthest below the log-scale chord from
-            s[0] to s[2n+2]; with fewer than 12 values the old second-difference /
+            plateau; <code>clear_count()</code> = leading values above 2 &times; plateau (clearly
+            above: at least 3/4 signal; replaced a chord-based "bend", whose position depended on
+            the chord's end point); with fewer than 12 values the old second-difference /
             1.2&middot;&sigma;(&radic;N + &radic;L) limit is used), <code>denoise()</code>
             (projection Y&nbsp;V<sub>k</sub>V<sub>k</sub><sup>T</sup>, not centred).</li>
             <li><code>EndmemberManager</code> has NMFManager's attributes (<code>W</code> abundances,
@@ -3522,7 +3523,7 @@ def _natural_sort_key(cls, label):
             decomposition map is drawn (fit, cached redraw, browsing). The "Denoise first" check
             box and spin box mark the fit stale like the other settings;
             <code>_SuggestEndmembersDialog</code> plots the singular values with plateau, noise
-            limit, bend and the two "Use …" buttons; <code>_EndmemberSpectraDialog</code> ("Show
+            limit, 2 &times; plateau and the two "Use …" buttons; <code>_EndmemberSpectraDialog</code> ("Show
             all endmembers…") draws them stacked or as a grid with abundance maps.</li>
             <li>Tests: <code>tests/test_endmember_unmixing.py</code> (methods, abundances,
             sum-to-one, brightness, suggestion incl. brighter-pixels-noisier, denoising, fit error,
@@ -3530,6 +3531,36 @@ def _natural_sort_key(cls, label):
             <code>unmixing_cell_map_demo.mat</code> with known truth, Suggest window, Denoise first,
             Show all endmembers, RGB, add to list). Help pictures: <code>dev_notes/make_unmixing_figures.py</code>
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
+        </ul>
+
+        <h2 id="factor-count-design">How many components: factor_diagnostics</h2>
+        <ul>
+            <li><code>src/modules/visualization_analysis/factor_diagnostics.py</code> (Qt-free) is the
+            one place for the component-count criteria: <code>residual_error(s, n_pts, n_sp)</code>
+            (&radic;[&Sigma;<sub>j&gt;m</sub> s<sub>j</sub>&sup2; / ((n_pts&minus;m)(n_sp&minus;m))]),
+            <code>malinowski_ind(s, n_pts, n_sp)</code> (RE/(c&minus;n)&sup2; with
+            RE = &radic;[&Sigma;<sub>j&gt;n</sub> s<sub>j</sub>&sup2; / (r(c&minus;n))], <b>c = the smaller
+            side</b> of the table, r the larger), <code>ind_minimum()</code> and
+            <code>noise_limit(s)</code> (noise plateau, n above it, n clearly above it &mdash; the Suggest-number
+            numbers; None below 12 values). Used by SVD Analysis (Diagnostics + export), the 2D
+            Map's <code>_SVDDiagAdapter</code>, PCA Scores &amp; Loadings, SVD background correction
+            and SVD interpolation.</li>
+            <li>Bugs it fixed (v1.5.0): IND used c = number of spectra even when there were more
+            spectra than points (a map: IND fell to the last component); RE used
+            <code>U.shape[1]</code> as the number of spectra (= number of points for such data);
+            PCA computed RE / IND from the <i>retained</i> singular values only (they changed with the
+            number of components requested) &mdash; it now keeps <code>s_all</code>; SVD
+            interpolation's RE used a different formula than SVD Analysis.</li>
+            <li>Always pass <b>all</b> singular values, and the real numbers of points and spectra
+            (from <code>U.shape[0]</code> and <code>Vt.shape[1]</code>).</li>
+            <li><code>src/modules/visualization/safe_layout.py</code>:
+            <code>safe_tight_layout(fig, **kw)</code> skips the layout for a figure of (almost) zero
+            pixel size, where matplotlib raises "LinAlgError: Singular matrix" (canvas squeezed by
+            a layout or collapsed by a splitter). Every unguarded <code>fig.tight_layout()</code>
+            in the views uses it. The 2D Map's Diagnostics… now puts the
+            <code>SVDDiagnosticsDialog</code> panel (a QWidget, a tab in SVD Analysis) into its own
+            QDialog &mdash; shown as a child widget it was squeezed to 100 &times; 30 px. Tests:
+            <code>tests/test_factor_diagnostics.py</code>.</li>
         </ul>
 
         <h2 id="splitters-many-spectra-design">Splitters, many spectra in tool windows, parallel bootstrap</h2>

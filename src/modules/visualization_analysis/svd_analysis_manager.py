@@ -290,29 +290,18 @@ class SVDAnalysisManager:
         return summary
     
     def calculate_residual_errors(self):
-        """Calculate residual errors based on MATLAB faktorka.m implementation."""
+        """Residual error E(m) (MATLAB faktorka.m), see
+        factor_diagnostics.residual_error. The number of spectra is taken
+        from Vt: U has min(points, spectra) columns, which for a table with
+        more spectra than points (a map) is the number of points."""
         if self.s is None or self.U is None:
             return None
-            
-        num_of_spectra = self.U.shape[1]
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
         num_of_spec_points = self.U.shape[0]
-        
+        num_of_spectra = self.Vt.shape[1] if self.Vt is not None else self.U.shape[1]
         if num_of_spectra == 1:
             return np.array([0])
-        
-        PCA_eigen = self.s**2
-        num_of_scores = len(self.s)
-        
-        E = np.zeros(num_of_scores - 1)
-        for m in range(num_of_scores - 1):
-            expr_1 = np.sum(PCA_eigen) - np.sum(PCA_eigen[:m+1])
-            expr_2 = (num_of_spec_points - m - 1) * (num_of_spectra - m - 1)
-            if expr_2 > 0:
-                E[m] = np.sqrt(expr_1 / expr_2)
-            else:
-                E[m] = 0
-                
-        return E
+        return residual_error(self.s, num_of_spec_points, num_of_spectra)
     
     def _autofit_excel_columns(self, writer, sheet_name, df):
         """Widen each column enough to show its full header on first

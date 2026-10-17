@@ -546,8 +546,9 @@ class _SpectrumCanvas(FigureCanvas):
 
 class _SuggestEndmembersDialog(QDialog):
     """Suggest number: the singular values with the noise plateau, the
-    components above the noise (upper limit) and where the curve bends
-    (a practical start). The user picks one of the two (or cancels)."""
+    components above the noise (> 1.15 x plateau, an upper limit) and
+    clearly above it (> 2 x plateau, a practical start). The user picks
+    one of the two (or cancels)."""
 
     def __init__(self, est, parent=None):
         super().__init__(parent)
@@ -557,7 +558,7 @@ class _SuggestEndmembersDialog(QDialog):
         self.chosen = None
         s = np.asarray(est['singular_values'], float)
         plateau = np.asarray(est['plateau'], float)
-        n, bend = int(est['n']), int(est['bend'])
+        n, clear = int(est['n']), int(est['clear'])
         lay = QVBoxLayout(self)
         fig = Figure(figsize=(6.4, 3.4), tight_layout=True)
         canvas = FigureCanvas(fig)
@@ -568,11 +569,13 @@ class _SuggestEndmembersDialog(QDialog):
         ax.semilogy(k, plateau[:shown], '--', lw=1, color='#757575',
                     label='noise plateau (fitted to the flat part)')
         ax.semilogy(k, 1.15 * plateau[:shown], ':', lw=1, color='#B71C1C',
-                    label='noise limit (1.15 x plateau)')
-        ax.semilogy([bend], [s[bend - 1]], 'o', ms=9, mfc='none', mec='#E65100', mew=2,
-                    label=f'bend: {bend}')
+                    label='noise limit (1.15 \u00d7 plateau)')
+        ax.semilogy(k, 2.0 * plateau[:shown], '-.', lw=1, color='#E65100',
+                    label='2 \u00d7 plateau')
+        ax.semilogy([clear], [s[clear - 1]], 'o', ms=9, mfc='none', mec='#E65100', mew=2,
+                    label=f'last clearly above the noise (> 2 \u00d7): {clear}')
         ax.semilogy([n], [s[n - 1]], 's', ms=9, mfc='none', mec='#B71C1C', mew=2,
-                    label=f'last above the noise: {n}')
+                    label=f'last above the noise (> 1.15 \u00d7): {n}')
         ax.set_xlabel('Component')
         ax.set_ylabel('Singular value (log)')
         ax.legend(fontsize=7)
@@ -582,9 +585,10 @@ class _SuggestEndmembersDialog(QDialog):
         lay.addWidget(self.toolbar)
         lay.addWidget(canvas, 1)
         text = QLabel(
-            f"<b>{n}</b> components are clearly above the noise &mdash; an upper limit "
-            f"for the number of substances. The curve bends into the noise at "
-            f"<b>{bend}</b> &mdash; a practical number to start with.<br>"
+            f"<b>{n}</b> components are above the noise (more than 1.15 &times; the "
+            f"noise line) &mdash; an upper limit for the number of substances. "
+            f"<b>{clear}</b> are clearly above it (more than 2 &times;: at least three "
+            f"quarters signal) &mdash; a practical number to start with.<br>"
             "The noise is read from the flat part of the curve itself, so it also "
             "holds when brighter pixels are noisier. Small, consistent differences "
             "(a baseline leftover, an intensity drift) also count as components, so "
@@ -592,16 +596,16 @@ class _SuggestEndmembersDialog(QDialog):
         text.setWordWrap(True)
         lay.addWidget(text)
         row = QHBoxLayout()
-        self.bend_btn = QPushButton(f"Use {bend} (bend)")
+        self.clear_btn = QPushButton(f"Use {clear} (clearly above the noise)")
         self.noise_btn = QPushButton(f"Use {n} (above the noise)")
         cancel = QPushButton("Cancel")
-        for b in (self.bend_btn, self.noise_btn, cancel):
+        for b in (self.clear_btn, self.noise_btn, cancel):
             b.setAutoDefault(False)
-        self.bend_btn.clicked.connect(lambda: self._pick(bend))
+        self.clear_btn.clicked.connect(lambda: self._pick(clear))
         self.noise_btn.clicked.connect(lambda: self._pick(n))
         cancel.clicked.connect(self.reject)
         row.addStretch(1)
-        row.addWidget(self.bend_btn)
+        row.addWidget(self.clear_btn)
         row.addWidget(self.noise_btn)
         row.addWidget(cancel)
         lay.addLayout(row)
@@ -784,19 +788,15 @@ class _SVDDiagAdapter:
         mgr = self._ctrl.manager
         if mgr._s is None or mgr._U is None:
             return None
-        s  = mgr._s
-        num_of_spectra    = mgr._U.shape[1]
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
+        # number of spectra from Vt: U has only min(points, spectra) columns,
+        # i.e. as many as there are points for a map
+        num_of_spectra = (mgr._Vt.shape[1] if mgr._Vt is not None
+                          else mgr._U.shape[1])
         num_of_spec_points = mgr._U.shape[0]
         if num_of_spectra == 1:
             return np.array([0])
-        PCA_eigen = s ** 2
-        num_of_scores = len(s)
-        E = np.zeros(num_of_scores - 1)
-        for m in range(num_of_scores - 1):
-            expr_1 = np.sum(PCA_eigen) - np.sum(PCA_eigen[:m + 1])
-            denom  = (num_of_spec_points - m - 1) * (num_of_spectra - m - 1)
-            E[m]   = np.sqrt(expr_1 / denom) if denom > 0 else 0.0
-        return E
+        return residual_error(mgr._s, num_of_spec_points, num_of_spectra)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4427,7 +4427,8 @@ class Map2DDialog(QDialog):
 
     def _suggest_n_endmembers(self):
         """Suggest the number of endmembers: a window with the singular
-        values, the noise plateau, the bend and the noise limit."""
+        values, the noise plateau, the noise limit and the components
+        clearly above the noise."""
         from PyQt5.QtWidgets import QApplication
         ranges, is_excl = self._active_range_state()
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -5125,8 +5126,24 @@ class Map2DDialog(QDialog):
             from src.views.dialogs.visualization_analysis.svd_analysis_dialog \
                 import SVDDiagnosticsDialog
             adapter = _SVDDiagAdapter(self.controller)
-            dlg     = SVDDiagnosticsDialog(parent=self, controller=adapter)
-            dlg.show()
+            # SVDDiagnosticsDialog is a panel (a tab in SVD Analysis), not a
+            # window: created with this dialog as parent and shown, it sat
+            # squeezed to ~100 x 30 px in this window's corner, and drawing
+            # its plot at 0 px height raised "Singular matrix". It gets its
+            # own window here.
+            win = QDialog(self)
+            win.setWindowTitle("SVD Diagnostics (2D Map)")
+            win.setWindowFlags((win.windowFlags() | Qt.WindowMaximizeButtonHint)
+                               & ~Qt.WindowMinimizeButtonHint)
+            win_lay = QVBoxLayout(win)
+            win_lay.setContentsMargins(4, 4, 4, 4)
+            panel = SVDDiagnosticsDialog(parent=win, controller=adapter)
+            win_lay.addWidget(panel)
+            win.resize(1150, 720)
+            win.setAttribute(Qt.WA_DeleteOnClose)
+            self._diagnostics_window = win          # for tests
+            self._diagnostics_panel = panel
+            win.show()
         except Exception as exc:
             logger.error("Map2DDialog: diagnostics failed: %s", exc,
                          exc_info=True)

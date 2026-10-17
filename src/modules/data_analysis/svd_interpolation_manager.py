@@ -121,14 +121,8 @@ class SVDInterpolationManager:
         n_pts = 0 if self.x_axis is None else len(self.x_axis)
         if n_sp <= 1 or n_pts <= 0:
             return None
-        eigenvalues = self.s ** 2
-        k = len(self.s)
-        re = np.zeros(k - 1)
-        for m in range(k - 1):
-            res_var = np.sum(eigenvalues[m + 1:])
-            denom = n_pts * (n_sp - m)
-            re[m] = np.sqrt(res_var / denom) if denom > 0 else 0
-        return re
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
+        return residual_error(self.s, n_pts, n_sp)
 
     def compute_component_diagnostics(self, threshold_pct=99.0):
         """
@@ -146,7 +140,12 @@ class SVDInterpolationManager:
         the variance and the tail is essentially zero) — in exactly that
         situation IND's minimum can land absurdly deep into the tail
         (hundreds or thousands of components) instead of reflecting the
-        handful that actually matter. Cumulative variance threshold
+        handful that actually matter. (Found later: a large part of that
+        failure was that IND was computed with c = number of spectra even
+        when there were more spectra than points; Malinowski's c is the
+        SMALLER side -- fixed in factor_diagnostics.malinowski_ind, which
+        SVD Analysis and PCA now use. This hint stays on the cumulative
+        variance, which is what this operation needs.) Cumulative variance threshold
         doesn't have that failure mode: it directly answers "how many
         components until we've captured (threshold)% of the
         variability", which is the practical question for this operation

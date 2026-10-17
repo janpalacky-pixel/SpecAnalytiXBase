@@ -56,17 +56,17 @@ def test_demo_map_suggest_and_unmix(quiet, monkeypatch):
     from PyQt5.QtWidgets import QDialog
     from src.views.dialogs.visualization_analysis import map2d_dialog as md
 
-    def use_bend(dlg):                      # the Suggest window: "Use 4 (bend)"
-        dlg.bend_btn.click()
+    def use_clear(dlg):          # the Suggest window: "Use 4 (clearly above the noise)"
+        dlg.clear_btn.click()
         return QDialog.Accepted
-    monkeypatch.setattr(md._SuggestEndmembersDialog, 'exec_', use_bend)
+    monkeypatch.setattr(md._SuggestEndmembersDialog, 'exec_', use_clear)
     d = _dialog(_map_spectra())
     assert (d._rows_spin.value(), d._cols_spin.value()) == (40, 50)    # filled in from the file
     assert d._decomp_n_label.text() == "Endmembers:" and d._em_settings_widget.isVisibleTo(d)
     assert not d._btn_decomp_run_n.isVisibleTo(d) and not d._ref_grp.isVisibleTo(d)
     d._suggest_n_endmembers()
     assert d._decomp_n_spin.value() == 4 and d._suggest_dialog.chosen == 4
-    assert 'Use 4 (bend)' in d._suggest_dialog.bend_btn.text()
+    assert 'Use 4 (clearly above the noise)' in d._suggest_dialog.clear_btn.text()
     assert 'Use 4 (above the noise)' in d._suggest_dialog.noise_btn.text()
     for method in ('vca', 'nfindr'):
         d._em_method_combo.setCurrentIndex(d._em_method_combo.findData(method))

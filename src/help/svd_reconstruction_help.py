@@ -509,22 +509,37 @@ def get_svd_reconstruction_help_content():
 
     <div class="cat">
         <h3>Malinowski IND function</h3>
-        <p>IND(m) = RE(m) / (n_sp − m)²</p>
-        <p>where RE(m) = √[ Σᵢ₌ₘ₊₁ σᵢ² / (n_pts × (n_sp − m)) ]</p>
-        <p>Dividing RE by (n_sp − m)² creates a competing effect: as m increases,
+        <p>IND(m) = RE(m) / (c − m)²</p>
+        <p>where RE(m) = √[ Σᵢ₌ₘ₊₁ σᵢ² / (r × (c − m)) ]</p>
+        <p><b>c</b> is the <b>smaller</b> side of the data table and <b>r</b> the larger one:
+        the number of spectra or the number of points, whichever is smaller. The program
+        chooses this automatically.</p>
+        <div class="warn">
+            <b>&#9888; Important &mdash; which side is c (fixed in v1.5.0).</b> For a few spectra
+            of many points (e.g. 20 spectra &times; 1 000 points) c is the number of spectra. For a
+            <b>2D map</b> or any data set with more spectra than points (e.g. 21&nbsp;000 spectra
+            &times; 1&nbsp;600 points) c is the number of <b>points</b>. Earlier versions always took
+            c = number of spectra. With more spectra than points the IND then only fell and its
+            "minimum" was the last component (for a 21&nbsp;000 &times; 1&nbsp;600 Raman map:
+            1&nbsp;599 instead of 9), and the "IND unreliable" warning appeared. This mistake is
+            fixed; the same formula is now used in SVD Analysis, the 2D Map diagnostics and PCA
+            Scores &amp; Loadings. The residual error E(m) now also uses the real number of spectra
+            (it used the number of columns of U, which for such data is the number of points).
+        </div>
+        <p>Dividing RE by (c − m)² creates a competing effect: as m increases,
         the numerator (residual) decreases, but the denominator shrinks faster in the
         noise regime, causing IND to <strong>turn upward</strong>.
         The <strong>minimum of IND</strong> is the statistically optimal number of
         components to retain — unlike E(m), IND has a genuine minimum.</p>
         <div class="warn">
-            <b>&#9888; IND reliability depends on the n_pts/n_sp ratio:</b><br>
-            IND was developed for datasets where n_pts &gt;&gt; n_sp (e.g. 10 spectra
-            × 1000 wavelength points). In that regime the denominator (n_sp − m)²
-            shrinks fast enough to produce a clear minimum.<br><br>
-            When n_pts/n_sp &lt; 10 (nearly square dataset — common with many UV-Vis
-            or large spectral series), the denominator shrinks too slowly and the IND
-            minimum may point to a much higher N than the true number of components.
-            The SVD Diagnostics summary shows a warning when this condition is detected.<br><br>
+            <b>&#9888; IND reliability depends on the ratio r / c (larger / smaller side):</b><br>
+            IND works best when the table is much longer than wide (r / c &gt; 10, e.g. 10 spectra
+            × 1000 wavelength points, or a map of 21&nbsp;000 spectra × 1&nbsp;600 points). Then the
+            denominator (c − m)² shrinks fast enough to produce a clear minimum.<br><br>
+            When r / c &lt; 10 (nearly square table — e.g. 300 spectra of 500 points), the
+            denominator shrinks too slowly and the IND minimum may point to a much higher N than
+            the true number of components. The SVD Diagnostics summary shows a note below 10 and a
+            warning below 5.<br><br>
             <b>For large datasets or continuous series</b> (titrations, concentration
             series, time series), use visual inspection of subspectra and the singular
             value kink as the primary criteria. IND is most reliable for small discrete
@@ -538,10 +553,29 @@ def get_svd_reconstruction_help_content():
     </div>
 
     <div class="cat">
+        <h3>Noise limit (singular values)</h3>
+        <p>The singular-value plot (and the Summary) also show the <b>noise plateau</b> &mdash; a
+        straight line (log scale) fitted to the flat end of the curve, which is noise &mdash;
+        with the <b>noise limit</b> (1.15 &times; plateau) and 2 &times; plateau, the <b>last
+        component above the noise</b> (more than 1.15 &times;, red square) and the <b>last component
+        clearly above the noise</b> (more than 2 &times;, orange circle: at least three quarters
+        signal). These are the same numbers as 2D Map &rarr; Unmixing &rarr; Suggest number;
+        the 2D Map help ("How Suggest number finds its two numbers") explains them with pictures.
+        "Above the noise" is an upper limit (consistent small effects such as a baseline leftover
+        also count); "clearly above" is a practical number to start with. They need at least 12
+        components (enough to see a flat part); with fewer spectra and points they are not
+        shown.</p>
+    </div>
+
+    <div class="cat">
         <h3>Cumulative variance</h3>
         <p>The diagnostic window annotates how many components are needed to reach
-        95% and 99% of total explained variance. This gives a practical upper bound:
-        retaining more than the 99% threshold is rarely justified.</p>
+        95% and 99% of total explained variance. For data with little noise this gives a
+        practical upper bound: retaining more than the 99% threshold is rarely justified.
+        For <b>noisy data</b> it is of little use: the noise itself is a large part of the
+        variance, so 95&nbsp;% or 99&nbsp;% may need hundreds of components (Glenodinium Raman map:
+        472 and 1&nbsp;234 of 1&nbsp;600, while the noise limit gives 13). Then use the noise limit,
+        "clearly above the noise" and IND.</p>
     </div>
 
     <div class="cat">

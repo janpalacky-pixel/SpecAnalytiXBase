@@ -57,6 +57,7 @@ _SCREENSHOT_FILES = {
     "UNMIX_GLEN_ALL":      "unmixing_glen_all.png",
     "UNMIX_GLEN_STACKED":  "unmixing_glen_stacked.png",
     "UNMIX_GLEN_DENOISE":  "unmixing_glen_denoise.png",
+    "UNMIX_SUGGEST_HOW":   "unmixing_suggest_explained.png",
 }
 
 # Screenshots shown only once the file exists, so a newly documented
@@ -84,11 +85,20 @@ _OPTIONAL_FIGURES = {
                     "Raman positions of glass, protein, DNA and lipids; the heights and widths "
                     "are invented): every pixel is a mixture of them. Unmixing should find "
                     "them again as its endmembers."),
+    "UNMIX_SUGGEST_HOW": ("How Suggest number finds its two numbers",
+                          "Left: all 1 600 singular values of the Glenodinium map (both axes "
+                          "logarithmic). A line is fitted to the flat part (grey band); 13 values "
+                          "lie more than 1.15 \u00d7 above it. A limit computed from a typical "
+                          "pixel's noise (purple) would be so low that 820 noise values were above "
+                          "it. Right: each of the first 20 values divided by the noise line: 13 are "
+                          "above 1.15 \u00d7 (above the noise), 8 above 2 \u00d7 (clearly above "
+                          "the noise)."),
     "UNMIX_SUGGEST": ("Suggest number window",
                       "Suggest number on the Glenodinium map: the singular values (blue) fall "
                       "steeply and then flatten into the noise (grey dashed line, fitted to the flat "
-                      "part). 13 components are above the noise limit (red square); the curve "
-                      "bends at 8 (orange circle). The two buttons take either number."),
+                      "part). 13 components are above the noise (more than 1.15 \u00d7, red "
+                      "square), 8 clearly above it (more than 2 \u00d7, orange circle). The two "
+                      "buttons take either number."),
     "UNMIX_GLEN_DIALOG": ("Unmixing of the Glenodinium map",
                           "Glenodinium map (140 \u00d7 150 = 21 000 spectra), 6 endmembers, VCA, "
                           "denoised with 13 SVD components: the abundance map of endmember 1; the "
@@ -214,7 +224,8 @@ recorded on a regular (x, y) grid.</p>
       <li><a href="#svd">SVD</a> &middot; <a href="#pca">PCA</a> &middot;
           <a href="#nmf-mcr">NMF / MCR-ALS</a> &middot;
           <a href="#unmixing">Unmixing (endmembers)</a>
-          (<a href="#glenodinium">real data example</a>)</li>
+          (<a href="#glenodinium">real data example</a>,
+          <a href="#suggest-how">how Suggest number works</a>)</li>
       <li><a href="#cluster">Cluster overlay</a> &middot; <a href="#rgb">RGB overlay</a></li>
     </ul></li>
   <li><a href="#range">3 — Spectral Range Configuration</a></li>
@@ -489,7 +500,22 @@ error) controls the text shown next to each component.</p>
 <p><b>Invert:</b> flips the sign of U[:,k] and V<sup>T</sup>[k,:] simultaneously.
 SVD sign is arbitrary; use Invert when the map or subspectrum appears upside-down.</p>
 <p><b>Multi-map… / Diagnostics…</b> open the multi-component grid view and the
-SVD diagnostics window respectively.</p>
+SVD diagnostics window respectively. The diagnostics window shows the singular values with
+the <b>noise limit</b> and the components <b>clearly above the noise</b> (the same numbers as Unmixing &rarr;
+<a href="#suggest-how">Suggest number</a>) next to the residual error, Malinowski IND and the
+explained variance.</p>
+<div class="warn">
+<b>&#9888; Malinowski IND and maps (fixed in v1.5.0).</b> IND is defined for a table whose
+<i>smaller</i> side limits the number of components. A map has many more spectra than points
+(Glenodinium: 21&nbsp;000 spectra &times; 1&nbsp;600 points), so that side is the number of
+<i>points</i>. Earlier versions always used the number of <i>spectra</i>; for a map the IND then
+kept falling and its "minimum" was the last component (Glenodinium: 1&nbsp;599) &mdash; the
+"IND unreliable" warning appeared. Now the smaller side is used automatically: Glenodinium
+gives an IND minimum at 9 (8&ndash;10 are almost equal), between "clearly above the noise" (8)
+and "above the noise" (13) shown in the same
+window. For a few spectra of many points (the usual SVD Analysis case) nothing changes.
+</div>
+
 
 <h4>Multi-map… window</h4>
 <p>Opens a separate window comparing several components side-by-side: each
@@ -862,16 +888,17 @@ limits the spectral range used.</p>
     first few values are large (real substances), then the curve flattens into a nearly
     straight line: the noise. That flat part is fitted (grey dashed line), so the noise
     level is read from your data itself &mdash; this also works when brighter pixels are
-    noisier, as in Raman maps. Two numbers are offered:
+    noisier, as in Raman maps (details: <a href="#suggest-how">How Suggest number finds its
+    two numbers</a>). Two numbers are offered:
     <ul>
-      <li><b>above the noise</b> (red square) &mdash; the components clearly above the noise
-        line (more than 1.15 &times; the noise). An <i>upper</i> limit for the number of
-        substances: small consistent differences (a baseline leftover, an intensity drift)
-        also count.</li>
-      <li><b>bend</b> (orange circle) &mdash; where the curve bends into the flat part: a
+      <li><b>above the noise</b> (red square) &mdash; the components more than 1.15 &times;
+        the noise line. An <i>upper</i> limit for the number of substances: small consistent
+        differences (a baseline leftover, an intensity drift) also count.</li>
+      <li><b>clearly above the noise</b> (orange circle) &mdash; the components more than
+        2 &times; the noise line (at least three quarters of such a component is signal): a
         practical number to start with.</li>
     </ul>
-    Click <b>Use … (bend)</b> or <b>Use … (above the noise)</b> to put the number into
+    Click <b>Use … (clearly above the noise)</b> or <b>Use … (above the noise)</b> to put the number into
     <b>Endmembers</b>. The window can be maximized, and its toolbar zooms into the curve.
     Take it as a starting point: a substance present in only a few pixels
     can be missed; check the endmember spectra and the fit-error map.</li>
@@ -918,7 +945,7 @@ Download large test datasets…</b> and then open it from the same menu. Before 
 baseline was removed (<b>ALS</b>, &lambda; = 10<sup>6</sup>, p = 0.01, all 21 000 spectra)
 and cosmic rays were removed (863 spectra had spikes).</p>
 
-<p><b>Suggest number</b> gives 13 components above the noise and a bend at 8. With 6
+<p><b>Suggest number</b> gives 13 components above the noise and 8 clearly above it. With 6
 endmembers (VCA, Denoise first = auto, i.e. 13 components) the Lack of fit is about 11 %.
 The endmembers include a broad low-wavenumber feature (around 350 cm<sup>&minus;1</sup>)
 in a ring of bodies, a broad OH band around 3400 cm<sup>&minus;1</sup> (water / medium),
@@ -933,6 +960,51 @@ $UNMIX_GLEN_DIALOG_FIGURE
 $UNMIX_GLEN_ALL_FIGURE
 $UNMIX_GLEN_STACKED_FIGURE
 $UNMIX_GLEN_DENOISE_FIGURE
+
+<h4 id="suggest-how">How Suggest number finds its two numbers</h4>
+<p>The SVD splits the spectra into components, from the strongest to the weakest; the
+<b>singular value</b> of a component says how strong it is. Real substances give a few large
+values. After them comes a long, almost flat run of values that only describe the noise
+(left picture below). Suggest number looks for the place where the large values end.</p>
+<ol>
+  <li><b>Above the noise.</b> A straight line (on the log scale) is fitted to the flat part
+    &mdash; the components between 5&nbsp;% and 50&nbsp;% of all of them (Glenodinium: 81 to 800
+    of 1&nbsp;600) &mdash; and extended to the first components. This <b>noise plateau</b> is
+    what pure noise would give at each position. Then, starting from the first component,
+    every value more than <b>1.15 &times;</b> the plateau counts as "above the noise" (signal);
+    the first value that is not ends the count. Glenodinium: plateau &asymp; 595, limit
+    &asymp; 684 &rarr; <b>13</b> components.</li>
+  <li><b>Clearly above the noise.</b> The same count, but with <b>2 &times;</b> the plateau
+    (right picture: each value divided by the noise line). A component twice as large as the
+    noise is at least three quarters signal (its squared size is at least 4 &times; that of
+    the noise, of which one part is noise). Glenodinium: component 8 is 2.1 &times; the noise,
+    component 9 only 1.7 &times; &rarr; <b>8</b>. This number is never larger than the
+    "above the noise" number.</li>
+</ol>
+<p><b>Why 1.15?</b> Even pure noise does not lie exactly on the fitted line: its first values
+rise a little above it &mdash; at most about 1.05 &times; the plateau in simulated noise (also
+with noise that differs from pixel to pixel) and about 1.06 &times; in the Glenodinium map.
+1.15 is a safety margin above that. It is our choice, not a value from the literature: a real
+but very weak component, less than 15&nbsp;% above the noise, is not counted (it can hardly be
+told from noise anyway). The factor 2 for "clearly above" is also a choice, but an easily
+interpreted one (at least three quarters signal). A "bend" of the curve is not used: for a
+smoothly falling curve like this one its position depends on how it is drawn.</p>
+<p><b>Why the noise line is read from the curve.</b> A common shortcut is to estimate the
+noise level of the spectra first &mdash; e.g. from their point-to-point jitter &mdash; and
+compute from theory (Marchenko&ndash;Pastur) the largest singular value pure noise of that level
+would give. For the Glenodinium map that goes wrong: a typical pixel has noise of about
+<b>1.8</b> intensity units, and pure noise of that level in a 21&nbsp;000 &times; 1&nbsp;600 table
+gives singular values up to about 1.8 &times; (&radic;21&nbsp;000 + &radic;1&nbsp;600) =
+1.8 &times; 185 &asymp; 333 (with a 20&nbsp;% margin <b>403</b>, purple line in the picture).
+But in a Raman map the noise is not the same in every pixel: the photon (shot) noise grows
+with the square root of the signal, so brighter pixels have a larger noise in intensity units
+(1.2 to 4.8 here) &mdash; even though their noise <i>relative</i> to the signal is smaller. The
+SVD adds up the noise in intensity units, so the noisy bright pixels push the noise singular
+values up to about 600, and 820 of them would count as "signal". Reading the noise line from
+the curve itself avoids this: it needs no noise level and no assumption that all pixels are
+equally noisy. (The residual error in Diagnostics levels off at about 2.9 for this map &mdash;
+the real average noise per point.)</p>
+$UNMIX_SUGGEST_HOW_FIGURE
 </div>
 
 <h3 id="cluster">◉ Cluster overlay</h3>
@@ -1407,7 +1479,7 @@ they work regardless of whether spectra share an axis.
 <h3>Unmixing (endmember) map</h3>
 <ol>
   <li>Switch to <b>Unmixing</b>; optionally set a range via <b>Configure Unmixing range…</b>.</li>
-  <li>Press <b>Suggest number</b> and click <b>Use … (bend)</b> (or set <b>Endmembers</b>
+  <li>Press <b>Suggest number</b> and click <b>Use … (clearly above the noise)</b> (or set <b>Endmembers</b>
       yourself); keep <b>Denoise first</b> on; press <b>Update Map</b>.</li>
   <li>Browse the endmembers; the circles show their pixels. Check the <b>fit-error map</b>:
       bright regions → try one more endmember.</li>

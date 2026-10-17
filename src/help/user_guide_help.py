@@ -1758,7 +1758,7 @@ def get_user_guide_help_content():
         much of each endmember every pixel contains (non-negative abundances, optionally fractions
         that sum to 1). <b>Denoise first</b> (on by default) reduces the noise before the purest
         pixels are searched. <b>Suggest number</b> plots the singular values and offers two numbers
-        (where the curve bends, and how many are above the noise), white circles mark the endmember
+        (how many components are clearly above the noise, and how many above it), white circles mark the endmember
         pixels, a <b>fit-error map</b> shows where something is left unexplained, <b>Show all
         endmembers…</b> plots all endmember spectra at once (stacked or as a grid with their maps),
         and the endmember spectra can be added to the spectra list. Demo: Help &rarr;

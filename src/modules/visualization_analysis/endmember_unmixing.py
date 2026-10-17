@@ -214,6 +214,7 @@ def abundances(Y, E, sum_to_one=False):
 # --------------------------------------------------------------------------- number of endmembers
 
 NOISE_FACTOR = 1.15     # a component counts as signal above 1.15 x the noise plateau
+CLEAR_FACTOR = 2.0      # ... and as clearly signal above 2 x the noise plateau
 
 
 def svd_basis(Y):
@@ -259,28 +260,30 @@ def noise_plateau(s, factor=NOISE_FACTOR):
     return n, plateau
 
 
-def bend_point(s, n_above):
-    """Where the curve (log scale) bends into the noise plateau: the point
-    farthest below the straight line from the first value to a point well
-    inside the plateau (2 x n_above + 2). Returns the number of components
-    before that point -- a practical number of substances to start with."""
+def clear_count(s, plateau, n_above, factor=None):
+    """Components CLEARLY above the noise: the leading singular values more
+    than CLEAR_FACTOR (2) x the noise plateau. A component at 2 x the noise
+    carries at least three quarters signal (1 - 1/2^2 of its squared size).
+    Counted from the first component, at most n_above, at least 1 -- a
+    practical number of substances to start with."""
+    factor = CLEAR_FACTOR if factor is None else factor
     s = np.asarray(s, dtype=float)
-    K = min(len(s) - 1, 2 * max(n_above, 1) + 2)
-    if K < 2:
-        return max(1, n_above)
-    ls = np.log(np.clip(s[:K + 1], 1e-300, None))
-    k = np.arange(K + 1)
-    d = ls[0] + (ls[K] - ls[0]) * k / K - ls
-    return max(1, int(np.argmax(d)))
+    plateau = np.asarray(plateau, dtype=float)
+    k = 0
+    while k < min(len(s), len(plateau)) and s[k] > factor * plateau[k]:
+        k += 1
+    return max(1, min(k, max(n_above, 1)))
 
 
 def estimate_n_endmembers(Y, max_n=50, s=None):
-    """How many components carry more than noise, and where the curve bends.
+    """How many components carry more than noise.
 
-    'n'    -- components clearly above the noise plateau (see noise_plateau):
-              an upper limit for the number of substances;
-    'bend' -- where the curve bends into the plateau (see bend_point): a
-              practical number to start with;
+    'n'     -- components above the noise (more than NOISE_FACTOR = 1.15 x
+               the noise plateau, see noise_plateau): an upper limit for the
+               number of substances;
+    'clear' -- components clearly above the noise (more than CLEAR_FACTOR =
+               2 x the plateau, see clear_count): a practical number to
+               start with;
     plus 'singular_values', 'plateau', 'threshold' (factor x plateau at the
     first noise component) and 'sigma' (noise level from the second
     differences along the spectra, for information).
@@ -305,8 +308,8 @@ def estimate_n_endmembers(Y, max_n=50, s=None):
         plateau = np.full(len(s), threshold / NOISE_FACTOR)
         n = int(np.sum(s > threshold)) if sigma > 0 else len(s)
     n = max(1, min(n, max_n))
-    bend = min(bend_point(s, n), n)
-    return {'n': n, 'bend': bend, 'sigma': sigma, 'threshold': threshold,
+    clear = clear_count(s, plateau, n)
+    return {'n': n, 'clear': clear, 'sigma': sigma, 'threshold': threshold,
             'plateau': plateau, 'singular_values': s}
 
 

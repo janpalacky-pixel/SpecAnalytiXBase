@@ -94,18 +94,13 @@ class SVDSingularValuesWindow(QDialog):
         U = self.svd_controller.manager.U
         if U is None:
             return None
-        n_spectra = U.shape[1]
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
+        Vt = self.svd_controller.manager.Vt
+        n_spectra = Vt.shape[1] if Vt is not None else U.shape[1]
         n_points  = U.shape[0]
         if n_spectra == 1:
             return np.array([0])
-        eigen = s ** 2
-        n     = len(s)
-        E     = np.zeros(n - 1)
-        for m in range(n - 1):
-            num = np.sum(eigen) - np.sum(eigen[:m + 1])
-            den = (n_points - m - 1) * (n_spectra - m - 1)
-            E[m] = np.sqrt(num / den) if den > 0 else 0
-        return E
+        return residual_error(s, n_points, n_spectra)
 
     def plot_data(self):
         if not self.svd_controller:
@@ -1537,18 +1532,13 @@ class SVDBackgroundDialog(QDialog):
         U         = self.svd_controller.manager.U
         if U is None:
             return None
-        n_spectra = U.shape[1]
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
+        Vt = self.svd_controller.manager.Vt
+        n_spectra = Vt.shape[1] if Vt is not None else U.shape[1]
         n_points  = U.shape[0]
         if n_spectra == 1:
             return np.array([0])
-        eigen = s ** 2
-        n     = len(s)
-        E     = np.zeros(n - 1)
-        for m in range(n - 1):
-            num  = np.sum(eigen) - np.sum(eigen[:m + 1])
-            den  = (n_points - m - 1) * (n_spectra - m - 1)
-            E[m] = np.sqrt(num / den) if den > 0 else 0
-        return E
+        return residual_error(s, n_points, n_spectra)
 
     def get_selected_components(self):
         return [

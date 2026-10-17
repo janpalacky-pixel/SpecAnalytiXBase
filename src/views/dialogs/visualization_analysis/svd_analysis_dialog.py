@@ -147,7 +147,12 @@ def _svd_dialog_help_html():
         &bull; <b>Overview (all)</b> — 2&times;4 grid of all seven metrics at once.</p>
         <p><b>Seven metrics:</b> singular values (&sigma;), eigenvalues (&sigma;&sup2;), explained variance (%), cumulative
         explained (%), cumulative unexplained (%), residual error E(m), <b>Malinowski IND</b>.<br>
-        <b>IND</b> has a genuine minimum — the statistically optimal number of components.<br>
+        <b>IND</b> has a genuine minimum — the statistically optimal number of components
+        (computed with the smaller side of the table, spectra or points &mdash; for a map that is
+        the number of points).<br>
+        The singular-value plot also shows the <b>noise limit</b> and the components <b>clearly
+        above the noise</b> (as in
+        2D Map &rarr; Unmixing &rarr; Suggest number); the Summary lists them.<br>
         <b>E(m)</b> is monotonically decreasing — look for the elbow instead.<br>
         Quick export buttons save all metrics or the current plot to CSV.</p>
     </div>
@@ -1086,18 +1091,22 @@ class SVDDiagnosticsDialog(QWidget):
             'ylabel_linear': 'IND',
             'title': 'Malinowski IND function',
             'tooltip': (
-                'IND(m) = RE(m) / (n_sp − m)²\n\n'
-                'where RE(m) = √[ Σᵢ>m σᵢ² / (n_pts × (n_sp − m)) ]\n\n'
-                'Dividing RE by (n_sp − m)² creates a competing effect:\n'
+                'IND(m) = RE(m) / (c − m)²\n\n'
+                'where RE(m) = √[ Σᵢ>m σᵢ² / (r × (c − m)) ]\n'
+                'c = the SMALLER side of the data table (number of spectra or of\n'
+                'points, whichever is smaller), r = the larger side. This is chosen\n'
+                'automatically: for a few spectra of many points c = spectra, for a\n'
+                '2D map (more spectra than points) c = points. (With c = spectra a\n'
+                'map\'s IND only falls and its "minimum" is the last component.)\n\n'
+                'Dividing RE by (c − m)² creates a competing effect:\n'
                 'as m increases the numerator (residual) decreases but the\n'
                 'denominator shrinks faster in the noise regime, causing IND\n'
                 'to turn upward. The MINIMUM of IND marks the statistically\n'
                 'optimal number of components to retain.\n\n'
-                'Reliability: IND works best when n_pts >> n_sp (ratio > 10).\n'
-                'For large or nearly-square datasets (n_pts/n_sp < 5), the\n'
-                'denominator shrinks too slowly and the minimum may be\n'
-                'unreliable. Use visual inspection of subspectra instead.\n\n'
-                'Reference: Malinowski, E.R. (2002) Factor Analysis in Chemistry,\n'
+                'Reliability: IND works best when r / c > 10. For a nearly square\n'
+                'table (r / c < 5) the minimum may be unreliable; compare it with\n'
+                'the noise limit on the singular values.\n\n'
+                'Reference: Malinowski, E.R. (1977) Anal. Chem. 49, 612; (2002) Factor Analysis in Chemistry,\n'
                 '3rd ed., John Wiley & Sons.'
             ),
         },
@@ -1128,6 +1137,8 @@ class SVDDiagnosticsDialog(QWidget):
         become available (mirrors what __init__ already does for the
         first-ever computation)."""
         self._compute_metrics()
+        if hasattr(self, '_summary_label'):
+            self._summary_label.setText(self._summary_html())
         self._refresh_plot()
 
     # ------------------------------------------------------------------ #
@@ -1161,23 +1172,81 @@ class SVDDiagnosticsDialog(QWidget):
         re = self.controller.calculate_residual_errors()
         self.data['RE'] = re if re is not None else np.array([])
 
-        # Malinowski IND
-        if s_raw is not None and self.n_sp > 1:
-            eigenvalues = s_raw ** 2
-            k = len(s_raw)
-            IND = np.zeros(k - 1)
-            for m in range(k - 1):
-                res_var = np.sum(eigenvalues[m+1:])
-                re_m = np.sqrt(res_var / (self.n_pts * (self.n_sp - m))) if (self.n_pts * (self.n_sp - m)) > 0 else 0
-                dof = (self.n_sp - m) ** 2
-                IND[m] = re_m / dof if dof > 0 else 0
-            self.data['IND'] = IND
+        # Malinowski IND -- c = the SMALLER side of the table (spectra or
+        # points), see factor_diagnostics: for a map (more spectra than
+        # points) taking c = number of spectra made IND fall to the end.
+        from src.modules.visualization_analysis.factor_diagnostics import (
+            malinowski_ind, noise_limit)
+        if s_raw is not None and self.n_sp > 1 and self.n_pts > 1:
+            self.data['IND'] = malinowski_ind(s_raw, self.n_pts, self.n_sp)
         else:
             self.data['IND'] = np.array([])
+        # Noise plateau (as in 2D Map -> Unmixing -> Suggest number)
+        self.noise = noise_limit(s_raw) if s_raw is not None else None
 
     # ------------------------------------------------------------------ #
     # UI                                                                   #
     # ------------------------------------------------------------------ #
+    def _summary_html(self):
+        """The Summary box: sizes, variance, the noise limit (as in
+        2D Map -> Unmixing -> Suggest number) and the IND minimum."""
+        from src.modules.visualization_analysis.factor_diagnostics import (
+            ind_minimum, table_sides)
+        cum = self.data['cum_ev']
+        n95 = int(np.searchsorted(cum, 95) + 1) if len(cum) else '?'
+        n99 = int(np.searchsorted(cum, 99) + 1) if len(cum) else '?'
+        top5  = float(np.sum(self.data['ev'][:5]))              if len(self.data['ev']) else 0
+        top10 = float(np.sum(self.data['ev'][:min(10, self.n_comp)])) if len(self.data['ev']) else 0
+        IND   = self.data['IND']
+        ind_n = ind_minimum(IND)
+        ind_min_n = ind_n if ind_n is not None else '?'
+        ind_min_v = f"{IND[ind_n - 1]:.3g}" if ind_n is not None else '?'
+
+        # IND is defined for a table whose smaller side c (spectra OR points)
+        # limits the number of components and whose larger side r is the
+        # "rows"; with r / c small (nearly square) its minimum is only a
+        # rough guide.
+        ind_warning = ""
+        if self.n_pts > 0 and self.n_sp > 0:
+            r, c = table_sides(self.n_pts, self.n_sp)
+            ratio = r / c
+            if ratio < 5:
+                ind_warning = (
+                    "<br><span style='color:#C62828;'>"
+                    "<b>&#9888; IND warning:</b> the table is nearly square "
+                    f"({r} &times; {c}, larger / smaller side = {ratio:.1f}). "
+                    "The IND minimum is then unreliable &mdash; use the noise "
+                    "limit and look at the subspectra."
+                    "</span>"
+                )
+            elif ratio < 10:
+                ind_warning = (
+                    "<br><span style='color:#E65100;'>"
+                    "<b>&#9888; IND note:</b> larger / smaller side of the "
+                    f"table = {r}/{c} = {ratio:.1f}. IND works best above 10; "
+                    "treat its minimum as a rough guide."
+                    "</span>"
+                )
+        noise = getattr(self, 'noise', None)
+        if noise is not None:
+            noise_text = (f"<b>Above the noise:</b> {noise['n']} "
+                          f"(clearly above: {noise['clear']})<br>")
+        else:
+            noise_text = ("<b>Above the noise:</b> ? (fewer than 12 components "
+                          "&mdash; no flat noise part to read)<br>")
+        return (
+            f"<b>Components:</b> {self.n_comp}<br>"
+            f"<b>Spectra:</b> {self.n_sp}<br>"
+            f"<b>Wavelength pts:</b> {self.n_pts}<br>"
+            f"<b>Variance top-5:</b> {top5:.1f}%<br>"
+            f"<b>Variance top-10:</b> {top10:.1f}%<br>"
+            f"<b>N for 95% var.:</b> {n95}<br>"
+            f"<b>N for 99% var.:</b> {n99}<br>"
+            f"{noise_text}"
+            f"<b>IND minimum at:</b> N={ind_min_n} (IND={ind_min_v})"
+            f"{ind_warning}"
+        )
+
     def _setup_ui(self):
         outer = QHBoxLayout(self)
 
@@ -1190,52 +1259,8 @@ class SVDDiagnosticsDialog(QWidget):
         # Summary box
         summary_group = QGroupBox("Summary")
         sg_layout = QVBoxLayout(summary_group)
-        cum = self.data['cum_ev']
-        n95 = int(np.searchsorted(cum, 95) + 1) if len(cum) else '?'
-        n99 = int(np.searchsorted(cum, 99) + 1) if len(cum) else '?'
-        top5  = float(np.sum(self.data['ev'][:5]))              if len(self.data['ev']) else 0
-        top10 = float(np.sum(self.data['ev'][:min(10, self.n_comp)])) if len(self.data['ev']) else 0
-        IND   = self.data['IND']
-        ind_min_n = int(np.argmin(IND) + 1) if len(IND) > 0 else '?'
-        ind_min_v = f"{IND[np.argmin(IND)]:.3g}" if len(IND) > 0 else '?'
-
-        # IND reliability warning: unreliable when n_sp is not << n_pts
-        ind_warning = ""
-        if self.n_pts > 0 and self.n_sp > 0:
-            ratio = self.n_pts / self.n_sp
-            if ratio < 5:
-                ind_warning = (
-                    "<br><span style='color:#C62828;'>"
-                    "<b>&#9888; IND warning:</b> n_pts/n_sp = "
-                    f"{self.n_pts}/{self.n_sp} = {ratio:.1f}. "
-                    "IND is unreliable when this ratio is &lt; 5 "
-                    "(dataset is nearly square). "
-                    "Use visual inspection of subspectra and the singular value "
-                    "kink instead."
-                    "</span>"
-                )
-            elif ratio < 10:
-                ind_warning = (
-                    "<br><span style='color:#E65100;'>"
-                    "<b>&#9888; IND note:</b> n_pts/n_sp = "
-                    f"{self.n_pts}/{self.n_sp} = {ratio:.1f}. "
-                    "IND works best when n_pts &gt;&gt; n_sp (ratio &gt; 10). "
-                    "Treat the IND minimum as a rough guide only."
-                    "</span>"
-                )
-
-        summary_text = (
-            f"<b>Components:</b> {self.n_comp}<br>"
-            f"<b>Spectra:</b> {self.n_sp}<br>"
-            f"<b>Wavelength pts:</b> {self.n_pts}<br>"
-            f"<b>Variance top-5:</b> {top5:.1f}%<br>"
-            f"<b>Variance top-10:</b> {top10:.1f}%<br>"
-            f"<b>N for 95% var.:</b> {n95}<br>"
-            f"<b>N for 99% var.:</b> {n99}<br>"
-            f"<b>IND minimum at:</b> N={ind_min_n} (IND={ind_min_v})"
-            f"{ind_warning}"
-        )
-        lbl = QLabel(summary_text)
+        lbl = QLabel(self._summary_html())
+        self._summary_label = lbl            # refreshed by refresh()
         lbl.setWordWrap(True)
         sg_layout.addWidget(lbl)
         left_layout.addWidget(summary_group)
@@ -1358,7 +1383,15 @@ class SVDDiagnosticsDialog(QWidget):
         ex_layout.addWidget(btn_cur)
         left_layout.addWidget(export_group)
 
-        outer.addWidget(left)
+        # in a scroll area, so a long Summary is never squeezed / cut off
+        from PyQt5.QtWidgets import QScrollArea
+        left_scroll = QScrollArea()
+        left_scroll.setWidget(left)
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        left_scroll.setFrameShape(QScrollArea.NoFrame)
+        left_scroll.setFixedWidth(320)
+        outer.addWidget(left_scroll)
 
         # ---- Right canvas panel ----
         right = QWidget()
@@ -1453,8 +1486,32 @@ class SVDDiagnosticsDialog(QWidget):
             if not use_log:
                 ax.set_ylim(0, 105)
 
-        if key == 'IND' and len(d) > 0:
-            min_idx = int(np.argmin(d))
+        if key in ('sv', 'eigenvalue') and getattr(self, 'noise', None) is not None:
+            # noise plateau, noise limit (1.15 x), 2 x plateau and the last
+            # values above / clearly above the noise -- the same numbers as
+            # 2D Map -> Unmixing -> Suggest number
+            nz = self.noise
+            pw = 1 if key == 'sv' else 2
+            m = min(len(d), len(nz['plateau']))
+            pl = np.asarray(nz['plateau'][:m]) ** pw
+            ax.plot(x[:m], pl, '--', color='#757575', lw=1,
+                    label='noise plateau (fitted to the flat part)')
+            ax.plot(x[:m], (nz['factor'] ** pw) * pl, ':', color='#B71C1C', lw=1,
+                    label=f"noise limit ({nz['factor']:g} \u00d7 plateau"
+                          + (")" if pw == 1 else ", squared)"))
+            ax.plot(x[:m], (nz['clear_factor'] ** pw) * pl, '-.', color='#E65100', lw=1,
+                    label=f"{nz['clear_factor']:g} \u00d7 plateau" + ("" if pw == 1 else ", squared"))
+            b, n = nz['clear'], nz['n']
+            if b <= len(d):
+                ax.plot([b], [d[b - 1]], 'o', ms=9, mfc='none', mec='#E65100',
+                        mew=2, zorder=6, label=f'last clearly above the noise: {b}')
+            if n <= len(d):
+                ax.plot([n], [d[n - 1]], 's', ms=9, mfc='none', mec='#B71C1C',
+                        mew=2, zorder=6, label=f'last above the noise: {n}')
+            ax.legend(fontsize=7)
+
+        if key == 'IND' and len(d) > 0 and np.any(np.isfinite(d)):
+            min_idx = int(np.nanargmin(d))
             # Use ax.plot not ax.semilogy — the axis scale is already set by the main plot call above
             ax.plot(min_idx + 1, d[min_idx], 'k*', ms=12, zorder=5,
                     label=f'Min at N={min_idx+1}')
@@ -1517,22 +1574,23 @@ class SVDDiagnosticsDialog(QWidget):
             "• The component where σ flattens should coincide with the IND minimum. "
             "If they agree, the result is robust.\n"
             "• After the IND minimum, IND rises because the degrees-of-freedom "
-            "denominator (n_sp − m)² shrinks faster than the residual variance — "
+            "denominator (c − m)² shrinks faster than the residual variance — "
             "adding those components is statistically unjustified even if σ is not zero.\n"
             "• Components before the IND minimum with visibly larger σ values are real signal. "
             "Components after the minimum with nearly flat σ are noise.\n\n"
             "IND RELIABILITY CAVEAT:\n"
-            "IND was developed for small datasets where n_pts >> n_sp (ratio > 10).\n"
-            "When n_pts/n_sp < 5 (nearly square matrix — common in UV-Vis, large "
-            "spectral series), the denominator (n_sp − m)² shrinks too slowly and "
-            "the IND minimum shifts to a falsely high N.\n"
+            "IND uses c = the smaller side of the table (number of spectra or of "
+            "points, chosen automatically) and works best when the larger side is "
+            "more than 10 × c.\n"
+            "When larger / smaller < 5 (nearly square table), the denominator (c − m)² "
+            "shrinks too slowly and the IND minimum shifts to a falsely high N.\n"
             "In those cases: rely on the σ kink and visual inspection of subspectra. "
             "A warning appears in the Diagnostics summary when this condition is met."
         ),
         frozenset(['RE', 'IND']): (
             "Residual error E(m) vs Malinowski IND\n\n"
             "Both metrics are derived from the same residual variance, but IND "
-            "divides by (n_sp − m)² while E divides by the full degrees of freedom.\n\n"
+            "divides by (c − m)² while E divides by the full degrees of freedom.\n\n"
             "• E always decreases — the curve never turns upward.\n"
             "• IND decreases at first, reaches a minimum, then rises. "
             "The minimum is the statistically optimal N.\n"
@@ -1541,8 +1599,8 @@ class SVDDiagnosticsDialog(QWidget):
             "• If E still drops noticeably after the IND minimum, the two criteria "
             "disagree — IND says stop, but E says there is still residual variance "
             "worth capturing. Inspect those components visually to decide.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable — see the "
+            "IND reliability: works best when the larger side of the table (spectra or points) is ≫ the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable — see the "
             "Diagnostics summary warning."
         ),
         frozenset(['cum_ev', 'IND']): (
@@ -1558,8 +1616,8 @@ class SVDDiagnosticsDialog(QWidget):
             "• If the IND minimum occurs where cum_ev is still rising steeply and has "
             "not yet reached 90%, IND may be too conservative — consider retaining "
             "additional components on scientific grounds.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable — check the "
+            "IND reliability: works best when the larger side of the table (spectra or points) is ≫ the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable — check the "
             "Diagnostics summary warning and rely on the cum_ev elbow instead."
         ),
         frozenset(['sv', 'ev']): (
@@ -1619,8 +1677,8 @@ class SVDDiagnosticsDialog(QWidget):
             "• Components with EV > 1% but rising IND are borderline — examine them "
             "visually before deciding to include or exclude.\n"
             "• The component where EV drops sharply should align with the IND minimum.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable."
+            "IND reliability: works best when the larger side of the table (spectra or points) is ≫ the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable."
         ),
         frozenset(['ev', 'cum_ev']): (
             "Explained variance per component (%) vs Cumulative explained variance (%)\n\n"
@@ -1685,8 +1743,8 @@ class SVDDiagnosticsDialog(QWidget):
             "on scientific grounds.\n"
             "• This is the most useful comparison for deciding whether to follow IND "
             "strictly or keep additional components for scientific reasons.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable — the unexplained "
+            "IND reliability: works best when the larger side of the table (spectra or points) is ≫ the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable — the unexplained "
             "variance elbow is then a more reliable guide."
         ),
     }
@@ -1752,8 +1810,9 @@ class SVDDiagnosticsDialog(QWidget):
         ax2 = self.fig.add_subplot(1, 2, 2)
         self._plot_one(ax1, x_name, override_log=self.x_log_cb.isChecked())
         self._plot_one(ax2, y_name, override_log=self.y_log_cb.isChecked())
-        if len(self.data['IND']) > 0:
-            ind_min_n = int(np.argmin(self.data['IND'])) + 1
+        from src.modules.visualization_analysis.factor_diagnostics import ind_minimum
+        ind_min_n = ind_minimum(self.data['IND'])
+        if ind_min_n is not None:
             for ax in [ax1, ax2]:
                 ax.axvline(ind_min_n, color='purple', ls=':', lw=1.2, alpha=0.7,
                            label=f'IND min (N={ind_min_n})')
@@ -1769,6 +1828,11 @@ class SVDDiagnosticsDialog(QWidget):
         for i, name in enumerate(names):
             ax = self.fig.add_subplot(n_rows, n_cols, i + 1)
             self._plot_one(ax, name, override_log=True if force_log else None)
+            # small panels: no plateau legend (it would cover the curve),
+            # smaller titles (they overlapped)
+            if self.METRICS[name]['key'] in ('sv', 'eigenvalue') and ax.get_legend():
+                ax.get_legend().remove()
+            ax.set_title(ax.get_title(), fontsize=8)
 
     # ------------------------------------------------------------------ #
     # Info popup                                                           #
@@ -3475,14 +3539,8 @@ class SVDAnalysisDialog(QDialog):
                 n_sp  = len(manager.spectrum_labels) if manager.spectrum_labels else 0
                 n_pts = manager.U.shape[0]
                 if n_sp > 1:
-                    eigenvalues = manager.s ** 2
-                    k = len(manager.s)
-                    ind_data = np.zeros(k - 1)
-                    for m in range(k - 1):
-                        res_var = np.sum(eigenvalues[m+1:])
-                        re_m = np.sqrt(res_var / (n_pts * (n_sp - m))) if (n_pts * (n_sp - m)) > 0 else 0
-                        dof = (n_sp - m) ** 2
-                        ind_data[m] = re_m / dof if dof > 0 else 0
+                    from src.modules.visualization_analysis.factor_diagnostics import malinowski_ind
+                    ind_data = malinowski_ind(manager.s, n_pts, n_sp)
 
             if config['format'] == 'excel':
                 success = self.controller.manager.save_results_excel(

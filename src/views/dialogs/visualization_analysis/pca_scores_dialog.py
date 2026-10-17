@@ -125,12 +125,14 @@ class PcaScoresDialog(QDialog):
         'Malinowski IND': {
             'log': True, 'color': '#6A1B9A',
             'tooltip': (
-                'IND(m) = E(m) / (n_sp \u2212 m)\u00b2\n\n'
-                'Normalizing E(m) this way makes IND turn back upward once you\'ve\n'
+                'IND(m) = RE(m) / (c \u2212 m)\u00b2, RE(m) = \u221a[ \u03a3\u1d62>m \u03c3\u1d62\u00b2 / (r (c \u2212 m)) ]\n'
+                'c = the SMALLER side of the data table (number of spectra or of points,\n'
+                'chosen automatically), r = the larger side.\n\n'
+                'Normalizing this way makes IND turn back upward once you\'ve\n'
                 'retained more components than there are real factors, giving it\n'
                 'an actual minimum \u2014 the statistically suggested cutoff.\n\n'
-                'Most reliable when n_pts >> n_sp; for large or near-square\n'
-                'datasets the minimum can be unreliable.'
+                'Most reliable when r / c > 10; for a nearly square table\n'
+                '(r / c < 5) the minimum can be unreliable.'
             ),
         },
     }
@@ -173,20 +175,22 @@ class PcaScoresDialog(QDialog):
             "\u2022 The component where \u03c3 flattens should coincide with the IND minimum. "
             "If they agree, the result is robust.\n"
             "\u2022 After the IND minimum, IND rises because the degrees-of-freedom "
-            "denominator (n_sp \u2212 m)\u00b2 shrinks faster than the residual variance \u2014 "
+            "denominator (c \u2212 m)\u00b2 shrinks faster than the residual variance \u2014 "
             "adding those components is statistically unjustified even if \u03c3 is not zero.\n"
             "\u2022 Components before the IND minimum with visibly larger \u03c3 values are real signal. "
             "Components after the minimum with nearly flat \u03c3 are noise.\n\n"
             "IND RELIABILITY CAVEAT:\n"
-            "IND was developed for small datasets where n_pts >> n_sp (ratio > 10).\n"
-            "When n_pts/n_sp < 5 (nearly square matrix), the denominator (n_sp \u2212 m)\u00b2 "
+            "IND uses c = the smaller side of the table (number of spectra or of "
+            "points, chosen automatically) and works best when the larger side is "
+            "more than 10 \u00d7 c.\n"
+            "When larger / smaller < 5 (nearly square table), the denominator (c \u2212 m)\u00b2 "
             "shrinks too slowly and the IND minimum shifts to a falsely high N.\n"
             "In those cases: rely on the \u03c3 kink and visual inspection of the Scores/Loadings tabs."
         ),
         frozenset(['Residual error E(m)', 'Malinowski IND']): (
             "Residual error E(m) vs Malinowski IND\n\n"
             "Both metrics are derived from the same residual variance, but IND "
-            "divides by (n_sp \u2212 m)\u00b2 while E divides by the full degrees of freedom.\n\n"
+            "divides by (c \u2212 m)\u00b2 while E divides by the full degrees of freedom.\n\n"
             "\u2022 E always decreases \u2014 the curve never turns upward.\n"
             "\u2022 IND decreases at first, reaches a minimum, then rises. "
             "The minimum is the statistically optimal N.\n"
@@ -195,8 +199,8 @@ class PcaScoresDialog(QDialog):
             "\u2022 If E still drops noticeably after the IND minimum, the two criteria "
             "disagree \u2014 IND says stop, but E says there is still residual variance "
             "worth capturing. Inspect those components visually to decide.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable."
+            "IND reliability: works best when the larger side of the table (spectra or points) is \u226b the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable."
         ),
         frozenset(['Cumulative explained var. (%)', 'Malinowski IND']): (
             "Cumulative explained variance (%) vs Malinowski IND\n\n"
@@ -211,8 +215,8 @@ class PcaScoresDialog(QDialog):
             "\u2022 If the IND minimum occurs where cumulative explained is still rising steeply "
             "and has not yet reached 90%, IND may be too conservative \u2014 consider retaining "
             "additional components on scientific grounds.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable \u2014 rely on the "
+            "IND reliability: works best when the larger side of the table (spectra or points) is \u226b the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable \u2014 rely on the "
             "cumulative-explained elbow instead."
         ),
         frozenset(['Singular values (\u03c3)', 'Explained variance (%)']): (
@@ -274,8 +278,8 @@ class PcaScoresDialog(QDialog):
             "examine them visually before deciding to include or exclude.\n"
             "\u2022 The component where explained variance drops sharply should align with "
             "the IND minimum.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable."
+            "IND reliability: works best when the larger side of the table (spectra or points) is \u226b the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable."
         ),
         frozenset(['Explained variance (%)', 'Cumulative explained var. (%)']): (
             "Explained variance per component (%) vs Cumulative explained variance (%)\n\n"
@@ -340,8 +344,8 @@ class PcaScoresDialog(QDialog):
             "on scientific grounds.\n"
             "\u2022 This is the most useful comparison for deciding whether to follow IND "
             "strictly or keep additional components for scientific reasons.\n\n"
-            "IND reliability: works best when n_pts >> n_sp. "
-            "If n_pts/n_sp < 5, the IND minimum may be unreliable \u2014 the unexplained "
+            "IND reliability: works best when the larger side of the table (spectra or points) is \u226b the smaller one. "
+            "If larger / smaller < 5, the IND minimum may be unreliable \u2014 the unexplained "
             "variance elbow is then a more reliable guide."
         ),
     }

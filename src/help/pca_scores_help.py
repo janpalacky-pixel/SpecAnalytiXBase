@@ -421,15 +421,22 @@ def get_pca_scores_help_content():
             for the very last component (nothing left over to measure
             residual against). Decreases monotonically — useful, but has no
             true minimum on its own.</td></tr>
-        <tr><td><strong>Malinowski IND</strong></td><td>Residual error
-            divided by (number of spectra &minus; components retained)&sup2;.
+        <tr><td><strong>Malinowski IND</strong></td><td>Malinowski's residual
+            error divided by (c &minus; components retained)&sup2;, where c is the
+            <em>smaller</em> side of the data table &mdash; the number of spectra or
+            of points, whichever is smaller (chosen automatically).
             This normalization makes IND turn back upward once you've
             retained more components than there are real factors, giving it
             an actual minimum — more reliable than Residual error alone for
-            pinpointing the optimal count. Most reliable when the number of
-            data points per spectrum greatly exceeds the number of spectra;
-            for large or near-square datasets the minimum can be
-            unreliable.</td></tr>
+            pinpointing the optimal count. Most reliable when the larger side
+            is more than 10 &times; c; for a nearly square table the minimum can
+            be unreliable.
+            <br><b>Fixed in v1.5.0:</b> earlier versions always took c = number
+            of spectra, so with more spectra than points (e.g. a map) IND only
+            fell and its "minimum" was the last component; and the residual
+            error and IND were computed from the <em>retained</em> components
+            only, so they changed with the number of components you asked for.
+            Both now use all singular values.</td></tr>
     </table>
     <div class="tip">
         <strong>Using Residual error / IND to pick a component count:</strong>

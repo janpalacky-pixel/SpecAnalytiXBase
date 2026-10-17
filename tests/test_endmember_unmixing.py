@@ -132,7 +132,7 @@ def test_suggestion_holds_when_brighter_pixels_are_noisier():
     clean = A @ E
     Y = clean + rng.normal(0, 1, clean.shape) * 0.03 * np.sqrt(clean)
     est = eu.estimate_n_endmembers(Y)
-    assert est['n'] == 3 and est['bend'] == 3
+    assert est['n'] == 3 and est['clear'] == 3
     assert len(est['plateau']) == len(est['singular_values'])
 
 

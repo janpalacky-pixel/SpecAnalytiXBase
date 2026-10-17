@@ -21,6 +21,7 @@ class PcaScoresManager:
     def __init__(self):
         self.U = None                  # (n_wl x n_comp)  — loadings
         self.s = None                  # (n_comp,)        — singular values
+        self.s_all = None              # all singular values (RE / IND)
         self.Vt = None                 # (n_comp x n_spec) — scores
         self.x_axis = None
         self.spectrum_labels = None
@@ -97,6 +98,11 @@ class PcaScoresManager:
             n = n_components
             self.U = mgr.U[:, :n]
             self.s = mgr.s[:n]
+            # ALL singular values, for the residual error and IND: their
+            # "rest after m components" must include the components that
+            # were not kept, not only the first n (otherwise both depended
+            # on how many components were requested).
+            self.s_all = np.asarray(mgr.s, dtype=float)
             self.Vt = mgr.Vt[:n, :]
             self.x_axis = np.asarray(mgr.x_axis, dtype=float)
             self.explained_variance = mgr.explained_variance[:n]
@@ -160,18 +166,15 @@ class PcaScoresManager:
         num_of_spec_points = self.U.shape[0]
         if num_of_spectra == 1:
             return np.array([0.0])
-
-        eigen = self.s ** 2
-        num_of_scores = len(self.s)
-        E = np.zeros(num_of_scores - 1) if num_of_scores > 1 else np.array([])
-        for m in range(num_of_scores - 1):
-            expr_1 = np.sum(eigen) - np.sum(eigen[:m + 1])
-            expr_2 = (num_of_spec_points - m - 1) * (num_of_spectra - m - 1)
-            E[m] = np.sqrt(expr_1 / expr_2) if expr_2 > 0 else 0.0
-        return E
+        from src.modules.visualization_analysis.factor_diagnostics import residual_error
+        s_all = getattr(self, 's_all', None)
+        s_all = self.s if s_all is None else s_all
+        # one value per kept component except the last (as before)
+        return residual_error(s_all, num_of_spec_points, num_of_spectra)[:max(len(self.s) - 1, 0)]
 
     def calculate_malinowski_ind(self):
-        """IND(m) = RE(m) / (n_sp - m)^2 — a normalized version of the
+        """IND(m) = RE(m) / (c - m)^2 (c = the smaller side of the table,
+        spectra or points -- see factor_diagnostics) — a normalized version of the
         residual error. RE alone decreases monotonically and never has a
         true minimum for spectroscopic data; dividing by (n_sp - m)^2
         creates a competing effect that makes IND turn back upward once m
@@ -181,15 +184,13 @@ class PcaScoresManager:
         nearly-square datasets the minimum can be unreliable (Malinowski,
         E.R. (2002) Factor Analysis in Chemistry, 3rd ed.).
         """
-        if self.residual_err is None or self.Vt is None:
+        if self.residual_err is None or self.Vt is None or self.U is None:
             return None
-        n_sp = self.Vt.shape[1]
-        ind = np.full(len(self.residual_err), np.nan)
-        for m in range(len(self.residual_err)):
-            denom = (n_sp - (m + 1)) ** 2
-            if denom > 0:
-                ind[m] = self.residual_err[m] / denom
-        return ind
+        from src.modules.visualization_analysis.factor_diagnostics import malinowski_ind
+        s_all = getattr(self, 's_all', None)
+        s_all = self.s if s_all is None else s_all
+        ind = malinowski_ind(s_all, self.U.shape[0], self.Vt.shape[1])
+        return ind[:len(self.residual_err)]
 
     def hotelling_t2(self, pc_indices):
         """Hotelling's T^2 per spectrum over the given (0-based) component
