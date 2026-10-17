@@ -707,6 +707,11 @@ class InteractiveSVDCanvas(FigureCanvas):
 #  SVDBackgroundDialog                                                      #
 # ======================================================================= #
 
+# tables with at least this many values (spectra x points) are decomposed
+# on a background thread with a progress window (about 2 s and more)
+_ASYNC_SVD_VALUES = 4_000_000
+
+
 class SVDBackgroundDialog(QDialog):
     """Main dialog for interactive SVD background correction."""
 
@@ -770,9 +775,16 @@ class SVDBackgroundDialog(QDialog):
 
         self.setup_ui()
 
+        # A large table (e.g. a 21 000-spectrum map) takes many seconds to
+        # decompose: then the SVD runs on a background thread after the
+        # window is shown, with a "Computing the SVD..." progress window
+        # (as in SVD Analysis), and the saved settings are restored when it
+        # is done. Small tables are decomposed at once, as before.
+        self._svd_async_pending = False
         if self.controller:
             self._initialise_data()    # Phase 1: compute SVD, populate components
-            self._restore_settings()   # Phase 2: apply previously saved settings
+            if not self._svd_async_pending:
+                self._restore_settings()   # Phase 2: apply previously saved settings
             self._finalise_ui()        # Phase 3: final adjustments
 
     # ------------------------------------------------------------------ #
@@ -1110,32 +1122,79 @@ class SVDBackgroundDialog(QDialog):
         if not selected:
             QMessageBox.warning(self, "No Spectra", "Please select spectra to compute SVD.")
             return
+        n_values = len(selected) * len(np.asarray(selected[0].get('y_scale', ())))
+        if n_values >= _ASYNC_SVD_VALUES and not getattr(self, '_svd_async_done', False):
+            self._svd_async_pending = True     # started from showEvent
+            return
         try:
             if not self.svd_controller.manager.compute_svd_from_spectra(selected):
                 QMessageBox.warning(self, "SVD Error",
                                     "Failed to compute SVD. Ensure all spectra have identical x-axes.")
                 return
-            info = self.svd_controller.get_svd_components_info()
-            if not info:
-                QMessageBox.warning(self, "SVD Error", "Failed to get SVD component information.")
-                return
-
-            self.subspectrum_spin.setMaximum(info['n_components'])
-            for btn in (self.subspectrum_spin, self.prev_btn, self.next_btn,
-                        self.invert_btn, self.baseline_on_btn, self.baseline_off_btn,
-                        self.clear_current_btn, self.clear_all_btn, self.preview_btn,
-                        self.diagnostics_btn, self.apply_button, self.add_as_new_button):
-                btn.setEnabled(True)
-
-            self.populate_components_list(info['n_components'])
-            self.subspectrum_spin.setValue(1)
-            self.canvas.plot_subspectrum(0)
-            self.canvas.enable_baseline_mode()
-            self.canvas.setFocus()
-            self.auto_apply_settings()
-            self.update_button_states()
+            self._after_svd_computed()
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"Error computing SVD: {exc}")
+
+    # -- large tables: the SVD on a background thread, with progress
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, '_svd_async_pending', False) and not getattr(self, '_svd_async_started', False):
+            self._svd_async_started = True
+            QTimer.singleShot(50, self._start_async_svd)
+
+    def _start_async_svd(self):
+        from PyQt5.QtWidgets import QProgressDialog
+        from src.views.dialogs.visualization_analysis.svd_analysis_dialog import _ComputeWorker
+        selected = self.selected_spectra
+        self._svd_progress = QProgressDialog(
+            f'Computing the SVD of {len(selected):,} spectra…'.replace(',', '\u202f'),
+            None, 0, 0, self)
+        self._svd_progress.setWindowModality(Qt.WindowModal)
+        self._svd_progress.setWindowTitle('SVD Background Correction')
+        self._svd_progress.setMinimumDuration(0)
+        self._svd_progress.setCancelButton(None)
+        self._svd_progress.show()
+        manager = self.svd_controller.manager
+        self._svd_worker = _ComputeWorker(lambda: manager.compute_svd_from_spectra(selected), self)
+        self._svd_worker.done.connect(self._on_async_svd_done)
+        self._svd_worker.start()
+
+    def _on_async_svd_done(self):
+        self._svd_progress.close()
+        self._svd_async_pending = False
+        self._svd_async_done = True
+        if self._svd_worker.error is not None or not self._svd_worker.result:
+            QMessageBox.warning(self, "SVD Error",
+                                "Failed to compute SVD. Ensure all spectra have identical x-axes."
+                                + (f"\n\n{self._svd_worker.error}" if self._svd_worker.error else ""))
+            return
+        try:
+            self._after_svd_computed()
+            self._restore_settings()
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Error computing SVD: {exc}")
+
+    def _after_svd_computed(self):
+        """Fill the window from a freshly computed SVD."""
+        info = self.svd_controller.get_svd_components_info()
+        if not info:
+            QMessageBox.warning(self, "SVD Error", "Failed to get SVD component information.")
+            return
+
+        self.subspectrum_spin.setMaximum(info['n_components'])
+        for btn in (self.subspectrum_spin, self.prev_btn, self.next_btn,
+                    self.invert_btn, self.baseline_on_btn, self.baseline_off_btn,
+                    self.clear_current_btn, self.clear_all_btn, self.preview_btn,
+                    self.diagnostics_btn, self.apply_button, self.add_as_new_button):
+            btn.setEnabled(True)
+
+        self.populate_components_list(info['n_components'])
+        self.subspectrum_spin.setValue(1)
+        self.canvas.plot_subspectrum(0)
+        self.canvas.enable_baseline_mode()
+        self.canvas.setFocus()
+        self.auto_apply_settings()
+        self.update_button_states()
 
     def load_current_settings(self):
         """Apply previously saved settings on top of the freshly computed SVD."""
