@@ -4,7 +4,7 @@ src/modules/visualization/large_selection.py for why and what).
 
 * More selected spectra than the threshold (View -> Plotting many spectra…,
   default 2 000) in an Overlay, Grid or Waterfall plot: a preview of an
-  evenly spread subset (default 1 000) is drawn, with a note above the plot
+  evenly spread subset (default 500) is drawn, with a note above the plot
   and a "Plot all" button. The selection is not changed: every analysis
   uses all selected spectra.
 * "Plot all" (or the setting "Always plot all"): in an Overlay plot the

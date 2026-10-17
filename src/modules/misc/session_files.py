@@ -36,8 +36,8 @@ from src.modules.utils.json_store import read_json_store, write_bytes_atomic, wr
 logger = get_logger(__name__)
 
 RECENT_FILES_MAX = 10
-DEFAULT_AUTOSAVE_MINUTES = 5
-AUTOSAVE_CHOICES = (0, 2, 5, 10)          # minutes; 0 = off
+DEFAULT_AUTOSAVE_MINUTES = 10
+AUTOSAVE_CHOICES = (0, 5, 10, 20)          # minutes; 0 = off
 
 
 def app_data_dir():

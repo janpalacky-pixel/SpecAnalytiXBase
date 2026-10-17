@@ -85,8 +85,8 @@ def get_plot_controls_help_content():
     of 1&nbsp;600 points on a typical computer, almost all of it one single drawing step that
     cannot show progress or be interrupted. Therefore, when <b>more than 2&nbsp;000</b> spectra
     are selected, the <b>Overlay</b>, <b>Grid</b> and <b>Waterfall</b> plots show a
-    <b>preview</b>: 1&nbsp;000 evenly spread spectra (always the first and the last). A line
-    above the plot says so, e.g. <i>"Preview: 1 000 of 21 000 selected spectra drawn (evenly
+    <b>preview</b>: 500 evenly spread spectra (always the first and the last). A line
+    above the plot says so, e.g. <i>"Preview: 500 of 21 000 selected spectra drawn (evenly
     spread). Analyses use all 21 000."</i></p>
     <ul>
         <li><b>Your selection is not changed.</b> Every analysis and processing step uses all
@@ -99,7 +99,7 @@ def get_plot_controls_help_content():
         a long drawing again. The line above the plot says how many were drawn; press
         Refresh Plot or Plot all to draw again.</li>
         <li><b>View &rarr; Plotting many spectra&hellip;</b> (also <b>Settings&hellip;</b> on
-        that line): the limit (default 2&nbsp;000), the preview size (default 1&nbsp;000), or
+        that line): the limit (default 2&nbsp;000), the preview size (default 500), or
         <i>Always plot all</i>. Remembered between sessions.</li>
         <li><b>Tool windows</b> (FFT Denoising, X-axis alignment, Isosbestic Point
         Detection, 2D Correlation, Normalization, Data range, Spectral Calculator, ROI

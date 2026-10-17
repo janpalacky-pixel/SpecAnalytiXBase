@@ -21,7 +21,7 @@ import numpy as np
 
 DEFAULT_SETTINGS = {
     'threshold': 2000,       # more selected spectra than this -> preview
-    'preview_count': 1000,   # how many spectra the preview draws
+    'preview_count': 500,    # how many spectra the preview draws
     'mode': 'preview',       # 'preview' or 'all'
 }
 

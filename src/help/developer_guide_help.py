@@ -3759,7 +3759,7 @@ def _natural_sort_key(cls, label):
         <ul>
             <li><code>src/modules/visualization/large_selection.py</code> (Qt-free): above a
             threshold (default 2&nbsp;000) the Overlay/Grid/Waterfall plots draw an evenly spread
-            preview (default 1&nbsp;000, ends included). Mean&nbsp;&plusmn;&nbsp;SD and Difference are
+            preview (default 500, ends included). Mean&nbsp;&plusmn;&nbsp;SD and Difference are
             excluded because their mean must use all spectra. The selection
             (<code>selected_spectra</code>) is never changed &mdash; only the local list in
             <code>_plot_spectra_impl</code>.</li>

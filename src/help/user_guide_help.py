@@ -904,7 +904,7 @@ def get_user_guide_help_content():
         Performance Guide</a> for a full decision table.</p>
         <p><b>Thousands of selected spectra:</b> above 2&nbsp;000 (adjustable under
         <b>View &rarr; Plotting many spectra&hellip;</b>), the Overlay, Grid and Waterfall
-        plots draw a preview of 1&nbsp;000 evenly spread spectra, with a note above the plot.
+        plots draw a preview of 500 evenly spread spectra, with a note above the plot.
         Your selection is not changed &mdash; analyses use all selected spectra. <b>Plot
         all</b> on that note draws every spectrum (the Overlay plot in portions with a
         progress window and <b>Stop</b>; Stop keeps what is drawn and switches Interactive
@@ -2036,8 +2036,8 @@ def get_user_guide_help_content():
                 and asks again next time.</li>
             <li>When you close the program normally, the automatic save is deleted
                 &mdash; it is a safety net, not a replacement for File → Save.</li>
-            <li><strong>File → Automatic saving</strong>: Off, or every 2, 5 (default)
-                or 10 minutes; the menu also shows when the last automatic save
+            <li><strong>File → Automatic saving</strong>: Off, or every 5, 10 (default)
+                or 20 minutes; the menu also shows when the last automatic save
                 happened. Your choice is remembered.</li>
             <li>Several copies of the program can run at the same time; each keeps
                 its own automatic save, and a running copy is never mistaken for a
