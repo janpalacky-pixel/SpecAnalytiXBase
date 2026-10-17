@@ -297,6 +297,16 @@ def get_xaxis_alignment_help_content():
             <td><em>cubic</em> for most Raman / IR work.</td>
         </tr>
         <tr>
+            <td><strong>Processing / Parallel workers</strong></td>
+            <td>How the shifts are found (as in Automated Baseline).
+                <em>Automatic</em> times the first spectra and, if the rest would take more
+                than a few seconds, finds the shifts in several worker processes at once
+                (e.g. a 21&nbsp;000-spectrum map). <em>Serial</em>: one after another;
+                <em>Parallel</em>: always in workers. The result is the same; next to
+                <em>Run preview</em> a bar counts the spectra and a note says how it ran.</td>
+            <td><em>Automatic</em>, all cores.</td>
+        </tr>
+        <tr>
             <td><strong>Restrict to x-range</strong></td>
             <td>When checked, the RMSD used by the optimiser is computed only
                 over this sub-range. Useful when the full spectrum contains

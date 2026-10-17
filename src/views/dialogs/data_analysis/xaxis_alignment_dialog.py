@@ -63,6 +63,7 @@ _COLORS = [
 class _AlignWorker(QThread):
     finished = pyqtSignal(list)
     error    = pyqtSignal(str)
+    counted  = pyqtSignal(int, int)        # shifts found so far, total
 
     def __init__(self, manager, spectra, settings, parent=None):
         super().__init__(parent)
@@ -72,7 +73,9 @@ class _AlignWorker(QThread):
 
     def run(self):
         try:
-            self.finished.emit(self._manager.align_spectra(self._spectra, self._settings))
+            self.finished.emit(self._manager.align_spectra(
+                self._spectra, self._settings,
+                count_callback=lambda done, total: self.counted.emit(done, total)))
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -296,6 +299,25 @@ class XAxisAlignmentDialog(QDialog):
         self.interp_combo.setToolTip('"cubic" is smooth and most accurate for Raman spectra.')
         self.interp_combo.currentIndexChanged.connect(self._on_settings_changed)
         form.addRow('Interpolation:', self.interp_combo)
+
+        # Processing, as in Automated Baseline: finding the shifts of
+        # thousands of spectra can run in several worker processes
+        self.processing_mode_combo = QComboBox()
+        self.processing_mode_combo.addItem("Automatic (recommended)", 'auto')
+        self.processing_mode_combo.addItem("Serial (one core)", 'serial')
+        self.processing_mode_combo.addItem("Parallel (several cores)", 'parallel')
+        self.processing_mode_combo.setToolTip(
+            "Automatic: the first spectra are timed; if the rest would take more than a\n"
+            "few seconds, the shifts are found in several worker processes at once.\n"
+            "Serial: always one after another. Parallel: always in worker processes.\n"
+            "The result is the same either way.")
+        form.addRow('Processing:', self.processing_mode_combo)
+        from src.views.dialogs.misc.worker_count_slider import WorkerCountSlider
+        self.max_workers_spin = WorkerCountSlider()
+        form.addRow('Parallel workers:', self.max_workers_spin)
+        self.processing_mode_combo.currentIndexChanged.connect(
+            lambda _i: self.max_workers_spin.setEnabled(
+                self.processing_mode_combo.currentData() != 'serial'))
         return group
 
     def _build_range_group(self):
@@ -525,6 +547,10 @@ class XAxisAlignmentDialog(QDialog):
         self._progress.setVisible(False)
         self._progress.setMaximumWidth(140)
         row.addWidget(self._progress)
+        # how the last preview ran, e.g. "21 000 spectra in 9 s (parallel, 19 workers)"
+        self._run_info_label = QLabel('')
+        self._run_info_label.setStyleSheet('color: #555; font-size: 8pt;')
+        row.addWidget(self._run_info_label)
 
         self._stale_label = QLabel('⚠  Settings changed — re-run preview')
         self._stale_label.setStyleSheet('color: #E65100; font-style: italic;')
@@ -785,6 +811,9 @@ class XAxisAlignmentDialog(QDialog):
             self.range_group.setChecked(True)
             self.x_min_spin.setValue(float(x_range[0]))
             self.x_max_spin.setValue(float(x_range[1]))
+        mode_index = self.processing_mode_combo.findData(settings.get('processing_mode', 'auto'))
+        self.processing_mode_combo.setCurrentIndex(max(0, mode_index))
+        self.max_workers_spin.setValue(int(settings.get('max_workers', 0) or 0))
 
 
     # ──────────────────────────────────────────────────────────────────
@@ -815,15 +844,29 @@ class XAxisAlignmentDialog(QDialog):
         self.run_preview_btn.setEnabled(False)
         self._progress.setVisible(True)
         self._stale_label.setVisible(False)
+        self._align_manager = XAxisAlignmentManager()
+        self._progress.setRange(0, 0)
+        self._run_info_label.setText('')
         self._worker = _AlignWorker(
-            XAxisAlignmentManager(), self.selected_spectra, self.get_settings(), self
+            self._align_manager, self.selected_spectra, self.get_settings(), self
         )
+        self._worker.counted.connect(self._on_align_count)
         self._worker.finished.connect(self._on_preview_done)
         self._worker.error.connect(self._on_preview_error)
         self._worker.start()
 
+    def _on_align_count(self, done, total):
+        """Determinate progress: shifts found so far."""
+        if total > 0:
+            self._progress.setRange(0, total)
+            self._progress.setValue(done)
+            self._progress.setFormat(f'{done} / {total}')
+            self._progress.setTextVisible(True)
+
     def _on_preview_done(self, aligned):
         self._progress.setVisible(False)
+        summary = getattr(getattr(self, '_align_manager', None), 'run_summary', lambda: '')()
+        self._run_info_label.setText(summary)
         self.run_preview_btn.setEnabled(True)
         self._aligned_spectra = aligned
         self._preview_settings_hash = self._compute_settings_hash()
@@ -1079,6 +1122,8 @@ class XAxisAlignmentDialog(QDialog):
             'max_shift':                self.max_shift_spin.value(),
             'interpolation_method':     self.interp_combo.currentText(),
             'x_range':                  x_range,
+            'processing_mode':          self.processing_mode_combo.currentData(),
+            'max_workers':              self.max_workers_spin.value(),
         }
         # Persist cached preview results so they survive dialog re-open
         if self._aligned_spectra and self._preview_settings_hash:
