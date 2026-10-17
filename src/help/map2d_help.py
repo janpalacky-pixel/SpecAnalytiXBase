@@ -52,6 +52,11 @@ _SCREENSHOT_FILES = {
     "UNMIX_MAP":           "unmixing_abundance.png",
     "UNMIX_ERROR":         "unmixing_fit_error.png",
     "UNMIX_TRUTH":         "unmixing_demo_spectra.png",
+    "UNMIX_SUGGEST":       "unmixing_glen_suggest.png",
+    "UNMIX_GLEN_DIALOG":   "unmixing_glen_dialog.png",
+    "UNMIX_GLEN_ALL":      "unmixing_glen_all.png",
+    "UNMIX_GLEN_STACKED":  "unmixing_glen_stacked.png",
+    "UNMIX_GLEN_DENOISE":  "unmixing_glen_denoise.png",
 }
 
 # Screenshots shown only once the file exists, so a newly documented
@@ -79,6 +84,28 @@ _OPTIONAL_FIGURES = {
                     "Raman positions of glass, protein, DNA and lipids; the heights and widths "
                     "are invented): every pixel is a mixture of them. Unmixing should find "
                     "them again as its endmembers."),
+    "UNMIX_SUGGEST": ("Suggest number window",
+                      "Suggest number on the Glenodinium map: the singular values (blue) fall "
+                      "steeply and then flatten into the noise (grey dashed line, fitted to the flat "
+                      "part). 13 components are above the noise limit (red square); the curve "
+                      "bends at 8 (orange circle). The two buttons take either number."),
+    "UNMIX_GLEN_DIALOG": ("Unmixing of the Glenodinium map",
+                          "Glenodinium map (140 \u00d7 150 = 21 000 spectra), 6 endmembers, VCA, "
+                          "denoised with 13 SVD components: the abundance map of endmember 1; the "
+                          "white circles mark the six endmember pixels. Below: the clicked endmember "
+                          "pixel's spectrum with the endmember spectrum."),
+    "UNMIX_GLEN_ALL": ("All endmembers as a grid with their abundance maps",
+                       "Show all endmembers\u2026 \u2192 Grid, with abundance maps: each endmember "
+                       "spectrum above its abundance map, so you see at a glance which spectrum "
+                       "belongs where."),
+    "UNMIX_GLEN_STACKED": ("All endmembers stacked",
+                           "Show all endmembers\u2026 \u2192 Stacked, normalized (max = 1): the six "
+                           "endmember spectra one above the other, easy to compare band positions."),
+    "UNMIX_GLEN_DENOISE": ("Effect of Denoise first",
+                           "The same unmixing (6 endmembers, VCA) without denoising (left) and with "
+                           "Denoise first (right). Without it, VCA picks noisy single pixels \u2014 "
+                           "often pixels that are extreme because of their noise. With it, the "
+                           "endmembers are clean and show the real bands."),
     "PEAK_FIT_TWO_BANDS": ("Fits of Band A and Band B in Map arithmetic",
                            "Map arithmetic with a Fitted metric: clicking a pixel shows the fit "
                            "of Band A (dark blue) and of Band B (dark red), each with its dashed "
@@ -162,6 +189,10 @@ def get_map2d_help_content():
     .screenshot { margin: 12px 0; text-align: center; }
     .screenshot img { border: 1px solid #dee2e6; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
     .screenshot .caption { font-size: 0.9em; color: #7f8c8d; font-style: italic; margin-top: 6px; }
+    .toc  { background: #f5f5f5; padding: 8px 14px; margin: 10px 0; border-radius: 5px; }
+    .toc ul { margin: 3px 0; } .toc li { margin: 1px 0; }
+    .toc a { text-decoration: none; } .toc a:hover { text-decoration: underline; }
+    .top-link { font-size: 0.85em; text-align: right; margin: 2px 0; }
 </style></head><body>
 
 <h1>2D Spectral Map</h1>
@@ -170,6 +201,30 @@ def get_map2d_help_content():
 two-dimensional colour-coded image where each pixel corresponds to one spectrum.
 It is particularly useful for hyperspectral Raman or IR mapping experiments
 recorded on a regular (x, y) grid.</p>
+
+<div class="toc" id="contents">
+<b>Contents</b>
+<ul>
+  <li><a href="#dimensions">1 — Map Dimensions</a></li>
+  <li><a href="#map-type">2 — Map Type</a>
+    <ul>
+      <li><a href="#intensity">Intensity metric</a> &middot;
+          <a href="#peak-fit">Peak-fit metrics</a> &middot;
+          <a href="#arithmetic">Map arithmetic</a></li>
+      <li><a href="#svd">SVD</a> &middot; <a href="#pca">PCA</a> &middot;
+          <a href="#nmf-mcr">NMF / MCR-ALS</a> &middot;
+          <a href="#unmixing">Unmixing (endmembers)</a>
+          (<a href="#glenodinium">real data example</a>)</li>
+      <li><a href="#cluster">Cluster overlay</a> &middot; <a href="#rgb">RGB overlay</a></li>
+    </ul></li>
+  <li><a href="#range">3 — Spectral Range Configuration</a></li>
+  <li><a href="#display">4 — Display Options</a></li>
+  <li><a href="#spectrum-panel">5 — Spectrum Panel</a></li>
+  <li><a href="#roi">6 — ROI Tools</a></li>
+  <li><a href="#workflows">Typical workflows</a></li>
+  <li><a href="#peak-fit-details">Technical details: peak-fit metrics</a></li>
+</ul>
+</div>
 
 <div class="screenshot">
     <img src="$OVERVIEW" width="$OVERVIEW_W" height="$OVERVIEW_H" alt="2D Spectral Map dialog overview" />
@@ -185,7 +240,7 @@ the 2D Map — the map uses whatever spectra you pass in as-is.
 </div>
 
 <hr>
-<h2>1 — Map Dimensions</h2>
+<h2 id="dimensions">1 — Map Dimensions</h2>
 
 <div class="cat">
 <p>Enter the physical scan dimensions in the <b>Rows × Cols</b> spinboxes.
@@ -212,7 +267,7 @@ information, so it falls back to the manual entry described below.
     <p class="caption">The Map Dimensions group, with the Rows × Cols spinboxes and validity indicator.</p>
 </div>
 
-<h3>Suggest… button</h3>
+<h3 id="suggest-dims">Suggest… button</h3>
 <p>Opens a selectable list of all valid integer (rows, cols) factor pairs.
 The pair whose aspect ratio is closest to 1:1 is pre-selected.
 Double-clicking or pressing OK applies the chosen pair immediately.</p>
@@ -223,8 +278,9 @@ Double-clicking or pressing OK applies the chosen pair immediately.</p>
 </div>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>2 — Map Type</h2>
+<h2 id="map-type">2 — Map Type</h2>
 
 <p>Select a map type using the radio buttons. Switching between
 <b>Intensity metric</b>, <b>Map arithmetic</b>, and <b>Cluster overlay</b>
@@ -242,7 +298,7 @@ NMF's <b>Init.</b>/<b>Max iter.</b> or MCR-ALS's <b>Max iter.</b>/
 <b>RGB overlay</b> never needs <b>Update Map</b> at all: composing it from
 already-fitted components is cheap, so it always redraws live.</p>
 
-<h3>◉ Intensity metric</h3>
+<h3 id="intensity">◉ Intensity metric</h3>
 <div class="cat">
 <p>Computes one scalar value per spectrum within the configured <b>Band</b>
 range and maps it as a pixel colour.</p>
@@ -375,7 +431,7 @@ The map is computed only with <b>Update Map</b>, like the single-band fit. The F
 $PEAK_FIT_TWO_BANDS_FIGURE
 </div>
 
-<h3>◉ Map arithmetic</h3>
+<h3 id="arithmetic">◉ Map arithmetic</h3>
 <div class="cat">
 <p>Computes the same metric for two independently configured bands (A and B)
 and combines them pixel-wise. Useful for band-ratio maps that highlight
@@ -411,7 +467,7 @@ No range configuration buttons are shown — point interpolation needs no range.
 </div>
 </div>
 
-<h3>◉ SVD</h3>
+<h3 id="svd">◉ SVD</h3>
 <div class="cat">
 <p>Performs Singular Value Decomposition on the range-filtered spectra and
 maps the coefficient vector V<sub>k</sub> as pixel values.</p>
@@ -513,7 +569,7 @@ available here.</p>
 </div>
 </div>
 
-<h3>◉ PCA</h3>
+<h3 id="pca">◉ PCA</h3>
 <div class="cat">
 <p>Computes Principal Component Analysis on the range-filtered spectra and
 maps the resulting score vector as pixel values — the same underlying
@@ -556,7 +612,7 @@ every pixel's spectrum is on the same wavenumber grid.
 </div>
 </div>
 
-<h3>◉ NMF / MCR-ALS</h3>
+<h3 id="nmf-mcr">◉ NMF / MCR-ALS</h3>
 <div class="cat">
 <p>Two further spatial decomposition modes, alongside SVD: <b>NMF</b> runs
 Non-negative Matrix Factorization and <b>MCR-ALS</b> runs Multivariate
@@ -790,11 +846,35 @@ limits the spectral range used.</p>
     every pixel add up to 1 (fractions, independent of the intensity; "fully constrained"
     unmixing). With intensity differences between pixels the fit is then worse &mdash; the
     status line shows the <b>Lack of fit</b>.</li>
-  <li><b>Suggest number</b> &mdash; how many components of the spectra are clearly above the
-    noise: the singular values of the spectra are compared with the largest value pure noise
-    of the estimated level would give. Take it as a starting point: a substance present in
-    only a few pixels can be missed, and a background or intensity change can count as one
-    more component.</li>
+  <li><b>Denoise first, keeping … SVD components</b> (on by default, recommended) &mdash;
+    before the endmembers are searched, every spectrum is rebuilt from its first SVD
+    components only, which removes most of the noise. <b>auto</b> keeps the components that
+    are above the noise (the upper number of <i>Suggest number</i>); you can also type a
+    number. It is never fewer than the number of endmembers. Why it matters: the endmembers
+    are single pixels, and without denoising the most "extreme" pixels are often just the
+    noisiest ones (see the Glenodinium example below). With denoising the endmembers are the
+    denoised spectra of the chosen pixels, and the <b>Lack of fit</b> and fit-error map refer
+    to the denoised spectra. Your spectra are not changed &mdash; the denoising is used only
+    for this analysis. (To denoise the spectra themselves, use the SVD denoising in
+    <b>SVD background correction</b>.)</li>
+  <li><b>Suggest number</b> &mdash; opens a window with the <b>singular values</b> of the
+    spectra (how much each SVD component contributes, largest first, on a log scale). The
+    first few values are large (real substances), then the curve flattens into a nearly
+    straight line: the noise. That flat part is fitted (grey dashed line), so the noise
+    level is read from your data itself &mdash; this also works when brighter pixels are
+    noisier, as in Raman maps. Two numbers are offered:
+    <ul>
+      <li><b>above the noise</b> (red square) &mdash; the components clearly above the noise
+        line (more than 1.15 &times; the noise). An <i>upper</i> limit for the number of
+        substances: small consistent differences (a baseline leftover, an intensity drift)
+        also count.</li>
+      <li><b>bend</b> (orange circle) &mdash; where the curve bends into the flat part: a
+        practical number to start with.</li>
+    </ul>
+    Click <b>Use … (bend)</b> or <b>Use … (above the noise)</b> to put the number into
+    <b>Endmembers</b>. The window can be maximized, and its toolbar zooms into the curve.
+    Take it as a starting point: a substance present in only a few pixels
+    can be missed; check the endmember spectra and the fit-error map.</li>
   <li><b>Mark endmember pixels</b> &mdash; white numbered circles on the map show where each
     endmember comes from (the browsed one larger); click one to see its spectrum. The status
     line lists the rows and columns.</li>
@@ -805,6 +885,11 @@ limits the spectral range used.</p>
   <li><b>Add to spectra list…</b> &mdash; adds the endmember spectra to the main spectra list
     (named &lt;name&gt;_1, _2, …; recorded in the Operations History), e.g. for Reference
     Matching or Peak Fitting.</li>
+  <li><b>Show all endmembers…</b> &mdash; all endmember spectra in one window, so you can
+    compare them at once. <b>Stacked</b>: one above the other (with <b>Normalize (max = 1)</b>
+    each is scaled to the same height). <b>Grid</b>: one small plot per endmember, with
+    <b>With abundance maps</b> each spectrum above its map. Zoom with the toolbar; <b>Save
+    plot…</b> writes PNG, TIFF, SVG or PDF (300 dpi).</li>
 </ul>
 
 <p>The component tools work as for NMF / MCR-ALS: <b>Show endmember spectrum</b> overlays the
@@ -819,15 +904,38 @@ $UNMIX_ERROR_FIGURE
 substance occurs (nearly) pure in at least one pixel. If a substance is always mixed with
 others (e.g. a nucleus never free of protein), its endmember is a mixture, and NMF or
 MCR-ALS can resolve it better. Noise in the single endmember pixel goes into the endmember
-spectrum; a light smoothing or a narrower range helps. Try it on <b>Help → Test datasets →
+spectrum &mdash; that is what <b>Denoise first</b> prevents; a narrower range can also help. Try it on <b>Help → Test datasets →
 Synthetic → Endmember unmixing (2D Map)</b>: a cell made of glass, protein, nucleus and lipid
 droplets &mdash; <i>Suggest number</i> gives 4, and both methods find one pure pixel of
 each.</div>
 
 $UNMIX_TRUTH_FIGURE
+
+<h4 id="glenodinium">Real data example: Glenodinium map (21 000 spectra)</h4>
+<p>A measured Raman map of a <i>Glenodinium</i> cell (140 &times; 150 pixels, 216&ndash;3849
+cm<sup>&minus;1</sup>). You can download it from <b>Help → Test datasets → Real (measured) →
+Download large test datasets…</b> and then open it from the same menu. Before unmixing, the
+baseline was removed (<b>ALS</b>, &lambda; = 10<sup>6</sup>, p = 0.01, all 21 000 spectra)
+and cosmic rays were removed (863 spectra had spikes).</p>
+
+<p><b>Suggest number</b> gives 13 components above the noise and a bend at 8. With 6
+endmembers (VCA, Denoise first = auto, i.e. 13 components) the Lack of fit is about 11 %.
+The endmembers include a broad low-wavenumber feature (around 350 cm<sup>&minus;1</sup>)
+in a ring of bodies, a broad OH band around 3400 cm<sup>&minus;1</sup> (water / medium),
+sharp bands near 1000, 1150 and 1520 cm<sup>&minus;1</sup> (carotenoid-like), bands at 1600
+and 2930 cm<sup>&minus;1</sup>, and a pixel with sharp crystal-like bands. N-FINDR finds
+mostly the same pixels (4 of 6 identical). What the endmembers are chemically is for you to
+judge &mdash; unmixing only shows which spectra are the most different and where they
+are.</p>
+
+$UNMIX_SUGGEST_FIGURE
+$UNMIX_GLEN_DIALOG_FIGURE
+$UNMIX_GLEN_ALL_FIGURE
+$UNMIX_GLEN_STACKED_FIGURE
+$UNMIX_GLEN_DENOISE_FIGURE
 </div>
 
-<h3>◉ Cluster overlay</h3>
+<h3 id="cluster">◉ Cluster overlay</h3>
 <div class="cat">
 <p>Runs k-means clustering directly on the map spectra and colours each pixel
 by its cluster assignment. No external Cluster Analysis step is required.</p>
@@ -867,7 +975,7 @@ one mode does not affect any other mode.
 </div>
 </div>
 
-<h3>◉ RGB overlay</h3>
+<h3 id="rgb">◉ RGB overlay</h3>
 <div class="cat">
 <p>Combines up to three already-computed component maps into a single
 false-color composite — assign one component to each of the Red, Green
@@ -961,8 +1069,9 @@ to be active.</p>
 </div>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>3 — Spectral Range Configuration</h2>
+<h2 id="range">3 — Spectral Range Configuration</h2>
 
 <div class="cat">
 <p>Each mode has its own independent spectral range, configured via a button
@@ -995,8 +1104,9 @@ added to the list immediately.
 </div>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>4 — Display Options</h2>
+<h2 id="display">4 — Display Options</h2>
 <div class="note"><b>Pixels without a value</b> &mdash; e.g. a rejected peak fit, or a
 ratio map dividing by zero &mdash; are drawn <b>hatched light grey</b>, so they can never
 be mistaken for a low value of the colour scale. Hovering over one shows
@@ -1018,8 +1128,9 @@ be mistaken for a low value of the colour scale. Hovering over one shows
 <p>Colormap and interpolation are not applicable to Cluster overlay (which uses a fixed discrete tab10 palette).</p>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>5 — Spectrum Panel (lower right)</h2>
+<h2 id="spectrum-panel">5 — Spectrum Panel (lower right)</h2>
 
 <div class="cat">
 <p>The lower-right panel shows the spectrum for the clicked pixel.
@@ -1068,8 +1179,9 @@ for any image and it is always available, independent of both the hover
 tooltip and the click-info line.</p>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>6 — ROI Tools</h2>
+<h2 id="roi">6 — ROI Tools</h2>
 
 <div class="cat">
 <p>All ROI tools are accessible via the <b>ROI ▾</b> dropdown menu.
@@ -1225,8 +1337,9 @@ they work regardless of whether spectra share an axis.
 </div>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
-<h2>Typical workflows</h2>
+<h2 id="workflows">Typical workflows</h2>
 
 <div class="cat">
 <h3>Quick band-intensity map</h3>
@@ -1294,9 +1407,11 @@ they work regardless of whether spectra share an axis.
 <h3>Unmixing (endmember) map</h3>
 <ol>
   <li>Switch to <b>Unmixing</b>; optionally set a range via <b>Configure Unmixing range…</b>.</li>
-  <li>Press <b>Suggest number</b> (or set <b>Endmembers</b> yourself) and <b>Update Map</b>.</li>
+  <li>Press <b>Suggest number</b> and click <b>Use … (bend)</b> (or set <b>Endmembers</b>
+      yourself); keep <b>Denoise first</b> on; press <b>Update Map</b>.</li>
   <li>Browse the endmembers; the circles show their pixels. Check the <b>fit-error map</b>:
       bright regions → try one more endmember.</li>
+  <li>Compare all endmembers with <b>Show all endmembers…</b> (stacked or grid with maps).</li>
   <li>Cross-check with <b>N-FINDR</b>; add the endmember spectra to the list if needed.</li>
 </ol>
 </div>
@@ -1312,6 +1427,7 @@ they work regardless of whether spectra share an axis.
 </ol>
 </div>
 
+<p class="top-link"><a href="#contents">&uarr; Contents</a></p>
 <hr>
 <h2 id="peak-fit-details">Technical details: peak-fit metrics</h2>
 <p><a href="#peak-fit">&larr; back to Peak-fit metrics</a></p>

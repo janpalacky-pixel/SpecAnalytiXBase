@@ -1032,7 +1032,7 @@ class Map2DManager:
                        component_index=0,
                        x_min=None, x_max=None,
                        include_ranges=None, exclude_ranges=None,
-                       method='vca', sum_to_one=False, random_state=0):
+                       method='vca', sum_to_one=False, random_state=0, denoise=None):
         """Endmember unmixing: find the n_components purest pixels (VCA or
         N-FINDR) in the range-filtered spectra and map the abundance of
         endmember component_index. Same pattern as compute_nmf_map (filter,
@@ -1052,7 +1052,8 @@ class Map2DManager:
             self._em_manager = mgr
             return None
         if not mgr.compute(filtered, n_components, method=method,
-                           sum_to_one=sum_to_one, random_state=random_state):
+                           sum_to_one=sum_to_one, random_state=random_state,
+                           denoise=denoise):
             logger.error("Map2DManager: unmixing failed: %s", mgr.last_error)
             self._em_manager = mgr
             return None

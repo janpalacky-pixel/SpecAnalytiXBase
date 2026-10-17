@@ -139,12 +139,12 @@ def _svd_dialog_help_html():
     <div class="cat">
         <h3>Diagnostics</h3>
         <p>A separate tab (next to Components) with three view modes:<br>
-        &bull; <b>Single metric</b> — plot any one of six metrics vs component number;
+        &bull; <b>Single metric</b> — plot any one of seven metrics vs component number;
         click <em>ℹ What does this metric mean?</em> for a formula + interpretation popup.<br>
         &bull; <b>Compare two metrics</b> — plot any two metrics side by side against component number,
         each point labelled by component number.<br>
-        &bull; <b>Overview (all)</b> — 2&times;3 grid of all six metrics at once.</p>
-        <p><b>Six metrics:</b> singular values (&sigma;), explained variance (%), cumulative
+        &bull; <b>Overview (all)</b> — 2&times;4 grid of all seven metrics at once.</p>
+        <p><b>Seven metrics:</b> singular values (&sigma;), eigenvalues (&sigma;&sup2;), explained variance (%), cumulative
         explained (%), cumulative unexplained (%), residual error E(m), <b>Malinowski IND</b>.<br>
         <b>IND</b> has a genuine minimum — the statistically optimal number of components.<br>
         <b>E(m)</b> is monotonically decreasing — look for the elbow instead.<br>
@@ -970,7 +970,7 @@ class SVDDiagnosticsDialog(QWidget):
     -----
     Single    Plot one metric vs component number
     Compare   Side-by-side plot of two metrics against component number
-    Overview  Fixed 2×3 grid showing all six metrics at once
+    Overview  Grid of all metrics at once (4 columns: 2×4 for the seven)
     """
 
     # ------------------------------------------------------------------ #
@@ -1250,7 +1250,7 @@ class SVDDiagnosticsDialog(QWidget):
         self.overview_log_cb = QCheckBox("Log scale (overview)")
         self.overview_log_cb.setChecked(False)
         self.overview_log_cb.setToolTip(
-            "Force log scale on all six panels in the Overview.\n"
+            "Force log scale on all panels in the Overview.\n"
             "When unchecked, each panel uses its own metric's default scale\n"
             "(σ, E, IND → log; variance metrics → linear)."
         )
@@ -1761,8 +1761,12 @@ class SVDDiagnosticsDialog(QWidget):
     def _plot_overview(self):
         force_log = self.overview_log_cb.isChecked()
         names = list(self.METRICS.keys())
+        # grid sized from the number of metrics (was a fixed 2 x 3, which
+        # crashed with the seventh metric, Eigenvalue)
+        n_cols = 4
+        n_rows = max(1, -(-len(names) // n_cols))
         for i, name in enumerate(names):
-            ax = self.fig.add_subplot(2, 3, i + 1)
+            ax = self.fig.add_subplot(n_rows, n_cols, i + 1)
             self._plot_one(ax, name, override_log=True if force_log else None)
 
     # ------------------------------------------------------------------ #

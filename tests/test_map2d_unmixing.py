@@ -52,13 +52,22 @@ def _matched(res):
     return [truth.NAMES[j] for j in corr.argmax(axis=1)], corr.max(axis=1)
 
 
-def test_demo_map_suggest_and_unmix(quiet):
+def test_demo_map_suggest_and_unmix(quiet, monkeypatch):
+    from PyQt5.QtWidgets import QDialog
+    from src.views.dialogs.visualization_analysis import map2d_dialog as md
+
+    def use_bend(dlg):                      # the Suggest window: "Use 4 (bend)"
+        dlg.bend_btn.click()
+        return QDialog.Accepted
+    monkeypatch.setattr(md._SuggestEndmembersDialog, 'exec_', use_bend)
     d = _dialog(_map_spectra())
     assert (d._rows_spin.value(), d._cols_spin.value()) == (40, 50)    # filled in from the file
     assert d._decomp_n_label.text() == "Endmembers:" and d._em_settings_widget.isVisibleTo(d)
     assert not d._btn_decomp_run_n.isVisibleTo(d) and not d._ref_grp.isVisibleTo(d)
     d._suggest_n_endmembers()
-    assert d._decomp_n_spin.value() == 4 and 'Suggested: 4' in quiet[-1][1]
+    assert d._decomp_n_spin.value() == 4 and d._suggest_dialog.chosen == 4
+    assert 'Use 4 (bend)' in d._suggest_dialog.bend_btn.text()
+    assert 'Use 4 (above the noise)' in d._suggest_dialog.noise_btn.text()
     for method in ('vca', 'nfindr'):
         d._em_method_combo.setCurrentIndex(d._em_method_combo.findData(method))
         d._compute_map()
@@ -158,3 +167,59 @@ def test_rgb_overlay_can_use_the_abundance_maps(quiet):
         w['enable'].setChecked(True)
     assert d._rgb_overlay_array is not None and d._rgb_overlay_array.shape == (40, 50, 3)
     d.deleteLater()
+
+
+
+def test_denoise_first_is_on_by_default_and_marks_the_fit_stale(quiet):
+    d = _dialog(_map_spectra())
+    assert d._em_denoise_cb.isChecked() and d._em_denoise_spin.text() == 'auto'
+    d._decomp_n_spin.setValue(4)
+    d._compute_map()
+    res = d.controller.get_em_result()
+    assert res.denoise_k == 4 and 'denoised (4 SVD comp.)' in d._decomp_status_label.text()
+    d._em_denoise_cb.setChecked(False)
+    assert d._decomp_needs_refit['em'] and not d._em_denoise_spin.isEnabled()
+    d._compute_map()
+    assert d.controller.get_em_result().denoise_k is None
+    d._em_denoise_cb.setChecked(True)
+    d._em_denoise_spin.setValue(8)
+    d._compute_map()
+    assert d.controller.get_em_result().denoise_k == 8
+    d.deleteLater()
+
+
+def test_show_all_endmembers_stacked_and_grid(quiet):
+    d = _dialog(_map_spectra())
+    d._decomp_n_spin.setValue(4)
+    d._compute_map()
+    assert d._btn_em_all.isEnabled()
+    from src.views.dialogs.visualization_analysis import map2d_dialog as md
+    dlg = md._EndmemberSpectraDialog(d.controller.get_em_result(), 40, 50, 'viridis', d)
+    assert len(dlg.fig.axes) == 1 and len(dlg.fig.axes[0].lines) == 4      # stacked
+    dlg.norm_cb.setChecked(True)
+    assert len(dlg.fig.axes[0].lines) == 4
+    dlg.grid_radio.setChecked(True)
+    assert len(dlg.fig.axes) == 8                                         # 4 maps + 4 spectra
+    assert 'row' in dlg.fig.axes[0].get_title()
+    dlg.maps_cb.setChecked(False)
+    assert len(dlg.fig.axes) == 4
+    dlg.deleteLater()
+    d.deleteLater()
+
+
+def test_suggest_and_all_endmembers_windows_can_zoom_and_maximize(quiet):
+    from PyQt5.QtCore import Qt
+    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
+    from src.views.dialogs.visualization_analysis import map2d_dialog as md
+    d = _dialog(_map_spectra())
+    est = d.controller.estimate_n_endmembers(d.spectra)
+    sug = md._SuggestEndmembersDialog(est, d)
+    assert isinstance(sug.toolbar, NavigationToolbar2QT)
+    assert sug.windowFlags() & Qt.WindowMaximizeButtonHint
+    d._decomp_n_spin.setValue(4)
+    d._compute_map()
+    dlg = md._EndmemberSpectraDialog(d.controller.get_em_result(), 40, 50, 'viridis', d)
+    assert dlg.findChildren(NavigationToolbar2QT)
+    assert dlg.windowFlags() & Qt.WindowMaximizeButtonHint
+    for w in (sug, dlg, d):
+        w.deleteLater()

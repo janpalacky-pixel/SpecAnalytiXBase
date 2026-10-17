@@ -3502,19 +3502,34 @@ def _natural_sort_key(cls, label):
             started from VCA; each swap evaluates every pixel at once through the cofactors of
             the replaced column), <code>abundances()</code> (NNLS per pixel on the p&times;p Gram system
             via Cholesky &mdash; fast; sum-to-one by a heavily weighted extra equation),
-            <code>estimate_n_endmembers()</code> (noise from robust second differences; singular
-            values above 1.2&middot;&sigma;(&radic;N + &radic;L)).</li>
+            <code>estimate_n_endmembers()</code> (singular values via <code>svd_basis()</code>;
+            <code>noise_plateau()</code> fits a straight line to log&nbsp;s between 5&nbsp;% and
+            50&nbsp;% of the components &mdash; the noise level read from the data, so it also holds
+            for heteroscedastic Raman noise; <code>n</code> = leading values above 1.15 &times;
+            plateau; <code>bend_point()</code> = the point farthest below the log-scale chord from
+            s[0] to s[2n+2]; with fewer than 12 values the old second-difference /
+            1.2&middot;&sigma;(&radic;N + &radic;L) limit is used), <code>denoise()</code>
+            (projection Y&nbsp;V<sub>k</sub>V<sub>k</sub><sup>T</sup>, not centred).</li>
             <li><code>EndmemberManager</code> has NMFManager's attributes (<code>W</code> abundances,
             <code>H</code> endmember spectra, <code>x_axis</code>, <code>explained_variance</code>,
             <code>lof</code>, <code>last_error</code>) plus <code>endmember_indices</code> and
-            <code>residual_rms</code>, so <code>Map2DManager</code>'s unified accessors handle kind
+            <code>residual_rms</code>, <code>denoise_k</code> and <code>n_above_noise</code>.
+            <code>compute(..., denoise=None|'auto'|k)</code> projects the spectra on max(k, p) SVD
+            components before VCA/N-FINDR; the endmembers, <code>lof</code> and the residual then
+            refer to the denoised spectra. <code>Map2DManager</code>'s unified accessors handle kind
             <code>'em'</code> like 'nmf'. The dialog adds the radio, the settings row and
             <code>_after_em_draw()</code> (title, fit-error map, markers) at the three places a
-            decomposition map is drawn (fit, cached redraw, browsing).</li>
+            decomposition map is drawn (fit, cached redraw, browsing). The "Denoise first" check
+            box and spin box mark the fit stale like the other settings;
+            <code>_SuggestEndmembersDialog</code> plots the singular values with plateau, noise
+            limit, bend and the two "Use …" buttons; <code>_EndmemberSpectraDialog</code> ("Show
+            all endmembers…") draws them stacked or as a grid with abundance maps.</li>
             <li>Tests: <code>tests/test_endmember_unmixing.py</code> (methods, abundances,
-            sum-to-one, brightness, suggestion, fit error, errors) and
-            <code>tests/test_map2d_unmixing.py</code> (window, demo map
-            <code>unmixing_cell_map_demo.mat</code> with known truth, RGB, add to list).</li>
+            sum-to-one, brightness, suggestion incl. brighter-pixels-noisier, denoising, fit error,
+            errors) and <code>tests/test_map2d_unmixing.py</code> (window, demo map
+            <code>unmixing_cell_map_demo.mat</code> with known truth, Suggest window, Denoise first,
+            Show all endmembers, RGB, add to list). Help pictures: <code>dev_notes/make_unmixing_figures.py</code>
+            (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
         <h2 id="group-statistics-design">Group Statistics</h2>

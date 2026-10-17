@@ -543,6 +543,183 @@ class _SpectrumCanvas(FigureCanvas):
 # Adapter so SVDDiagnosticsDialog can work with Map2DManager
 # ══════════════════════════════════════════════════════════════════════════════
 
+class _SuggestEndmembersDialog(QDialog):
+    """Suggest number: the singular values with the noise plateau, the
+    components above the noise (upper limit) and where the curve bends
+    (a practical start). The user picks one of the two (or cancels)."""
+
+    def __init__(self, est, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Suggest number of endmembers")
+        self.setWindowFlags((self.windowFlags() | Qt.WindowMaximizeButtonHint)
+                            & ~Qt.WindowMinimizeButtonHint)
+        self.chosen = None
+        s = np.asarray(est['singular_values'], float)
+        plateau = np.asarray(est['plateau'], float)
+        n, bend = int(est['n']), int(est['bend'])
+        lay = QVBoxLayout(self)
+        fig = Figure(figsize=(6.4, 3.4), tight_layout=True)
+        canvas = FigureCanvas(fig)
+        ax = fig.add_subplot(111)
+        shown = min(len(s), max(30, 3 * n + 5))
+        k = np.arange(1, shown + 1)
+        ax.semilogy(k, s[:shown], 'o-', ms=3.5, lw=1, color='#1565C0', label='singular values')
+        ax.semilogy(k, plateau[:shown], '--', lw=1, color='#757575',
+                    label='noise plateau (fitted to the flat part)')
+        ax.semilogy(k, 1.15 * plateau[:shown], ':', lw=1, color='#B71C1C',
+                    label='noise limit (1.15 x plateau)')
+        ax.semilogy([bend], [s[bend - 1]], 'o', ms=9, mfc='none', mec='#E65100', mew=2,
+                    label=f'bend: {bend}')
+        ax.semilogy([n], [s[n - 1]], 's', ms=9, mfc='none', mec='#B71C1C', mew=2,
+                    label=f'last above the noise: {n}')
+        ax.set_xlabel('Component')
+        ax.set_ylabel('Singular value (log)')
+        ax.legend(fontsize=7)
+        ax.grid(alpha=0.3)
+        self.canvas = canvas
+        self.toolbar = NavigationToolbar(canvas, self)     # zoom, pan, save, ...
+        lay.addWidget(self.toolbar)
+        lay.addWidget(canvas, 1)
+        text = QLabel(
+            f"<b>{n}</b> components are clearly above the noise &mdash; an upper limit "
+            f"for the number of substances. The curve bends into the noise at "
+            f"<b>{bend}</b> &mdash; a practical number to start with.<br>"
+            "The noise is read from the flat part of the curve itself, so it also "
+            "holds when brighter pixels are noisier. Small, consistent differences "
+            "(a baseline leftover, an intensity drift) also count as components, so "
+            "check the endmember spectra and the fit-error map.")
+        text.setWordWrap(True)
+        lay.addWidget(text)
+        row = QHBoxLayout()
+        self.bend_btn = QPushButton(f"Use {bend} (bend)")
+        self.noise_btn = QPushButton(f"Use {n} (above the noise)")
+        cancel = QPushButton("Cancel")
+        for b in (self.bend_btn, self.noise_btn, cancel):
+            b.setAutoDefault(False)
+        self.bend_btn.clicked.connect(lambda: self._pick(bend))
+        self.noise_btn.clicked.connect(lambda: self._pick(n))
+        cancel.clicked.connect(self.reject)
+        row.addStretch(1)
+        row.addWidget(self.bend_btn)
+        row.addWidget(self.noise_btn)
+        row.addWidget(cancel)
+        lay.addLayout(row)
+        self.resize(700, 560)
+
+    def _pick(self, value):
+        self.chosen = int(value)
+        self.accept()
+
+
+class _EndmemberSpectraDialog(QDialog):
+    """All endmembers at once: stacked (one axis, offset) or a grid (one
+    panel per endmember, optionally with its abundance map)."""
+
+    def __init__(self, res, n_rows, n_cols, cmap='viridis', parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("All endmembers")
+        self.setWindowFlags((self.windowFlags() | Qt.WindowMaximizeButtonHint)
+                            & ~Qt.WindowMinimizeButtonHint)
+        self.res, self.n_rows, self.n_cols, self.cmap = res, n_rows, n_cols, cmap
+        lay = QVBoxLayout(self)
+        row = QHBoxLayout()
+        self.stacked_radio = QRadioButton("Stacked")
+        self.grid_radio = QRadioButton("Grid")
+        self.stacked_radio.setChecked(True)
+        self.norm_cb = QCheckBox("Normalize (max = 1)")
+        self.norm_cb.setToolTip("Stacked: scale every spectrum to the same height, to compare\n"
+                                "the shapes rather than the intensities.")
+        self.maps_cb = QCheckBox("With abundance maps")
+        self.maps_cb.setChecked(True)
+        self.maps_cb.setToolTip("Grid: show each endmember's abundance map above its spectrum.")
+        for w in (self.stacked_radio, self.grid_radio, self.norm_cb, self.maps_cb):
+            row.addWidget(w)
+        row.addStretch(1)
+        save_btn = QPushButton("Save plot…")
+        save_btn.clicked.connect(self._save)
+        row.addWidget(save_btn)
+        lay.addLayout(row)
+        self.fig = Figure(figsize=(9, 6), tight_layout=True)
+        self.canvas = FigureCanvas(self.fig)
+        lay.addWidget(NavigationToolbar(self.canvas, self))
+        lay.addWidget(self.canvas, 1)
+        close = QPushButton("Close")
+        close.setAutoDefault(False)
+        close.clicked.connect(self.accept)
+        lay.addWidget(close, 0, Qt.AlignRight)
+        for w in (self.stacked_radio, self.grid_radio, self.norm_cb, self.maps_cb):
+            w.toggled.connect(self.redraw)
+        self.resize(1000, 720)
+        self.redraw()
+
+    def _label(self, k):
+        r, c = divmod(int(self.res.endmember_indices[k]), self.n_cols)
+        return f"E{k + 1}  (row {r + 1}, col {c + 1}; EV {self.res.explained_variance[k]:.1f} %)"
+
+    def redraw(self, *_):
+        res = self.res
+        p = len(res.endmember_indices)
+        colors = matplotlib.cm.tab10(np.arange(p) % 10)
+        self.fig.clear()
+        self.norm_cb.setEnabled(self.stacked_radio.isChecked())
+        self.maps_cb.setEnabled(self.grid_radio.isChecked())
+        x = np.asarray(res.x_axis, float)
+        if self.stacked_radio.isChecked():
+            ax = self.fig.add_subplot(111)
+            H = np.asarray(res.H, float)
+            if self.norm_cb.isChecked():
+                H = H / np.where(np.abs(H).max(axis=1, keepdims=True) > 0,
+                                 np.abs(H).max(axis=1, keepdims=True), 1)
+            step = 1.1 * float(np.max(H.max(axis=1) - np.minimum(H.min(axis=1), 0))) or 1.0
+            for k in range(p):
+                off = step * (p - 1 - k)
+                ax.plot(x, H[k] + off, lw=0.9, color=colors[k])
+                ax.text(x[-1], H[k][-1] + off, f"  E{k + 1}", color=colors[k],
+                        va='center', fontsize=9, fontweight='bold')
+            ax.set_yticks([])
+            ax.set_xlabel('x')
+            ax.set_title("Endmember spectra (offset for clarity)" +
+                         (", normalized" if self.norm_cb.isChecked() else ""), fontsize=10)
+        else:
+            cols = int(np.ceil(np.sqrt(p))) if p > 3 else p
+            rows = int(np.ceil(p / cols))
+            with_maps = self.maps_cb.isChecked() and res.W is not None
+            per = 2 if with_maps else 1
+            gs = self.fig.add_gridspec(rows * per, cols,
+                                       height_ratios=[1.5, 1] * rows if with_maps else None)
+            for k in range(p):
+                r0, c0 = divmod(k, cols)
+                if with_maps:
+                    axm = self.fig.add_subplot(gs[r0 * 2, c0])
+                    try:
+                        img = np.asarray(res.W[:, k], float).reshape(self.n_rows, self.n_cols)
+                        axm.imshow(img, cmap=self.cmap, aspect='equal')
+                        pr, pc = divmod(int(res.endmember_indices[k]), self.n_cols)
+                        axm.plot(pc, pr, 'o', ms=7, mfc='none', mec='white', mew=1.5)
+                    except ValueError:
+                        pass
+                    axm.set_xticks([])
+                    axm.set_yticks([])
+                    axm.set_title(self._label(k), fontsize=8)
+                    axs = self.fig.add_subplot(gs[r0 * 2 + 1, c0])
+                else:
+                    axs = self.fig.add_subplot(gs[r0, c0])
+                    axs.set_title(self._label(k), fontsize=8)
+                axs.plot(x, res.H[k], lw=0.8, color=colors[k])
+                axs.tick_params(labelsize=7)
+        self.canvas.draw_idle()
+
+    def _save(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save plot", "endmembers.png",
+            "PNG (*.png);;TIFF (*.tif *.tiff);;SVG (*.svg);;PDF (*.pdf)")
+        if path:
+            try:
+                self.fig.savefig(path, dpi=300)
+            except Exception as exc:
+                QMessageBox.warning(self, "Save plot", f"Could not save the plot:\n{exc}")
+
+
 class _SVDDiagAdapter:
     """
     Thin shim that wraps Map2DController to expose the same interface that
@@ -1588,6 +1765,32 @@ class Map2DDialog(QDialog):
             "If a substance never occurs pure in the map, its endmember is a "
             "mixture; NMF or MCR-ALS can then resolve it better."))
         em_v.addLayout(em_row1)
+        em_row_dn = QHBoxLayout()
+        em_row_dn.setSpacing(4)
+        self._em_denoise_cb = QCheckBox("Denoise first, keeping")
+        self._em_denoise_cb.setChecked(True)
+        self._em_denoise_cb.setToolTip(
+            "Before unmixing, keep only the first SVD components of the spectra\n"
+            "(the rest is mostly noise). Recommended for noisy maps: the purest\n"
+            "pixels are found on clean spectra, so noise-extreme pixels are not\n"
+            "picked, and the endmember spectra and abundance maps are smoother.\n"
+            "Only for this calculation -- the spectra themselves are not changed.\n"
+            "The endmembers are then the denoised spectra of their pixels, and\n"
+            "lack of fit / fit-error map refer to the denoised spectra.")
+        em_row_dn.addWidget(self._em_denoise_cb)
+        self._em_denoise_spin = QSpinBox()
+        self._em_denoise_spin.setKeyboardTracking(False)
+        self._em_denoise_spin.setRange(0, 200)
+        self._em_denoise_spin.setSpecialValueText("auto")
+        self._em_denoise_spin.setValue(0)
+        self._em_denoise_spin.setFixedWidth(64)
+        self._em_denoise_spin.setToolTip(
+            "How many SVD components to keep. auto: the components clearly above\n"
+            "the noise (as in Suggest number). Never fewer than the endmembers.")
+        em_row_dn.addWidget(self._em_denoise_spin)
+        em_row_dn.addWidget(QLabel("SVD components"))
+        em_row_dn.addStretch()
+        em_v.addLayout(em_row_dn)
         em_row2 = QHBoxLayout()
         em_row2.setSpacing(6)
         self._em_markers_cb = QCheckBox("Mark endmember pixels")
@@ -1610,6 +1813,13 @@ class Map2DDialog(QDialog):
             "Add the endmember spectra as new spectra to the main spectra list\n"
             "(e.g. for Reference Matching), recorded in the Operations History.")
         em_row2.addWidget(self._btn_em_add)
+        self._btn_em_all = QPushButton("Show all endmembers…")
+        self._btn_em_all.setEnabled(False)
+        self._btn_em_all.setToolTip(
+            "All endmember spectra at once: stacked in one plot, or as a grid\n"
+            "with each endmember's abundance map.")
+        # on the (shorter) denoise row, right-aligned, so the row below fits
+        em_row_dn.addWidget(self._btn_em_all)
         em_row2.addStretch()
         em_v.addLayout(em_row2)
         self._em_settings_widget.setVisible(False)
@@ -2260,6 +2470,10 @@ class Map2DDialog(QDialog):
         self._em_markers_cb.toggled.connect(self._redraw_em_view)
         self._em_error_map_cb.toggled.connect(self._redraw_em_view)
         self._btn_em_add.clicked.connect(self._add_endmembers_to_list)
+        self._btn_em_all.clicked.connect(self._show_all_endmembers)
+        self._em_denoise_cb.toggled.connect(self._on_em_denoise_toggled)
+        self._em_denoise_spin.valueChanged.connect(
+            lambda *_: self._on_fit_settings_changed('em'))
         self._cmap_combo.currentTextChanged.connect(
             self._on_cmap_interp_changed)
         self._interp_combo.currentTextChanged.connect(
@@ -3752,6 +3966,7 @@ class Map2DDialog(QDialog):
                         include_ranges=dec_inc_ranges, exclude_ranges=dec_exc_ranges,
                         method=self._em_method_combo.currentData(),
                         sum_to_one=self._em_sum_to_one_cb.isChecked(),
+                        denoise=self._em_denoise_setting(),
                     )
                 finally:
                     QApplication.restoreOverrideCursor()
@@ -4167,6 +4382,7 @@ class Map2DDialog(QDialog):
         except Exception:
             logger.exception("Hover for the unmixing map failed")
         self._btn_em_add.setEnabled(True)
+        self._btn_em_all.setEnabled(True)
 
     def _draw_endmember_markers(self, res, comp_idx, n_cols):
         """White numbered circles at the endmember pixels (the browsed
@@ -4195,8 +4411,20 @@ class Map2DDialog(QDialog):
             return
         self._on_component_changed(max(0, self._component_combo.currentIndex()))
 
+    def _em_denoise_setting(self):
+        """None (off), 'auto' or the number of SVD components to keep."""
+        if not self._em_denoise_cb.isChecked():
+            return None
+        k = self._em_denoise_spin.value()
+        return 'auto' if k == 0 else k
+
+    def _on_em_denoise_toggled(self, checked):
+        self._em_denoise_spin.setEnabled(checked)
+        self._on_fit_settings_changed('em')
+
     def _suggest_n_endmembers(self):
-        """Suggest the number of endmembers: components clearly above noise."""
+        """Suggest the number of endmembers: a window with the singular
+        values, the noise plateau, the bend and the noise limit."""
         from PyQt5.QtWidgets import QApplication
         ranges, is_excl = self._active_range_state()
         QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -4212,19 +4440,21 @@ class Map2DDialog(QDialog):
                 "The spectra cannot be compared in the chosen range (different "
                 "x-axes or missing values).")
             return
-        n = max(self._decomp_n_spin.minimum(), min(est['n'], self._decomp_n_spin.maximum()))
-        s = est['singular_values']
-        shown = ", ".join(f"{v:.3g}" for v in s[:min(len(s), est['n'] + 3)])
-        QMessageBox.information(
-            self, "Suggest number",
-            f"Suggested: {est['n']} endmembers.\n\n"
-            f"That many components of the spectra are clearly above the noise "
-            f"(estimated noise level {est['sigma']:.3g}; pure noise would give "
-            f"values below {est['threshold']:.3g}). The largest values: {shown}.\n\n"
-            "Take it as a starting point: a substance present in only a few pixels "
-            "can be missed (look at the fit-error map), and a background or "
-            "intensity change can count as one more component.")
-        self._decomp_n_spin.setValue(n)
+        dlg = _SuggestEndmembersDialog(est, self)
+        self._suggest_dialog = dlg            # for tests
+        if dlg.exec_() == QDialog.Accepted and dlg.chosen:
+            self._decomp_n_spin.setValue(
+                max(self._decomp_n_spin.minimum(),
+                    min(dlg.chosen, self._decomp_n_spin.maximum())))
+
+    def _show_all_endmembers(self):
+        res = self.controller.get_em_result()
+        if res is None:
+            return
+        dlg = _EndmemberSpectraDialog(res, self._rows_spin.value(), self._cols_spin.value(),
+                                      self._cmap_combo.currentText(), self)
+        self._all_endmembers_dialog = dlg     # for tests
+        dlg.exec_()
 
     def _add_endmembers_to_list(self):
         """Add the endmember spectra to the main spectra list."""
@@ -4280,7 +4510,8 @@ class Map2DDialog(QDialog):
             where = ", ".join(f"E{k + 1}: row {int(i) // n_cols + 1}, col {int(i) % n_cols + 1}"
                               for k, i in enumerate(res.endmember_indices))
             parts = [f"{METHODS.get(res.method, res.method)}, {len(res.endmember_indices)} "
-                     f"endmembers" + (", fractions" if res.sum_to_one else ""),
+                     f"endmembers" + (", fractions" if res.sum_to_one else "")
+                     + (f", denoised ({res.denoise_k} SVD comp.)" if res.denoise_k else ""),
                      f"Lack of fit: {res.lof:.3f}%", f"pixels: {where}"]
             self._decomp_status_label.setText("  |  ".join(parts))
             return

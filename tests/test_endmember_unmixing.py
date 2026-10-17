@@ -120,3 +120,33 @@ def test_one_endmember_and_reproducible():
     a.compute(_spectra(Y), 3, random_state=4)
     b.compute(_spectra(Y), 3, random_state=4)
     assert np.array_equal(a.endmember_indices, b.endmember_indices)
+
+
+
+def test_suggestion_holds_when_brighter_pixels_are_noisier():
+    """Raman-like noise (larger in brighter pixels): the noise is read from
+    the flat part of the singular-value curve itself."""
+    rng = np.random.default_rng(2)
+    E = _truth()
+    A = rng.dirichlet(np.ones(3) * 0.7, 900) * rng.uniform(0.5, 2.0, (900, 1))
+    clean = A @ E
+    Y = clean + rng.normal(0, 1, clean.shape) * 0.03 * np.sqrt(clean)
+    est = eu.estimate_n_endmembers(Y)
+    assert est['n'] == 3 and est['bend'] == 3
+    assert len(est['plateau']) == len(est['singular_values'])
+
+
+def test_denoise_first():
+    Y, E, A, pure = _data(noise=0.05, seed=3)
+    noisy, clean = eu.EndmemberManager(), eu.EndmemberManager()
+    assert noisy.compute(_spectra(Y), 3) and clean.compute(_spectra(Y), 3, denoise='auto')
+    assert noisy.denoise_k is None and clean.denoise_k == 3 and clean.n_above_noise == 3
+    # the denoised endmember spectra are much closer to the truth
+    def err(mgr):
+        corr = np.corrcoef(np.vstack([mgr.H, E]))[:3, 3:]
+        return 1 - corr.max(axis=1).min()
+    assert err(clean) < 0.5 * err(noisy)
+    two = eu.EndmemberManager()
+    assert two.compute(_spectra(Y), 3, denoise=2) and two.denoise_k == 3    # never below p
+    Yd = eu.denoise(Y, 3)
+    assert Yd.shape == Y.shape and np.linalg.matrix_rank(Yd) == 3

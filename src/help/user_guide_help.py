@@ -1756,10 +1756,14 @@ def get_user_guide_help_content():
         <p><b>Unmixing (endmembers).</b> Map Type <i>Unmixing</i> finds the purest pixels of the
         map (VCA or N-FINDR) &mdash; their measured spectra are the endmembers &mdash; and maps how
         much of each endmember every pixel contains (non-negative abundances, optionally fractions
-        that sum to 1). <b>Suggest number</b> estimates how many endmembers the data contain, white
-        circles mark the endmember pixels, a <b>fit-error map</b> shows where something is left
-        unexplained, and the endmember spectra can be added to the spectra list. Demo: Help &rarr;
-        Test datasets &rarr; Synthetic &rarr; Endmember unmixing. Details:
+        that sum to 1). <b>Denoise first</b> (on by default) reduces the noise before the purest
+        pixels are searched. <b>Suggest number</b> plots the singular values and offers two numbers
+        (where the curve bends, and how many are above the noise), white circles mark the endmember
+        pixels, a <b>fit-error map</b> shows where something is left unexplained, <b>Show all
+        endmembers…</b> plots all endmember spectra at once (stacked or as a grid with their maps),
+        and the endmember spectra can be added to the spectra list. Demo: Help &rarr;
+        Test datasets &rarr; Synthetic &rarr; Endmember unmixing; the help also shows a real
+        example (the Glenodinium map). Details:
         <a href="help://map2d">2D Map help</a>.</p>
         <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, 2D Map peak
         fitting). Large jobs run in several worker processes. The <b>Workers</b> slider goes from 1

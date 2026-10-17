@@ -213,12 +213,79 @@ def abundances(Y, E, sum_to_one=False):
 
 # --------------------------------------------------------------------------- number of endmembers
 
-def estimate_n_endmembers(Y, max_n=20):
-    """How many components carry more than noise. The noise level is taken
-    from the second differences along the spectrum (robust median, so the
-    bands do not count); a matrix of pure noise of that level has no
-    singular value above sigma * (sqrt(N) + sqrt(L)). Returns a dict with
-    'n', 'sigma', 'threshold' and 'singular_values' (largest first)."""
+NOISE_FACTOR = 1.15     # a component counts as signal above 1.15 x the noise plateau
+
+
+def svd_basis(Y):
+    """Singular values (largest first) and the matching spectral directions
+    V (n_points x m) of Y (n_pixels x n_points), m = min(n_pixels, n_points)."""
+    Y = np.asarray(Y, dtype=float)
+    N, L = Y.shape
+    m = min(N, L)
+    if L <= N:
+        vals, V = np.linalg.eigh(Y.T @ Y)
+        order = np.argsort(vals)[::-1][:m]
+        vals, V = vals[order], V[:, order]
+    else:
+        vals, U = np.linalg.eigh(Y @ Y.T)
+        order = np.argsort(vals)[::-1][:m]
+        vals, U = vals[order], U[:, order]
+        s = np.sqrt(np.clip(vals, 0, None))
+        keep = s > (s[0] * 1e-12 if s[0] > 0 else 0)
+        V = np.zeros((L, m))
+        V[:, keep] = (Y.T @ U[:, keep]) / s[keep]
+    return np.sqrt(np.clip(vals, 0, None)), V
+
+
+def noise_plateau(s, factor=NOISE_FACTOR):
+    """The noise floor of the singular values: a straight line (log scale)
+    fitted to the flat middle part of the curve (5 %..50 % of the
+    components, which is noise in spectral maps), extended to the first
+    components. Read from the data's own curve, so it also holds when the
+    noise differs from pixel to pixel (Raman: brighter pixels are noisier).
+    Returns (number of leading components above factor x plateau,
+    plateau values)."""
+    s = np.asarray(s, dtype=float)
+    m = len(s)
+    k = np.arange(m)
+    k0 = max(4, int(0.05 * m))
+    k1 = max(k0 + 4, int(0.5 * m))
+    ls = np.log(np.clip(s, 1e-300, None))
+    slope, offset = np.polyfit(k[k0:k1], ls[k0:k1], 1)
+    plateau = np.exp(offset + slope * k)
+    n = 0
+    while n < m and s[n] > factor * plateau[n]:
+        n += 1
+    return n, plateau
+
+
+def bend_point(s, n_above):
+    """Where the curve (log scale) bends into the noise plateau: the point
+    farthest below the straight line from the first value to a point well
+    inside the plateau (2 x n_above + 2). Returns the number of components
+    before that point -- a practical number of substances to start with."""
+    s = np.asarray(s, dtype=float)
+    K = min(len(s) - 1, 2 * max(n_above, 1) + 2)
+    if K < 2:
+        return max(1, n_above)
+    ls = np.log(np.clip(s[:K + 1], 1e-300, None))
+    k = np.arange(K + 1)
+    d = ls[0] + (ls[K] - ls[0]) * k / K - ls
+    return max(1, int(np.argmax(d)))
+
+
+def estimate_n_endmembers(Y, max_n=50, s=None):
+    """How many components carry more than noise, and where the curve bends.
+
+    'n'    -- components clearly above the noise plateau (see noise_plateau):
+              an upper limit for the number of substances;
+    'bend' -- where the curve bends into the plateau (see bend_point): a
+              practical number to start with;
+    plus 'singular_values', 'plateau', 'threshold' (factor x plateau at the
+    first noise component) and 'sigma' (noise level from the second
+    differences along the spectra, for information).
+    With fewer than 12 singular values the classic limit for pure noise,
+    1.2 sigma (sqrt(N) + sqrt(L)), is used instead of the plateau."""
     Y = np.asarray(Y, dtype=float)
     N, L = Y.shape
     if L >= 5:
@@ -227,12 +294,30 @@ def estimate_n_endmembers(Y, max_n=20):
         sigma = 1.4826 * mad / math.sqrt(6.0)
     else:
         sigma = 0.0
-    _, vals = _gram_eig(Y.T)
-    s = np.sqrt(np.clip(vals[:min(N, L)], 0, None) * N)
-    threshold = 1.2 * sigma * (math.sqrt(N) + math.sqrt(L))
-    n = int(np.sum(s > threshold)) if sigma > 0 else min(len(s), max_n)
+    if s is None:
+        s, _ = svd_basis(Y)
+    s = np.asarray(s, dtype=float)
+    if len(s) >= 12:
+        n, plateau = noise_plateau(s)
+        threshold = NOISE_FACTOR * plateau[min(n, len(s) - 1)]
+    else:
+        threshold = 1.2 * sigma * (math.sqrt(N) + math.sqrt(L))
+        plateau = np.full(len(s), threshold / NOISE_FACTOR)
+        n = int(np.sum(s > threshold)) if sigma > 0 else len(s)
     n = max(1, min(n, max_n))
-    return {'n': n, 'sigma': sigma, 'threshold': threshold, 'singular_values': s}
+    bend = min(bend_point(s, n), n)
+    return {'n': n, 'bend': bend, 'sigma': sigma, 'threshold': threshold,
+            'plateau': plateau, 'singular_values': s}
+
+
+def denoise(Y, k, V=None):
+    """Y with only its first k SVD components kept (the rest -- mostly noise
+    -- removed): Y V_k V_k^T. V: the spectral directions from svd_basis()."""
+    Y = np.asarray(Y, dtype=float)
+    if V is None:
+        _, V = svd_basis(Y)
+    Vk = V[:, :max(1, int(k))]
+    return (Y @ Vk) @ Vk.T
 
 
 # --------------------------------------------------------------------------- manager
@@ -262,10 +347,17 @@ class EndmemberManager:
         self.sum_to_one = False
         self.sweeps = None
         self.bootstrap_result = None
+        self.denoise_k = None          # SVD components kept (None: not denoised)
+        self.n_above_noise = None      # with denoise='auto': the estimate used
 
     def compute(self, spectra, n_components, method='vca', sum_to_one=False,
-                random_state=0):
+                random_state=0, denoise=None):
         """spectra: dicts with a common x-axis (already range-filtered).
+        denoise: None (off), 'auto' (keep the components above the noise,
+        see estimate_n_endmembers) or a number of SVD components to keep --
+        the spectra are then cleaned that way first: the endmembers are the
+        denoised spectra of the purest pixels, and lack of fit / fit error
+        refer to the denoised spectra.
         Returns True on success, else False with last_error set."""
         self.last_error = None
         try:
@@ -277,6 +369,19 @@ class EndmemberManager:
                 raise ValueError("The spectra do not share one x-axis.")
             p = int(n_components)
             Y = _check(Y, p)
+            self.denoise_k = None
+            self.n_above_noise = None
+            if denoise:
+                s_vals, V = svd_basis(Y)
+                if denoise == 'auto':
+                    est = estimate_n_endmembers(Y, s=s_vals)
+                    self.n_above_noise = est['n']
+                    k = est['n']
+                else:
+                    k = int(denoise)
+                k = max(k, p)                   # p endmembers need p dimensions
+                Y = (Y @ V[:, :k]) @ V[:, :k].T
+                self.denoise_k = k
             if method == 'nfindr':
                 idx, self.sweeps = nfindr(Y, p, seed=random_state)
             elif method == 'vca':
