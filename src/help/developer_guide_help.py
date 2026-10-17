@@ -3532,6 +3532,19 @@ def _natural_sort_key(cls, label):
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
+        <h2 id="splitters-many-spectra-design">Splitters, many spectra in tool windows, parallel bootstrap</h2>
+        <ul>
+            <li><code>src/views/dialogs/misc/splitter_utils.py</code>: <code>scrollable_panel()</code>
+            (control panel in a frameless QScrollArea, a fixed width released) and
+            <code>no_collapse()</code> (no part of a splitter can be dragged to 0; parts are hidden on
+            purpose with <code>setVisible(False)</code>, which a splitter reports as size 0). A fixed
+            panel width made the handle jump between "full" and "collapsed" (Manual / Automated / SNIP
+            baseline, SVD background, X-axis alignment, Resolution enhancement, Isosbestic points);
+            Reference Matching's plot-control row (~1 340 px) and Group Statistics' two panels
+            (~540 + ~930 px) blocked the handle. Test: <code>tests/test_splitters_and_many_spectra.py</code>
+            drags every splitter of 15 tools.</li>
+        </ul>
+
         <h2 id="group-statistics-design">Group Statistics</h2>
         <ul>
             <li><code>src/modules/visualization_analysis/group_statistics.py</code> (Qt-free):

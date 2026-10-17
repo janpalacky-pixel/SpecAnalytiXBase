@@ -42,6 +42,7 @@ from matplotlib.figure import Figure
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -386,6 +387,7 @@ class FFTDenoisingDialog(QDialog):
         self._vsplit.setSizes([320, 480])
         self._vsplit.setStretchFactor(0, 0)
         self._vsplit.setStretchFactor(1, 1)
+        no_collapse(self._vsplit, 80)
         layout.addWidget(self._vsplit)
         return widget
 

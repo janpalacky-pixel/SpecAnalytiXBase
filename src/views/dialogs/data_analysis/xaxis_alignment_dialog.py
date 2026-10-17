@@ -43,6 +43,7 @@ from src.modules.utils.label_shortening import (
     make_shorten_names_checkbox,
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -121,8 +122,9 @@ class XAxisAlignmentDialog(QDialog):
     def _build_ui(self):
         root = QHBoxLayout(self)
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_left_panel())
+        splitter.addWidget(scrollable_panel(self._build_left_panel()))
         splitter.addWidget(self._build_right_panel())
+        no_collapse(splitter, 300)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([340, 960])

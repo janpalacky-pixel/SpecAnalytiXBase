@@ -1137,7 +1137,9 @@ class Map2DDialog(QDialog):
 
         # Outer horizontal splitter: map  |  controls+panels
         self._outer_splitter = QSplitter(Qt.Horizontal)
-        self._outer_splitter.setChildrenCollapsible(True)
+        # parts are never dragged down to nothing; the right column / the
+        # spectrum panel are hidden on purpose (right-click menu) instead
+        self._outer_splitter.setChildrenCollapsible(False)
 
         # ── LEFT: map canvas ─────────────────────────────────────────
         left_widget = QWidget()
@@ -1172,7 +1174,7 @@ class Map2DDialog(QDialog):
 
         # ── RIGHT: inner vertical splitter (controls + spectrum panel)
         self._right_splitter = QSplitter(Qt.Vertical)
-        self._right_splitter.setChildrenCollapsible(True)
+        self._right_splitter.setChildrenCollapsible(False)
 
         # Controls in a scroll area
         scroll = QScrollArea()
@@ -5323,23 +5325,28 @@ class Map2DDialog(QDialog):
 
     def _set_right_panel_visible(self, visible):
         """Collapse or restore the entire right control column."""
-        total = sum(self._outer_splitter.sizes())
+        # hidden with setVisible (a hidden part reports size 0), since the
+        # splitter no longer collapses parts by dragging
+        right = self._outer_splitter.widget(1)
         if visible:
+            right.setVisible(True)
+            total = sum(self._outer_splitter.sizes())
             self._outer_splitter.setSizes([int(total * 0.62), int(total * 0.38)])
         else:
-            self._outer_splitter.setSizes([total, 0])
+            right.setVisible(False)
 
     # kept as alias so existing internal calls still work
     def _set_spectrum_panel_visible(self, visible):
         """Show or collapse the spectrum sub-panel inside the right splitter."""
+        panel = self._right_splitter.widget(1)
         if visible:
-            sizes = self._right_splitter.sizes()
-            total = sum(sizes)
-            self._right_splitter.setSizes([int(total * 0.58), int(total * 0.42)])
+            was_hidden = not panel.isVisible()
+            panel.setVisible(True)
+            if was_hidden:
+                total = sum(self._right_splitter.sizes())
+                self._right_splitter.setSizes([int(total * 0.58), int(total * 0.42)])
         else:
-            sizes = self._right_splitter.sizes()
-            total = sum(sizes)
-            self._right_splitter.setSizes([total, 0])
+            panel.setVisible(False)
 
     # ── Interactive click ───────────────────────────────────────────────
 

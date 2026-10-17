@@ -12,6 +12,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 
 class SpikeRemovalInteractiveDialog(QDialog):
@@ -290,7 +291,10 @@ class SpikeRemovalInteractiveDialog(QDialog):
         btn_box.addButton(close_btn, QDialogButtonBox.RejectRole)
         ll.addWidget(btn_box)
 
-        outer.addWidget(left)
+        # controls | plot in a splitter (the controls in a scroll area)
+        from PyQt5.QtWidgets import QSplitter
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(scrollable_panel(left, 240))
 
         # ── Right canvas ───────────────────────────────────────────────
         right = QWidget()
@@ -301,7 +305,12 @@ class SpikeRemovalInteractiveDialog(QDialog):
         self.toolbar = NavigationToolbar(self.canvas, right)
         rl.addWidget(self.toolbar)
         rl.addWidget(self.canvas)
-        outer.addWidget(right)
+        splitter.addWidget(right)
+        no_collapse(splitter, 300)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([300, 900])
+        outer.addWidget(splitter)
 
 
     # ------------------------------------------------------------------ #

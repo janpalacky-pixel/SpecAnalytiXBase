@@ -37,6 +37,7 @@ from src.modules.utils.label_shortening import (
     compute_distinguishing_labels, make_shorten_names_checkbox,
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 logger = get_logger(__name__)
 
 _MATCH_COLORS = ['#E65100','#1565C0','#2E7D32','#6A1B9A','#00838F']
@@ -134,8 +135,9 @@ class ReferenceMatchingDialog(QDialog):
     def _build_ui(self):
         root = QHBoxLayout(self)
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_left())
+        splitter.addWidget(scrollable_panel(self._build_left(), 280))
         splitter.addWidget(self._build_right())
+        no_collapse(splitter, 300)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([340, 960])
@@ -578,7 +580,11 @@ class ReferenceMatchingDialog(QDialog):
         self._label_chars_spin.setKeyboardTracking(False)
         self._label_chars_spin.valueChanged.connect(self._refresh_plots)
         pc_row.addWidget(self._label_chars_spin)
-        pc_row.addSpacing(12)
+        pc_row.addStretch()
+        pll.addLayout(pc_row)
+        # second row: in one row the plot controls were ~1340 px wide, which
+        # kept the window's splitter from moving
+        pc_row = QHBoxLayout()
         pc_row.addWidget(QLabel('Bar colours:'))
         self._palette_combo = QComboBox()
         self._palette_combo.addItems([

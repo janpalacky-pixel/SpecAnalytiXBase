@@ -19,6 +19,7 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_shorten_names_checkbox,
     make_display_text_delegate, shorten_spectra_labels)
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -849,7 +850,7 @@ class SVDInterpolationDialog(QDialog):
         left_scroll.setWidget(left)
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        left_scroll.setMinimumWidth(500)
+        left_scroll.setMinimumWidth(300)
         splitter.addWidget(left_scroll)
 
         # ---------------- Right: plots ----------------
@@ -910,6 +911,7 @@ class SVDInterpolationDialog(QDialog):
         curve_splitter.setStretchFactor(0, 3)
         curve_splitter.setStretchFactor(1, 1)
         curve_splitter.setSizes([600, 0])  # subspectrum starts collapsed (hidden anyway)
+        no_collapse(curve_splitter, 80)    # dragging never hides a plot completely
         curve_tab_layout.addWidget(curve_splitter, 1)
         self._curve_splitter = curve_splitter
 
@@ -1029,6 +1031,7 @@ class SVDInterpolationDialog(QDialog):
         self._tabs.addTab(preview_tab, "  Preview  ")
 
         splitter.addWidget(self._tabs)
+        no_collapse(splitter, 300)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([480, 900])

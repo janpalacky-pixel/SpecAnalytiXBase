@@ -37,6 +37,7 @@ from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
     save_settings as save_peak_fit_settings)
 from src.views.dialogs.misc.fill_column_table import FillColumnTable
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -462,8 +463,12 @@ class GroupStatisticsDialog(QDialog):
         intro.setWordWrap(True)
         layout.addWidget(intro)
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_groups_panel())
-        splitter.addWidget(self._build_right_panel())
+        # both sides in scroll areas: their contents need ~540 + ~930 px, more
+        # than the window is wide, so the handle could hardly move (and
+        # dragging further hid a side completely)
+        splitter.addWidget(scrollable_panel(self._build_groups_panel(), 300))
+        splitter.addWidget(scrollable_panel(self._build_right_panel(), 400))
+        no_collapse(splitter)
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 5)
         layout.addWidget(splitter, 1)

@@ -22,6 +22,7 @@ from src.help.automated_baseline_help import (get_automated_baseline_help_conten
                                               get_automated_baseline_help_title)
 from src.help.help_window import show_help_window
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 
 BASELINE_METHOD_INFO = {
@@ -578,10 +579,13 @@ class AutomatedBaselineDialog(QDialog):
         layout.addWidget(splitter)
         
         control_panel = self.create_control_panel()
-        splitter.addWidget(control_panel)
+        splitter.addWidget(scrollable_panel(control_panel))
         
         canvas_panel = self.create_canvas_panel()
         splitter.addWidget(canvas_panel)
+        no_collapse(splitter, 300)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         
         splitter.setSizes([400, 800])
   

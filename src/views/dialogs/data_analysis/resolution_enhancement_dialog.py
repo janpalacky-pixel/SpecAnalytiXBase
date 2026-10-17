@@ -19,6 +19,7 @@ from matplotlib.figure import Figure
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 logger = get_logger(__name__)
 
 
@@ -73,8 +74,9 @@ class ResolutionEnhancementDialog(QDialog):
     def _build_ui(self):
         root = QHBoxLayout(self)
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_left())
+        splitter.addWidget(scrollable_panel(self._build_left()))
         splitter.addWidget(self._build_right())
+        no_collapse(splitter, 300)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([300, 800])

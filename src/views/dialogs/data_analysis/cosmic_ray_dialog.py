@@ -27,6 +27,7 @@ from src.modules.utils.label_shortening import (
     make_display_text_delegate, compute_distinguishing_labels,
     make_shorten_names_checkbox,
 )
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 logger = get_logger(__name__)
 
 
@@ -353,6 +354,7 @@ class CosmicRayDialog(QDialog):
 
         sp_splitter.setStretchFactor(0, 1)
         sp_splitter.setStretchFactor(1, 1)
+        no_collapse(sp_splitter, 150)
         sp_splitter.setSizes([420, 420])
         sl.addWidget(sp_splitter)
 

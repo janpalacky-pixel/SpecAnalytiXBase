@@ -17,6 +17,7 @@ import re
 
 from src.modules.data_analysis.spectral_calculator_manager import SpectralCalculatorManager
 from src.modules.utils.label_shortening import shorten_spectra_labels, make_shorten_names_checkbox
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 
 class SpectralCalculatorDialog(QDialog):
@@ -160,6 +161,7 @@ class SpectralCalculatorDialog(QDialog):
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_right_panel())
+        no_collapse(splitter, 200)
         splitter.setSizes([560, 340])
         root.addWidget(splitter)
 
@@ -397,6 +399,7 @@ class SpectralCalculatorDialog(QDialog):
         left_splitter.setSizes([top_height, 10000])
         left_splitter.setStretchFactor(0, 0)
         left_splitter.setStretchFactor(1, 1)
+        no_collapse(left_splitter, 80)
         self._left_splitter = left_splitter
 
         outer_layout.addWidget(left_splitter)

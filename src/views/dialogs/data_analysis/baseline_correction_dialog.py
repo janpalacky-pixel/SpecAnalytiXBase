@@ -20,6 +20,7 @@ from src.help.baseline_correction_help import (
 from src.help.help_window import show_help_window
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -194,8 +195,11 @@ class BaselineCorrectionDialog(QDialog):
         layout   = QHBoxLayout(self)
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter)
-        splitter.addWidget(self._create_control_panel())
+        splitter.addWidget(scrollable_panel(self._create_control_panel()))
         splitter.addWidget(self._create_canvas_panel())
+        no_collapse(splitter, 300)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
         splitter.setSizes([400, 1000])
 
     def _hint(self, text):

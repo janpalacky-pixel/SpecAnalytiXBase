@@ -45,6 +45,7 @@ from src.modules.visualization_analysis.isosbestic_point_manager import (
     DEFAULT_MIN_PROMINENCE_PCT, DEFAULT_MIN_SIGNAL_PCT, DEFAULT_MAX_CANDIDATES,
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -120,8 +121,9 @@ class IsosbesticPointDialog(QDialog):
     def _build_ui(self):
         root = QHBoxLayout(self)
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self._build_left())
+        splitter.addWidget(scrollable_panel(self._build_left()))
         splitter.addWidget(self._build_right())
+        no_collapse(splitter, 300)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([340, 940])
@@ -340,6 +342,7 @@ class IsosbesticPointDialog(QDialog):
         right_splitter.addWidget(results_widget)
         right_splitter.setStretchFactor(0, 3)
         right_splitter.setStretchFactor(1, 2)
+        no_collapse(right_splitter, 80)
         outer.addWidget(right_splitter)
         return w
 

@@ -19,6 +19,7 @@ from src.modules.data_analysis.interactive_subtraction_manager import (
 from src.modules.utils.spectra_validation import axes_match
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_shorten_names_checkbox)
+from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
 
 
 class _MultiSpectrumPickerDialog(QDialog):
@@ -159,8 +160,17 @@ class InteractiveSubtractionDialog(QDialog):
     # =================================================================
     def setup_ui(self):
         main_layout = QHBoxLayout(self)
-        main_layout.addWidget(self.create_plot_panel(), stretch=3)
-        main_layout.addWidget(self.create_control_panel(), stretch=1)
+        # plot | controls in a splitter, so the user can give the plot or the
+        # controls more room
+        from PyQt5.QtWidgets import QSplitter
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(self.create_plot_panel())
+        splitter.addWidget(scrollable_panel(self.create_control_panel(), 260))
+        no_collapse(splitter, 300)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([900, 360])
+        main_layout.addWidget(splitter)
 
     def create_plot_panel(self):
         plot_widget = QWidget()
