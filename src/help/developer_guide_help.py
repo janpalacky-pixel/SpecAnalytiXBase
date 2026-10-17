@@ -3574,6 +3574,11 @@ def _natural_sort_key(cls, label):
             Reference Matching's plot-control row (~1 340 px) and Group Statistics' two panels
             (~540 + ~930 px) blocked the handle. Test: <code>tests/test_splitters_and_many_spectra.py</code>
             drags every splitter of 15 tools.</li>
+            <li>Tool windows draw at most <code>dialog_draw_limit()</code> spectra (preference
+            <code>large_plot_dialog_count</code>, default 100, set in View &rarr; Plotting many
+            spectra&hellip;) via <code>large_selection.dialog_subset()</code> /
+            <code>subset_for_dialog()</code> / <code>annotate_shown()</code>. 3 000 spectra: FFT
+            Denoising opened in ~9 s &rarr; ~1 s, X-axis alignment ~7 s &rarr; ~2 s.</li>
         </ul>
 
         <h2 id="group-statistics-design">Group Statistics</h2>

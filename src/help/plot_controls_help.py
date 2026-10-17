@@ -101,6 +101,12 @@ def get_plot_controls_help_content():
         <li><b>View &rarr; Plotting many spectra&hellip;</b> (also <b>Settings&hellip;</b> on
         that line): the limit (default 2&nbsp;000), the preview size (default 1&nbsp;000), or
         <i>Always plot all</i>. Remembered between sessions.</li>
+        <li><b>Tool windows</b> (FFT Denoising, X-axis alignment, Isosbestic Point
+        Detection, 2D Correlation, Normalization, Data range, Spectral Calculator, ROI
+        spectra, &hellip;) redraw their plots after every change, so they draw at most
+        <b>100</b> spectra (an evenly spread subset; the plot says e.g. <i>"100 of 3&nbsp;000
+        shown"</i>). Their calculations always use all spectra. The number is set in the same
+        window: <i>Tool windows: draw at most &hellip; spectra</i>.</li>
         <li>Not limited: <b>Heatmap</b> (one image, fast), <b>Mean&nbsp;&plusmn;&nbsp;SD</b> and
         <b>Difference</b> (their mean must be the mean of all selected spectra) and
         <b>Single spectrum</b>.</li>

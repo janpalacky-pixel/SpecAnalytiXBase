@@ -25,6 +25,19 @@ DEFAULT_SETTINGS = {
     'mode': 'preview',       # 'preview' or 'all'
 }
 
+# Tool windows (FFT Denoising, X-axis alignment, Isosbestic points,
+# 2D Correlation, ...) redraw after every change, so they draw at most this
+# many spectra (an evenly spread subset; the calculation always uses all of
+# them). Stored as its own preference (see large_plot_controller).
+DEFAULT_DIALOG_COUNT = 100
+
+
+def normalized_dialog_count(value):
+    try:
+        return int(min(max(int(value), 10), 10_000_000))
+    except (TypeError, ValueError):
+        return DEFAULT_DIALOG_COUNT
+
 # Plot types that draw one line (or panel) per selected spectrum. Not
 # limited: Heatmap (one image), Mean ± SD and Difference (their mean must be
 # the mean of ALL selected spectra, not of a preview) and Single spectrum.
@@ -49,6 +62,29 @@ def normalized_settings(settings=None):
     return s
 
 
+def dialog_subset(items, limit, keep=None):
+    """For drawing in a tool window: (items to draw, number of items). At
+    most `limit` items, evenly spread (first and last included); items for
+    which keep(item) is true (e.g. the reference spectrum) are always kept.
+    Only the picture is affected -- callers compute with all items."""
+    items = list(items)
+    n = len(items)
+    if limit is None or n <= limit:
+        return items, n
+    idx = set(preview_indices(n, max(int(limit), 1)))
+    if keep is not None:
+        idx.update(i for i, it in enumerate(items) if keep(it))
+    return [items[i] for i in sorted(idx)], n
+
+
+def shown_note(n_shown, n_total):
+    """'' or e.g. '300 of 3 000 shown' (for a plot title)."""
+    if n_shown >= n_total:
+        return ''
+    fmt = lambda v: f'{v:,}'.replace(',', '\u202f')
+    return f'{fmt(n_shown)} of {fmt(n_total)} shown'
+
+
 def preview_indices(n, count):
     """`count` indices spread evenly over range(n), first and last included
     (all of them if n <= count)."""
@@ -71,3 +107,37 @@ def is_large(n_selected, plot_type, settings=None):
     threshold, in a plot type that draws one line per spectrum)."""
     s = normalized_settings(settings)
     return plot_type in LIMITED_PLOT_TYPES and n_selected > s['threshold']
+
+
+def annotate_shown(ax, n_shown, n_total):
+    """Small grey note in the top right corner of `ax` when only a subset
+    of the spectra is drawn (e.g. '300 of 3 000 shown (evenly spread)')."""
+    note = shown_note(n_shown, n_total)
+    if note:
+        ax.text(0.99, 0.99, note + ' (evenly spread)', transform=ax.transAxes,
+                ha='right', va='top', fontsize=7, color='#666666', zorder=10)
+    return note
+
+
+def subset_for_dialog(spectra):
+    """dialog_subset() with the tool-window limit from the preferences
+    (View -> Plotting many spectra...). Returns (spectra to draw, total)."""
+    try:
+        from src.controllers.visualization.large_plot_controller import dialog_draw_limit
+        limit = dialog_draw_limit()
+    except Exception:
+        limit = DEFAULT_DIALOG_COUNT
+    return dialog_subset(spectra, limit)
+
+
+LEGEND_MAX_ENTRIES = 30
+
+
+def legend_if_few(ax, **kwargs):
+    """ax.legend(**kwargs) only when the axes has at most LEGEND_MAX_ENTRIES
+    labelled lines: a legend of hundreds of spectra (placed with 'best',
+    which tries every position) takes seconds and cannot be read."""
+    handles, labels = ax.get_legend_handles_labels()
+    if 0 < len(labels) <= LEGEND_MAX_ENTRIES:
+        return ax.legend(**kwargs)
+    return None

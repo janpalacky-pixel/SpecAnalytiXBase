@@ -43,6 +43,9 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
 from src.modules.visualization.safe_layout import safe_tight_layout
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered, restore_selection
+from src.modules.visualization.large_selection import legend_if_few
 
 logger = get_logger(__name__)
 
@@ -94,7 +97,12 @@ class FFTDenoisingDialog(QDialog):
         self._populate_spectrum_list()
         self._populate_from_settings(self._settings)
         self._initialization_complete = True
-        self._select_all()
+        # the spectra selected last time (by label), else all of them
+        self.spectra_list.blockSignals(True)
+        restore_selection('fft_denoising', self.spectra_list, default='all')
+        self.spectra_list.blockSignals(False)
+        self._on_list_selection_changed()
+        remember_on_close(self, 'fft_denoising', self.spectra_list)
 
     # ------------------------------------------------------------------
     # Top-level layout
@@ -478,22 +486,19 @@ class FFTDenoisingDialog(QDialog):
         self.sort_button.setText('▲' if self.sort_ascending else '▼')
         sel = {item.text() for item in self.spectra_list.selectedItems()}
         self._populate_spectrum_list()
-        for i in range(self.spectra_list.count()):
-            if self.spectra_list.item(i).text() in sel:
-                self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, [i for i in range(self.spectra_list.count())
+                                 if self.spectra_list.item(i).text() in sel], mode='add')
 
     def _select_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, range(self.spectra_list.count()))
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_list_selection_changed()
 
     def _unselect_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(False)
+        self.spectra_list.clearSelection()
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_list_selection_changed()
@@ -665,6 +670,14 @@ class FFTDenoisingDialog(QDialog):
         visible    = [s for s in self.selected_spectra if s['label'] in sel_labels]
         if not visible:
             visible = [self.selected_spectra[0]]
+        # Drawing thousands of spectra takes seconds and happens after every
+        # change here: draw an evenly spread subset (View -> Plotting many
+        # spectra... -> Tool windows). Apply always uses all spectra.
+        from src.controllers.visualization.large_plot_controller import dialog_draw_limit
+        from src.modules.visualization.large_selection import dialog_subset
+        visible, n_visible = dialog_subset(visible, dialog_draw_limit())
+        self._power_canvas.n_total = n_visible
+        self._signal_canvas.n_total = n_visible
 
         # Precompute denoised for all visible spectra
         denoised_map: dict[str, np.ndarray] = {}
@@ -814,8 +827,12 @@ class FFTDenoisingDialog(QDialog):
 # Canvas helpers
 # ======================================================================
 
-def _n_spectra_label(n: int) -> str:
-    """Return '1 spectrum' or 'N spectra' — no grammar bug."""
+def _n_spectra_label(n: int, total=None) -> str:
+    """Return '1 spectrum' or 'N spectra' — no grammar bug; with more
+    spectra than are drawn (total > n): 'N of TOTAL spectra shown'."""
+    if total is not None and total > n:
+        from src.modules.visualization.large_selection import shown_note
+        return shown_note(n, total).replace(' shown', ' spectra shown (evenly spread)')
     return f'{n} spectrum' if n == 1 else f'{n} spectra'
 
 
@@ -866,7 +883,7 @@ class _PowerCanvas(FigureCanvas):
         has_bands = _shade_filter_bands(ax, settings)
         n = len(power_data)
         self._common_ax_style(
-            ax, f'Power spectrum — {_n_spectra_label(n)} (overlay)'
+            ax, f'Power spectrum — {_n_spectra_label(n, getattr(self, "n_total", None))} (overlay)'
         )
         if legend_visible or has_bands:
             ax.legend(fontsize=7, loc='upper right')
@@ -893,7 +910,7 @@ class _PowerCanvas(FigureCanvas):
             ax.grid(True, linestyle='--', alpha=0.4)
         axes[-1].set_xlabel('Normalised frequency  (0 = DC,  1 = Nyquist)', fontsize=8)
         self._fig.suptitle(
-            f'Power spectra — {_n_spectra_label(n)} (subplots)', fontsize=9, y=1.0
+            f'Power spectra — {_n_spectra_label(n, getattr(self, "n_total", None))} (subplots)', fontsize=9, y=1.0
         )
         safe_tight_layout(self._fig)
         self.draw_idle()
@@ -938,12 +955,12 @@ class _SignalCanvas(FigureCanvas):
             ax.set_xlabel('x', fontsize=9)
             ax.set_ylabel('Intensity', fontsize=9)
             ax.set_title(
-                f'Original (dashed) vs Denoised (solid) — {_n_spectra_label(n)}',
+                f'Original (dashed) vs Denoised (solid) — {_n_spectra_label(n, getattr(self, "n_total", None))}',
                 fontsize=10
             )
             ax.grid(True, linestyle='--', alpha=0.4)
             if legend_visible:
-                ax.legend(fontsize=7, loc='best')
+                legend_if_few(ax, fontsize=7, loc='best')
 
         else:   # Subplots
             ax_top = self._fig.add_subplot(211)
@@ -962,13 +979,13 @@ class _SignalCanvas(FigureCanvas):
                 if y_d is not None and len(x):
                     ax_bot.plot(x, y_d, color=col, lw=1.0, alpha=0.85, label=disp)
 
-            ax_top.set_title(f'Original — {_n_spectra_label(n)}',  fontsize=10)
-            ax_bot.set_title(f'Denoised — {_n_spectra_label(n)}', fontsize=10)
+            ax_top.set_title(f'Original — {_n_spectra_label(n, getattr(self, "n_total", None))}',  fontsize=10)
+            ax_bot.set_title(f'Denoised — {_n_spectra_label(n, getattr(self, "n_total", None))}', fontsize=10)
             for ax in (ax_top, ax_bot):
                 ax.set_ylabel('Intensity', fontsize=9)
                 ax.grid(True, linestyle='--', alpha=0.4)
                 if legend_visible:
-                    ax.legend(fontsize=7, loc='best')
+                    legend_if_few(ax, fontsize=7, loc='best')
             ax_bot.set_xlabel('x', fontsize=9)
 
         safe_tight_layout(self._fig)

@@ -18,6 +18,8 @@ from src.modules.utils.label_shortening import make_shortened_name_delegate, mak
 from src.views.dialogs.data_analysis.spectral_calculator_dialog import (
     SpectralCalculatorPlotCanvas,
 )
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, restore_selection
 
 
 class CombineSpectraDialog(QDialog):
@@ -120,6 +122,11 @@ class CombineSpectraDialog(QDialog):
         # Preview is what the user actually needs room to see.
         row_h = self.spectra_list.sizeHintForRow(0) if self.spectra_list.count() else 18
         self.spectra_list.setMaximumHeight(row_h * 5 + 2 * self.spectra_list.frameWidth())
+        # the spectra selected last time (by label), else all of them
+        self.spectra_list.blockSignals(True)
+        restore_selection('combine_spectra', self.spectra_list, default='all')
+        self.spectra_list.blockSignals(False)
+        remember_on_close(self, 'combine_spectra', self.spectra_list)
         self.spectra_list.itemSelectionChanged.connect(self._update_preview)
         spectra_layout.addWidget(self.spectra_list)
 
@@ -238,15 +245,13 @@ class CombineSpectraDialog(QDialog):
 
     def _select_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, range(self.spectra_list.count()))
         self.spectra_list.blockSignals(False)
         self._update_preview()
 
     def _unselect_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(False)
+        self.spectra_list.clearSelection()
         self.spectra_list.blockSignals(False)
         self._update_preview()
 

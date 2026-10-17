@@ -13,6 +13,9 @@ from matplotlib.figure import Figure
 import numpy as np
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shortened_name_delegate, make_shorten_names_checkbox
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered, restore_selection
+from src.modules.visualization.large_selection import legend_if_few
 logger = get_logger(__name__)
 
 class RangeDisplayDialog(QDialog):
@@ -141,10 +144,14 @@ class SpectralRangePlotCanvas(FigureCanvas):
     
     def plot_spectra(self, spectra_list):
         self.axes.clear()
+        # draw at most the tool-window limit (View -> Plotting many spectra...)
+        from src.modules.visualization.large_selection import annotate_shown, subset_for_dialog
+        spectra_list, n_all = subset_for_dialog(spectra_list or [])
         self.spectra_data = spectra_list
         
         if not spectra_list:
             return
+        annotate_shown(self.axes, len(spectra_list), n_all)
         
         colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
         
@@ -167,7 +174,7 @@ class SpectralRangePlotCanvas(FigureCanvas):
                 self.axes.plot(x, y, color=color, lw=1, label=label, alpha=0.8)
                 plotted_count += 1
                 
-                x_data_all.extend(x)
+                x_data_all.append((float(np.min(x)), float(np.max(x))))
                 
             except Exception as e:
                 continue
@@ -180,18 +187,20 @@ class SpectralRangePlotCanvas(FigureCanvas):
             if len(spectra_list) == 1:
                 self.axes.set_title(f"Spectrum: {spectra_list[0].get('label', 'Unknown')}")
             else:
-                self.axes.set_title(f"Selected Spectra ({plotted_count} spectra)")
+                self.axes.set_title(f"Selected Spectra ({n_all} spectra)")
                 
             self.axes.set_xlabel('X')
             self.axes.set_ylabel('Intensity')
             self.axes.grid(True, linestyle='--', alpha=0.7)
             
+            # a legend of hundreds of entries (placed with 'best', which
+            # tests every position) took seconds and cannot be read
             if plotted_count > 1 and self.legend_visible:
-                self.axes.legend(loc='best', fontsize='small')
+                legend_if_few(self.axes, loc='best', fontsize='small')
             
             if x_data_all:
-                x_min = np.min(x_data_all)
-                x_max = np.max(x_data_all)
+                x_min = min(lo for lo, _ in x_data_all)
+                x_max = max(hi for _, hi in x_data_all)
                 padding = (x_max - x_min) * 0.02
                 self.axes.set_xlim(x_min - padding, x_max + padding)
             
@@ -219,9 +228,9 @@ class SpectralRangePlotCanvas(FigureCanvas):
         
         # Add legend back if visible and we have multiple spectra
         if visible and len(self.spectra_data) > 1:
-            self.axes.legend(loc='best', fontsize='small')
+            legend_if_few(self.axes, loc='best', fontsize='small')
             
-        self.draw()
+        self.draw_idle()        # coalesced with the plot's own draw
     
     def update_range_display(self, ranges, is_exclude=False):
         """Update the display of all defined ranges.
@@ -344,11 +353,13 @@ class SpectralRangeDialog(QDialog):
             
         self.populate_spectrum_list()
         
-        # Select only the FIRST spectrum by default (like normalization dialog)
+        # the spectra selected last time (by label), else all of them
         if self.spectra_list.count() > 0:
-            logger.debug(f"DEBUG: Selecting first spectrum from {self.spectra_list.count()} available")
-            self.spectra_list.item(0).setSelected(True)
-            self.on_spectrum_selection_changed()  # This will plot the first spectrum
+            self.spectra_list.blockSignals(True)
+            restore_selection('data_range', self.spectra_list, default='all')
+            self.spectra_list.blockSignals(False)
+            self.on_spectrum_selection_changed()
+            remember_on_close(self, 'data_range', self.spectra_list)
         else:
             logger.debug("DEBUG: No items in spectra list")
 
@@ -770,9 +781,7 @@ class SpectralRangeDialog(QDialog):
         """Select all spectra in the list."""
         self.spectra_list.blockSignals(True)
         try:
-            for i in range(self.spectra_list.count()):
-                item = self.spectra_list.item(i)
-                item.setSelected(True)
+            select_rows(self.spectra_list, range(self.spectra_list.count()))
         finally:
             self.spectra_list.blockSignals(False)
         
@@ -782,9 +791,7 @@ class SpectralRangeDialog(QDialog):
         """Unselect all spectra in the list."""
         self.spectra_list.blockSignals(True)
         try:
-            for i in range(self.spectra_list.count()):
-                item = self.spectra_list.item(i)
-                item.setSelected(False)
+            self.spectra_list.clearSelection()
         finally:
             self.spectra_list.blockSignals(False)
         
@@ -825,24 +832,15 @@ class SpectralRangeDialog(QDialog):
         selected_items = self.spectra_list.selectedItems()
         logger.debug(f"DEBUG: {len(selected_items)} items selected")
         
-        selected_spectra = []
-        for item in selected_items:
-            label = item.text()
-            logger.debug(f"DEBUG: Looking for spectrum with label: {label}")
-            for i, mapped_spectrum in self.list_to_spectra_map.items():
-                if mapped_spectrum.get('label') == label:
-                    selected_spectra.append(mapped_spectrum)
-                    logger.debug(f"DEBUG: Found matching spectrum: {label}")
-                    # Debug spectrum data
-                    x_data = mapped_spectrum.get('x_scale', [])
-                    y_data = mapped_spectrum.get('y_scale', [])
-                    logger.debug(f"DEBUG: Spectrum data - x: {len(x_data)} points, y: {len(y_data)} points")
-                    if len(x_data) > 0:
-                        logger.debug(f"DEBUG: X range: {min(x_data):.3f} to {max(x_data):.3f}")
-                    if len(y_data) > 0:
-                        logger.debug(f"DEBUG: Y range: {min(y_data):.3f} to {max(y_data):.3f}")
-                    break
-        
+        # one dictionary lookup per selected row (was a search through all
+        # spectra for every selected row, with debug texts built each time:
+        # 21 000 selected spectra took minutes)
+        by_label = {}
+        for mapped_spectrum in self.list_to_spectra_map.values():
+            by_label.setdefault(mapped_spectrum.get('label'), mapped_spectrum)
+        selected_spectra = [by_label[item.text()] for item in selected_items
+                            if item.text() in by_label]
+
         logger.debug(f"DEBUG: Total selected spectra for plotting: {len(selected_spectra)}")
         
         # Update plot with selected spectra

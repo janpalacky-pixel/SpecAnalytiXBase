@@ -46,6 +46,8 @@ from src.modules.visualization_analysis.isosbestic_point_manager import (
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered, restore_selection
 
 logger = get_logger(__name__)
 
@@ -95,7 +97,12 @@ class IsosbesticPointDialog(QDialog):
         self._populate_list()
         self._restore_settings(self._settings)
         self._init_complete = True
-        self._select_all()
+        # the spectra selected last time (by label), else all of them
+        self._list.blockSignals(True)
+        restore_selection('isosbestic', self._list, default='all')
+        self._list.blockSignals(False)
+        self._schedule()
+        remember_on_close(self, 'isosbestic', self._list)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -428,9 +435,8 @@ class IsosbesticPointDialog(QDialog):
         self._sort_btn.setText('▲' if self.sort_ascending else '▼')
         sel = {item.text() for item in self._list.selectedItems()}
         self._populate_list()
-        for i in range(self._list.count()):
-            if self._list.item(i).text() in sel:
-                self._list.item(i).setSelected(True)
+        select_rows(self._list, [i for i in range(self._list.count())
+                                 if self._list.item(i).text() in sel], mode='add')
 
     def _select_all(self):
         self._list.blockSignals(True)
@@ -693,6 +699,12 @@ class _IsosbesticPlotCanvas(FigureCanvas):
             return
 
         dmap = display_labels or {}
+        # draw at most the tool-window limit (View -> Plotting many
+        # spectra...); the detection uses all spectra
+        from src.controllers.visualization.large_plot_controller import dialog_draw_limit
+        from src.modules.visualization.large_selection import dialog_subset, shown_note
+        spectra, n_all = dialog_subset(spectra, dialog_draw_limit())
+        note = shown_note(len(spectra), n_all)
         for i, s in enumerate(spectra):
             x = np.asarray(s.get('x_scale', []), dtype=float)
             y = np.asarray(s.get('y_scale', []), dtype=float)
@@ -706,7 +718,8 @@ class _IsosbesticPlotCanvas(FigureCanvas):
             ax1.legend(fontsize=6, loc='best', framealpha=0.6, ncol=max(1, len(spectra) // 8))
 
         ax1.set_ylabel('Intensity', fontsize=9)
-        ax1.set_title(f'{len(spectra)} spectra', fontsize=10)
+        ax1.set_title(f'{n_all} spectra' + (f' ({note}, evenly spread)' if note else ''),
+                      fontsize=10)
         ax1.grid(True, linestyle='--', alpha=0.35)
 
         if result is not None and len(result.get('x', [])):

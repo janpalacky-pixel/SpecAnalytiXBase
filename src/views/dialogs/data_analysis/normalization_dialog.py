@@ -18,6 +18,9 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, compute_distinguishing_labels, make_shorten_names_checkbox,
 )
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered, restore_selection
+from src.modules.visualization.large_selection import legend_if_few
 
 logger = get_logger(__name__)
 
@@ -1103,8 +1106,12 @@ class NormalizationDialog(QDialog):
         self._initialization_complete = True
 
         if self.spectra_list.count() > 0:
-            self.spectra_list.item(0).setSelected(True)
+            # the spectra selected last time (by label), else all of them
+            self.spectra_list.blockSignals(True)
+            restore_selection('normalization', self.spectra_list, default='all')
+            self.spectra_list.blockSignals(False)
             self._on_spectrum_selection_changed()
+        remember_on_close(self, 'normalization', self.spectra_list)
 
         self.help_button.clicked.connect(self._show_help)
 
@@ -1816,16 +1823,14 @@ class NormalizationDialog(QDialog):
 
     def _select_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, range(self.spectra_list.count()))
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_spectrum_selection_changed()
 
     def _unselect_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(False)
+        self.spectra_list.clearSelection()
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_spectrum_selection_changed()
@@ -1835,9 +1840,8 @@ class NormalizationDialog(QDialog):
         self.sort_button.setText('\u25b2' if self.sort_ascending else '\u25bc')
         selected_labels = {item.text() for item in self.spectra_list.selectedItems()}
         self._populate_spectrum_list()
-        for i in range(self.spectra_list.count()):
-            if self.spectra_list.item(i).text() in selected_labels:
-                self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, [i for i in range(self.spectra_list.count())
+                                 if self.spectra_list.item(i).text() in selected_labels], mode='add')
 
     # =================================================================
     # Settings
@@ -2010,12 +2014,16 @@ class NormalizationPlotCanvas(FigureCanvas):
         label_shortening.py) — legend/title text only."""
         display_labels = display_labels or {}
         self.axes.clear()
+        # draw at most the tool-window limit (View -> Plotting many spectra...)
+        from src.modules.visualization.large_selection import annotate_shown, subset_for_dialog
+        spectra_list, n_all = subset_for_dialog(spectra_list or [])
         self.spectra_data = spectra_list
         self._region_spans = []
 
         if not spectra_list:
             self.draw()
             return
+        annotate_shown(self.axes, len(spectra_list), n_all)
 
         colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e',
                   '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -2047,7 +2055,7 @@ class NormalizationPlotCanvas(FigureCanvas):
             self.axes.set_ylabel('Intensity')
             self.axes.grid(True, linestyle='--', alpha=0.6)
             if plotted > 1 and self.legend_visible:
-                self.axes.legend(loc='best', fontsize='small')
+                legend_if_few(self.axes, loc='best', fontsize='small')
             if x_all:
                 xlo, xhi = np.min(x_all), np.max(x_all)
                 pad = (xhi - xlo) * 0.02
@@ -2099,5 +2107,5 @@ class NormalizationPlotCanvas(FigureCanvas):
         if legend:
             legend.remove()
         if visible and len(self.spectra_data) > 1:
-            self.axes.legend(loc='best', fontsize='small')
+            legend_if_few(self.axes, loc='best', fontsize='small')
         self.draw()

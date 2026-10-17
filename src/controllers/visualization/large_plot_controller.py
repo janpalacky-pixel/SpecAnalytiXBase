@@ -26,11 +26,13 @@ from PyQt5.QtWidgets import (
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.visualization.large_selection import (
-    DEFAULT_SETTINGS, is_large, needs_preview, normalized_settings, preview_indices)
+    DEFAULT_DIALOG_COUNT, DEFAULT_SETTINGS, is_large, needs_preview, normalized_dialog_count,
+    normalized_settings, preview_indices)
 
 logger = get_logger(__name__)
 
 PREFERENCES_KEY = 'large_plot_settings'
+DIALOG_COUNT_KEY = 'large_plot_dialog_count'
 PORTION = 500          # spectra drawn per step when drawing in portions
 LEGEND_ASK_ABOVE = 500  # "Show all" legend entries: ask first above this many
 
@@ -43,9 +45,18 @@ def _preferences():
         return None
 
 
+def dialog_draw_limit():
+    """How many spectra a tool window draws at most (the setting 'Tool
+    windows: draw at most ...' in View -> Plotting many spectra...)."""
+    prefs = _preferences()
+    stored = prefs.get(DIALOG_COUNT_KEY, DEFAULT_DIALOG_COUNT) if prefs is not None \
+        else DEFAULT_DIALOG_COUNT
+    return normalized_dialog_count(stored)
+
+
 class LargePlotSettingsDialog(QDialog):
 
-    def __init__(self, settings, parent=None):
+    def __init__(self, settings, parent=None, dialog_count=DEFAULT_DIALOG_COUNT):
         super().__init__(parent)
         self.setWindowTitle("Plotting many spectra")
         s = normalized_settings(settings)
@@ -78,6 +89,17 @@ class LargePlotSettingsDialog(QDialog):
         row.addStretch(1)
         form.addRow("Then:", row)
         form.addRow("", self.all_radio)
+        self.dialog_spin = QSpinBox()
+        self.dialog_spin.setRange(10, 10_000_000)
+        self.dialog_spin.setSingleStep(100)
+        self.dialog_spin.setValue(normalized_dialog_count(dialog_count))
+        self.dialog_spin.setSuffix(" spectra")
+        self.dialog_spin.setToolTip(
+            "Tool windows such as FFT Denoising, X-axis alignment, Isosbestic Point\n"
+            "Detection or 2D Correlation redraw their plots after every change. With\n"
+            "more spectra than this they draw an evenly spread subset (the plot title\n"
+            "says e.g. '100 of 3 000 shown'); the calculation always uses all spectra.")
+        form.addRow("Tool windows: draw at most", self.dialog_spin)
         (self.preview_radio if s['mode'] == 'preview' else self.all_radio).setChecked(True)
         self.preview_radio.toggled.connect(self.count_spin.setEnabled)
         self.count_spin.setEnabled(s['mode'] == 'preview')
@@ -95,6 +117,7 @@ class LargePlotSettingsDialog(QDialog):
         self.count_spin.setValue(d['preview_count'])
         self.preview_radio.setChecked(d['mode'] == 'preview')
         self.all_radio.setChecked(d['mode'] != 'preview')
+        self.dialog_spin.setValue(DEFAULT_DIALOG_COUNT)
 
     def settings(self):
         return normalized_settings({
@@ -102,6 +125,9 @@ class LargePlotSettingsDialog(QDialog):
             'preview_count': self.count_spin.value(),
             'mode': 'preview' if self.preview_radio.isChecked() else 'all',
         })
+
+    def dialog_count(self):
+        return normalized_dialog_count(self.dialog_spin.value())
 
 
 class LargePlotController:
@@ -127,9 +153,13 @@ class LargePlotController:
             prefs.set(PREFERENCES_KEY, normalized_settings(settings))
 
     def edit_settings(self):
-        dialog = LargePlotSettingsDialog(self.settings(), self.main.view)
+        dialog = LargePlotSettingsDialog(self.settings(), self.main.view,
+                                         dialog_count=dialog_draw_limit())
         if dialog.exec_() == QDialog.Accepted:
             self.set_settings(dialog.settings())
+            prefs = _preferences()
+            if prefs is not None:
+                prefs.set(DIALOG_COUNT_KEY, dialog.dialog_count())
             if getattr(self.main, 'selected_spectra', None):
                 self.main.plot_spectra()
 

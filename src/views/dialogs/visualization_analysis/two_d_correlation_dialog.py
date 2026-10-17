@@ -45,6 +45,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import shorten_spectra_labels, make_shorten_names_checkbox
+from src.modules.utils.list_selection import select_rows
 logger = get_logger(__name__)
 
 _COLORS = [
@@ -713,9 +714,7 @@ class TwoDCorrelationDialog(QDialog):
             for s in self.spectra:
                 full = s.get('label', '?')
                 list_widget.addItem(self._display_labels.get(full, full))
-            for row in selected_rows:
-                if 0 <= row < list_widget.count():
-                    list_widget.item(row).setSelected(True)
+            select_rows(list_widget, selected_rows, mode='add')
             list_widget.blockSignals(False)
 
         self._refresh_dynamic()
@@ -1163,7 +1162,13 @@ class TwoDCorrelationDialog(QDialog):
         x = self._mgr.x_axis
         dyn = self._mgr.dynamic_spectra
         n_spec = dyn.shape[0]
-        for i in range(n_spec):
+        # draw at most the tool-window limit (View -> Plotting many
+        # spectra...); the correlation maps use all spectra
+        from src.controllers.visualization.large_plot_controller import dialog_draw_limit
+        from src.modules.visualization.large_selection import dialog_subset, shown_note
+        drawn, _ = dialog_subset(range(n_spec), dialog_draw_limit())
+        note = shown_note(len(drawn), n_spec)
+        for i in drawn:
             color = _COLORS[i % len(_COLORS)]
             label = self._truncate_label(self._shortened(self._mgr.spectrum_labels[i]))
             ax.plot(x, dyn[i], color=color, lw=0.9, alpha=0.85,
@@ -1175,7 +1180,8 @@ class TwoDCorrelationDialog(QDialog):
             ref_desc = 'average spectrum'
         else:
             ref_desc = f'spectrum \u2018{self._truncate_label(self._mgr.reference_label or "?")}\u2019'
-        ax.set_title(f'Dynamic spectra ({n_spec} spectra, reference: {ref_desc})', fontsize=11)
+        ax.set_title(f'Dynamic spectra ({n_spec} spectra' + (f', {note}' if note else '')
+                     + f', reference: {ref_desc})', fontsize=11)
         if n_spec <= 12:
             ax.legend(fontsize=7, loc='best', framealpha=0.7)
         ax.grid(True, linestyle='--', alpha=0.35)

@@ -18,6 +18,7 @@ import re
 from src.modules.data_analysis.spectral_calculator_manager import SpectralCalculatorManager
 from src.modules.utils.label_shortening import shorten_spectra_labels, make_shorten_names_checkbox
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.visualization.large_selection import legend_if_few
 
 
 class SpectralCalculatorDialog(QDialog):
@@ -920,6 +921,10 @@ class SpectralCalculatorPlotCanvas(FigureCanvas):
         if not spectra_list:
             self.show_message('No result to preview.', keep_data=True)
             return
+        # draw at most the tool-window limit (View -> Plotting many spectra...)
+        from src.modules.visualization.large_selection import annotate_shown, subset_for_dialog
+        spectra_list, n_all = subset_for_dialog(spectra_list)
+        annotate_shown(self.axes, len(spectra_list), n_all)
 
         colors = ['#1f77b4', '#d62728', '#2ca02c', '#ff7f0e',
                   '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -966,7 +971,7 @@ class SpectralCalculatorPlotCanvas(FigureCanvas):
         self.axes.set_yscale('log' if self.log_y else 'linear')
         self.axes.grid(True, linestyle='--', alpha=0.6)
         if plotted > 1 and self.legend_visible:
-            self.axes.legend(loc='best', fontsize='small')
+            legend_if_few(self.axes, loc='best', fontsize='small')
         if x_all and not self.log_x:
             xlo, xhi = np.min(x_all), np.max(x_all)
             pad = (xhi - xlo) * 0.02 if xhi > xlo else 1.0

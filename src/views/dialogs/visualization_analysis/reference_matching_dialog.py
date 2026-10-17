@@ -38,6 +38,7 @@ from src.modules.utils.label_shortening import (
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.utils.list_selection import select_rows
 logger = get_logger(__name__)
 
 _MATCH_COLORS = ['#E65100','#1565C0','#2E7D32','#6A1B9A','#00838F']
@@ -649,29 +650,25 @@ class ReferenceMatchingDialog(QDialog):
 
     def _select_all_int_refs(self):
         self._ref_list_widget.blockSignals(True)
-        for i in range(self._ref_list_widget.count()):
-            self._ref_list_widget.item(i).setSelected(True)
+        select_rows(self._ref_list_widget, range(self._ref_list_widget.count()))
         self._ref_list_widget.blockSignals(False)
         self._on_library_changed()
 
     def _clear_int_refs(self):
         self._ref_list_widget.blockSignals(True)
-        for i in range(self._ref_list_widget.count()):
-            self._ref_list_widget.item(i).setSelected(False)
+        self._ref_list_widget.clearSelection()
         self._ref_list_widget.blockSignals(False)
         self._on_library_changed()
 
     def _select_all_file_refs(self):
         self._file_ref_list.blockSignals(True)
-        for i in range(self._file_ref_list.count()):
-            self._file_ref_list.item(i).setSelected(True)
+        select_rows(self._file_ref_list, range(self._file_ref_list.count()))
         self._file_ref_list.blockSignals(False)
         self._schedule()
 
     def _clear_file_refs(self):
         self._file_ref_list.blockSignals(True)
-        for i in range(self._file_ref_list.count()):
-            self._file_ref_list.item(i).setSelected(False)
+        self._file_ref_list.clearSelection()
         self._file_ref_list.blockSignals(False)
         self._schedule()
 
@@ -721,9 +718,8 @@ class ReferenceMatchingDialog(QDialog):
             self._lib_summary.setStyleSheet('font-size:8pt; color:#2E7D32;')
             self._file_ref_list.clear()
             for entry in self._file_library:
-                item = QListWidgetItem(entry['label'])
-                self._file_ref_list.addItem(item)
-                item.setSelected(True)
+                self._file_ref_list.addItem(QListWidgetItem(entry['label']))
+            select_rows(self._file_ref_list, range(self._file_ref_list.count()))
             self._schedule()
         except Exception as exc:
             self._lib_summary.setText(f'\u26a0  {exc}')
@@ -865,8 +861,7 @@ class ReferenceMatchingDialog(QDialog):
 
     def _select_all(self):
         self._list.blockSignals(True)
-        for i in range(self._list.count()):
-            self._list.item(i).setSelected(True)
+        select_rows(self._list, range(self._list.count()))
         self._list.blockSignals(False)
         self._sync_preview_idx()
         if self._preview_idx is None and self._list.count() > 0:
@@ -886,8 +881,7 @@ class ReferenceMatchingDialog(QDialog):
         Not used for Clear/re-selection elsewhere — those already have
         their own explicit meaning."""
         self._list.blockSignals(True)
-        for i in range(self._list.count()):
-            self._list.item(i).setSelected(i == 0)
+        select_rows(self._list, [0] if self._list.count() else [])
         self._list.blockSignals(False)
         self._sync_preview_idx()
         if self._preview_idx is None and self._list.count() > 0:
@@ -897,8 +891,7 @@ class ReferenceMatchingDialog(QDialog):
 
     def _clear_selection(self):
         self._list.blockSignals(True)
-        for i in range(self._list.count()):
-            self._list.item(i).setSelected(False)
+        self._list.clearSelection()
         self._list.blockSignals(False)
         # Nothing is selected anymore — the preview must not keep showing
         # whatever was last previewed.
@@ -1319,10 +1312,10 @@ class ReferenceMatchingDialog(QDialog):
                     item = QListWidgetItem(entry['label'])
                     self._file_ref_list.addItem(item)
                 saved_sel = set(s.get('file_ref_selected', []))
-                for i in range(self._file_ref_list.count()):
-                    it = self._file_ref_list.item(i)
-                    # If no saved selection, select all; otherwise restore saved
-                    it.setSelected(it.text() in saved_sel if saved_sel else True)
+                # If no saved selection, select all; otherwise restore saved
+                select_rows(self._file_ref_list,
+                            [i for i in range(self._file_ref_list.count())
+                             if not saved_sel or self._file_ref_list.item(i).text() in saved_sel])
                 self._file_ref_list.blockSignals(False)
             except Exception:
                 self._lib_summary.setText(
@@ -1338,9 +1331,10 @@ class ReferenceMatchingDialog(QDialog):
         if s.get('ref_selected'):
             sel = set(s['ref_selected'])
             self._ref_list_widget.blockSignals(True)
-            for i in range(self._ref_list_widget.count()):
-                item = self._ref_list_widget.item(i)
-                item.setSelected(item.data(Qt.UserRole) in sel or item.text() in sel)
+            select_rows(self._ref_list_widget,
+                        [i for i in range(self._ref_list_widget.count())
+                         if self._ref_list_widget.item(i).data(Qt.UserRole) in sel
+                         or self._ref_list_widget.item(i).text() in sel])
             self._ref_list_widget.blockSignals(False)
             self._on_library_changed()
 
@@ -1348,9 +1342,10 @@ class ReferenceMatchingDialog(QDialog):
         if s.get('query_selected'):
             sel = set(s['query_selected'])
             self._list.blockSignals(True)
-            for i in range(self._list.count()):
-                item = self._list.item(i)
-                item.setSelected(item.data(Qt.UserRole) in sel or item.text() in sel)
+            select_rows(self._list,
+                        [i for i in range(self._list.count())
+                         if self._list.item(i).data(Qt.UserRole) in sel
+                         or self._list.item(i).text() in sel])
             self._list.blockSignals(False)
 
     def get_settings(self) -> dict:

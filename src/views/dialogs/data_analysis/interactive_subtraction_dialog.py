@@ -20,6 +20,8 @@ from src.modules.utils.spectra_validation import axes_match
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_shorten_names_checkbox)
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered
 
 
 class _MultiSpectrumPickerDialog(QDialog):
@@ -126,6 +128,8 @@ class InteractiveSubtractionDialog(QDialog):
         )
         self.setSizeGripEnabled(True)
         self.setup_ui()
+        # the minuends selected last time are selected again next time
+        remember_on_close(self, 'subtraction_minuends', self.minuend_list)
 
         # Qt's default behavior: pressing Enter/Return in a spinbox or line
         # edit both commits that field's value AND propagates the keypress
@@ -552,7 +556,7 @@ class InteractiveSubtractionDialog(QDialog):
         s_key = self._key_for(self._subtrahend_pool()[self.subtrahend_index])
         previously_selected = {
             item.text() for item in self.minuend_list.selectedItems()
-        } if self.minuend_list.count() else set()
+        } if self.minuend_list.count() else remembered('subtraction_minuends')
 
         self.minuend_list.blockSignals(True)
         self.minuend_list.clear()
@@ -566,12 +570,10 @@ class InteractiveSubtractionDialog(QDialog):
             if self._key_for(spectrum) != s_key:
                 self.minuend_list.addItem(QListWidgetItem(label))
 
-        any_selected = False
-        for row in range(self.minuend_list.count()):
-            item = self.minuend_list.item(row)
-            if item.text() in previously_selected:
-                item.setSelected(True)
-                any_selected = True
+        rows = [row for row in range(self.minuend_list.count())
+                if self.minuend_list.item(row).text() in previously_selected]
+        select_rows(self.minuend_list, rows, mode='add')     # one call, not one per row
+        any_selected = bool(rows)
 
         if not any_selected and self.minuend_list.count():
             # Nothing survived the rebuild (the only previously-selected
@@ -1078,17 +1080,16 @@ class InteractiveSubtractionDialog(QDialog):
         )
 
     def on_select_all_targets(self):
-        for i in range(self.minuend_list.count()):
-            self.minuend_list.item(i).setSelected(True)
+        select_rows(self.minuend_list, range(self.minuend_list.count()))
 
     def on_clear_all_targets(self):
         """Deselect every row except the one currently being previewed —
         a fully empty selection would leave Update with nothing to act
         on, and the previewed row is always a sensible default to keep."""
         preview_label = self.preview_combo.currentText()
-        for i in range(self.minuend_list.count()):
-            item = self.minuend_list.item(i)
-            item.setSelected(item.text() == preview_label)
+        select_rows(self.minuend_list,
+                    [i for i in range(self.minuend_list.count())
+                     if self.minuend_list.item(i).text() == preview_label])
 
     def on_prev_factor_clicked(self):
         key = self._pair_key()

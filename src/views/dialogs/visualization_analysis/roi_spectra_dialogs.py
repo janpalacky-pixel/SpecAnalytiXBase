@@ -828,6 +828,15 @@ class _ROISpectraDialog(QDialog):
     def _plot_overlay(self, sel_spectra, colors, orig_indices):
         ax = self._fig.add_subplot(111)
         self._axes = [ax]
+        # draw at most the tool-window limit (View -> Plotting many spectra...)
+        from src.modules.visualization.large_selection import annotate_shown, subset_for_dialog
+        all_spectra = sel_spectra          # the average / variance use all of them
+        keep, n_all = subset_for_dialog(list(range(len(sel_spectra))))
+        if len(keep) < n_all:
+            sel_spectra = [sel_spectra[i] for i in keep]
+            colors = [colors[i] for i in keep]
+            orig_indices = [orig_indices[i] for i in keep]
+            annotate_shown(ax, len(keep), n_all)
         lines, labels = [], []
         for i, (sp, color) in enumerate(zip(sel_spectra, colors)):
             x = np.asarray(sp.get('original_x_scale', sp['x_scale']), float)
@@ -835,12 +844,12 @@ class _ROISpectraDialog(QDialog):
             ln, = ax.plot(x, y, color=color, linewidth=0.7, alpha=0.7)
             lines.append(ln)
             labels.append(self.labels[orig_indices[i]])
-        self._avg_variance_overlay(ax, sel_spectra)
+        self._avg_variance_overlay(ax, all_spectra)
         self._add_legend(ax, lines, labels)
         self._shading_kwargs(ax)
         ax.set_xlabel("Wavenumber / x", fontsize=8)
         ax.set_ylabel("Intensity", fontsize=8)
-        ax.set_title(f"{len(sel_spectra)} spectra (overlay)", fontsize=9)
+        ax.set_title(f"{n_all} spectra (overlay)", fontsize=9)
         self._lines = lines
 
     def _plot_grid(self, sel_spectra, colors, orig_indices):

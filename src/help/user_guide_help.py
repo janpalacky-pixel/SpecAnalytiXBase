@@ -908,7 +908,8 @@ def get_user_guide_help_content():
         Your selection is not changed &mdash; analyses use all selected spectra. <b>Plot
         all</b> on that note draws every spectrum (the Overlay plot in portions with a
         progress window and <b>Stop</b>; Stop keeps what is drawn and switches Interactive
-        Update off).</p>
+        Update off). Tool windows such as FFT Denoising or X-axis alignment draw at most 100
+        spectra (also set there); their calculations use all of them.</p>
 
         <h3>Interactive Update</h3>
         <p>When <strong>Interactive Update</strong> is checked, the plot redraws

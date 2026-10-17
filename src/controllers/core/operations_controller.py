@@ -1891,8 +1891,8 @@ class OperationsController:
         # Restore selection
         self.controller.spectrum_selector.is_handling_selection = True
         try:
-            for i in range(self.controller.spectra_list_widget.count()):
-                self.controller.spectra_list_widget.item(i).setSelected(i in current_selection)
+            # one call, not one per row (21 000 rows: seconds -> milliseconds)
+            select_rows(self.controller.spectra_list_widget, current_selection)
         finally:
             self.controller.spectrum_selector.is_handling_selection = False
         

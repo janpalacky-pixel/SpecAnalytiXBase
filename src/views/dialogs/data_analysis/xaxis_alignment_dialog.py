@@ -44,6 +44,9 @@ from src.modules.utils.label_shortening import (
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
 from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.modules.utils.list_selection import select_rows
+from src.views.dialogs.misc.selection_memory import remember_on_close, remembered, restore_selection
+from src.modules.visualization.large_selection import legend_if_few
 
 logger = get_logger(__name__)
 
@@ -112,7 +115,12 @@ class XAxisAlignmentDialog(QDialog):
         self._populate_spectrum_list()
         self._populate_from_settings(self._settings)
         self._initialization_complete = True
-        self._select_all()
+        # the spectra selected last time (by label), else all of them
+        self.spectra_list.blockSignals(True)
+        restore_selection('xaxis_alignment', self.spectra_list, default='all')
+        self.spectra_list.blockSignals(False)
+        self._on_selection_changed()
+        remember_on_close(self, 'xaxis_alignment', self.spectra_list)
         self._restore_cached_preview()
 
     # ──────────────────────────────────────────────────────────────────
@@ -564,9 +572,8 @@ class XAxisAlignmentDialog(QDialog):
         self.sort_button.setText('▲' if self.sort_ascending else '▼')
         sel = {item.text() for item in self.spectra_list.selectedItems()}
         self._populate_spectrum_list()
-        for i in range(self.spectra_list.count()):
-            if self.spectra_list.item(i).text() in sel:
-                self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, [i for i in range(self.spectra_list.count())
+                                 if self.spectra_list.item(i).text() in sel], mode='add')
 
     def _shorten_names_enabled(self):
         return self.checkBox_shorten_names.isChecked()
@@ -672,16 +679,14 @@ class XAxisAlignmentDialog(QDialog):
 
     def _select_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(True)
+        select_rows(self.spectra_list, range(self.spectra_list.count()))
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_selection_changed()
 
     def _unselect_all(self):
         self.spectra_list.blockSignals(True)
-        for i in range(self.spectra_list.count()):
-            self.spectra_list.item(i).setSelected(False)
+        self.spectra_list.clearSelection()
         self.spectra_list.blockSignals(False)
         if self._initialization_complete:
             self._on_selection_changed()
@@ -1086,6 +1091,24 @@ class XAxisAlignmentDialog(QDialog):
 # Canvas helpers
 # ======================================================================
 
+def _drawn_subset(originals, aligned, ref_label):
+    """At most the tool-window limit of spectra to DRAW (View -> Plotting
+    many spectra...), evenly spread, the reference always included; the
+    aligned list is cut to the same spectra. Returns (originals, aligned,
+    note) -- note is '' or e.g. '300 of 3 000 shown'."""
+    from src.controllers.visualization.large_plot_controller import dialog_draw_limit
+    from src.modules.visualization.large_selection import dialog_subset, shown_note
+
+    def is_ref(sp):
+        return (sp.get('label') == ref_label
+                or sp.get('xaxis_alignment_info', {}).get('is_reference', False))
+    shown, n = dialog_subset(originals, dialog_draw_limit(), keep=is_ref)
+    if aligned and len(shown) < n:
+        labels = {sp.get('label') for sp in shown}
+        aligned = [sp for sp in aligned if sp.get('label') in labels or is_ref(sp)]
+    return shown, aligned, shown_note(len(shown), n)
+
+
 def _plot_spectra_on_ax(ax, spectra_list, color_map, ref_label,
                         legend_visible, title=''):
     """Common helper: plot a list of spectra onto *ax*."""
@@ -1105,7 +1128,7 @@ def _plot_spectra_on_ax(ax, spectra_list, color_map, ref_label,
     if title:
         ax.set_title(title, fontsize=10)
     if legend_visible and len(spectra_list) > 1:
-        ax.legend(loc='best', fontsize=7)
+        legend_if_few(ax, loc='best', fontsize=7)
 
 
 class _ComparisonCanvas(FigureCanvas):
@@ -1132,10 +1155,12 @@ class _ComparisonCanvas(FigureCanvas):
             return
         ax = self._fig.add_subplot(111)
         ax.set_facecolor('#ffffff')
+        originals, _, note = _drawn_subset(originals, None, ref_label)
         color_map = {s['label']: _COLORS[i % len(_COLORS)]
                      for i, s in enumerate(originals)}
         _plot_spectra_on_ax(ax, originals, color_map, ref_label,
-                            legend_visible, 'Spectra (run preview to align)')
+                            legend_visible, 'Spectra (run preview to align)'
+                            + (f' \u2014 {note}' if note else ''))
         ax.set_xlabel('x', fontsize=9)
         safe_tight_layout(self._fig)
         self.draw_idle()
@@ -1147,9 +1172,12 @@ class _ComparisonCanvas(FigureCanvas):
             self.draw_idle()
             return
 
+        n_all = len(originals)
+        originals, aligned, note = _drawn_subset(originals, aligned, ref_label)
         color_map = {s['label']: _COLORS[i % len(_COLORS)]
                      for i, s in enumerate(originals)}
         n = len(originals)
+        shown = f' ({note})' if note else ''
 
         if overlay:
             ax = self._fig.add_subplot(111)
@@ -1180,11 +1208,11 @@ class _ComparisonCanvas(FigureCanvas):
             ax.set_xlabel('x', fontsize=9)
             ax.set_ylabel('Intensity', fontsize=9)
             ax.set_title(
-                f'Original (dashed) vs Aligned (solid) — {n} spectra', fontsize=10
+                f'Original (dashed) vs Aligned (solid) — {n_all} spectra{shown}', fontsize=10
             )
             ax.grid(True, linestyle='--', alpha=0.4)
             if legend_visible and n > 1:
-                ax.legend(loc='best', fontsize=7)
+                legend_if_few(ax, loc='best', fontsize=7)
 
         else:  # Subplots
             ax_top = self._fig.add_subplot(211)
@@ -1192,10 +1220,10 @@ class _ComparisonCanvas(FigureCanvas):
             for ax in (ax_top, ax_bot):
                 ax.set_facecolor('#ffffff')
             _plot_spectra_on_ax(ax_top, originals, color_map, ref_label,
-                                legend_visible, f'Original ({n} spectra)')
+                                legend_visible, f'Original ({n_all} spectra){shown}')
             if aligned:
                 _plot_spectra_on_ax(ax_bot, aligned, color_map, ref_label,
-                                    legend_visible, f'After alignment ({len(aligned)} spectra)')
+                                    legend_visible, f'After alignment ({n_all} spectra){shown}')
             ax_bot.set_xlabel('x', fontsize=9)
 
         safe_tight_layout(self._fig)
@@ -1238,10 +1266,16 @@ class _ShiftPlotCanvas(FigureCanvas):
         shifts = [e[2] for e in entries]
         arr    = np.array(shifts)
 
-        bar_colors = ['#1565C0' if v >= 0 else '#B71C1C' for v in shifts]
-        self._ax.bar(range(len(entries)), shifts, color=bar_colors,
-                     alpha=0.7, edgecolor='white', linewidth=0.5)
-        self._ax.scatter(range(len(entries)), shifts, color='black', s=40, zorder=5)
+        many = len(entries) > 300
+        if many:
+            # thousands of bars and tick labels take seconds to draw and
+            # cannot be read anyway: points, with the spectrum number below
+            self._ax.plot(range(len(entries)), shifts, '.', color='#1565C0', ms=3)
+        else:
+            bar_colors = ['#1565C0' if v >= 0 else '#B71C1C' for v in shifts]
+            self._ax.bar(range(len(entries)), shifts, color=bar_colors,
+                         alpha=0.7, edgecolor='white', linewidth=0.5)
+            self._ax.scatter(range(len(entries)), shifts, color='black', s=40, zorder=5)
         self._ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
 
         mean_s, std_s = float(np.mean(arr)), float(np.std(arr))
@@ -1253,9 +1287,12 @@ class _ShiftPlotCanvas(FigureCanvas):
         if labels is None:
             labels = [lbl if len(lbl) <= 20 else f'…{lbl[-18:]}' for lbl in raw_labels]
         ha = 'right' if rotation > 0 else 'center'
-        self._ax.set_xticks(range(len(entries)))
-        self._ax.set_xticklabels(labels, rotation=rotation, ha=ha, fontsize=fontsize)
-        self._ax.set_xlabel('Spectrum', fontsize=9)
+        if many:
+            self._ax.set_xlabel('Spectrum (number)', fontsize=9)
+        else:
+            self._ax.set_xticks(range(len(entries)))
+            self._ax.set_xticklabels(labels, rotation=rotation, ha=ha, fontsize=fontsize)
+            self._ax.set_xlabel('Spectrum', fontsize=9)
         self._ax.set_ylabel('Shift (x-units)', fontsize=9)
         self._ax.set_title('X-axis shift per spectrum', fontsize=10)
         self._ax.legend(fontsize=8, loc='best')
