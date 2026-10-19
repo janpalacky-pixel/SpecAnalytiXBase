@@ -182,7 +182,8 @@ class SpectralRangeManager:
         """
         Interpolate spectrum to have equidistant x values with given step.
         Supports both positive and negative steps.
-        Uses x_min as the start point.
+        Uses x_min as the start point (x_max for a negative step); never
+        creates points outside the spectrum's measured x-range.
         """
         # Check for empty arrays
         if len(x_scale) == 0 or len(y_scale) == 0:
@@ -199,39 +200,40 @@ class SpectralRangeManager:
             y_scale = binned_statistic(x_scale, y_scale, 'mean', bins=len(unique_x))[0]
             x_scale = unique_x
         
-        # Handle different start/end points based on step sign
+        # The new x-points lie on one common grid: X-min + k * step (X-max -
+        # k * |step| for a negative step), so spectra linearized with the same
+        # limits and step share their x-points. They never go beyond the
+        # spectrum's own measured data: the spline would invent values there
+        # (found 2026-10-19: two spectra that do not overlap, limits covering
+        # both, linearized -> values up to 4 million where nothing had been
+        # measured). A spectrum that does not cover the limits gets only the
+        # grid points inside its data (recorded in self._last_clip).
+        lo, hi = float(x_scale[0]), float(x_scale[-1])
+        tol = 1e-9 * max(1.0, abs(x_step))
+        self._last_clip = None
         if x_step > 0:
-            # Positive step: increasing values
-            first_point = self.x_min if self.x_min is not None else x_scale[0]
-            max_possible = self.x_max if self.x_max is not None else x_scale[-1]
-            
-            # Ensure max_possible is greater than first_point
-            if max_possible <= first_point:
-                max_possible = x_scale[-1]
-                if max_possible <= first_point:
-                    # No valid range, return empty arrays
-                    return np.array([]), np.array([])
+            anchor = self.x_min if self.x_min is not None else lo
+            end_req = self.x_max if self.x_max is not None else hi
+            if end_req <= anchor:
+                end_req = hi
+            k0 = max(0, int(np.ceil((lo - anchor) / x_step - tol)))
+            k1_req = int(np.floor((end_req - anchor) / x_step + tol))
+            k1 = min(k1_req, int(np.floor((hi - anchor) / x_step + tol)))
         else:
-            # Negative step: decreasing values
-            first_point = self.x_max if self.x_max is not None else x_scale[-1]
-            max_possible = self.x_min if self.x_min is not None else x_scale[0]
-            
-            # Ensure max_possible is less than first_point
-            if max_possible >= first_point:
-                max_possible = x_scale[0]
-                if max_possible >= first_point:
-                    # No valid range, return empty arrays
-                    return np.array([]), np.array([])
-        
-        # Calculate number of complete steps that fit within the range
-        # Use abs(x_step) to ensure positive number of intervals
-        num_intervals = int(abs((max_possible - first_point) / x_step))
-        last_point = first_point + num_intervals * x_step
-        num_points = num_intervals + 1
-        
-        # Create points ensuring exact spacing
-        x_new = np.linspace(first_point, last_point, num_points)
-        
+            step = -x_step
+            anchor = self.x_max if self.x_max is not None else hi
+            end_req = self.x_min if self.x_min is not None else lo
+            if end_req >= anchor:
+                end_req = lo
+            k0 = max(0, int(np.ceil((anchor - hi) / step - tol)))
+            k1_req = int(np.floor((anchor - end_req) / step + tol))
+            k1 = min(k1_req, int(np.floor((anchor - lo) / step + tol)))
+        if k1 < k0:
+            return np.array([]), np.array([])
+        if k0 > 0 or k1 < k1_req:
+            self._last_clip = (lo, hi)
+        x_new = anchor + np.arange(k0, k1 + 1) * x_step
+
         # Create cubic spline interpolation
         cs = CubicSpline(x_scale, y_scale)
         
@@ -282,6 +284,7 @@ class SpectralRangeManager:
         for every spectrum, so there's no separate global-only shortcut
         left to go stale.
         """
+        self.last_clipped = []      # (label, measured min, measured max)
         if not spectra:
             return []
 
@@ -304,11 +307,16 @@ class SpectralRangeManager:
             if len(x_scale) == 0:
                 continue
 
-            # 1. Overall X-axis limits (shared across all spectra in this commit)
+            # 1. Overall X-axis limits (shared across all spectra in this commit).
+            # With linearization the cut happens there instead (the new points
+            # are made only inside the limits): the spline then also sees the
+            # measured points just outside them, so a spectrum measured e.g.
+            # 399.5, 400.8, ... still gets the point 400 when X-min = 400.
             if self.x_min is not None and self.x_max is not None:
                 mask = (x_scale >= self.x_min) & (x_scale <= self.x_max)
-                x_scale = x_scale[mask]
-                y_scale = y_scale[mask]
+                if not (self.apply_linearization and mask.any()):
+                    x_scale = x_scale[mask]
+                    y_scale = y_scale[mask]
 
                 if len(x_scale) == 0:
                     logger.warning(
@@ -324,6 +332,12 @@ class SpectralRangeManager:
             if self.apply_linearization and len(x_scale) > 0:
                 step = self.spectrum_x_steps.get(self._key_for(spectrum), self.x_step)
                 x_scale, y_scale = self.linearize_spectrum(x_scale, y_scale, step)
+                if getattr(self, '_last_clip', None) is not None:
+                    lo, hi = self._last_clip
+                    self.last_clipped.append((spectrum.get('label', '?'), lo, hi))
+                    logger.info("Data range: spectrum '%s' was measured only from %s to %s; "
+                                "linearized only there (no values invented outside).",
+                                spectrum.get('label', '?'), lo, hi)
 
             # 3. Include/exclude ranges, per-spectrum falling back to the shared ones
             ranges = self.spectrum_ranges.get(self._key_for(spectrum), [])

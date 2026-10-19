@@ -11,6 +11,25 @@ import numpy as np
 
 logger = get_logger(__name__)
 
+
+def linearization_note(clipped, settings):
+    """'' or a note for the result message: which spectra do not cover the
+    X-min..X-max limits and were therefore linearized only over their own
+    measured range (no values are invented outside it)."""
+    if not clipped:
+        return ''
+    lo, hi = settings.get('x_min'), settings.get('x_max')
+    limits = (f"{lo:g}\u2013{hi:g}" if lo is not None and hi is not None
+              else "the chosen X-axis limits")
+    n = len(clipped)
+    shown = ", ".join(f"{label} (measured {a:g}\u2013{b:g})" for label, a, b in clipped[:5])
+    if n > 5:
+        shown += f" and {n - 5} more"
+    return (f"\n\nNote: {n} spectr{'um does' if n == 1 else 'a do'} not cover {limits}. "
+            f"Linearization used only {'its' if n == 1 else 'their'} measured range, so no "
+            f"values were invented outside it; the points still lie on the common x-values "
+            f"(X-min + k \u00d7 step): {shown}.")
+
 class SpectralRangeController:
     def __init__(self, main_controller):
         """
@@ -166,6 +185,7 @@ class SpectralRangeController:
             message = f'Added {n} new {noun}: {new_names}.'
         else:
             message = f'Replaced {n} {noun} with the range-restricted result.'
+        message += linearization_note(getattr(self.manager, 'last_clipped', None), settings)
         return True, message
 
 

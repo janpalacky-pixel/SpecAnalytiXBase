@@ -215,6 +215,15 @@ def get_data_range_help_content():
                 <li><strong>Data Standardization:</strong> Makes spectra from different instruments comparable</li>
             </ul>
             <p><strong>Interpolation Method:</strong> Uses cubic spline interpolation to preserve spectral shape</p>
+            <p><strong>Same x-values for all spectra:</strong> the new points are X-min, X-min + step,
+            X-min + 2&times;step, &hellip; (with a negative step: X-max, X-max &minus; step, &hellip;), so
+            spectra linearized with the same limits and step get exactly the same x-values &mdash; as
+            the multivariate tools (SVD, PCA, NMF, MCR-ALS) and the Spectral Calculator need. The
+            <b>Reset</b> buttons set the limits to the range that all selected spectra share.</p>
+            <p><strong>Never beyond the measured data:</strong> a spectrum is linearized only within its
+            own measured range. If the limits reach further (e.g. limits 799&ndash;1798 for a spectrum
+            measured from 799 to 998), it gets only the points inside its data &mdash; nothing is
+            invented outside it &mdash; and the message after Apply names such spectra.</p>
             <div class="warning">
                 <strong>Caution:</strong> Linearization can introduce small interpolation artifacts. Only use when necessary for your analysis.
             </div>
@@ -379,7 +388,7 @@ def get_data_range_help_content():
         <h3>Interpolation Algorithm</h3>
         <p>When linearization is enabled, the system uses cubic spline interpolation:</p>
         <ul>
-            <li><strong>Method:</strong> SciPy CubicSpline with natural boundary conditions</li>
+            <li><strong>Method:</strong> SciPy CubicSpline (its default &ldquo;not-a-knot&rdquo; end conditions), only between the first and the last measured point</li>
             <li><strong>Advantages:</strong> Smooth interpolation, preserves spectral shape</li>
             <li><strong>Handling:</strong> Automatically sorts data and removes duplicate x-values</li>
             <li><strong>Edge Cases:</strong> Gracefully handles insufficient data points</li>
