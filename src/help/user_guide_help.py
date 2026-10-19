@@ -969,6 +969,12 @@ def get_user_guide_help_content():
         Update off). Tool windows such as FFT Denoising or X-axis alignment draw at most 100
         spectra (also set there); their calculations use all of them.</p>
 
+        <h3 id="theme">Light or dark theme</h3>
+        <p><strong>View &rarr; Theme &rarr; Light / Dark</strong>; the choice is used from the next
+        start. In the dark theme every window keeps its colours' hues with the opposite lightness
+        (dark backgrounds, light text); plots stay white, as they would be printed or put into a
+        paper. Help pages open in the web browser as before.</p>
+
         <h3>Interactive Update</h3>
         <p>When <strong>Interactive Update</strong> is checked, the plot redraws
         automatically on every selection change. This is convenient for small datasets

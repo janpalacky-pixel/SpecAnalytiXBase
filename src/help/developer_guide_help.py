@@ -3533,7 +3533,7 @@ def _natural_sort_key(cls, label):
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
-        <h2 id="conveniences-design">Cursor, paste from clipboard, opening files</h2>
+        <h2 id="conveniences-design">Cursor, paste from clipboard, opening files, dark theme</h2>
         <ul>
             <li><b>Cursor</b> (<code>plot_cursor_controller.py</code>, values in Qt-free
             <code>cursor_values.py</code>): attached to every new main-plot canvas at the end of
@@ -3553,6 +3553,14 @@ def _natural_sort_key(cls, label):
             <code>open_snapshot_path</code>, data &rarr; the drag-and-drop path). The installer
             (<code>installer.iss</code>, [Registry]) associates <code>.snapx</code> (task
             "assocsnapx") and registers the exe for "Open with" of the data formats.</li>
+            <li><b>Dark theme</b> (<code>src/views/theme.py</code>): Fusion style + a dark
+            <code>QPalette</code>; instead of editing ~370 style sheets, it wraps
+            <code>QWidget.setStyleSheet</code>, rich text in <code>QLabel.setText</code> /
+            <code>QTextEdit.setHtml</code> and cell colours of table/list/tree items and converts
+            every colour to the same hue with the opposite lightness (<code>dark_rgb</code>); very
+            light <i>text</i> colours stay light (white text on a coloured button). Must be applied
+            before the first window is created, hence "from the next start". Matplotlib figures are
+            not converted (plots stay white).</li>
         </ul>
 
         <h2 id="factor-count-design">How many components: factor_diagnostics</h2>

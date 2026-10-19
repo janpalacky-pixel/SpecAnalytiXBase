@@ -1,5 +1,6 @@
 """Conveniences: the vertical cursor of the main plot, pasting numbers from
-Excel / text as spectra and opening files given on the command line."""
+Excel / text as spectra, opening files given on the command line, and the
+dark theme's colour conversion."""
 import os
 import sys
 import time
@@ -244,3 +245,25 @@ def test_cursor_lists_values_and_copies_pinned_ones(mc):
     cc.clear_pinned()
     assert cc.pinned == []
 
+
+# --- dark theme -------------------------------------------------------------------------------
+
+def test_dark_colours_keep_hue_and_invert_lightness():
+    from src.views.theme import convert_css, dark_hex
+    assert dark_hex('#FFFFFF') == '#1f1f1f'                       # white background -> dark
+    assert dark_hex('#000000') == '#ebebeb'                       # black text -> light
+    out = convert_css('QPushButton { background-color: #3A6AAF; color: white; '
+                      'border: 1px solid #B0B8C8; white-space: pre }')
+    assert 'color: #ffffff' in out                                # white text on a button stays
+    assert '#3a6aaf' not in out.lower() and 'white-space' in out
+    html = convert_css("<span style='color:#1A1A2E'>a</span> <font color=\"#2E7D32\">b</font>")
+    assert '#1a1a2e' not in html.lower() and '#2e7d32' not in html.lower()
+
+
+def test_theme_menu_and_preference(mc):
+    from src.views import theme
+    assert theme.saved_theme() == 'light'
+    assert set(mc.theme_actions) == {'light', 'dark'} and mc.theme_actions['light'].isChecked()
+    mc.theme_actions['dark'].trigger()
+    assert theme.saved_theme() == 'dark'
+    assert any('next start' in m for m in mc.messages)

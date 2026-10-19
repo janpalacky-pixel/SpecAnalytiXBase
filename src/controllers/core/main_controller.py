@@ -185,6 +185,9 @@ class MainController(QMainWindow):
         # 'Cursor' above the plot: vertical cursor with the spectra's values
         from src.controllers.visualization.plot_cursor_controller import PlotCursorController
         self.plot_cursor_controller = PlotCursorController(self)
+        # View -> Theme (light / dark, used from the next start)
+        from src.views.theme import build_menu as _build_theme_menu
+        _build_theme_menu(self)
         self._add_methods_report_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)

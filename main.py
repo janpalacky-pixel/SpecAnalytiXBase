@@ -142,6 +142,10 @@ def main():
 
     _check_optional_dependencies()
 
+    # Light or dark theme (View -> Theme), before the first window exists
+    from src.views.theme import apply_saved_theme
+    apply_saved_theme(app)
+
     main_controller = MainController()
     main_controller.show()
 
