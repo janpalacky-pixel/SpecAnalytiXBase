@@ -168,6 +168,14 @@ the Excel workbook they were imported from, or a file <code>&lt;data file name&g
 (<code>measurement : control_01</code>). A green line under the table says where the groups came
 from; one Ctrl+Z (or right-click &rarr; Undo) removes them again. So you can prepare the groups once, next to the
 data, and they are there every time you open the tool.</li>
+<li><b>Order of the groups</b> (left to right in the plot, in the Summary, the pairs of the
+Test tab, and which group is subtracted from which in a paired test): when the groups come
+from a group table (<i>From table file</i> or the automatic table), the order of that table
+&mdash; e.g. control, low dose, high dose, or before, after. Otherwise the order in which the
+groups first appear in the table of the window, which is the order of the main spectra list
+(sorted by name, so e.g. &ldquo;high dose&rdquo; comes before &ldquo;low dose&rdquo;). So
+to get the groups in a particular order, write them in that order in a group table. The order
+never changes a p-value; in a paired test it only changes the sign of the difference.</li>
 </ul>
 <p>When the groups, the samples or the value are changed after Compute, an orange line under
 the results says so and the Compute button turns orange until you press it &mdash; the results
@@ -389,6 +397,21 @@ three:
   confidence interval (black bar, from the t distribution: mean &plusmn; t &middot; SD /
   &radic;n) &mdash; the range in which the true group mean probably lies. It matches the
   t-test and ANOVA, and is preferred to bar charts by many journals.</li>
+  </ul>
+  <b>Dots</b> (next to the plot type): the <i>height</i> of a dot is its value; how far left
+  or right it is drawn means nothing &mdash; it only keeps dots with similar values from
+  covering each other. Four ways (each always gives the same picture for the same data):
+  <ul>
+  <li><i>Automatic</i> (default): a beeswarm when it fits beside the box, otherwise the
+  density-scaled spread (e.g. ROI regions of a map with hundreds of pixels).</li>
+  <li><i>Random jitter</i>: a small random-looking shift (as in R's ggplot2 or Python's
+  seaborn), fixed for each spectrum &mdash; it does not change when groups are added or
+  reordered.</li>
+  <li><i>Beeswarm</i>: a dot goes on the centre line and is moved sideways only as far as
+  needed not to cover another dot (as GraphPad Prism's scatter dot plot); the width shows
+  where the values crowd. Very wide for hundreds of dots.</li>
+  <li><i>Density-scaled</i>: spread wider where many values lie close together, narrow where
+  they are few (&ldquo;quasirandom&rdquo; in R's ggbeeswarm); for any number of dots.</li>
   </ul></li>
 <li><b>Summary:</b> n, mean, standard deviation (SD), median, minimum and maximum per group.</li>
 <li><b>p-value:</b> the probability of seeing a difference at least this large if the groups

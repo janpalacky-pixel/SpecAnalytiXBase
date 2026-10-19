@@ -3610,6 +3610,27 @@ def _natural_sort_key(cls, label):
             <li>Pitfall found by the automatic bug hunt: a dialog attribute named
             <code>result</code> hides <code>QDialog.result()</code>; the comparison is stored as
             <code>self.comparison</code>.</li>
+            <li><b>Order of the groups</b>: the window gets the spectra in the order of the main
+            spectra list, which is sorted by name ("high_dose" before "low_dose", "after" before
+            "before"). A group table's own row order is therefore kept separately
+            (<code>remembered_settings['group_order']</code>, from
+            <code>gs.table_group_order()</code>) and applied by <code>gs.ordered_names()</code>
+            to the plot, Summary, pairs, colours, the Spectra tab and the paired difference.
+            Lesson learned: the tutorial pictures were first made by opening the window directly
+            with the spectra in file order, so they did not match what users saw; the picture
+            script (<code>dev_notes/make_group_statistics_tutorial_figures.py</code>) now imports
+            through the main window, and <code>tests/test_group_order_and_dots.py</code> checks
+            the demos through that path.</li>
+            <li><b>Dots</b> (<code>src/modules/visualization_analysis/dot_spread.py</code>,
+            Qt-free): Automatic (beeswarm if it fits in the half width, else density-scaled),
+            Random jitter (fixed per spectrum from an md5 of its name), Beeswarm, Density-scaled
+            (van der Corput offsets &times; Gaussian KDE). All deterministic. The dots are drawn on
+            the centre line and spread by <code>_place_dots()</code> once the y limits are final,
+            because a beeswarm needs the dot diameter in data units. That diameter is computed
+            for a fixed reference plot (3 in per group, 5 in high,
+            <code>reference_dot_size()</code>), not the window's size, so the picture is the same
+            in any window, in a saved file and in the help screenshots. Before, one <code>default_rng(0)</code> was
+            drawn group by group, so a group's dots moved when the group order changed.</li>
             <li>p-values are formatted as text such as "&lt; 0.0001": escape them before putting
             them into HTML, or "&lt;" starts a tag and the value disappears.</li>
             <li>Values: <code>group_values.py</code> (Qt-free). One band reuses the 2D Map

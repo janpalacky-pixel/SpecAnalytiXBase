@@ -359,15 +359,31 @@ def spectrum_values(spectra, kind, **kwargs):
     return np.array([spectrum_value(s, kind, **kwargs) for s in spectra], dtype=float)
 
 
-def collect(groups, values):
-    """{group: array of finite values}, groups in order of first appearance;
-    spectra without a group or with a NaN value are left out."""
+def collect(groups, values, order=None):
+    """{group: array of finite values}, groups in order of first appearance
+    (or in `order` first, see ordered_names); spectra without a group or
+    with a NaN value are left out."""
     out = {}
     for g, v in zip(groups, values):
         if g == NO_GROUP or not np.isfinite(v):
             continue
         out.setdefault(g, []).append(float(v))
-    return {g: np.array(v) for g, v in out.items()}
+    return {g: np.array(out[g]) for g in ordered_names(list(out), order)}
+
+
+def ordered_names(names, order=None):
+    """The group names in `order` first (e.g. the order of the rows of the
+    group table they were read from: control, low dose, high dose), then the
+    others in their given order (first appearance)."""
+    names = list(dict.fromkeys(names))
+    order = [g for g in dict.fromkeys(order or []) if g in names]
+    return order + [g for g in names if g not in order]
+
+
+def table_group_order(mapping):
+    """The order of the groups in a group table (name -> group, in the
+    table's row order)."""
+    return [g for g in dict.fromkeys(str(v).strip() for v in mapping.values()) if g]
 
 
 # ---------------------------------------------------------------------------

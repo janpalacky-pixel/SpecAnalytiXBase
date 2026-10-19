@@ -183,7 +183,10 @@ $FIG_l1_why_normalize
 <span class="set">Parametric: Welch t-test / one-way ANOVA</span> and press <b>Compute</b>.</p>
 $FIG_l1_area
 <p>The plot shows each spectrum as a dot; the box holds the middle half of the group, the
-black line is the median, the orange line the mean. The dots overlap a lot. The title says
+black line is the median, the orange line the mean. A dot's <i>height</i> is its value; it is
+moved sideways only so that it does not cover another dot (the sideways position means
+nothing; <span class="set">Dots</span> next to the plot type offers other ways). The values
+of the three groups overlap a lot. The title says
 <b>p = 0.03</b>, but the pairs in the Test tab are confusing: control vs low dose p &asymp;
 0.03, control vs high dose p &asymp; 0.07, low vs high dose p &asymp; 0.88 &mdash; as if the
 high dose did no more than the low dose.</p>

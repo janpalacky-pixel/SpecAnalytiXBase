@@ -312,10 +312,11 @@ def _average_per_sample(Y, groups, samples):
 
 def compare_spectra(spectra, groups, samples=None, method='parametric', per_sample=False,
                     normalization='none', band=None, rng=None, correction='fdr',
-                    alpha=0.05):
+                    alpha=0.05, order=None):
     """Everything the Spectra tab shows. Returns a dict: x, names, mean, sd,
     ci (half-width), n, p, q, ranges, test, notes, same_axis, unit ('spectra'
-    or 'samples')."""
+    or 'samples'). order: preferred order of the groups (see
+    group_statistics.ordered_names); otherwise first appearance."""
     samples = list(samples) if samples is not None else [''] * len(spectra)
     use = [i for i, g in enumerate(groups) if g]
     if not use:
@@ -351,7 +352,7 @@ def compare_spectra(spectra, groups, samples=None, method='parametric', per_samp
     if per_sample:
         Y, g_used, s_used = _average_per_sample(Y, g_used, s_used)
         unit = 'samples'
-    names = list(dict.fromkeys(g_used))
+    names = gs.ordered_names(g_used, order)
     mats = {g: Y[[i for i, gg in enumerate(g_used) if gg == g]] for g in names}
     small = [g for g in names if len(mats[g]) < 2]
     if small:

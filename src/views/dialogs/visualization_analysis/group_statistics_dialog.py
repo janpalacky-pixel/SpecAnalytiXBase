@@ -32,6 +32,7 @@ from src.modules.visualization_analysis import group_statistics as gs
 from src.modules.visualization_analysis import group_values as gv
 from src.modules.visualization_analysis import group_tests as gt
 from src.modules.visualization_analysis import group_spectra as gsp
+from src.modules.visualization_analysis import dot_spread as ds
 from src.views.dialogs.visualization_analysis.peak_fit_settings_dialog import (
     PeakFitSettingsDialog, load_settings as load_peak_fit_settings,
     save_settings as save_peak_fit_settings)
@@ -140,6 +141,16 @@ _HELP_PLOT = (
     "fewer than about 10 values.</li>"
     "<li><b>Points with mean &plusmn; 95 % CI</b>: the mean and the range in which the true "
     "mean probably lies &mdash; matches the t-test / ANOVA.</li></ul>"
+    "<p><b>Dots</b>: the <i>height</i> of a dot is its value; its sideways position means "
+    "nothing &mdash; it only keeps dots with similar values from covering each other. "
+    "<i>Automatic</i> (default): a beeswarm when it fits, otherwise the density-scaled "
+    "spread (many values, e.g. ROI regions of a map). <i>Random jitter</i>: a small "
+    "random-looking shift, fixed for each spectrum. <i>Beeswarm</i>: dots side by side, "
+    "none covers another, the width shows where the values crowd; very wide for hundreds "
+    "of dots. <i>Density-scaled</i>: spread wider where many values lie close together, "
+    "for any number of dots. Each choice always gives the same picture for the same data.</p>"
+    "<p><b>Order of the groups</b>: the order of the group table the groups were read from "
+    "(e.g. control, low dose, high dose), otherwise the order of the spectra list.</p>"
     "<p><b>Mark outliers</b> circles values outside 1.5 &times; the interquartile range; they "
     "are not removed. <b>Save plot&hellip;</b>: PNG, TIFF, SVG, PDF.</p>")
 _HELP_RESULTS = (
@@ -153,6 +164,8 @@ _HELP_RESULTS = (
     "<li><b>Possible outliers</b>: named, never removed.</li>"
     "<li><b>Results sentence</b>: ready for a paper &mdash; <i>Copy results "
     "sentence</i>.</li></ul>")
+
+_DOT_AREA = 14          # scatter size of a dot (points^2)
 
 _PLOT_TYPES = {
     'box': "Box plot",
@@ -364,7 +377,7 @@ class NamesToGroupsDialog(QDialog):
         self.preview.setText(text)
 
 
-def repeated_samples_text(groups, samples, values=None, what="this test"):
+def repeated_samples_text(groups, samples, values=None, what="this test", order=None):
     """The warning for a sample name given to several spectra of ONE group,
     or '' if there is none. Says which names, what the program assumes and
     what to do -- not what happens to the p-value (that depends on the data).
@@ -373,6 +386,7 @@ def repeated_samples_text(groups, samples, values=None, what="this test"):
     rep = gt.repeated_sample_names(groups, samples, values)
     if not rep:
         return ""
+    rep = {g: rep[g] for g in gs.ordered_names(list(rep), order)}   # groups in plot order
     parts = []
     for g, names in rep.items():
         shown = ", ".join(f"{smp} ({n} spectra)" for smp, n in names[:3])
@@ -498,6 +512,9 @@ class GroupStatisticsDialog(QDialog):
         j = self.plot_combo.findData(self.remembered_settings.get('plot'))
         if j >= 0:
             self.plot_combo.setCurrentIndex(j)
+        j = self.dots_combo.findData(self.remembered_settings.get('dots'))
+        if j >= 0:
+            self.dots_combo.setCurrentIndex(j)
         j = self.test_combo.findData(self.remembered_settings.get('test'))
         if j >= 0:
             self.test_combo.setCurrentIndex(j)
@@ -620,6 +637,16 @@ class GroupStatisticsDialog(QDialog):
     def groups(self):
         return [v.strip() for v in self.table.values()]
 
+    def group_order(self):
+        """The preferred order of the groups: the order of the group table
+        they were read from (remembered for the session), else []."""
+        return list(self.remembered_settings.get('group_order') or [])
+
+    def _ordered(self, names):
+        """names in the preferred order (group_order first, then the rest in
+        order of first appearance)."""
+        return gs.ordered_names(names, self.group_order())
+
     def _load_own_group_table(self):
         """If no group is set yet and the spectra's own data file has a group
         table (sheet 'Groups' in the workbook, or '<data file>_groups.csv'
@@ -638,6 +665,9 @@ class GroupStatisticsDialog(QDialog):
         groups = gs.groups_from_own_table(self.spectra, self.labels, path, mapping)
         if not any(groups):
             return
+        # the groups keep the order of the table (e.g. control, low dose,
+        # high dose), not of the spectra list (sorted by name: high before low)
+        self.remembered_settings['group_order'] = gs.table_group_order(mapping)
         self._set_groups(groups)
         if sample_map:
             # same undo step as the groups: one Ctrl+Z removes both
@@ -744,7 +774,7 @@ class GroupStatisticsDialog(QDialog):
         and the Spectra tab. A group keeps its colour while the window is open
         (a new group -- e.g. a typo -- gets the next free colour instead of
         shifting the colours of the others)."""
-        order = list(dict.fromkeys(g for g in self.groups() if g))
+        order = self._ordered([g for g in self.groups() if g])
         assigned = self.__dict__.setdefault('_colour_assign', {})
         for g in order:
             if g not in assigned:
@@ -845,11 +875,7 @@ class GroupStatisticsDialog(QDialog):
                 saved_samples.pop(key, None)
 
     def _group_names(self):
-        seen = []
-        for g in self.groups():
-            if g and g not in seen:
-                seen.append(g)
-        return seen
+        return self._ordered([g for g in self.groups() if g])
 
     def _update_group_summary(self):
         groups = self.groups()
@@ -857,8 +883,8 @@ class GroupStatisticsDialog(QDialog):
         for g in groups:
             counts[g] = counts.get(g, 0) + 1
         cmap = self.group_colours() if hasattr(self, 'table') else {}
-        named = [f"<b><span style='color:{cmap.get(g, '#000')}'>{html.escape(g)}</span></b> ({n})"
-                 for g, n in counts.items() if g != gs.NO_GROUP]
+        named = [f"<b><span style='color:{cmap.get(g, '#000')}'>{html.escape(g)}</span></b> "
+                 f"({counts[g]})" for g in self._ordered(list(counts)) if g != gs.NO_GROUP]
         none = counts.get(gs.NO_GROUP, 0)
         if not named:
             text = "No groups yet."
@@ -897,6 +923,7 @@ class GroupStatisticsDialog(QDialog):
     def groups_from_names(self):
         dlg = NamesToGroupsDialog(self.labels, self)
         if dlg.exec_() == QDialog.Accepted:
+            self.remembered_settings['group_order'] = []     # order of the spectra list
             self._set_groups(dlg.groups())
 
     def groups_from_table_file(self):
@@ -913,6 +940,7 @@ class GroupStatisticsDialog(QDialog):
             return
         groups = gs.groups_from_table(self.labels, mapping)
         found = sum(1 for g in groups if g)
+        self.remembered_settings['group_order'] = gs.table_group_order(mapping)
         self._set_groups(groups)
         if sample_map:
             self.table.set_values(gs.groups_from_table(self.labels, sample_map),
@@ -1157,6 +1185,19 @@ class GroupStatisticsDialog(QDialog):
             "interval — the plot that matches the t-test / ANOVA.")
         self.plot_combo.currentIndexChanged.connect(self._on_plot_type_changed)
         plot_row.addWidget(self.plot_combo)
+        plot_row.addWidget(QLabel("Dots:"))
+        self.dots_combo = QComboBox()
+        for key in ds.MODES:
+            self.dots_combo.addItem(ds.MODE_NAMES[key], key)
+        self.dots_combo.setToolTip(
+            "How the dots are spread sideways. The HEIGHT of a dot is its value; the sideways\n"
+            "position means nothing, it only keeps dots with similar values apart.\n"
+            "Automatic: a beeswarm when it fits, otherwise the density-scaled spread.\n"
+            "Random jitter: a small random-looking shift, fixed for each spectrum.\n"
+            "Beeswarm: side by side, no dot covers another (very wide for hundreds of dots).\n"
+            "Density-scaled: wider where many values lie close together (any number of dots).")
+        self.dots_combo.currentIndexChanged.connect(self._on_plot_type_changed)
+        plot_row.addWidget(self.dots_combo)
         self.save_plot_btn = QPushButton("Save plot…")
         self.save_plot_btn.setToolTip("Save the plot as PNG, TIFF, SVG or PDF")
         self.save_plot_btn.setAutoDefault(False)
@@ -1356,7 +1397,7 @@ class GroupStatisticsDialog(QDialog):
         try:
             r = gsp.compare_spectra(self.spectra, groups, samples, method, per_sample,
                                     st['normalization'], st['band'], st['rng'],
-                                    st['correction'])
+                                    st['correction'], order=self.group_order())
             error = None
         except ValueError as exc:
             r, error = None, exc
@@ -1378,12 +1419,13 @@ class GroupStatisticsDialog(QDialog):
         notes = [t for t in (gsp.overall_text(r), gsp.ranges_text(r)) if t] + r['notes']
         warn = False
         if not per_sample and method not in gt.PAIRED and any(samples):
-            text = repeated_samples_text(groups, samples, what="this comparison")
+            text = repeated_samples_text(groups, samples, what="this comparison",
+                                         order=self.group_order())
             if text:
                 warn = True
                 notes.append(text)
         if r['n_pairs'] is not None:
-            two = list(dict.fromkeys(g for g in groups if g != gs.NO_GROUP))
+            two = self._ordered([g for g in groups if g != gs.NO_GROUP])
             notes.append(paired_note(r['n_pairs'], groups, samples, None, two[0], two[1])
                          if len(two) == 2 else f"{r['n_pairs']} pairs (Sample column).")
         self.sp_note.setText(" ".join(notes))
@@ -1611,7 +1653,7 @@ class GroupStatisticsDialog(QDialog):
 
     def _update_reference_choices(self):
         current = self.reference_combo.currentText()
-        names = [g for g in dict.fromkeys(self.groups()) if g]
+        names = self._ordered([g for g in self.groups() if g])
         self.reference_combo.blockSignals(True)
         self.reference_combo.clear()
         self.reference_combo.addItems(names)
@@ -1780,7 +1822,7 @@ class GroupStatisticsDialog(QDialog):
         else:
             g_used, v_used = groups, list(values)
             point_labels = list(self.labels)
-        data = gs.collect(g_used, v_used)
+        data = gs.collect(g_used, v_used, self.group_order())
         self.data_labels = {}
         for g, lab, val in zip(g_used, point_labels, v_used):
             if g and np.isfinite(val):
@@ -1865,7 +1907,7 @@ class GroupStatisticsDialog(QDialog):
                     "power; a non-significant result is not evidence of no difference.")
             self.replicate_warned = False
         else:
-            text = (repeated_samples_text(groups, samples, values)
+            text = (repeated_samples_text(groups, samples, values, order=self.group_order())
                     if any(samples) and method not in gt.PAIRED else "")
             if text:
                 notes.append(text)
@@ -1895,6 +1937,7 @@ class GroupStatisticsDialog(QDialog):
 
     def _on_plot_type_changed(self, *_):
         self.remembered_settings['plot'] = self.plot_combo.currentData()
+        self.remembered_settings['dots'] = self.dots_combo.currentData()
         self.remembered_settings['mark_outliers'] = self.outliers_check.isChecked()
         if getattr(self, 'data', None) is not None:
             self._show_box_plot()
@@ -1949,20 +1992,34 @@ class GroupStatisticsDialog(QDialog):
                 if few:
                     footnote = ("Fewer than 10 values in " + ", ".join(few)
                                 + ": the violin shape is unreliable there.")
-            rng = np.random.default_rng(0)
+            # the dots are drawn on the centre line first and spread sideways
+            # by _place_dots() once the y-axis limits are final (a beeswarm
+            # needs the size of a dot in data units)
             mark = self.outliers_check.isChecked()
             any_marked = False
-            for p, v, colour in zip(positions, values, colours):
-                jitter = rng.uniform(-0.12, 0.12, len(v))
-                ax.scatter(np.full(len(v), p) + jitter, v, s=14, alpha=0.7,
-                           color=colour, zorder=3)
+            layers = []
+            labels_of = getattr(self, 'data_labels', None) or {}
+            for p, g, v, colour in zip(positions, names, values, colours):
+                dots = ax.scatter(np.full(len(v), p), v, s=_DOT_AREA, alpha=0.7,
+                                  color=colour, zorder=3)
+                ring, idx = None, []
                 if mark:
-                    idx = gt.outliers(v)
+                    idx = list(gt.outliers(v))
                     if idx:
                         any_marked = True
-                        ax.scatter((np.full(len(v), p) + jitter)[idx], v[idx], s=70,
-                                   facecolors='none', edgecolors='#D50000', linewidths=1.4,
-                                   zorder=7)
+                        ring = ax.scatter(np.full(len(idx), p), v[idx], s=70,
+                                          facecolors='none', edgecolors='#D50000',
+                                          linewidths=1.4, zorder=7)
+                # the key of every dot (spectrum or sample name): Random jitter
+                # gives each its own fixed shift
+                keys = list(labels_of.get(g, []))
+                if len(keys) != len(v):
+                    keys = [f"{g}\n{i}" for i in range(len(v))]
+                layers.append((p, v, keys, dots, ring, idx))
+            # half width of the spread: in the CI plot the mean and its bar
+            # start 0.12 to the right of the centre
+            self._dot_layers = (ax, layers, 0.1 if kind == 'ci' else 0.3)
+            for p, v in zip(positions, values):
                 mean = float(np.mean(v))
                 if kind == 'ci':
                     if len(v) >= 2:
@@ -2010,8 +2067,32 @@ class GroupStatisticsDialog(QDialog):
             safe_tight_layout(fig, rect=(0, 0.05, 1, 1))
         else:
             safe_tight_layout(fig)
+        if not names:
+            self._dot_layers = None
+        self._place_dots()
         self.canvas.draw_idle()
         self.save_plot_btn.setEnabled(bool(names))
+
+    def _place_dots(self):
+        """Spread the dots of every group sideways (Dots: Automatic / Random
+        jitter / Beeswarm / Density-scaled, see dot_spread.py). Returns the
+        set of methods used ('swarm', 'density', 'jitter')."""
+        layers = getattr(self, '_dot_layers', None)
+        if not layers:
+            return set()
+        ax, groups, half = layers
+        dx, dy = ds.reference_dot_size(ax.get_ylim(), _DOT_AREA)
+        mode = self.dots_combo.currentData()
+        used = set()
+        for p, v, keys, dots, ring, idx in groups:
+            off, how = ds.offsets(mode, v, keys, dx, dy,
+                                  min(0.12, half) if mode == 'jitter' else half)
+            used.add(how)
+            dots.set_offsets(np.column_stack([p + off, v]))
+            if ring is not None:
+                ring.set_offsets(np.column_stack([p + off[idx], v[idx]]))
+        self.dots_used = used
+        return used
 
     def _show_summary(self):
         rows = gs.describe(self.data)
