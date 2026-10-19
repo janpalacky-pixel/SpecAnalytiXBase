@@ -31,6 +31,8 @@ LicenseFile=installer_assets\license.txt
 PrivilegesRequired=admin
 ShowLanguageDialog=auto
 UsePreviousTasks=no
+; Tell Windows (Explorer) that file associations changed, see [Registry]
+ChangesAssociations=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -60,7 +62,32 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "assocsnapx"; Description: "{cm:AssocSnapx}"; GroupDescription: "{cm:AssocGroup}"
 Name: "readme"; Description: "{cm:ReadmeTaskDescription}"; Flags: unchecked
+
+[Registry]
+; Double-click on a snapshot (.snapx) opens it in SpecAnalytiXBase (task
+; "assocsnapx", on by default). main.py opens the files it is given.
+Root: HKA; Subkey: "Software\Classes\.snapx"; ValueType: string; ValueName: ""; ValueData: "SpecAnalytiXBase.snapx"; Flags: uninsdeletevalue; Tasks: assocsnapx
+Root: HKA; Subkey: "Software\Classes\.snapx\OpenWithProgids"; ValueType: string; ValueName: "SpecAnalytiXBase.snapx"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assocsnapx
+Root: HKA; Subkey: "Software\Classes\SpecAnalytiXBase.snapx"; ValueType: string; ValueName: ""; ValueData: "SpecAnalytiXBase snapshot"; Flags: uninsdeletekey; Tasks: assocsnapx
+Root: HKA; Subkey: "Software\Classes\SpecAnalytiXBase.snapx\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: assocsnapx
+Root: HKA; Subkey: "Software\Classes\SpecAnalytiXBase.snapx\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: assocsnapx
+; "Open with -> SpecAnalytiXBase" for the data formats it reads (without
+; taking over their default program).
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".snapx"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".spc"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".spe"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".jws"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".jwb"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".mat"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".txt"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".csv"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".dat"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".xlsx"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\{#MyAppExeName}\SupportedTypes"; ValueType: string; ValueName: ".xls"; ValueData: ""
 
 [Run]
 ; Launch application after install (with proper ampersand handling)
@@ -71,6 +98,10 @@ Filename: "notepad.exe"; Parameters: "{app}\readme.txt"; Flags: shellexec skipif
 [CustomMessages]
 english.ReadmeTaskDescription=View README after install
 czech.ReadmeTaskDescription=Zobrazit README po instalaci
+english.AssocGroup=File types:
+czech.AssocGroup=Typy souboru:
+english.AssocSnapx=Open snapshots (.snapx) with SpecAnalytiXBase by double-click
+czech.AssocSnapx=Otevirat snapshoty (.snapx) dvojklikem v SpecAnalytiXBase
 
 ; Existing translation
 czech.LaunchProgram=Spustit aplikaci %1

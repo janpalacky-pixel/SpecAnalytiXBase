@@ -430,6 +430,12 @@ def get_user_guide_help_content():
                 starting data (<em>Original state</em> of the Operations History), like a first
                 import; pasted later they become an <em>Import</em> step (Undo removes them).
                 (<strong>Ctrl+V</strong> on the spectra list stays the paste of copied spectra.)</li>
+            <li><strong>Opening files from Windows:</strong> after installation a double-click on a
+                snapshot (<code>.snapx</code>) opens it in SpecAnalytiXBase (an option of the
+                installer, on by default), and data files can be opened with right-click &rarr;
+                <em>Open with &rarr; SpecAnalytiXBase</em> (they go through the Import dialog). The
+                same works from the command line: <code>SpecAnalytiXBase.exe file1.txt file2.spc</code>
+                (from source: <code>python main.py file1.txt</code>).</li>
         </ul>
 
         <div class="screenshot">

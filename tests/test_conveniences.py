@@ -1,5 +1,5 @@
-"""Conveniences: the vertical cursor of the main plot and pasting numbers from
-Excel / text as spectra."""
+"""Conveniences: the vertical cursor of the main plot, pasting numbers from
+Excel / text as spectra and opening files given on the command line."""
 import os
 import sys
 import time
@@ -185,6 +185,26 @@ def test_ctrl_v_still_pastes_copies_of_spectra(mc):
     mc.paste_data_action.trigger()
     _pump()
     assert 'Pasted 1 : y' in _labels(mc)
+
+
+def test_open_paths_from_the_command_line(mc, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(mc.import_controller, 'open_snapshot_path', lambda p: opened.append(p))
+    mc.open_paths([DATA, str(tmp_path / 'nothing.txt'), str(tmp_path / 'a.snapx')])
+    _pump()
+    assert any('nothing.txt' in m for m in mc.messages)          # missing file named
+    assert len(_labels(mc)) > 0                                   # the data file imported
+    snap = tmp_path / 'b.snapx'
+    snap.write_bytes(b'x')
+    mc.open_paths([str(snap)])
+    assert opened == [str(snap)]
+
+
+def test_main_passes_only_file_arguments():
+    sys.path.insert(0, ROOT)
+    import main
+    assert main._file_arguments(['a.txt', '--multiprocessing-fork', '', 'b.snapx']) == \
+        ['a.txt', 'b.snapx']
 
 
 def test_cursor_lists_values_and_copies_pinned_ones(mc):

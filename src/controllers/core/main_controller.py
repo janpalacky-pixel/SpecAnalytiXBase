@@ -501,6 +501,31 @@ class MainController(QMainWindow):
         n = len(sources)
         self._status(f"{n} cop{'y' if n == 1 else 'ies'} added (_copy)")
 
+    def open_paths(self, paths):
+        """Files given on the command line -- also what Windows passes when
+        a .snapx file is double-clicked or a data file is opened with
+        "Open with -> SpecAnalytiXBase": a snapshot is opened (File ->
+        Import Snapshot), data files go through the Import dialog, as if
+        dropped on the window. Missing files are named."""
+        import os
+        paths = [str(p) for p in paths if str(p).strip()]
+        missing = [p for p in paths if not os.path.isfile(p)]
+        found = [os.path.abspath(p) for p in paths if os.path.isfile(p)]
+        if missing:
+            QMessageBox.warning(self.view, "File not found",
+                                "These files could not be found:\n\n" + "\n".join(missing[:10]))
+        snapshots = [p for p in found if p.lower().endswith('.snapx')]
+        data = [p for p in found if not p.lower().endswith('.snapx')]
+        if snapshots:
+            if len(snapshots) > 1:
+                QMessageBox.information(
+                    self.view, "Open snapshot",
+                    "Only one snapshot can be open at a time; opening the first:\n"
+                    + os.path.basename(snapshots[0]))
+            self.import_controller.open_snapshot_path(snapshots[0])
+        if data:
+            self.import_controller._handle_dropped_files(data)
+
     def paste_data_from_clipboard(self, text=None):
         """File -> Paste data from clipboard (Ctrl+Shift+V): numbers copied
         from Excel or any text table become new spectra (first column = x,

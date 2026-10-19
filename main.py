@@ -148,7 +148,21 @@ def main():
     # Automatic saving + the "restore unsaved work?" question after a crash.
     from src.version import __version__
     main_controller.autosave_controller.start(__version__)
+
+    # Files given on the command line -- also what Windows passes on a
+    # double-click of a .snapx file or "Open with -> SpecAnalytiXBase"
+    # (see installer.iss): opened once the window is up.
+    paths = _file_arguments(sys.argv[1:])
+    if paths:
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, lambda: main_controller.open_paths(paths))
     sys.exit(app.exec_())
+
+
+def _file_arguments(args) -> list:
+    """The command-line arguments that are files to open (options such as
+    the ones Qt or multiprocessing add start with '-')."""
+    return [a for a in args if a and not a.startswith('-')]
 
 
 if __name__ == "__main__":

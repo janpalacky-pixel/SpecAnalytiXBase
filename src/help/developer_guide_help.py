@@ -3533,7 +3533,7 @@ def _natural_sort_key(cls, label):
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
-        <h2 id="conveniences-design">Cursor and paste from clipboard</h2>
+        <h2 id="conveniences-design">Cursor, paste from clipboard, opening files</h2>
         <ul>
             <li><b>Cursor</b> (<code>plot_cursor_controller.py</code>, values in Qt-free
             <code>cursor_values.py</code>): attached to every new main-plot canvas at the end of
@@ -3548,6 +3548,11 @@ def _natural_sort_key(cls, label):
             stores the spectra in the import <code>SpectrumManager</code> and emits the same signals
             as an import (<code>spectra_imported</code> into an empty workspace, else
             <code>spectra_added</code> &rarr; an "Import" history step).</li>
+            <li><b>Opening files</b>: <code>main.py</code> passes its non-option arguments to
+            <code>MainController.open_paths()</code> after the window is shown (snapshot &rarr;
+            <code>open_snapshot_path</code>, data &rarr; the drag-and-drop path). The installer
+            (<code>installer.iss</code>, [Registry]) associates <code>.snapx</code> (task
+            "assocsnapx") and registers the exe for "Open with" of the data formats.</li>
         </ul>
 
         <h2 id="factor-count-design">How many components: factor_diagnostics</h2>
