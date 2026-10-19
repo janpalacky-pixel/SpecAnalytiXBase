@@ -1,4 +1,5 @@
-"""Conveniences: the vertical cursor of the main plot."""
+"""Conveniences: the vertical cursor of the main plot and pasting numbers from
+Excel / text as spectra."""
 import os
 import sys
 import time
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
+from src.modules.data_io.clipboard_table import ClipboardTableError, parse_table
 from src.modules.visualization import cursor_values as cv
 
 app = QApplication.instance() or QApplication([])
@@ -45,6 +47,83 @@ def test_listed_values_nearest_to_the_pointer_and_table():
     assert cv.fmt(270234.4) == '270234' and cv.fmt(1.2e-5) == '1.2e-05' and cv.fmt(None) == '—'
 
 
+# --- clipboard table (Qt-free) -------------------------------------------------------------
+
+def test_excel_with_header_and_decimal_comma():
+    x_name, spectra, notes = parse_table('nm\tA\tB\n200\t0,1\t0,2\n201\t0,15\t\n202\t0,2\t0,3\n')
+    assert x_name == 'nm' and [s[0] for s in spectra] == ['A', 'B']
+    assert np.allclose(spectra[0][2], [0.1, 0.15, 0.2])
+    assert np.allclose(spectra[1][1], [200, 202])               # empty cell: no point
+    assert notes == ["The table was read in columns: x = the first column, one spectrum per "
+                     "further column, names from the header row."]
+
+
+@pytest.mark.parametrize('text, names, first_y', [
+    ('200 1 2\n201 3 4\n202 5 6', ['column 2', 'column 3'], [1, 3, 5]),
+    ('x,a\n1,2.5\n2,3.5\n3,4', ['a'], [2.5, 3.5, 4]),
+    ('200;1,5\n201;2,5\n202;3', ['column 2'], [1.5, 2.5, 3]),
+    ('\t200\t201\t202\ns1\t1\t2\t3\ns2\t4\t5\t6', ['s1', 's2'], [1, 2, 3]),
+    ('5\n6\n7', ['column 1'], [5, 6, 7]),
+])
+def test_other_table_shapes(text, names, first_y):
+    _, spectra, _ = parse_table(text)
+    assert [s[0] for s in spectra] == names
+    assert np.allclose(spectra[0][2], first_y)
+
+
+def test_rows_with_names_and_x_in_the_header_row():
+    """E.g. a Specord export with only the Name column and the numbers
+    copied (and a separator at the end of every line)."""
+    text = ('Name;230,0;231,0;232,0;\n'
+            'rC5U3;0,1460;0,1351;0,1300;\n'
+            'rC5U3;0,2;0,3;0,4;\n'
+            'blank;0,01;0,02;0,03;\n')
+    x_name, spectra, notes = parse_table(text)
+    assert x_name == 'Name' and [s[0] for s in spectra] == ['rC5U3', 'rC5U3 (2)', 'blank']
+    assert np.allclose(spectra[0][1], [230, 231, 232]) and np.allclose(spectra[0][2], [0.146, 0.1351, 0.13])
+    assert 'x = the header row' in notes[0]
+    # the same numbers without names: first row = x
+    _, spectra, notes = parse_table('230\t231\t232\n0,1\t0,2\t0,3\n0,4\t0,5\t0,6')
+    assert len(spectra) == 2 and np.allclose(spectra[1][2], [0.4, 0.5, 0.6])
+    assert 'first row = x' in notes[0]
+
+
+def test_rows_with_several_leading_columns_as_exported_by_a_spectrometer():
+    """dev_notes/multiple_column_header-ii.txt: No., Type, Name, Date, Note,
+    Temperature (decimal comma) ... then the absorbances (decimal point)."""
+    text = ('user\tNo.\tType\tName\tDate/Time\tNote\tTemperature\tTemperature\t230.0000\t231.0000\t232.0000\r\n'
+            'A\t1.0000\tSample\trC5U3\t2021.06.21 12:28\t\t4,1\t4,0\t0.1460\t0.1351\t0.1272\r\n'
+            'b\t2.0000\tSample\trC3,5\t2021.06.21 12:28\t\t4,1\t4,0\t0.5664\t0.5424\t0.5237\r\n'
+            'D\t5.0000\tSample\trC5U3\t2021.06.21 12:33\t\t4,8\t5,0\t0.1612\t0.1530\t0.1451\r\n')
+    x_name, spectra, notes = parse_table(text)
+    assert [s[0] for s in spectra] == ['rC5U3', 'rC3,5', 'rC5U3 (2)']
+    assert np.allclose(spectra[0][1], [230, 231, 232]) and np.allclose(spectra[1][2], [0.5664, 0.5424, 0.5237])
+    assert 'column 9' in notes[0] and '7 leading columns' in notes[0]
+
+
+def test_every_paste_says_whether_it_read_columns_or_rows():
+    """The message after a paste always names the layout, so a wrong guess
+    is noticed: columns without a header row too."""
+    for text, words in (('200 1 2\n201 3 4\n202 5 6', 'read in columns'),
+                        ('x,a\n1,2.5\n2,3.5\n3,4', 'names from the header row'),
+                        ('230\t231\t232\n0,1\t0,2\t0,3\n0,4\t0,5\t0,6', 'read in rows'),
+                        ('5\n6\n7', 'One column only')):
+        _, _, notes = parse_table(text)
+        assert len(notes) == 1 and words in notes[0], (text, notes)
+    _, _, notes = parse_table('200 1 2\n201 3 4\n202 5 6')
+    assert 'header' not in notes[0]
+
+
+def test_decreasing_x_is_stored_increasing_and_errors_are_plain():
+    _, spectra, _ = parse_table('210\t1\n205\t2\n200\t3')
+    assert np.allclose(spectra[0][1], [200, 205, 210]) and np.allclose(spectra[0][2], [3, 2, 1])
+    for bad, words in (('', 'empty'), ('hello\nworld', 'Not a table'),
+                       ('1\t2\n1\t3\n1\t4', 'not increasing')):
+        with pytest.raises(ClipboardTableError) as e:
+            parse_table(bad)
+        assert words in str(e.value)
+
+
 # --- the main window -----------------------------------------------------------------------
 
 @pytest.fixture
@@ -70,6 +149,42 @@ def mc(tmp_path, monkeypatch):
 
 def _labels(mc):
     return [mc.spectra_list_widget.item(i).text() for i in range(mc.spectra_list_widget.count())]
+
+
+def test_paste_into_an_empty_and_into_a_loaded_workspace(mc):
+    assert mc.paste_data_from_clipboard('nm\tA\tB\n200\t1\t2\n201\t3\t4\n202\t5\t6') == 2
+    assert _labels(mc) == ['Pasted 1 : A', 'Pasted 1 : B']
+    mc.import_controller._run_import(clear_first=False, file_paths=[DATA])
+    _pump()
+    n = len(_labels(mc))
+    om = mc.operations_controller.operations_manager
+    steps = len(om.operations_chain)
+    assert mc.paste_data_from_clipboard('x;y\n1;2\n2;3\n3;5') == 1
+    assert len(_labels(mc)) == n + 1 and 'Pasted 2 : y' in _labels(mc)
+    assert om.operations_chain[-1]['type'] == 'Import' and len(om.operations_chain) == steps + 1
+    pasted = [s for s in mc.original_spectra if s['label'] == 'Pasted 2 : y'][0]
+    assert pasted['metadata']['source'] == 'clipboard'
+    assert mc.paste_data_from_clipboard('just words') == 0      # explained, nothing added
+    assert mc.messages and 'Copy a block of numbers' in mc.messages[-1]
+
+
+def test_ctrl_v_still_pastes_copies_of_spectra(mc):
+    """Numbers are pasted with Ctrl+Shift+V; Ctrl+V on the list stays the
+    copy / paste of spectra, whatever the clipboard holds."""
+    mc.import_controller._run_import(clear_first=True, file_paths=[DATA])
+    _pump()
+    mc.spectrum_selector.select_all_items()
+    _pump()
+    n = len(_labels(mc))
+    mc.copy_spectra_to_clipboard()
+    QApplication.clipboard().setText('x\ty\n1\t2\n2\t3\n3\t4')
+    mc.paste_spectra_from_clipboard()
+    _pump()
+    assert len(_labels(mc)) == 2 * n and not any(l.startswith('Pasted') for l in _labels(mc))
+    assert mc.paste_data_action.shortcut().toString() == 'Ctrl+Shift+V'
+    mc.paste_data_action.trigger()
+    _pump()
+    assert 'Pasted 1 : y' in _labels(mc)
 
 
 def test_cursor_lists_values_and_copies_pinned_ones(mc):

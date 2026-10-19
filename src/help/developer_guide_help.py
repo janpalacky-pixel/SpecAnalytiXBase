@@ -3533,7 +3533,7 @@ def _natural_sort_key(cls, label):
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
-        <h2 id="conveniences-design">Cursor</h2>
+        <h2 id="conveniences-design">Cursor and paste from clipboard</h2>
         <ul>
             <li><b>Cursor</b> (<code>plot_cursor_controller.py</code>, values in Qt-free
             <code>cursor_values.py</code>): attached to every new main-plot canvas at the end of
@@ -3543,6 +3543,11 @@ def _natural_sort_key(cls, label):
             drawn <code>Line2D</code> data (lines with more than 2 points, not the controller's own),
             interpolated, never extrapolated. Pinned cursors are ordinary artists
             (gid <code>sax_cursor_pinned</code>) re-created after each plot.</li>
+            <li><b>Paste data</b>: <code>clipboard_table.parse_table()</code> (Qt-free: separators,
+            decimal comma, header row, tables in rows); <code>MainController.paste_data_from_clipboard</code>
+            stores the spectra in the import <code>SpectrumManager</code> and emits the same signals
+            as an import (<code>spectra_imported</code> into an empty workspace, else
+            <code>spectra_added</code> &rarr; an "Import" history step).</li>
         </ul>
 
         <h2 id="factor-count-design">How many components: factor_diagnostics</h2>

@@ -410,6 +410,7 @@ class MainController(QMainWindow):
             f"Paste {n_clip} cop{'y' if n_clip == 1 else 'ies'}\tCtrl+V" if n_clip
             else "Paste\tCtrl+V")
         paste_action.setEnabled(bool(n_clip))
+        paste_data_action = context_menu.addAction("Paste data from clipboard (Excel, text)\tCtrl+Shift+V")
         context_menu.addSeparator()
         delete_action = context_menu.addAction("Delete spectra")
 
@@ -455,6 +456,9 @@ class MainController(QMainWindow):
         elif action == paste_action:
             self.paste_spectra_from_clipboard()
 
+        elif action == paste_data_action:
+            self.paste_data_from_clipboard()
+
         elif action == delete_action:
             self.spectrum_selector.delete_selected_spectra()
 
@@ -486,14 +490,81 @@ class MainController(QMainWindow):
                      f"to add the copies")
 
     def paste_spectra_from_clipboard(self):
-        """Ctrl+V: add copies of the spectra remembered by Ctrl+C."""
+        """Ctrl+V: add copies of the spectra remembered by Ctrl+C. (Numbers
+        copied in Excel: Ctrl+Shift+V, paste_data_from_clipboard.)"""
         sources = list(getattr(self, 'spectra_clipboard', None) or [])
         if not sources:
-            self._status("Nothing to paste: select spectra and press Ctrl+C first")
+            self._status("Nothing to paste: select spectra and press Ctrl+C first "
+                         "(numbers copied in Excel: Ctrl+Shift+V)")
             return
         self._copy_selected_spectra(sources)
         n = len(sources)
         self._status(f"{n} cop{'y' if n == 1 else 'ies'} added (_copy)")
+
+    def paste_data_from_clipboard(self, text=None):
+        """File -> Paste data from clipboard (Ctrl+Shift+V): numbers copied
+        from Excel or any text table become new spectra (first column = x,
+        one spectrum per further column; see clipboard_table.py). They are
+        added like an import ("Import" step in the Operations History, so
+        Undo removes them) and named "Pasted N : <column name>".
+        Returns the number of spectra added."""
+        import datetime
+        import uuid
+        from src.modules.data_io.clipboard_table import ClipboardTableError, parse_table
+        from src.modules.utils.correction_history import append_correction_history
+        if text is None:
+            text = QApplication.clipboard().text()
+        try:
+            x_name, columns, notes = parse_table(text)
+        except ClipboardTableError as exc:
+            QMessageBox.information(
+                self.view, "Paste data from clipboard",
+                f"{exc}\n\nCopy a block of numbers, e.g. in Excel: x in the first column and "
+                "one spectrum in each further column (an optional header row gives the "
+                "names), then use File \u2192 Paste data from clipboard (Ctrl+Shift+V).")
+            return 0
+        ic = self.import_controller
+        manager = ic.spectrum_manager
+        k = 1
+        while any(lbl.startswith(f"Pasted {k} : ") for lbl in manager.spectra):
+            k += 1
+        prefix = f"Pasted {k}"
+        was_empty = not manager.spectra
+        before = set(manager.spectra)
+        when = datetime.datetime.now().isoformat(timespec='seconds')
+        for name, x, y in columns:
+            manager._store_spectrum_dict({
+                'label': f"{prefix} : {name}",
+                'x_scale': x,
+                'y_scale': y,
+                'metadata': {
+                    'unique_id': str(uuid.uuid4()),
+                    'source': 'clipboard',
+                    'pasted_at': when,
+                    'x_column': x_name,
+                    'correction_history': append_correction_history(
+                        None, 'Paste data from clipboard', {'column': name}),
+                },
+            })
+        new_labels = [lbl for lbl in manager.spectra if lbl not in before]
+        if not new_labels:
+            return 0
+        if was_empty:
+            ic.spectra_cleared.emit()
+            ic.spectra_imported.emit()
+        else:
+            ic.spectra_added.emit([
+                {'label': lbl, 'x_scale': manager.spectra[lbl].x_scale,
+                 'y_scale': manager.spectra[lbl].y_scale,
+                 'metadata': manager.spectra[lbl].metadata} for lbl in new_labels])
+        n = len(new_labels)
+        self._status(f"{n} spectr{'um' if n == 1 else 'a'} pasted from the clipboard "
+                     f"({prefix})", 8000)
+        if notes:
+            QMessageBox.information(self.view, "Paste data from clipboard",
+                                    f"{n} spectr{'um' if n == 1 else 'a'} added ({prefix}).\n\n"
+                                    + "\n".join(notes))
+        return n
 
     def _copy_selected_spectra(self, sources=None):
         """Create copies of the selected spectra (or of `sources`, given
@@ -968,6 +1039,17 @@ class MainController(QMainWindow):
 
         copy_spectra_shortcut_v = QShortcut(QKeySequence("Ctrl+V"), self.spectra_list_widget)
         copy_spectra_shortcut_v.activated.connect(self.paste_spectra_from_clipboard)
+
+        # File -> Paste data from clipboard (numbers from Excel / text)
+        from PyQt5.QtWidgets import QAction
+        self.paste_data_action = QAction("Paste data from clipboard (Excel, text)", self.view)
+        self.paste_data_action.setShortcut(QKeySequence("Ctrl+Shift+V"))
+        self.paste_data_action.setStatusTip(
+            "Numbers copied in Excel or any text table become new spectra: x in the first "
+            "column, one spectrum per further column")
+        self.paste_data_action.triggered.connect(lambda: self.paste_data_from_clipboard())
+        if hasattr(self.view, 'menuFile') and hasattr(self.view, 'actionImport_Snapshot'):
+            self.view.menuFile.insertAction(self.view.actionImport_Snapshot, self.paste_data_action)
 
         # Ctrl+D and the Delete key both trigger Delete Spectra directly —
         # spectrum_selector.delete_selected_spectra() already asks for

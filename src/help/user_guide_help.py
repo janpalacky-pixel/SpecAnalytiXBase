@@ -392,6 +392,44 @@ def get_user_guide_help_content():
             <li><strong>File → Import data → new:</strong> Replace all current spectra. If every selected file fails to import, existing spectra are left untouched — nothing is cleared until at least one new file has actually loaded successfully.</li>
             <li><strong>File → Import data → add:</strong> Append to existing spectra</li>
             <li><strong>Drag and drop:</strong> drag spectrum files from your file manager and drop them anywhere on the application window — opens the same Import dialog with those files already selected. If spectra are already loaded it first asks whether to <strong>Add</strong> (keep them) or <strong>Replace all</strong>; <strong>Add</strong> is the default, so a stray drag can never discard your work. The same prompt appears for the built-in datasets under Help → Test datasets.</li>
+            <li><strong>Paste data from clipboard</strong> (File menu, <strong>Ctrl+Shift+V</strong>,
+                or right-click on the spectra list): numbers copied in Excel or from any text table
+                become new spectra; a decimal comma works too. In the Import dialog you choose the
+                layout yourself; paste has to <em>guess</em> whether the spectra are in columns or
+                in rows. It decides like this:
+                <ul>
+                    <li><strong>In columns</strong> (the default): x in the first column, one
+                        spectrum in each further column; an optional header row gives the names.</li>
+                    <li><strong>In rows</strong> (one spectrum per row) only when
+                        <ul>
+                            <li>the first column holds names (text) and the rest of each row numbers
+                                &mdash; x is then the header row (e.g. Name | 230 | 231 | &hellip;)
+                                or the first row; or</li>
+                            <li>it is a whole spectrometer export with several leading columns (e.g.
+                                No. | Type | Name | Date | Note | Temperature | 230 | 231 | &hellip;):
+                                x = the numbers at the end of the header row, the names from the
+                                column headed <em>Name</em> / <em>Label</em> / <em>Sample</em> (else
+                                the first text column that differs between rows), the other leading
+                                columns are left out; or</li>
+                            <li>there are only numbers, and the first column does not steadily
+                                increase or decrease while the first row does &mdash; the first row
+                                is then x.</li>
+                        </ul></li>
+                </ul>
+                <strong>Check the result.</strong> Numbers alone can be read both ways: when both the
+                first column and the first row increase (e.g. a small block cut out of a larger
+                table), paste reads them in columns. After every paste a message says how the table
+                was read (in columns or in rows) and which columns were used. If the result looks wrong (number of spectra, x
+                range), remove the pasted spectra and use the Import dialog instead: it shows a
+                preview and lets you choose the layout (<em>Row-oriented</em> or columns), the name
+                column and the header rows. When you know the layout of a file in advance, the
+                Import dialog is the safer way; paste is the quick way for a table you already have
+                open.<br>
+                The spectra are named <em>Pasted 1 : &lt;name&gt;</em>; a name that occurs more
+                than once gets (2), (3), &hellip; added. Pasted into an empty workspace they are the
+                starting data (<em>Original state</em> of the Operations History), like a first
+                import; pasted later they become an <em>Import</em> step (Undo removes them).
+                (<strong>Ctrl+V</strong> on the spectra list stays the paste of copied spectra.)</li>
         </ul>
 
         <div class="screenshot">
