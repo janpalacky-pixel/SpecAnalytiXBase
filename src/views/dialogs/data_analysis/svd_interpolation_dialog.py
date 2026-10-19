@@ -19,7 +19,7 @@ from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import (
     make_shortened_name_delegate, make_shorten_names_checkbox,
     make_display_text_delegate, shorten_spectra_labels)
-from src.views.dialogs.misc.splitter_utils import no_collapse, scrollable_panel
+from src.views.dialogs.misc.splitter_utils import fit_on_first_show, no_collapse, scrollable_panel
 
 logger = get_logger(__name__)
 
@@ -852,6 +852,7 @@ class SVDInterpolationDialog(QDialog):
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         left_scroll.setMinimumWidth(300)
         splitter.addWidget(left_scroll)
+        fit_on_first_show(left_scroll)     # opens wide enough for its controls
 
         # ---------------- Right: plots ----------------
         self._tabs = QTabWidget()
