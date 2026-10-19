@@ -3533,6 +3533,18 @@ def _natural_sort_key(cls, label):
             (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
+        <h2 id="conveniences-design">Cursor</h2>
+        <ul>
+            <li><b>Cursor</b> (<code>plot_cursor_controller.py</code>, values in Qt-free
+            <code>cursor_values.py</code>): attached to every new main-plot canvas at the end of
+            <code>_plot_spectra_impl</code>. The moving line, dots and box are <i>animated</i>
+            artists drawn with blitting (background saved on <code>draw_event</code>), so a mouse
+            move never redraws the spectra (thousands of lines take seconds). Values come from the
+            drawn <code>Line2D</code> data (lines with more than 2 points, not the controller's own),
+            interpolated, never extrapolated. Pinned cursors are ordinary artists
+            (gid <code>sax_cursor_pinned</code>) re-created after each plot.</li>
+        </ul>
+
         <h2 id="factor-count-design">How many components: factor_diagnostics</h2>
         <ul>
             <li><code>src/modules/visualization_analysis/factor_diagnostics.py</code> (Qt-free) is the

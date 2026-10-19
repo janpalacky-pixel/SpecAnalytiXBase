@@ -862,7 +862,21 @@ def get_user_guide_help_content():
 
         <h3>Navigation Toolbar</h3>
         <p>The matplotlib toolbar (below the plot) provides: Home, Back, Forward, Pan,
-        Zoom, Axis properties, Curve properties, and Save figure.</p>
+        Zoom, Axis properties, Curve properties, and Save figure. Its right end shows the
+        mouse position (x, y) while the pointer is over the plot.</p>
+
+        <h3 id="cursor">Cursor (values of the spectra at one x)</h3>
+        <p>Tick <strong>Cursor</strong> in <em>Basic plot options</em>: a dashed vertical line
+        follows the mouse, a dot marks where it crosses each drawn spectrum, and a box next to it
+        lists x and the value of every spectrum there (interpolated between the measured points;
+        a spectrum has no value outside its own x-range). With more than 10 spectra the 10 nearest
+        to the mouse pointer's height are listed. <strong>Click</strong> to pin a cursor
+        (numbered 1, 2, &hellip;; several can be pinned); right-click on the plot &rarr;
+        <em>Copy cursor values</em> copies a table (one row per spectrum, one column per pinned
+        cursor) to paste into Excel, <em>Clear pinned cursors</em> removes them. Pinned cursors
+        stay when the plot is drawn again, e.g. for another selection. In a Waterfall plot only x
+        is shown (the curves are shifted); Pan and Zoom of the toolbar switch the cursor off while
+        they are active.</p>
 
         <h3>Context Menu (right-click on plot)</h3>
         <p>Right-clicking anywhere on the plot canvas opens a context menu with the

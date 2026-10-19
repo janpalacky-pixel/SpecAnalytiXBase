@@ -182,6 +182,9 @@ class MainController(QMainWindow):
         # (View -> Plotting many spectra…)
         from src.controllers.visualization.large_plot_controller import LargePlotController
         self.large_plot_controller = LargePlotController(self)
+        # 'Cursor' above the plot: vertical cursor with the spectra's values
+        from src.controllers.visualization.plot_cursor_controller import PlotCursorController
+        self.plot_cursor_controller = PlotCursorController(self)
         self._add_methods_report_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
@@ -654,6 +657,26 @@ class MainController(QMainWindow):
         self.refresh_plot_button = QPushButton("Refresh Plot")
         self.refresh_plot_button.setVisible(False)  # Initially hidden since interactive mode is on
         layout.addWidget(self.refresh_plot_button)
+
+        # Vertical cursor with the value of every drawn spectrum (see
+        # plot_cursor_controller.py)
+        self.cursor_checkbox = QCheckBox("Cursor")
+        self.cursor_checkbox.setToolTip(
+            "A vertical line follows the mouse over the plot and lists x and the value of\n"
+            "every drawn spectrum there (the 10 nearest to the pointer when more are drawn).\n"
+            "Click to pin a cursor (several possible); right-click on the plot \u2192\n"
+            "'Copy cursor values' copies their values as a table for Excel.\n"
+            "The mouse position (x, y) is also shown in the toolbar under the plot.")
+        self.cursor_checkbox.toggled.connect(
+            lambda on: getattr(self, 'plot_cursor_controller', None)
+            and self.plot_cursor_controller.set_enabled(on))
+        # in 'Basic plot options', under 'Band markers…' (the row with
+        # Interactive Update has no room left)
+        grid = getattr(self.view, 'gridLayout', None)
+        if grid is not None:
+            grid.addWidget(self.cursor_checkbox, 8, 0, 1, 2)
+        else:
+            layout.addWidget(self.cursor_checkbox)
 
         # Show / hide the legend: 'show legend' in Basic plot options, under
         # 'automatic line colors' (redraws only the legend); the ☰ Legend
@@ -2348,6 +2371,9 @@ class MainController(QMainWindow):
         self.graphics_layout.addWidget(plot_widget)
         if large_info is not None:
             large.finish(plot_widget, self.static_canvas, large_info)
+        cursor = getattr(self, 'plot_cursor_controller', None)
+        if cursor is not None:
+            cursor.attach(self.static_canvas, plot_type)
 
     def handle_mouse_click(self, event):
         """Handle mouse clicks on the canvas."""
@@ -2392,6 +2418,16 @@ class MainController(QMainWindow):
         context_menu.addSeparator()
         new_figure_action = context_menu.addAction("Open in New Window")        
 
+        # Pinned cursors (Cursor checkbox above the plot)
+        cursor = getattr(self, 'plot_cursor_controller', None)
+        copy_cursor_action = clear_cursor_action = None
+        if cursor is not None and cursor.pinned:
+            context_menu.addSeparator()
+            n_pin = len(cursor.pinned)
+            copy_cursor_action = context_menu.addAction(
+                f"Copy cursor values ({n_pin} pinned cursor{'s' if n_pin != 1 else ''})")
+            clear_cursor_action = context_menu.addAction("Clear pinned cursors")
+
         # Convert matplotlib event coordinates to global screen coordinates
         canvas = self.static_canvas
         point = canvas.mapToGlobal(canvas.geometry().topLeft())
@@ -2416,6 +2452,12 @@ class MainController(QMainWindow):
             self.constrained_layout_controller.show_dialog()
         elif action == new_figure_action:
             self.open_external_figure()
+        elif copy_cursor_action is not None and action == copy_cursor_action:
+            n = cursor.copy_table()
+            self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "
+                         f"\u2014 paste them into Excel")
+        elif clear_cursor_action is not None and action == clear_cursor_action:
+            cursor.clear_pinned()
         elif action == automatic_line_colors_action:
             # Toggle the checkbox state and update the plot
             self.use_automatic_line_colors = automatic_line_colors_action.isChecked()
