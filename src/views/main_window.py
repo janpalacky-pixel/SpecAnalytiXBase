@@ -1832,6 +1832,9 @@ class MainWindow(QMainWindow):
         self.actionLicense.setText("License")
 
         # About -- version / build / library versions of this running copy.
+        self.actionRunTests = QAction(self)
+        self.actionRunTests.setObjectName("actionRunTests")
+        self.actionRunTests.setText("Run tests…")
         self.actionAbout = QAction(self)
         self.actionAbout.setObjectName("actionAbout")
         self.actionAbout.setText("About SpecAnalytiXBase")
@@ -1945,6 +1948,7 @@ class MainWindow(QMainWindow):
         self.menuHelp.addAction(self.actionOur_Institute)
         self.menuHelp.addSeparator()
         self.menuHelp.addAction(self.actionLicense)
+        self.menuHelp.addAction(self.actionRunTests)
         self.menuHelp.addAction(self.actionAbout)
 
         # Add actions to other menus

@@ -1628,6 +1628,13 @@ class MainController(QMainWindow):
         self.view.actionDeveloperGuide.triggered.connect(self.show_developer_guide_help)
         self.view.actionLicense.triggered.connect(self.show_license_help)
         self.view.actionAbout.triggered.connect(self.show_about_dialog)
+        if hasattr(self.view, 'actionRunTests'):
+            from src.modules.utils.self_test import availability
+            ok, why = availability()
+            self.view.actionRunTests.setEnabled(ok)
+            self.view.actionRunTests.setStatusTip(
+                "Run the program's own checks on this computer" if ok else why)
+            self.view.actionRunTests.triggered.connect(self.show_run_tests_dialog)
         self.view.help_operations_pushButton.clicked.connect(self.show_user_guide_help)
         self.view.actionInteractiveSubtractionHelp.triggered.connect(self.show_interactive_subtraction_help)
         self.view.actionCombineSpectraHelp.triggered.connect(self.show_combine_spectra_help)
@@ -2077,6 +2084,11 @@ class MainController(QMainWindow):
         if not hasattr(self, '_methods_report_draft'):
             self._methods_report_draft = {}
         MethodsReportDialog(report, self.view, start_dir, self._methods_report_draft).exec_()
+
+    def show_run_tests_dialog(self):
+        """Help -> Run tests...: the program's own test suite (self_test.py)."""
+        from src.views.dialogs.misc.run_tests_dialog import open_run_tests_dialog
+        return open_run_tests_dialog(self.view)
 
     def show_about_dialog(self):
         """Help > About: app version, source-vs-installed, and the Python /

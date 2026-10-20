@@ -2416,6 +2416,25 @@ def get_user_guide_help_content():
 
         <h2 id="troubleshooting">12. Troubleshooting</h2>
 
+        <h3 id="run-tests">Checking that the program works on this computer: Run tests</h3>
+        <p><strong>Help &rarr; Run tests&hellip;</strong> (also a button in <em>Help &rarr; About</em>)
+        runs the program's own checks &mdash; about 1&nbsp;300 small tests of import, processing,
+        analysis, plotting and the windows, taking roughly 5&ndash;10 minutes. Click
+        <strong>Start</strong>; a progress bar, the numbers of passed / failed / skipped tests and
+        their output follow. The tests run in a separate, invisible process: you can keep working,
+        and your spectra, settings and automatic saves are not touched.</p>
+        <ul>
+            <li>At the end a green line says <em>All tests passed</em>, or a red line says how many
+                failed.</li>
+            <li><strong>Save output&hellip;</strong> writes everything into one text file &mdash;
+                together with the information from Help &rarr; About (version, Python and library
+                versions) &mdash; to send to the developer; <strong>Copy</strong> puts the same text on
+                the clipboard. <strong>Stop</strong> ends a run early.</li>
+            <li>Available when SpecAnalytiXBase runs from its Python source
+                (<code>python main.py</code>, with <code>pytest</code> installed). In the installed
+                version the entry is greyed out: it does not contain the tests.</li>
+        </ul>
+
         <h3>Import Problems</h3>
         <table>
             <tr><th>Symptom</th><th>Cause</th><th>Solution</th></tr>

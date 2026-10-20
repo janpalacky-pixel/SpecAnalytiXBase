@@ -4195,6 +4195,22 @@ pytest tests/ -v
         importantly that the Spectral Calculator silently created undefined values (log/sqrt of negative
         CD data) which later made SVD/MCR-ALS/clustering fail with cryptic errors.</p>
 
+        <h3 id="run-tests-in-app">Running the tests from the program</h3>
+        <p><b>Help &rarr; Run tests&hellip;</b> (and a button in Help &rarr; About) runs the same suite
+        for users and colleagues who run the source: <code>RunTestsDialog</code>
+        (<code>src/views/dialogs/misc/run_tests_dialog.py</code>) starts
+        <code>python -m pytest tests -v --color=no</code> in the project folder as a separate
+        <code>QProcess</code> with <code>QT_QPA_PLATFORM=offscreen</code> (no windows) and reads its
+        output line by line with <code>self_test.OutputReader</code>
+        (<code>src/modules/utils/self_test.py</code>, Qt-free): counts, progress from the
+        <code>[ 45%]</code> column, the summary line, and the result text for exit code 0 (all
+        passed), 1 (some failed) or anything else (the run ended unexpectedly, e.g. a crash).
+        <i>Save output&hellip;</i> / <i>Copy</i> add the About information, so one file is enough for a
+        bug report. <code>self_test.availability()</code> greys it out in the PyInstaller build
+        (<code>sys.frozen</code>), without a <code>tests</code> folder or without pytest. Its tests
+        (<code>tests/test_run_tests_dialog.py</code>) run small demo test files, not the suite
+        itself.</p>
+
         <h3 id="tests-on-windows">When the suite fails only on Windows: lessons from October 2026</h3>
         <p>After new tests were added on 19 October 2026, <code>pytest tests/ -v</code> on Windows
         ended silently at about 20&nbsp;% and later hung at about 60&nbsp;%, while every test passed

@@ -46,9 +46,23 @@ class AboutDialog(QDialog):
             "Copy this information, e.g. to paste into a bug report.")
         self.copy_button.clicked.connect(self.copy_to_clipboard)
         buttons.addButton(self.copy_button, QDialogButtonBox.ActionRole)
+        from src.modules.utils.self_test import availability
+        self.run_tests_button = QPushButton("Run tests…")
+        ok, why = availability()
+        self.run_tests_button.setEnabled(ok)
+        self.run_tests_button.setToolTip(
+            "Run the program's own checks to see whether it works correctly on this "
+            "computer (Help › Run tests…)." if ok else why)
+        self.run_tests_button.clicked.connect(self.run_tests)
+        buttons.addButton(self.run_tests_button, QDialogButtonBox.ActionRole)
         buttons.addButton(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def run_tests(self):
+        from src.views.dialogs.misc.run_tests_dialog import open_run_tests_dialog
+        self.accept()                          # the test window stays; About closes
+        return open_run_tests_dialog(self.parent())
 
     def copy_to_clipboard(self):
         QApplication.clipboard().setText(self.details.toPlainText())
