@@ -3,20 +3,31 @@
 Help -> About -> Run tests...), without Qt: whether it is possible here, the
 command, and reading pytest's output line by line (progress, counts, result).
 
-The tests run as a separate process -- `python -m pytest tests -v` in the
-project folder, with invisible windows (QT_QPA_PLATFORM=offscreen) -- so the
-open program and its workspace are never touched; tests/conftest.py also
-points the per-user files (automatic saves, preferences) to a temporary
-folder. Available when the program runs from its Python source; the
-installed (PyInstaller) version contains neither the tests nor pytest."""
+The tests run as a separate process -- the program itself started with
+`--run-tests` (`python main.py --run-tests tests -v` from the Python source,
+`SpecAnalytiXBase.exe --run-tests tests -v` in the installed version), which
+runs pytest instead of opening the window -- in the project folder (in the
+installed version its _internal folder, where the build puts the tests and
+pytest.ini), with invisible windows (QT_QPA_PLATFORM=offscreen), so the open
+program and its workspace are never touched; tests/conftest.py also points
+the per-user files (automatic saves, preferences) to a temporary folder.
+
+pytest's output goes to a file (--output), read by the Run tests window while
+the tests run: the installed program is a Windows program without a console,
+whose printed output would otherwise be lost."""
 
 import importlib.util
 import os
 import re
 import sys
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))
+if getattr(sys, 'frozen', False):
+    PROJECT_ROOT = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))))
+
+RUN_TESTS_ARG = '--run-tests'          # main.py: run pytest instead of opening the window
 
 _STATUS = re.compile(r'\s(PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASS)\b')
 _PERCENT = re.compile(r'\[\s*(\d{1,3})%\]\s*$')
@@ -26,19 +37,53 @@ _COUNT = re.compile(r'(\d+) (passed|failed|skipped|errors?|xfailed|xpassed|warni
 
 def availability(root=PROJECT_ROOT):
     """(True, '') when the tests can be run here, else (False, why)."""
-    if getattr(sys, 'frozen', False):
-        return False, ("Available when SpecAnalytiXBase runs from its Python source "
-                       "(python main.py); the installed version does not contain the tests.")
+    frozen = getattr(sys, 'frozen', False)
     if not os.path.isdir(os.path.join(root, 'tests')):
+        if frozen:
+            return False, ("This installed version was built without the tests "
+                           f"({os.path.join(root, 'tests')} is missing).")
         return False, f"The folder with the tests was not found ({os.path.join(root, 'tests')})."
     if importlib.util.find_spec('pytest') is None:
+        if frozen:
+            return False, "This installed version was built without pytest."
         return False, "pytest is not installed in this Python (pip install pytest)."
     return True, ''
 
 
-def command(args=('tests',)):
-    """The command line that runs the tests (as a list)."""
-    return [sys.executable, '-m', 'pytest', *args, '-v', '--color=no']
+def command(args=('tests',), output=None):
+    """The command line that runs the tests (as a list): the program itself
+    with --run-tests; pytest's output goes to the file `output`."""
+    if getattr(sys, 'frozen', False):
+        start = [sys.executable]
+    else:
+        start = [sys.executable, os.path.join(PROJECT_ROOT, 'main.py')]
+    out = ['--output', output] if output else []
+    return [*start, RUN_TESTS_ARG, *out, *args, '-v', '--color=no', '-p', 'no:cacheprovider']
+
+
+def run_tests_here(argv):
+    """main.py --run-tests [--output FILE] [pytest arguments]: run pytest in
+    this process (instead of opening the window) and return its exit code.
+    Everything printed -- also by the maths libraries, below Python -- goes
+    to FILE, line by line."""
+    if argv[:1] == ['--output'] and len(argv) > 1:
+        path, argv = argv[1], argv[2:]
+        f = open(path, 'w', encoding='utf-8', errors='replace')
+        os.dup2(f.fileno(), 1)
+        os.dup2(f.fileno(), 2)
+        f.close()
+        sys.stdout = open(1, 'w', encoding='utf-8', errors='replace', buffering=1, closefd=False)
+        sys.stderr = open(2, 'w', encoding='utf-8', errors='replace', buffering=1, closefd=False)
+    sys.dont_write_bytecode = True        # the installed program's folder is read-only
+    import pytest
+    try:
+        return int(pytest.main(list(argv)))
+    finally:
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.flush()
+            except Exception:
+                pass
 
 
 def environment():

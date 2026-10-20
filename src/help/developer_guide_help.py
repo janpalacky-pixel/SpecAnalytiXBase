@@ -4211,19 +4211,39 @@ pytest tests/ -v
 
         <h3 id="run-tests-in-app">Running the tests from the program</h3>
         <p><b>Help &rarr; Run tests&hellip;</b> (and a button in Help &rarr; About) runs the same suite
-        for users and colleagues who run the source: <code>RunTestsDialog</code>
-        (<code>src/views/dialogs/misc/run_tests_dialog.py</code>) starts
-        <code>python -m pytest tests -v --color=no</code> in the project folder as a separate
-        <code>QProcess</code> with <code>QT_QPA_PLATFORM=offscreen</code> (no windows) and reads its
-        output line by line with <code>self_test.OutputReader</code>
+        in the installed version and from the source: <code>RunTestsDialog</code>
+        (<code>src/views/dialogs/misc/run_tests_dialog.py</code>) starts the program itself again
+        with <code>--run-tests</code> &mdash; <code>python main.py --run-tests --output FILE tests
+        -v</code> from the source, <code>SpecAnalytiXBase.exe --run-tests &hellip;</code> installed
+        &mdash; as a separate <code>QProcess</code> with <code>QT_QPA_PLATFORM=offscreen</code> (no
+        windows), in the project folder (installed: <code>_internal</code>). <code>main.py</code>
+        then calls <code>self_test.run_tests_here()</code>, which runs <code>pytest.main()</code>
+        instead of opening the window, with stdout and stderr (file descriptors 1 and 2, so also
+        what the maths libraries print) redirected to FILE: the installed program is a Windows
+        program without a console, whose output would otherwise be lost. The window reads FILE
+        every 150&nbsp;ms, line by line, with <code>self_test.OutputReader</code>
         (<code>src/modules/utils/self_test.py</code>, Qt-free): counts, progress from the
         <code>[ 45%]</code> column, the summary line, and the result text for exit code 0 (all
         passed), 1 (some failed) or anything else (the run ended unexpectedly, e.g. a crash).
         <i>Save output&hellip;</i> / <i>Copy</i> add the About information, so one file is enough for a
-        bug report. <code>self_test.availability()</code> greys it out in the PyInstaller build
-        (<code>sys.frozen</code>), without a <code>tests</code> folder or without pytest. Its tests
+        bug report. <code>self_test.availability()</code> greys it out without a
+        <code>tests</code> folder or without pytest. Its tests
         (<code>tests/test_run_tests_dialog.py</code>) run small demo test files, not the suite
         itself.</p>
+        <p><b>In the installed version.</b> Every build command (<code>BuildInstaller.bat</code>,
+        both GitHub workflows) passes <code>--additional-hooks-dir=build_hooks</code>. The hook
+        <code>build_hooks/hook-src.modules.utils.self_test.py</code> runs when PyInstaller packs
+        <code>self_test.py</code> and adds the <code>tests</code> folder (without
+        <code>__pycache__</code>) and <code>pytest.ini</code> to <code>_internal</code>, and every
+        module the tests import &mdash; read from their <code>import</code> lines, e.g.
+        <code>unittest.mock</code>, which the program itself never imports. pytest is packed because
+        <code>self_test.py</code> imports it. A new test therefore needs no change to the build.
+        The tests that check the program's source and build files (<code>main.py</code>, the code
+        in <code>src/</code>, <code>installer.iss</code>) cannot run there; they are listed in
+        <code>SOURCE_FILE_CHECKS</code> in <code>tests/conftest.py</code> and skipped in the
+        installed version (<code>sys.frozen</code>). A new test of that kind goes into that list
+        (<code>tests/test_tests_in_installed_version.py</code> checks that every listed name
+        exists).</p>
 
         <h3 id="tests-on-windows">When the suite fails only on Windows: lessons from October 2026</h3>
         <p>After new tests were added on 19 October 2026, <code>pytest tests/ -v</code> on Windows
@@ -4299,7 +4319,8 @@ pytest tests/ -v
         <ol>
             <li>Runs <code>pyinstaller</code> directly from the command line —
                 <code>--name</code>, <code>--windowed</code>, <code>--onedir</code>,
-                <code>--add-data</code>, <code>--icon</code> are all baked into the
+                <code>--add-data</code>, <code>--additional-hooks-dir</code> (the tests for
+                Help &rarr; Run tests, see above), <code>--icon</code> are all baked into the
                 <code>.bat</code> file itself — against <code>main.py</code>.
                 PyInstaller writes <code>SpecAnalytiXBase.spec</code> and the
                 <code>build/</code> and <code>dist/</code> folders as a side effect

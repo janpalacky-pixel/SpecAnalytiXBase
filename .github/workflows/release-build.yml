@@ -73,6 +73,7 @@ jobs:
         run: >-
           pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
           --add-data "resources;resources"
+          --additional-hooks-dir=build_hooks
           --icon="resources/icons/app_icon.ico" main.py
 
       # windows-latest doesn't ship Inno Setup — install it via

@@ -1,7 +1,8 @@
 @echo off
 
 REM Build executable with PyInstaller
-pyinstaller --name="SpecAnalytiXBase" --windowed --onedir --add-data "resources;resources" --icon="resources/icons/app_icon.ico" main.py
+REM (build_hooks adds the program's own tests, so that Help - Run tests works in the installed version)
+pyinstaller --name="SpecAnalytiXBase" --windowed --onedir --add-data "resources;resources" --additional-hooks-dir=build_hooks --icon="resources/icons/app_icon.ico" main.py
 if errorlevel 1 (
     echo PyInstaller build failed - stopping.
     pause

@@ -6,7 +6,47 @@
 import numpy as np
 import pytest
 import os
+import sys
 import tempfile
+
+
+# ---------------------------------------------------------------------------
+# In the installed version (Help -> Run tests... of SpecAnalytiXBase.exe)
+# ---------------------------------------------------------------------------
+# These tests check the program's source and build files (main.py, the source
+# code in src/, installer.iss): they make sure the program is written and
+# built correctly. The installed version does not contain those files, so
+# there they are skipped (test_installer_script.py is not even read: it opens
+# installer.iss as soon as it is loaded).
+
+SOURCE_FILE_CHECKS = {
+    # file: the tests that read source files (None = all tests of the file)
+    'test_installer_script.py': None,
+    'test_tests_in_installed_version.py': {
+        'test_the_build_puts_the_tests_and_what_they_import_into_the_installed_version',
+        'test_every_build_command_uses_the_hook'},
+    'test_main_worker_safe.py': None,
+    'test_help_modules_bundled.py': None,
+    'test_operation_errors_are_logged.py': None,
+    'test_about_info.py': {'test_app_version_matches_installer_version'},
+    'test_methods_report.py': {'test_every_operation_in_the_app_is_described'},
+}
+_SOURCE_ONLY_REASON = ("checks the program's source files, which the installed version "
+                       "does not contain")
+
+collect_ignore = ['test_installer_script.py'] if getattr(sys, 'frozen', False) else []
+
+
+def pytest_collection_modifyitems(config, items):
+    if not getattr(sys, 'frozen', False):
+        return
+    skip = pytest.mark.skip(reason=_SOURCE_ONLY_REASON)
+    for item in items:
+        file = os.path.basename(str(item.fspath))
+        if file in SOURCE_FILE_CHECKS:
+            names = SOURCE_FILE_CHECKS[file]
+            if names is None or getattr(item, 'originalname', item.name) in names:
+                item.add_marker(skip)
 
 
 # ---------------------------------------------------------------------------

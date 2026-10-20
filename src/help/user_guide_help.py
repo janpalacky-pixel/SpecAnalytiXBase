@@ -2473,9 +2473,10 @@ def get_user_guide_help_content():
                 together with the information from Help &rarr; About (version, Python and library
                 versions) &mdash; to send to the developer; <strong>Copy</strong> puts the same text on
                 the clipboard. <strong>Stop</strong> ends a run early.</li>
-            <li>Available when SpecAnalytiXBase runs from its Python source
-                (<code>python main.py</code>, with <code>pytest</code> installed). In the installed
-                version the entry is greyed out: it does not contain the tests.</li>
+            <li>Works in the installed version and when SpecAnalytiXBase runs from its Python
+                source (<code>python main.py</code>, with <code>pytest</code> installed). In the
+                installed version a few tests are skipped: they check the program's source files,
+                which it does not contain.</li>
         </ul>
 
         <h3>Import Problems</h3>

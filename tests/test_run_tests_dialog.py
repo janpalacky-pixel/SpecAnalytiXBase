@@ -79,15 +79,38 @@ def test_result_texts():
     assert r.result(-9, stopped=True) == (False, 'Stopped by you after 1 tests.')
 
 
-def test_available_only_from_the_python_source(monkeypatch, tmp_path):
+def test_available_from_the_python_source_and_in_the_installed_version(monkeypatch, tmp_path):
     assert self_test.availability() == (True, '')
     assert self_test.availability(str(tmp_path))[0] is False            # no tests folder
+    start = ([sys.executable] if getattr(sys, 'frozen', False)          # installed
+             else [sys.executable, os.path.join(self_test.PROJECT_ROOT, 'main.py')])
+    cmd = self_test.command(output='out.txt')
+    assert cmd[:len(start) + 4] == start + ['--run-tests', '--output', 'out.txt', 'tests']
+    assert '-v' in cmd
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
-    ok, why = self_test.availability()
-    assert not ok and 'installed version' in why
-    cmd = self_test.command()
-    assert cmd[:3] == [sys.executable, '-m', 'pytest'] and '-v' in cmd
+    assert self_test.availability() == (True, '')        # the build puts the tests in
+    ok, why = self_test.availability(str(tmp_path))
+    assert not ok and 'built without the tests' in why
+    assert self_test.command()[:3] == [sys.executable, '--run-tests', 'tests']
     assert self_test.environment()['QT_QPA_PLATFORM'] == 'offscreen'
+
+
+def test_the_run_writes_everything_to_the_output_file(tmp_path):
+    """main.py --run-tests --output FILE: pytest's output goes to FILE, also
+    what is printed below Python (the installed program has no console)."""
+    import subprocess
+    _demo(tmp_path, "import os\n\ndef test_a():\n    os.write(1, b'LOW LEVEL\\n')\n")
+    out = tmp_path / 'out.txt'
+    cmd = self_test.command(('tests', '-s'), output=str(out))
+    # stdin=DEVNULL: in the installed program (a Windows program without a
+    # console) there is no input to hand on, and Windows refuses to try
+    proc = subprocess.run(cmd, cwd=str(tmp_path), capture_output=True, timeout=120,
+                          stdin=subprocess.DEVNULL,
+                          env=dict(os.environ, **self_test.environment()))
+    text = out.read_text(encoding='utf-8')
+    assert proc.returncode == 0, text
+    assert 'LOW LEVEL' in text and 'test_demo.py::test_a' in text and '1 passed' in text
+    assert proc.stdout == b''                             # nothing lost on the way
 
 
 # --- the window ----------------------------------------------------------------------
@@ -199,9 +222,13 @@ def test_about_button_and_help_menu_open_it(monkeypatch):
         assert about.run_tests_button.isEnabled()
         assert about.run_tests() == 'window' and opened[-1] is mc.view
         monkeypatch.setattr(sys, 'frozen', True, raising=False)
-        frozen = about_dialog.AboutDialog(mc.view)
-        assert not frozen.run_tests_button.isEnabled()
-        assert 'installed version' in frozen.run_tests_button.toolTip()
+        frozen = about_dialog.AboutDialog(mc.view)               # the installed version
+        assert frozen.run_tests_button.isEnabled()
+        monkeypatch.setattr(self_test, 'availability',
+                            lambda root=None: (False, 'built without the tests'))
+        without = about_dialog.AboutDialog(mc.view)
+        assert not without.run_tests_button.isEnabled()
+        assert 'built without the tests' in without.run_tests_button.toolTip()
     finally:
         mc.autosave_controller.shutdown()
         mc.view.deleteLater()

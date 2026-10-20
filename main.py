@@ -177,4 +177,10 @@ if __name__ == "__main__":
     # start the whole application again instead of running its task.
     # No effect when running from source.
     multiprocessing.freeze_support()
+    if len(sys.argv) > 1 and sys.argv[1] == '--run-tests':
+        # Help -> Run tests... starts the program again this way: run the
+        # program's own tests instead of opening the window
+        # (src/modules/utils/self_test.py)
+        from src.modules.utils.self_test import run_tests_here
+        sys.exit(run_tests_here(sys.argv[2:]))
     main()

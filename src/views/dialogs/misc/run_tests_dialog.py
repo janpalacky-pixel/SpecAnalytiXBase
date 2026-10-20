@@ -6,8 +6,9 @@ information) to send to the developer. See src/modules/utils/self_test.py."""
 
 import datetime
 import os
+import tempfile
 
-from PyQt5.QtCore import QProcess, QProcessEnvironment, Qt
+from PyQt5.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
 from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtWidgets import (QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -40,6 +41,11 @@ class RunTestsDialog(QDialog):
         self._process = None
         self._stopped = False
         self._buffer = ''
+        self._out_path = None              # pytest writes its output here
+        self._out_file = None
+        self._poll = QTimer(self)          # ... and this reads it while the tests run
+        self._poll.setInterval(150)
+        self._poll.timeout.connect(self._read)
         self.reader = self_test.OutputReader()
         self.started_at = None
 
@@ -109,7 +115,11 @@ class RunTestsDialog(QDialog):
         self.result_label.setStyleSheet("")
         self.progress.setValue(0)
         self.started_at = datetime.datetime.now()
-        cmd = self_test.command(self._args)
+        self._close_output()
+        fd, self._out_path = tempfile.mkstemp(prefix='SpecAnalytiXBase_tests_', suffix='.txt')
+        os.close(fd)
+        self._out_file = open(self._out_path, 'rb')
+        cmd = self_test.command(self._args, output=self._out_path)
         self._cmd = cmd
         proc = QProcess(self)
         env = QProcessEnvironment.systemEnvironment()
@@ -127,6 +137,7 @@ class RunTestsDialog(QDialog):
         self.copy_button.setEnabled(False)
         self.save_button.setEnabled(False)
         self.counts_label.setText("Starting…")
+        self._poll.start()
         proc.start(cmd[0], cmd[1:])
 
     def stop(self):
@@ -135,8 +146,16 @@ class RunTestsDialog(QDialog):
             self._process.kill()
 
     def _read(self):
-        data = bytes(self._process.readAllStandardOutput()).decode('utf-8', errors='replace')
-        self._buffer += data
+        """New output: what pytest wrote to the output file, and anything the
+        process printed before it got there (e.g. an error at its start)."""
+        data = b''
+        if self._process is not None:
+            data += bytes(self._process.readAllStandardOutput())
+        if self._out_file is not None:
+            data += self._out_file.read()
+        if not data:
+            return
+        self._buffer += data.decode('utf-8', errors='replace')
         *lines, self._buffer = self._buffer.split('\n')
         if lines:
             self.output.appendPlainText('\n'.join(l.rstrip('\r') for l in lines))
@@ -154,7 +173,21 @@ class RunTestsDialog(QDialog):
             text += f"   —   {self.reader.current}"
         self.counts_label.setText(text)
 
+    def _close_output(self):
+        if self._out_file is not None:
+            self._out_file.close()
+            self._out_file = None
+        if self._out_path:
+            try:
+                os.remove(self._out_path)
+            except OSError:
+                pass
+            self._out_path = None
+
     def _finished(self, exit_code, _status=None):
+        self._poll.stop()
+        self._read()
+        self._close_output()
         if self._buffer:
             self.output.appendPlainText(self._buffer.rstrip('\r'))
             self.reader.feed(self._buffer)
@@ -174,7 +207,9 @@ class RunTestsDialog(QDialog):
 
     def _error(self, error):
         if error == QProcess.FailedToStart:
-            self.result_label.setText("The tests could not be started (Python was not found).")
+            self._poll.stop()
+            self._close_output()
+            self.result_label.setText("The tests could not be started.")
             self.result_label.setStyleSheet("font-weight: bold; color: #c62828;")
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
