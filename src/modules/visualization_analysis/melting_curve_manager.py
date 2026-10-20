@@ -10,6 +10,23 @@ from scipy.special import expit, erf
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
 
+
+def _polyfit_checked(x, y, deg):
+    """np.polyfit, but never with input that makes it hand NaN to the
+    least-squares routine (LAPACK): missing / infinite values, or a line
+    (deg >= 1) through points that all lie at x = 0 (polyfit scales each
+    column by its length, here 0, giving 0/0). On Linux LAPACK then reports
+    an error; on some Windows builds of the maths library the call never
+    returns and the program hangs. Such input raises ValueError instead,
+    which the callers already treat as "no fit possible"."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if not (np.all(np.isfinite(x)) and np.all(np.isfinite(y))):
+        raise ValueError("the window contains missing (NaN) or infinite values")
+    if deg >= 1 and x.size and np.all(x == 0):
+        raise ValueError("a line cannot be fitted through points that all lie at x = 0")
+    return np.polyfit(x, y, deg=deg)
+
 # NumPy 2.0 renamed trapz -> trapezoid; this keeps working on either
 # (same compatibility shim used by peak_fitting_manager.py).
 _trapz = getattr(np, 'trapezoid', None) or np.trapz
@@ -297,8 +314,8 @@ class MeltingCurveManager:
             return None
 
         try:
-            coeffs_low = np.polyfit(x[low_mask], y[low_mask], deg=order)
-            coeffs_high = np.polyfit(x[high_mask], y[high_mask], deg=order)
+            coeffs_low = _polyfit_checked(x[low_mask], y[low_mask], order)
+            coeffs_high = _polyfit_checked(x[high_mask], y[high_mask], order)
         except (np.linalg.LinAlgError, ValueError) as exc:
             # Degenerate baseline-region data (e.g. too few distinct
             # temperatures, or all-identical signal in a window) can make
@@ -539,8 +556,10 @@ class MeltingCurveManager:
         y_arr = np.asarray(y_arr, dtype=float)
         if x_arr.size < 2:
             return None
-
-        coeffs = np.polyfit(x_arr, y_arr, deg=1)
+        try:
+            coeffs = _polyfit_checked(x_arr, y_arr, 1)
+        except ValueError:          # all points at x = 0, or NaN: no line
+            return None
         slope, intercept = coeffs
         deltaH = -slope * R_GAS
         deltaS = intercept * R_GAS
@@ -692,11 +711,11 @@ class MeltingCurveManager:
         n = len(x_fit)
         k = max(2, int(round(baseline_fraction * n)))
         try:
-            p0_low = np.polyfit(x_fit[:k], y_fit_data[:k], deg=1)
+            p0_low = _polyfit_checked(x_fit[:k], y_fit_data[:k], 1)
         except Exception:
             p0_low = [0.0, float(np.mean(y_fit_data[:k]))]
         try:
-            p0_high = np.polyfit(x_fit[-k:], y_fit_data[-k:], deg=1)
+            p0_high = _polyfit_checked(x_fit[-k:], y_fit_data[-k:], 1)
         except Exception:
             p0_high = [0.0, float(np.mean(y_fit_data[-k:]))]
         mid0 = float(midpoint_guess) if midpoint_guess is not None else float(np.median(x_fit))
@@ -830,14 +849,14 @@ class MeltingCurveManager:
             p0_low = [float(coeffs_low_guess[0]), float(coeffs_low_guess[1])]
         else:
             try:
-                p0_low = list(np.polyfit(x_fit[:k], y_fit_data[:k], deg=1))
+                p0_low = list(_polyfit_checked(x_fit[:k], y_fit_data[:k], 1))
             except Exception:
                 p0_low = [0.0, float(np.mean(y_fit_data[:k]))]
         if coeffs_high_guess is not None:
             p0_high = [float(coeffs_high_guess[0]), float(coeffs_high_guess[1])]
         else:
             try:
-                p0_high = list(np.polyfit(x_fit[-k:], y_fit_data[-k:], deg=1))
+                p0_high = list(_polyfit_checked(x_fit[-k:], y_fit_data[-k:], 1))
             except Exception:
                 p0_high = [0.0, float(np.mean(y_fit_data[-k:]))]
 
