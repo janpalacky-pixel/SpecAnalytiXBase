@@ -165,6 +165,8 @@ def test_svd_background_large_table_computes_in_background(monkeypatch):
     monkeypatch.setattr(sbd, '_ASYNC_SVD_VALUES', 1)         # every table counts as large
     for n in ('information', 'warning', 'critical'):
         monkeypatch.setattr(QMessageBox, n, staticmethod(lambda *a, **k: QMessageBox.Ok))
+    # "Are you sure you want to close?" when the main window is closed below
+    monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: QMessageBox.Yes))
     x = np.linspace(400, 1800, 200)
     rng = np.random.RandomState(0)
     spectra = [{'label': f's{i}', 'x_scale': x,

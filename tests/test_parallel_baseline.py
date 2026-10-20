@@ -352,7 +352,7 @@ def test_default_worker_setting_means_all_cores(monkeypatch):
 def test_worker_slider_shows_the_maximum_and_stores_it_as_0(monkeypatch):
     monkeypatch.setattr(parallel_utils.os, 'cpu_count', lambda: 20)
     from PyQt5.QtWidgets import QApplication
-    QApplication.instance() or QApplication([])
+    app = QApplication.instance() or QApplication([])   # kept alive while the widget exists
     from src.views.dialogs.misc.worker_count_slider import WorkerCountSlider
     w = WorkerCountSlider()
     assert w.value() == 0 and w.workers() == 20 and '20 / 20' in w.number_label.text()
