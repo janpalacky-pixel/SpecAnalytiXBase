@@ -83,11 +83,11 @@ def get_plot_controls_help_content():
     <h2 id="many-spectra">Plotting thousands of spectra: preview, Plot all, Stop</h2>
     <p>Drawing is the slow part of plotting many spectra: about 5&nbsp;s per 1&nbsp;000 spectra
     of 1&nbsp;600 points on a typical computer, almost all of it one single drawing step that
-    cannot show progress or be interrupted. Therefore, when <b>more than 2&nbsp;000</b> spectra
-    are selected, the <b>Overlay</b>, <b>Grid</b> and <b>Waterfall</b> plots show a
-    <b>preview</b>: 500 evenly spread spectra (always the first and the last). A line
-    above the plot says so, e.g. <i>"Preview: 500 of 21 000 selected spectra drawn (evenly
-    spread). Analyses use all 21 000."</i></p>
+    cannot show progress or be interrupted. Therefore the <b>Overlay</b>, <b>Grid</b> and
+    <b>Waterfall</b> plots draw <b>at most 1&nbsp;000</b> spectra: up to 1&nbsp;000 selected,
+    all are drawn; with more, a <b>preview</b> of 1&nbsp;000 evenly spread spectra (always the
+    first and the last). A line above the plot says so, e.g. <i>"Preview: 1 000 of 21 000
+    selected spectra drawn (evenly spread). Analyses use all 21 000."</i></p>
     <ul>
         <li><b>Your selection is not changed.</b> Every analysis and processing step uses all
         selected spectra; only the picture shows fewer.</li>
@@ -99,7 +99,7 @@ def get_plot_controls_help_content():
         a long drawing again. The line above the plot says how many were drawn; press
         Refresh Plot or Plot all to draw again.</li>
         <li><b>View &rarr; Plotting many spectra&hellip;</b> (also <b>Settings&hellip;</b> on
-        that line): the limit (default 2&nbsp;000), the preview size (default 500), or
+        that line): how many spectra are drawn at most (default 1&nbsp;000), or
         <i>Always plot all</i>. Remembered between sessions.</li>
         <li><b>Tool windows</b> (FFT Denoising, X-axis alignment, Isosbestic Point
         Detection, 2D Correlation, Normalization, Data range, Spectral Calculator, ROI
@@ -197,7 +197,7 @@ def get_plot_controls_help_content():
         <tr><td>200–1000 spectra</td><td>⚠️ Off — use Refresh Plot</td><td>✅ On (limited to 20)</td></tr>
         <tr><td>&gt;1000 spectra</td><td>❌ Off — use Refresh Plot</td><td>✅ On (limited to 20)</td></tr>
     </table>
-    <p>Above 2&nbsp;000 selected spectra the Overlay, Grid and Waterfall plots show a preview
+    <p>Above 1&nbsp;000 selected spectra the Overlay, Grid and Waterfall plots show a preview
     anyway (see <a href="#many-spectra">Plotting thousands of spectra</a>), so Interactive
     Update stays quick enough to leave on.</p>
 

@@ -7,8 +7,9 @@ progress nor be interrupted (measured with 1 600-point spectra: 1 000
 spectra 0.3 s to create the lines + 5 s to draw them; 5 000: 1.4 s + 24 s;
 drawing them as one LineCollection or without antialiasing did not help).
 
-So when more spectra are selected than a threshold, the plot types that
-draw one line per spectrum show a *preview*: an evenly spread subset. The
+So the plot types that draw one line per spectrum draw at most a set
+number of spectra (default 1 000): up to that many selected, all are drawn;
+with more, that many evenly spread ones (a *preview*). The
 selection itself is never changed -- every analysis still uses all
 selected spectra; only the picture is affected. "Plot all" draws every
 spectrum (the Overlay plot then in portions, with progress and Stop; see
@@ -20,8 +21,7 @@ Qt-free.
 import numpy as np
 
 DEFAULT_SETTINGS = {
-    'threshold': 2000,       # more selected spectra than this -> preview
-    'preview_count': 500,    # how many spectra the preview draws
+    'max_drawn': 1000,       # draw at most this many (more selected -> preview of this many)
     'mode': 'preview',       # 'preview' or 'all'
 }
 
@@ -50,13 +50,9 @@ def normalized_settings(settings=None):
     s = dict(DEFAULT_SETTINGS)
     s.update({k: v for k, v in (settings or {}).items() if k in DEFAULT_SETTINGS})
     try:
-        s['threshold'] = int(min(max(int(s['threshold']), 10), 10_000_000))
+        s['max_drawn'] = int(min(max(int(s['max_drawn']), 10), 10_000_000))
     except (TypeError, ValueError):
-        s['threshold'] = DEFAULT_SETTINGS['threshold']
-    try:
-        s['preview_count'] = int(min(max(int(s['preview_count']), 10), s['threshold']))
-    except (TypeError, ValueError):
-        s['preview_count'] = min(DEFAULT_SETTINGS['preview_count'], s['threshold'])
+        s['max_drawn'] = DEFAULT_SETTINGS['max_drawn']
     if s['mode'] not in MODES:
         s['mode'] = DEFAULT_SETTINGS['mode']
     return s
@@ -99,14 +95,14 @@ def needs_preview(n_selected, plot_type, settings=None, plot_all=False):
     """True if the plot should show a preview instead of all spectra."""
     s = normalized_settings(settings)
     return (not plot_all and s['mode'] == 'preview'
-            and plot_type in LIMITED_PLOT_TYPES and n_selected > s['threshold'])
+            and plot_type in LIMITED_PLOT_TYPES and n_selected > s['max_drawn'])
 
 
 def is_large(n_selected, plot_type, settings=None):
     """True if drawing all selected spectra counts as large (more than the
-    threshold, in a plot type that draws one line per spectrum)."""
+    'draw at most' number, in a plot type that draws one line per spectrum)."""
     s = normalized_settings(settings)
-    return plot_type in LIMITED_PLOT_TYPES and n_selected > s['threshold']
+    return plot_type in LIMITED_PLOT_TYPES and n_selected > s['max_drawn']
 
 
 def annotate_shown(ax, n_shown, n_total):

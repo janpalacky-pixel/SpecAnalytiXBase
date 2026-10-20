@@ -3808,11 +3808,12 @@ def _natural_sort_key(cls, label):
         switching off antialiasing gained nothing (the cost is rasterising millions of
         segments). So a progress bar around the old code would not have moved.</p>
         <ul>
-            <li><code>src/modules/visualization/large_selection.py</code> (Qt-free): above a
-            threshold (default 2&nbsp;000) the Overlay/Grid/Waterfall plots draw an evenly spread
-            preview (default 500, ends included). Mean&nbsp;&plusmn;&nbsp;SD and Difference are
-            excluded because their mean must use all spectra. The selection
-            (<code>selected_spectra</code>) is never changed &mdash; only the local list in
+            <li><code>src/modules/visualization/large_selection.py</code> (Qt-free): the
+            Overlay/Grid/Waterfall plots draw at most <code>max_drawn</code> spectra (default
+            1&nbsp;000); with more selected, that many evenly spread (ends included) &mdash; one
+            number, so the drawn count never drops when one more spectrum is selected.
+            Mean&nbsp;&plusmn;&nbsp;SD and Difference are excluded because their mean must use all
+            spectra. The selection (<code>selected_spectra</code>) is never changed &mdash; only the local list in
             <code>_plot_spectra_impl</code>.</li>
             <li><code>src/controllers/visualization/large_plot_controller.py</code>: the note
             above the plot (Plot all / Settings&hellip;), View &rarr; Plotting many

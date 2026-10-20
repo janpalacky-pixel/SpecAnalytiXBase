@@ -965,9 +965,10 @@ def get_user_guide_help_content():
         </div>
         <p>See the <a href="help://plot_controls">Interactive Update &amp; Legend
         Performance Guide</a> for a full decision table.</p>
-        <p><b>Thousands of selected spectra:</b> above 2&nbsp;000 (adjustable under
-        <b>View &rarr; Plotting many spectra&hellip;</b>), the Overlay, Grid and Waterfall
-        plots draw a preview of 500 evenly spread spectra, with a note above the plot.
+        <p id="many-spectra"><b>Thousands of selected spectra:</b> the Overlay, Grid and Waterfall
+        plots draw at most 1&nbsp;000 spectra (adjustable under <b>View &rarr; Plotting many
+        spectra&hellip;</b>). With more selected, they draw a preview of 1&nbsp;000 evenly spread
+        spectra, with a note above the plot.
         Your selection is not changed &mdash; analyses use all selected spectra. <b>Plot
         all</b> on that note draws every spectrum (the Overlay plot in portions with a
         progress window and <b>Stop</b>; Stop keeps what is drawn and switches Interactive

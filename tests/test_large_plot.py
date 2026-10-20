@@ -24,7 +24,7 @@ def test_preview_is_evenly_spread_and_includes_both_ends():
 
 
 def test_which_plots_get_a_preview():
-    s = {'threshold': 2000, 'preview_count': 1000, 'mode': 'preview'}
+    s = {'max_drawn': 2000, 'mode': 'preview'}
     for plot_type in ('Overlay plot', 'Grid plot', 'Waterfall plot'):
         assert ls.needs_preview(2001, plot_type, s)
         assert not ls.needs_preview(2000, plot_type, s)
@@ -35,8 +35,20 @@ def test_which_plots_get_a_preview():
 
 
 def test_settings_are_kept_sensible():
-    s = ls.normalized_settings({'threshold': 'x', 'preview_count': 99999, 'mode': 'weird'})
-    assert s == dict(ls.DEFAULT_SETTINGS, preview_count=ls.DEFAULT_SETTINGS['threshold'])
+    s = ls.normalized_settings({'max_drawn': 'x', 'mode': 'weird'})
+    assert s == ls.DEFAULT_SETTINGS == {'max_drawn': 1000, 'mode': 'preview'}
+    assert ls.normalized_settings({'max_drawn': 3})['max_drawn'] == 10
+    # values of the earlier two-number version (limit + preview size) are not used
+    assert ls.normalized_settings({'threshold': 5000, 'preview_count': 800}) == ls.DEFAULT_SETTINGS
+
+
+def test_the_number_drawn_never_drops_when_more_are_selected():
+    """One number: up to it all are drawn, above it that many -- no jump
+    (before: 1 950 selected drew 1 950, 2 001 drew 500)."""
+    s = ls.DEFAULT_SETTINGS
+    drawn = [len(ls.preview_indices(n, s['max_drawn'])) if ls.needs_preview(n, 'Overlay plot', s)
+             else n for n in (500, 999, 1000, 1001, 1950, 2001, 10000)]
+    assert drawn == [500, 999, 1000, 1000, 1000, 1000, 1000]
 
 
 # --- in the main window ---------------------------------------------------------
@@ -48,8 +60,7 @@ def mc(tmp_path, monkeypatch):
         monkeypatch.setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.Ok))
     from src.controllers.core.main_controller import MainController
     controller = MainController()
-    controller.large_plot_controller.set_settings(
-        {'threshold': 300, 'preview_count': 100, 'mode': 'preview'})
+    controller.large_plot_controller.set_settings({'max_drawn': 100, 'mode': 'preview'})
     x = np.linspace(0, 100, 40)
     spectra = [{'label': f's{i:04d}', 'x_scale': x, 'y_scale': np.sin(x / 10) + i * 0.01,
                 'metadata': {}} for i in range(1250)]
@@ -104,9 +115,9 @@ def test_stop_keeps_what_is_drawn_and_switches_interactive_update_off(mc, monkey
 
 
 def test_small_selections_and_other_plot_types_are_unchanged(mc):
-    mc.selected_spectra = mc.original_spectra[:200]
+    mc.selected_spectra = mc.original_spectra[:100]
     mc.plot_spectra()
-    assert _drawn(mc) == 200
+    assert _drawn(mc) == 100
     assert mc.large_plot_controller.last_info['preview'] is False
     mc.selected_spectra = list(mc.original_spectra)
     mc.view.comboBox_plot_type_choice.setCurrentText('Heatmap')
@@ -115,15 +126,15 @@ def test_small_selections_and_other_plot_types_are_unchanged(mc):
 
 
 def test_always_plot_all_setting(mc):
-    mc.large_plot_controller.set_settings({'threshold': 300, 'preview_count': 100, 'mode': 'all'})
+    mc.large_plot_controller.set_settings({'max_drawn': 100, 'mode': 'all'})
     mc.plot_spectra()
     assert _drawn(mc) == 1250
 
 
 def test_settings_dialog_round_trip():
     from src.controllers.visualization.large_plot_controller import LargePlotSettingsDialog
-    d = LargePlotSettingsDialog({'threshold': 5000, 'preview_count': 800, 'mode': 'all'})
-    assert d.settings() == {'threshold': 5000, 'preview_count': 800, 'mode': 'all'}
+    d = LargePlotSettingsDialog({'max_drawn': 5000, 'mode': 'all'})
+    assert d.settings() == {'max_drawn': 5000, 'mode': 'all'}
     d.preview_radio.setChecked(True)
     assert d.settings()['mode'] == 'preview'
 
@@ -192,8 +203,7 @@ def test_legend_show_all_and_choose(mc, monkeypatch):
 
 
 def test_legend_show_all_asks_above_500(mc, monkeypatch):
-    mc.large_plot_controller.set_settings({'threshold': 5000, 'preview_count': 100,
-                                           'mode': 'preview'})
+    mc.large_plot_controller.set_settings({'max_drawn': 5000, 'mode': 'preview'})
     mc.legend_manager.update_settings({'visible': True})
     mc.selected_spectra = mc.original_spectra[:600]
     mc.plot_spectra()

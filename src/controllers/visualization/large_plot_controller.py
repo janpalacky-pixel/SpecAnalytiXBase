@@ -2,9 +2,9 @@
 """Plotting very many selected spectra (see
 src/modules/visualization/large_selection.py for why and what).
 
-* More selected spectra than the threshold (View -> Plotting many spectra…,
-  default 2 000) in an Overlay, Grid or Waterfall plot: a preview of an
-  evenly spread subset (default 500) is drawn, with a note above the plot
+* Overlay, Grid and Waterfall plots draw at most a set number of spectra
+  (View -> Plotting many spectra…, default 1 000): with more selected, a
+  preview of that many evenly spread spectra is drawn, with a note above the plot
   and a "Plot all" button. The selection is not changed: every analysis
   uses all selected spectra.
 * "Plot all" (or the setting "Always plot all"): in an Overlay plot the
@@ -64,30 +64,28 @@ class LargePlotSettingsDialog(QDialog):
         intro = QLabel(
             "Drawing thousands of spectra takes long (about 5 s per 1 000 spectra of 1 600 "
             "points on a typical computer) and cannot be interrupted once it has started. "
-            "Above the limit below, Overlay, Grid and Waterfall plots therefore show a "
-            "preview: an evenly spread subset of the selected spectra. The selection itself "
-            "is not changed — every analysis uses all selected spectra.")
+            "Overlay, Grid and Waterfall plots therefore draw at most the number below: with "
+            "more spectra selected, they show a preview of that many evenly spread spectra. "
+            "The selection itself is not changed — every analysis uses all selected spectra.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         form = QFormLayout()
-        self.threshold_spin = QSpinBox()
-        self.threshold_spin.setRange(10, 10_000_000)
-        self.threshold_spin.setSingleStep(500)
-        self.threshold_spin.setValue(s['threshold'])
-        form.addRow("More selected spectra than:", self.threshold_spin)
-        self.preview_radio = QRadioButton("Show a preview of")
+        self.preview_radio = QRadioButton("Draw at most")
         self.all_radio = QRadioButton("Always plot all (Overlay plot: in portions, "
                                       "with progress and Stop)")
         self.count_spin = QSpinBox()
         self.count_spin.setRange(10, 10_000_000)
         self.count_spin.setSingleStep(100)
-        self.count_spin.setValue(s['preview_count'])
+        self.count_spin.setValue(s['max_drawn'])
         self.count_spin.setSuffix(" spectra")
+        self.count_spin.setToolTip(
+            "Up to this many selected spectra: all are drawn. More selected: this many,\n"
+            "evenly spread (always the first and the last).")
         row = QHBoxLayout()
         row.addWidget(self.preview_radio)
         row.addWidget(self.count_spin)
         row.addStretch(1)
-        form.addRow("Then:", row)
+        form.addRow("Overlay, Grid, Waterfall:", row)
         form.addRow("", self.all_radio)
         self.dialog_spin = QSpinBox()
         self.dialog_spin.setRange(10, 10_000_000)
@@ -113,16 +111,14 @@ class LargePlotSettingsDialog(QDialog):
 
     def _defaults(self):
         d = DEFAULT_SETTINGS
-        self.threshold_spin.setValue(d['threshold'])
-        self.count_spin.setValue(d['preview_count'])
+        self.count_spin.setValue(d['max_drawn'])
         self.preview_radio.setChecked(d['mode'] == 'preview')
         self.all_radio.setChecked(d['mode'] != 'preview')
         self.dialog_spin.setValue(DEFAULT_DIALOG_COUNT)
 
     def settings(self):
         return normalized_settings({
-            'threshold': self.threshold_spin.value(),
-            'preview_count': self.count_spin.value(),
+            'max_drawn': self.count_spin.value(),
             'mode': 'preview' if self.preview_radio.isChecked() else 'all',
         })
 
@@ -186,7 +182,7 @@ class LargePlotController:
         s = self.settings()
         plot_all, self._plot_all_once = self._plot_all_once, False
         if needs_preview(n, plot_type, s, plot_all):
-            chosen = [spectra[i] for i in preview_indices(n, s['preview_count'])]
+            chosen = [spectra[i] for i in preview_indices(n, s['max_drawn'])]
             info = {'n': n, 'shown': len(chosen), 'preview': True, 'progressive': False}
         else:
             chosen = spectra
