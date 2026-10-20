@@ -102,6 +102,24 @@ def test_rows_with_several_leading_columns_as_exported_by_a_spectrometer():
     assert 'column 9' in notes[0] and '7 leading columns' in notes[0]
 
 
+def test_rows_message_names_the_x_range_and_the_left_out_columns_briefly():
+    """The message after pasting a spectrometer export says which x-values were
+    found and which leading columns were left out, by name -- at most 8 names,
+    each cut to 20 characters, so the window stays small."""
+    text = ('No.;Type;Name;Date/Time;Note;Temperature;Temperature;230,0;231,0;232,0\n'
+            '1;Sample;rC5U3;2021.06.21 12:28;;4,1;4,0;0,1460;0,1351;0,1272\n'
+            '2;Sample;rC3,5;2021.06.21 12:28;;4,1;4,0;0,5664;0,5424;0,5237\n')
+    _, _, notes = parse_table(text)
+    assert notes == ['The table was read in rows: x = the header row from column 8 on (230 \u2026 232), '
+                     'names from the column \u201cName\u201d; the other 6 leading columns were left out: '
+                     'No., Type, Date/Time, Note, Temperature, Temperature.']
+    header = '\t'.join(['Name'] + [f'a very long column name {i}' for i in range(15)] + ['230', '231', '232'])
+    rows = ['\t'.join([f's{r}'] + ['x'] * 15 + ['1', '2', '3']) for r in range(2)]
+    _, _, notes = parse_table('\n'.join([header] + rows))
+    assert notes[0].count('\u2026,') == 7 and notes[0].endswith('\u2026 and 7 more.')
+    assert 'a very long column \u2026' in notes[0] and len(notes[0]) < 400
+
+
 def test_every_paste_says_whether_it_read_columns_or_rows():
     """The message after a paste always names the layout, so a wrong guess
     is noticed: columns without a header row too."""

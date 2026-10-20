@@ -68,6 +68,25 @@ def _monotonic(v):
 _NAME_HEADERS = ('name', 'label', 'sample', 'sample name', 'spectrum', 'title', 'id')
 
 
+def _short(text, limit):
+    """text, cut to `limit` characters (with … when cut)."""
+    text = str(text)
+    return text if len(text) <= limit else text[:limit - 1] + '\u2026'
+
+
+def _short_list(items, limit=8, each=20):
+    """At most `limit` items, each at most `each` characters, so that the
+    message stays small however many or long the column names are."""
+    shown = ', '.join(_short(t, each) for t in items[:limit])
+    if len(items) > limit:
+        shown += f" \u2026 and {len(items) - limit} more"
+    return shown
+
+
+def _short_number(v):
+    return f"{v:g}"
+
+
 def _rows_with_leading_columns(rows, header, decimal_comma):
     """A table in rows with several leading columns before the numbers, as
     an export of a spectrometer (No. | Type | Name | Date | ... | 230 | 231
@@ -102,11 +121,13 @@ def _rows_with_leading_columns(rows, header, decimal_comma):
     if name_col is None:
         name_col = 0
     names = [rows[i][name_col].strip() or f"row {i + 2}" for i in range(len(rows))]
-    note = (f"The table was read in rows: x = the header row from column {k + 1} on, "
-            f"names from the column \u201c{header[name_col].strip() or name_col + 1}\u201d")
+    note = (f"The table was read in rows: x = the header row from column {k + 1} on "
+            f"({_short_number(x[0])} \u2026 {_short_number(x[-1])}), names from the column "
+            f"\u201c{_short(header[name_col].strip(), 30) or name_col + 1}\u201d")
     if k > 1:
+        left_out = [header[j].strip() or f"column {j + 1}" for j in range(k) if j != name_col]
         note += (f"; the other {k - 1} leading column{'s were' if k - 1 != 1 else ' was'} "
-                 "left out")
+                 f"left out: {_short_list(left_out)}")
     notes = [note + "."]
     return ((header[name_col].strip() or 'x'), list(zip(names, [x] * len(data), data)), notes)
 
