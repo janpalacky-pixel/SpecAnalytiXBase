@@ -2271,7 +2271,17 @@ class MainController(QMainWindow):
         this one call. None (the default) — ordinary calls to
         plot_spectra() elsewhere in the app don't need this and are
         unaffected.
+
+        Many controls redraw by connecting their signal straight to this
+        method (X-scale, Y-scale, Link axes, Waterfall offset, ...); Qt then
+        passes the new value (an index, a check state) as the first argument.
+        That value is not a progress callback and is ignored here -- it used
+        to be called as one ("'int' object is not callable"), so the plot was
+        not redrawn, and on Windows such an error inside a Qt callback can
+        close the program.
         """
+        if not callable(progress_callback):
+            progress_callback = None
         if not self.selected_spectra:
             self.clear_graphics_view()
             return
