@@ -52,6 +52,9 @@ from src.modules.utils.spectrum_identity import spectrum_key, spectrum_id
 from src.modules.utils.label_shortening import compute_distinguishing_labels, shorten_spectra_labels
 logger = get_logger(__name__)
 
+# True while a main window's closeEvent is closing all other windows (see closeEvent)
+_closing_other_windows = [False]
+
 
 class _SpectraListWidget(QListWidget):
     """QListWidget that doesn't let a right-click change the current
@@ -2798,10 +2801,21 @@ class MainController(QMainWindow):
         # Without this, widget.close() would eventually reach self,
         # triggering THIS SAME closeEvent a second time recursively —
         # exactly what caused the confirmation to appear twice.
-        for widget in QApplication.topLevelWidgets():
-            if widget is not self.view and widget is not self:
-                try:
-                    widget.close()
-                except Exception:
-                    pass
+        #
+        # Done only once: a window closed here may itself be another main
+        # window (several exist in the test suite), whose closeEvent would
+        # again close every window, and so on -- a chain that never ended in
+        # a full test run. While one closeEvent is closing the others, a
+        # nested one just closes its own window.
+        if not _closing_other_windows[0]:
+            _closing_other_windows[0] = True
+            try:
+                for widget in QApplication.topLevelWidgets():
+                    if widget is not self.view and widget is not self:
+                        try:
+                            widget.close()
+                        except Exception:
+                            pass
+            finally:
+                _closing_other_windows[0] = False
         event.accept() 

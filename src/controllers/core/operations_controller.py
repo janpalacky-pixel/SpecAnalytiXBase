@@ -1935,9 +1935,13 @@ class OperationsController:
             self._redo_button.clicked.connect(self.redo_operation)
         except (AttributeError, TypeError):
             return
-        from PyQt5.QtCore import QTimer
+        from PyQt5.QtCore import QObject, QTimer
         if QApplication.instance() is not None:
-            self._undo_redo_timer = QTimer()
+            # A child of the main window, so it stops and goes away together
+            # with the window. (Without a parent it kept firing after the
+            # window was deleted and then touched deleted buttons -- an error
+            # that PyQt5 on Windows answers by closing the program.)
+            self._undo_redo_timer = QTimer(view if isinstance(view, QObject) else None)
             self._undo_redo_timer.setInterval(400)
             self._undo_redo_timer.timeout.connect(self.update_undo_redo_buttons)
             self._undo_redo_timer.start()
@@ -1966,6 +1970,12 @@ class OperationsController:
         undo_btn = getattr(self, '_undo_button', None)
         redo_btn = getattr(self, '_redo_button', None)
         if undo_btn is None or redo_btn is None:
+            return
+        from PyQt5 import sip
+        if any(isinstance(b, sip.simplewrapper) and sip.isdeleted(b)
+               for b in (undo_btn, redo_btn)):
+            # the main window is already gone: nothing left to update
+            self._undo_button = self._redo_button = None
             return
         mgr = self.operations_manager
         chain = getattr(mgr, 'operations_chain', None) or []
