@@ -286,6 +286,21 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
 
     return canvas, toolbar
 
+def apply_x_direction(figure, reverse_x):
+    """Draw the x-axis of every plot in `figure` from high to low
+    (reverse_x=True) or from low to high. Only the direction of the axis
+    changes; the limits (and thus zoom) and the data stay the same. Colour
+    bars are left alone, and axes that share their x-axis (Grid plot) are
+    not flipped twice, because the limits are set, not toggled."""
+    for ax in figure.axes:
+        if ax.get_label() == '<colorbar>':
+            continue
+        lo, hi = sorted(ax.get_xlim())
+        # auto=None: automatic scaling stays as it was (spectra drawn later
+        # in portions still widen the axis, in the chosen direction)
+        ax.set_xlim((hi, lo) if reverse_x else (lo, hi), auto=None)
+
+
 def initialize_plot_widget(graphics_view):
     """
     Clears any existing layout in graphics_view and initializes a fresh Figure, Canvas, and Toolbar.

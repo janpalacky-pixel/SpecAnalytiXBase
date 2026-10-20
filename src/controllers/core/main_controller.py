@@ -1427,6 +1427,8 @@ class MainController(QMainWindow):
         self.refresh_plot_button.clicked.connect(self.spectrum_selector.plot_selected_spectra)
     
         self.view.x_scale_comboBox.currentIndexChanged.connect(self.plot_spectra)
+        if hasattr(self.view, 'reverse_x_checkBox'):
+            self.view.reverse_x_checkBox.toggled.connect(self._on_reverse_x_toggled)
         self.view.y_scale_comboBox.currentIndexChanged.connect(self.plot_spectra)
         
         self.view.automatic_line_colors_checkBox.stateChanged.connect(self.toggle_automatic_line_colors)
@@ -2474,6 +2476,11 @@ class MainController(QMainWindow):
                     and not progressive:
                 self.static_canvas.draw_idle()
 
+        # "reverse x" in Basic plot options: x from high to low
+        if self._reverse_x() and getattr(self, 'static_canvas', None) is not None:
+            from src.modules.visualization.plotting import apply_x_direction
+            apply_x_direction(self.static_canvas.figure, True)
+
         # Set up the context menu for the canvas
         self.static_canvas.mpl_connect('button_press_event', self.handle_mouse_click)  
 
@@ -2487,6 +2494,26 @@ class MainController(QMainWindow):
         cursor = getattr(self, 'plot_cursor_controller', None)
         if cursor is not None:
             cursor.attach(self.static_canvas, plot_type)
+
+    def _reverse_x(self):
+        box = getattr(self.view, 'reverse_x_checkBox', None)
+        return bool(box is not None and box.isChecked())
+
+    def _on_reverse_x_toggled(self, checked):
+        """Turn the x-axis of the plot shown now around, without drawing the
+        spectra again (fast also with thousands of spectra)."""
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None:
+            return
+        from src.modules.visualization.plotting import apply_x_direction
+        apply_x_direction(canvas.figure, checked)
+        toolbar = getattr(canvas, 'toolbar', None)
+        if toolbar is not None:
+            try:
+                toolbar.update()          # Home = the view in the new direction
+            except Exception:
+                pass
+        canvas.draw_idle()
 
     def handle_mouse_click(self, event):
         """Handle mouse clicks on the canvas."""

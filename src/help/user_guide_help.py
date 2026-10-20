@@ -827,6 +827,11 @@ def get_user_guide_help_content():
         <h3>Axis Controls</h3>
         <ul>
             <li><strong>X-scale / Y-scale:</strong> Linear or logarithmic</li>
+            <li><strong>reverse x</strong> (under Y-scale): draws the x-axis from high to low
+                values, e.g. 4000 &rarr; 400&nbsp;cm<sup>&minus;1</sup> as usual for IR and Raman
+                spectra. Works in every plot type and in <em>Open in New Window</em>; the cursor,
+                zoom and band markers keep working. Only the drawing changes, not the data. Saved
+                in snapshots.</li>
             <li><strong>Link x-axes / Link y-axes:</strong> Synchronise zoom across subplots
                 (Grid plot only &mdash; the Link axes box is hidden for other plot types)</li>
             <li><strong>Automatic line colors:</strong> Assign distinct colours automatically

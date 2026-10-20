@@ -193,6 +193,12 @@ def create_external_figure(mc):
     if cd_quality is not None:
         cd_quality.decorate(new_fig, spectra, plot_type)
 
+    # "reverse x" in Basic plot options, as in the main window
+    box = getattr(mc.view, 'reverse_x_checkBox', None)
+    if box is not None and box.isChecked():
+        from src.modules.visualization.plotting import apply_x_direction
+        apply_x_direction(new_fig, True)
+
     # Set window title
     title = f'Figure {figure_count}: {plot_type}'
     try:

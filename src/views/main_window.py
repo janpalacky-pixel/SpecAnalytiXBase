@@ -885,6 +885,15 @@ class MainWindow(QMainWindow):
         self.y_scale_comboBox.setSizePolicy(sizePolicy)
         self.y_scale_comboBox.setObjectName("y_scale_comboBox")
         self.gridLayout_2.addWidget(self.y_scale_comboBox, 1, 1, 1, 1)
+
+        # Reversed x-axis (high to low, e.g. IR / Raman wavenumbers)
+        self.reverse_x_checkBox = QCheckBox("reverse x", self.groupBox_basic_plot_options)
+        self.reverse_x_checkBox.setObjectName("reverse_x_checkBox")
+        self.reverse_x_checkBox.setToolTip(
+            "Draw the x-axis from high to low values (e.g. 4000 \u2192 400 cm\u207b\u00b9, as usual\n"
+            "for IR and Raman spectra), in every plot type and in Open in New Window.\n"
+            "Only the drawing changes; the data stay as they are.")
+        self.gridLayout_2.addWidget(self.reverse_x_checkBox, 2, 0, 1, 2)
         
         self.gridLayout_4.addLayout(self.gridLayout_2, 0, 2, 1, 1)
         

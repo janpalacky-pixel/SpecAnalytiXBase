@@ -501,6 +501,7 @@ class SaveManager:
             'use_automatic_line_colors': main_controller.use_automatic_line_colors,
             'use_default_points':        main_controller.use_default_points,
             'x_scale':                   self._safe_get(ui, 'x_scale_comboBox', 'currentText'),
+            'reverse_x':                 bool(self._safe_get(ui, 'reverse_x_checkBox', 'isChecked')),
             'y_scale':                   self._safe_get(ui, 'y_scale_comboBox', 'currentText'),
             'grid_settings':             main_controller.grid_settings.copy(),
             # The "reverse sorting" checkbox lives on the main controller
@@ -1267,6 +1268,8 @@ class SaveManager:
                     self._safe_set(ui, 'comboBox_plot_type_choice', 'setCurrentText', s['plot_type'])
                 if 'x_scale' in s:
                     self._safe_set(ui, 'x_scale_comboBox', 'setCurrentText', s['x_scale'])
+                # snapshots from before "reverse x" existed were drawn low to high
+                self._safe_set(ui, 'reverse_x_checkBox', 'setChecked', bool(s.get('reverse_x', False)))
                 if 'y_scale' in s:
                     self._safe_set(ui, 'y_scale_comboBox', 'setCurrentText', s['y_scale'])
                 if 'use_automatic_line_colors' in s:
