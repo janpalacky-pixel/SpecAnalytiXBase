@@ -92,6 +92,7 @@ _REGISTRY = {
     'two_d_correlation':       ('src.help.two_d_correlation_help', 'get_two_d_correlation_help_title', 'get_two_d_correlation_help_content'),
     'band_markers':            ('src.help.band_markers_help', 'get_band_markers_help_title', 'get_band_markers_help_content'),
     'quick_start':             ('src.help.quick_start_help', 'get_quick_start_help_title', 'get_quick_start_help_content'),
+    'whats_new':               ('src.help.whats_new_help', 'get_whats_new_help_title', 'get_whats_new_help_content'),
     'installation':            ('src.help.installation_help', 'get_installation_help_title', 'get_installation_help_content'),
     'license':                 ('src.help.license_help', 'get_license_help_title', 'get_license_help_content'),
     'user_guide':              ('src.help.user_guide_help', 'get_user_guide_help_title', 'get_user_guide_help_content'),
@@ -239,6 +240,7 @@ def _declare_help_modules_for_bundlers():
     import src.help.svd_interpolation_help  # noqa: F401
     import src.help.svd_reconstruction_help  # noqa: F401
     import src.help.two_d_correlation_help  # noqa: F401
+    import src.help.whats_new_help  # noqa: F401
     import src.help.user_guide_help  # noqa: F401
     import src.help.xaxis_alignment_help  # noqa: F401
     import src.help.xaxis_unit_conversion_help  # noqa: F401
@@ -248,9 +250,10 @@ def _declare_help_modules_for_bundlers():
 # Public API
 # ======================================================================
 
-def open_help_topic(parent, key):
+def open_help_topic(parent, key, anchor=None):
     """Open the help page for the given registry key (e.g. 'nmf') in the
-    user's default browser."""
+    user's default browser -- at the section `anchor` (an id in the page)
+    when given and the browser keeps it."""
     logger.debug("open_help_topic: requested '%s'", key)
     entry = _REGISTRY.get(key)
     if entry is None:
@@ -262,7 +265,7 @@ def open_help_topic(parent, key):
         _write_all_registered_pages()
         path = os.path.join(_help_pages_dir(), f"{key}.html")
         logger.debug("open_help_topic: opening %s in browser", path)
-        _open_in_browser(path)
+        _open_in_browser(path, anchor)
     except Exception as exc:
         logger.error("help: failed to open '%s': %s", key, exc)
         logger.exception("Traceback:")
@@ -286,7 +289,7 @@ def show_help_window(parent, title, content):
         QMessageBox.information(parent, 'Help', f'Help not available: {exc}')
 
 
-def _open_in_browser(path):
+def _open_in_browser(path, anchor=None):
     """
     Open a local file in the user's default application for .html files
     (their normal web browser) — the same OS-level operation as
@@ -295,7 +298,7 @@ def _open_in_browser(path):
     integrates with Qt's own event loop), falling back to Python's
     built-in webbrowser module if that's unavailable for any reason.
     """
-    file_url = "file:///" + path.replace(os.sep, "/")
+    file_url = "file:///" + path.replace(os.sep, "/") + (f"#{anchor}" if anchor else "")
     try:
         from PyQt5.QtGui import QDesktopServices
         from PyQt5.QtCore import QUrl

@@ -1473,6 +1473,9 @@ class MainWindow(QMainWindow):
         # every processing/analysis operation's help linked from one table,
         # save, test datasets, contact), for anyone who wants a fast
         # starting point instead of the full User Guide.
+        self.actionWhatsNew = QAction(self)
+        self.actionWhatsNew.setObjectName("actionWhatsNew")
+        self.actionWhatsNew.setText("What's New")
         self.actionQuickStart = QAction(self)
         self.actionQuickStart.setObjectName("actionQuickStart")
         self.actionQuickStart.setText("Quick Start")
@@ -1937,6 +1940,7 @@ class MainWindow(QMainWindow):
         # Assemble Help menu
         self.menuHelp.addAction(self.actionUserGuide)
         self.menuHelp.addAction(self.actionQuickStart)
+        self.menuHelp.addAction(self.actionWhatsNew)
         self.menuHelp.addAction(self.actionInstallationHelp)
         self.menuHelp.addAction(self.actionDeveloperGuide)
         self.menuHelp.addSeparator()

@@ -1628,6 +1628,8 @@ class MainController(QMainWindow):
         self.view.actionDeveloperGuide.triggered.connect(self.show_developer_guide_help)
         self.view.actionLicense.triggered.connect(self.show_license_help)
         self.view.actionAbout.triggered.connect(self.show_about_dialog)
+        if hasattr(self.view, 'actionWhatsNew'):
+            self.view.actionWhatsNew.triggered.connect(self.show_whats_new)
         if hasattr(self.view, 'actionRunTests'):
             from src.modules.utils.self_test import availability
             ok, why = availability()
@@ -2084,6 +2086,64 @@ class MainController(QMainWindow):
         if not hasattr(self, '_methods_report_draft'):
             self._methods_report_draft = {}
         MethodsReportDialog(report, self.view, start_dir, self._methods_report_draft).exec_()
+
+    def show_whats_new(self):
+        """Help -> What's New: the small window with this version's "in brief"
+        list (where "Don't show this again" can also be switched off again);
+        its "Show all changes..." opens the full page. Without notes for this
+        version, the full page directly."""
+        from src.version import __version__
+        from src.help.whats_new_help import brief_markdown
+        if brief_markdown(__version__):
+            return self.show_whats_new_window(__version__)
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'whats_new')
+
+    def announce_new_version(self, version, delay_ms=1500):
+        """At the start: show the window with what is new in this version
+        (WhatsNewDialog), unless "Don't show this again" was ticked for this
+        version or there are no notes for it. It waits while another window
+        asks something (e.g. restoring work after a crash). Returns True if
+        the window will be shown."""
+        from src.help.whats_new_help import brief_markdown
+        prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
+        if prefs is None or not version or not brief_markdown(version):
+            return False
+        if prefs.get('whats_new_hidden_for') == version:
+            return False
+        from PyQt5.QtCore import QTimer
+
+        def show():
+            if QApplication.activeModalWidget() is not None:
+                QTimer.singleShot(1000, show)          # after the other question
+                return
+            self.show_whats_new_window(version)
+        QTimer.singleShot(delay_ms, show)
+        return True
+
+    def show_whats_new_window(self, version):
+        """The small "What's new in <version>" window; remembers "Don't show
+        this again" for this version when it is closed."""
+        from src.views.dialogs.misc.whats_new_dialog import WhatsNewDialog
+        prefs = self.autosave_controller.preferences
+        old = getattr(self, '_whats_new_window', None)
+        try:
+            if old is not None and old.isVisible():
+                old.raise_(); old.activateWindow()
+                return old
+        except RuntimeError:
+            pass
+        dlg = WhatsNewDialog(self.view, version)
+        dlg.dont_show.setChecked(prefs.get('whats_new_hidden_for') == version)
+
+        def closed(_result=None):
+            # ticked: not at the start of this version any more; unticked
+            # (also when switched off again here): shown at every start
+            prefs.set('whats_new_hidden_for', version if dlg.dont_show.isChecked() else '')
+        dlg.finished.connect(closed)
+        self._whats_new_window = dlg
+        dlg.show()
+        return dlg
 
     def show_run_tests_dialog(self):
         """Help -> Run tests...: the program's own test suite (self_test.py)."""

@@ -152,6 +152,8 @@ def main():
     # Automatic saving + the "restore unsaved work?" question after a crash.
     from src.version import __version__
     main_controller.autosave_controller.start(__version__)
+    # What's new in this version (a small window, until "Don't show this again")
+    main_controller.announce_new_version(__version__)
 
     # Files given on the command line -- also what Windows passes on a
     # double-click of a .snapx file or "Open with -> SpecAnalytiXBase"

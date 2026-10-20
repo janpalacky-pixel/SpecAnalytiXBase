@@ -4266,6 +4266,20 @@ pytest tests/ -v
              BUILD, PACKAGING & REPO HYGIENE
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="build-packaging">Build, Packaging &amp; Repository Hygiene</h2>
+        <div class="tip">
+            <b>Release notes: one file per version.</b> Before a release, write
+            <code>resources/whats_new/&lt;version&gt;.md</code> (a short "in brief" list with
+            <code>help://topic#anchor</code> links, then New, Faster, Easier to use, Changed results,
+            Fixed, Safer, Upgrading). Help &rarr; What's New shows all these files, newest first
+            (<code>src/help/whats_new_help.py</code>); at the start of a new version a small window
+            shows its "in brief" list until <i>Don't show this again</i> is ticked
+            (<code>WhatsNewDialog</code>, preference <code>whats_new_hidden_for</code>); Help &rarr;
+            What's New opens the same window, where the box can be unticked again. For the GitHub release, print the same text without the
+            help links: <code>python -m src.help.whats_new_help 1.5.0</code>. Only what users of
+            the previous release will notice belongs there &mdash; not changes made and undone during
+            development. <code>tests/test_whats_new.py</code> fails while the current version has no
+            file, and checks that every link leads to an existing help section.
+        </div>
         <p><code>BuildInstaller.bat</code> (repo root) does a full release build in
         one step:</p>
         <ol>
