@@ -730,12 +730,16 @@ class AutomatedBaselineDialog(QDialog):
         invert_state = self.current_settings.get('invert_regions', False)
         self.invert_regions_checkbox.setChecked(invert_state)
 
-        # Load processing mode / workers (settings saved before this
-        # option existed simply keep the Automatic default).
+        # Load processing mode / workers; without a setting from this session
+        # (or the snapshot): the computer-wide default (File > Settings and
+        # saved items... > Parallel processing).
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        default = default_parallel_settings()
         mode_index = self.processing_mode_combo.findData(
-            self.current_settings.get('processing_mode', 'auto'))
+            self.current_settings.get('processing_mode', default['processing_mode']))
         self.processing_mode_combo.setCurrentIndex(max(0, mode_index))
-        self.max_workers_spin.setValue(int(self.current_settings.get('max_workers', 0) or 0))
+        self.max_workers_spin.setValue(int(self.current_settings.get(
+            'max_workers', default['max_workers']) or 0))
 
     def create_control_panel(self):
         widget = QWidget()
@@ -1225,6 +1229,14 @@ class AutomatedBaselineDialog(QDialog):
         self.processing_mode_combo.currentIndexChanged.connect(
             lambda _i: self.max_workers_spin.setEnabled(
                 self.processing_mode_combo.currentData() != 'serial'))
+        # start from the computer-wide setting (File > Settings and saved
+        # items... > Parallel processing); settings of this session or the
+        # snapshot replace it in load_settings()
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        _default = default_parallel_settings()
+        self.processing_mode_combo.setCurrentIndex(
+            max(0, self.processing_mode_combo.findData(_default['processing_mode'])))
+        self.max_workers_spin.setValue(_default['max_workers'])
         layout.addWidget(processing_group)
 
         # No trailing addStretch() here: spectra_group's stretch factor

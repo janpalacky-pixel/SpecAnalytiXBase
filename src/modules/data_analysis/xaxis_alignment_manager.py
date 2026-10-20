@@ -225,6 +225,11 @@ class XAxisAlignmentManager:
         started = time.perf_counter()
         todo = [i for i in range(len(spectra)) if i != ref_idx]
         n = len(todo)
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        default = default_parallel_settings()
+        settings = dict(settings)
+        settings.setdefault('processing_mode', default['processing_mode'])
+        settings.setdefault('max_workers', default['max_workers'])
         mode = settings.get('processing_mode', 'auto')
         if mode not in ('auto', 'serial', 'parallel'):
             mode = 'auto'

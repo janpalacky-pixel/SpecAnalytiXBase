@@ -2050,9 +2050,12 @@ class AutomatedBaselineManager:
         # same function computes each one), then the cheap bookkeeping
         # below always runs here in this process, identically in every
         # processing mode.
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        default = default_parallel_settings()        # e.g. a batch pipeline without them
         baselines = self._compute_all_baselines(
             spectra, algorithm, cfg,
-            params.get('processing_mode', 'auto'), params.get('max_workers', 0),
+            params.get('processing_mode', default['processing_mode']),
+            params.get('max_workers', default['max_workers']),
             progress_callback, status_callback, progress)
         for i, spectrum in enumerate(spectra):
             corrected_spectrum = {key: (value.copy() if hasattr(value, 'copy') else value)

@@ -289,6 +289,24 @@ def show_help_window(parent, title, content):
         QMessageBox.information(parent, 'Help', f'Help not available: {exc}')
 
 
+def _anchor_redirect(path, anchor):
+    """Write <folder>/_goto_<page>_<anchor>.html, which sends the browser on to
+    <page>.html#<anchor>, and return its path (see _open_in_browser)."""
+    import html
+    import re
+    page = os.path.basename(path)
+    safe = re.sub(r'[^A-Za-z0-9_-]', '_', f"{os.path.splitext(page)[0]}_{anchor}")
+    target = f"{page}#{anchor}"
+    redirect = os.path.join(os.path.dirname(path), f"_goto_{safe}.html")
+    with open(redirect, 'w', encoding='utf-8') as fh:
+        fh.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            f'<meta http-equiv="refresh" content="0; url={html.escape(target)}">'
+            f'<script>location.replace({target!r});</script></head>'
+            f'<body><a href="{html.escape(target)}">Open the help</a></body></html>')
+    return redirect
+
+
 def _open_in_browser(path, anchor=None):
     """
     Open a local file in the user's default application for .html files
@@ -297,8 +315,15 @@ def _open_in_browser(path, anchor=None):
     first (works without importing the stdlib webbrowser module, and
     integrates with Qt's own event loop), falling back to Python's
     built-in webbrowser module if that's unavailable for any reason.
+
+    With an `anchor` (a section of the page): Windows drops the '#section'
+    part of a file:// link it hands to the browser, so the page would open
+    at its top. Instead a tiny page next to it is opened that sends the
+    browser on to page.html#section.
     """
-    file_url = "file:///" + path.replace(os.sep, "/") + (f"#{anchor}" if anchor else "")
+    if anchor:
+        path = _anchor_redirect(path, anchor)
+    file_url = "file:///" + path.replace(os.sep, "/")
     try:
         from PyQt5.QtGui import QDesktopServices
         from PyQt5.QtCore import QUrl

@@ -191,6 +191,15 @@ class MainController(QMainWindow):
         # View -> Theme (light / dark, used from the next start)
         from src.views.theme import build_menu as _build_theme_menu
         _build_theme_menu(self)
+        # File -> Settings and saved items... (after Automatic saving)
+        from PyQt5.QtWidgets import QAction as _QAction
+        self.settings_action = _QAction("Settings and saved items\u2026", self.view)
+        self.settings_action.setObjectName("actionSettingsAndSavedItems")
+        self.settings_action.setStatusTip(
+            "All settings remembered between sessions (reset them) and your saved items")
+        self.settings_action.triggered.connect(self.show_settings_dialog)
+        if hasattr(self.view, 'menuFile'):
+            self.view.menuFile.addAction(self.settings_action)
         self._add_methods_report_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
@@ -2144,6 +2153,35 @@ class MainController(QMainWindow):
         self._whats_new_window = dlg
         dlg.show()
         return dlg
+
+    def show_settings_dialog(self):
+        """File -> Settings and saved items... (settings_dialog.py)."""
+        from src.views.dialogs.misc.settings_dialog import SettingsDialog
+        ac = self.autosave_controller
+        dlg = SettingsDialog(self.view, self, ac.preferences, ac.manager)
+        self._settings_dialog = dlg
+        dlg.exec_()
+
+    def settings_changed(self, ids):
+        """After File -> Settings and saved items... changed or reset settings
+        (ids: 'autosave', 'cd_quality', 'large_plot', 'theme'): what the open
+        program shows follows at once (menus, automatic saving, the plot); the
+        theme changes at the next start."""
+        ac = self.autosave_controller
+        if 'autosave' in ids:
+            ac._apply_interval(ac.preferences.autosave_minutes())
+        cq = getattr(self, 'cd_quality_controller', None)
+        if 'cd_quality' in ids and cq is not None and hasattr(cq, 'shade_action'):
+            cq.shade_action.blockSignals(True)
+            cq.shade_action.setChecked(cq.shading_enabled())
+            cq.shade_action.blockSignals(False)
+        if 'theme' in ids:
+            from src.views.theme import saved_theme
+            actions = getattr(self, 'theme_actions', {}) or {}
+            if saved_theme() in actions:
+                actions[saved_theme()].setChecked(True)
+        if ids & {'cd_quality', 'large_plot'} and getattr(self, 'selected_spectra', None):
+            self.plot_spectra()
 
     def show_run_tests_dialog(self):
         """Help -> Run tests...: the program's own test suite (self_test.py)."""

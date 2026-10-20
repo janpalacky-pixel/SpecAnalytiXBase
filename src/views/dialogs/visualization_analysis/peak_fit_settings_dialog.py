@@ -17,19 +17,44 @@ _MODE_TEXT = {'auto': 'Automatic', 'serial': 'Serial (one process)',
               'parallel': 'Parallel (several processes)'}
 
 
+_SHARED = {'processing_mode': 'parallel_processing_mode', 'max_workers': 'parallel_max_workers'}
+
+
 def load_settings():
+    """The Fit settings; Processing and Workers are the computer-wide
+    Parallel processing setting (shared with Automated Baseline, X-axis
+    alignment and bootstrap). Values stored here by an earlier version are
+    moved there once, if it is not set yet."""
     try:
         from src.modules.misc.session_files import Preferences
-        stored = Preferences().get(PREFERENCES_KEY, {})
+        prefs = Preferences()
+        stored = prefs.get(PREFERENCES_KEY, {})
+        stored = dict(stored) if isinstance(stored, dict) else {}
+        for key, shared in _SHARED.items():
+            if key in stored:
+                old = stored.pop(key)
+                if prefs.get(shared) is None and old not in ('auto', 0, None):
+                    prefs.set(shared, old)
+                prefs.set(PREFERENCES_KEY, stored) if stored else prefs.remove(PREFERENCES_KEY)
     except Exception:
         stored = {}
-    return normalized_settings(stored if isinstance(stored, dict) else {})
+    from src.modules.utils.parallel_utils import default_parallel_settings
+    stored.update(default_parallel_settings())
+    return normalized_settings(stored)
 
 
 def save_settings(settings):
     try:
         from src.modules.misc.session_files import Preferences
-        Preferences().set(PREFERENCES_KEY, normalized_settings(settings))
+        prefs = Preferences()
+        s = normalized_settings(settings)
+        for key, shared in _SHARED.items():
+            value = s.pop(key)
+            if value in ('auto', 0):
+                prefs.remove(shared)
+            else:
+                prefs.set(shared, value)
+        prefs.set(PREFERENCES_KEY, s)
     except Exception:
         pass
 
@@ -97,13 +122,17 @@ class PeakFitSettingsDialog(QDialog):
         for key in ('auto', 'serial', 'parallel'):
             self.mode_combo.addItem(_MODE_TEXT[key], key)
         self.mode_combo.setCurrentIndex(['auto', 'serial', 'parallel'].index(s['processing_mode']))
+        shared_note = ("\n\nProcessing and Parallel workers are shared by all tools that can use\n"
+                       "several processor cores (Automated Baseline, X-axis alignment, bootstrap):\n"
+                       "File \u203a Settings and saved items\u2026 \u203a Parallel processing.")
         self.mode_combo.setToolTip(
             "Automatic: fits a few pixels first and uses several processes only when\n"
-            "the whole map would take more than a few seconds.")
+            "the whole map would take more than a few seconds." + shared_note)
         form.addRow("Processing:", self.mode_combo)
 
         self.workers_spin = WorkerCountSlider()
         self.workers_spin.setValue(int(s['max_workers'] or 0))
+        self.workers_spin.setToolTip(shared_note.strip())
         form.addRow("Parallel workers:", self.workers_spin)
         layout.addLayout(form)
 

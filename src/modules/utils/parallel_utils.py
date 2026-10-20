@@ -149,6 +149,35 @@ def max_worker_count():
     return max(1, min(os.cpu_count() or 1, _MAX_POOL_WORKERS))
 
 
+PREF_PROCESSING_MODE = 'parallel_processing_mode'
+PREF_MAX_WORKERS = 'parallel_max_workers'
+PROCESSING_MODES = ('auto', 'serial', 'parallel')
+
+
+def default_parallel_settings():
+    """The computer-wide starting point for parallel processing (File >
+    Settings and saved items... > Parallel processing): {'processing_mode':
+    'auto' | 'serial' | 'parallel', 'max_workers': 0 (= all cores) or n}.
+    Automated Baseline, X-axis alignment and the peak-fit maps start from it
+    (a change in their window applies to that session); bootstrap uses at
+    most that many workers, and none with 'serial'."""
+    mode, workers = 'auto', 0
+    try:
+        from src.modules.misc.session_files import Preferences
+        prefs = Preferences()
+        mode = prefs.get(PREF_PROCESSING_MODE, 'auto')
+        workers = prefs.get(PREF_MAX_WORKERS, 0)
+    except Exception:
+        pass
+    if mode not in PROCESSING_MODES:
+        mode = 'auto'
+    try:
+        workers = max(0, int(workers))
+    except (TypeError, ValueError):
+        workers = 0
+    return {'processing_mode': mode, 'max_workers': workers}
+
+
 def requested_workers(setting):
     """The worker count asked for by a 'Parallel workers' setting: 0 (the
     default) means the maximum, all CPU cores; a positive number is taken

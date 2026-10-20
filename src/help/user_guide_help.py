@@ -1836,12 +1836,18 @@ def get_user_guide_help_content():
         Test datasets &rarr; Synthetic &rarr; Endmember unmixing; the help also shows a real
         example (the Glenodinium map). Details:
         <a href="help://map2d">2D Map help</a>.</p>
-        <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, 2D Map peak
-        fitting). Large jobs run in several worker processes. The <b>Workers</b> slider goes from 1
-        to the number of CPU cores and defaults to the maximum; an orange note shows when the memory
-        free right now suits fewer workers. If the workers cannot start or run out of memory, the job
-        is redone serially &mdash; same result, slower. The progress bar counts every spectrum, also
-        in parallel mode.</p>
+        <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, X-axis alignment,
+        2D Map peak fitting, bootstrap uncertainty of NMF and MCR-ALS). Large jobs run in several
+        worker processes. The <b>Workers</b> slider goes from 1 to the number of CPU cores and
+        defaults to the maximum; an orange note shows when the memory free right now suits fewer
+        workers. If the workers cannot start or run out of memory, the job is redone serially
+        &mdash; same result, slower. The progress bar counts every spectrum, also in parallel mode.
+        <b>Processing</b> and <b>Workers</b> start from one setting for all these tools, kept on
+        this computer: <b>File &rarr; Settings and saved items&hellip; &rarr; Parallel
+        processing</b> (e.g. <em>Serial</em> to keep the computer free for other work). A change in a
+        tool's own window applies to that session; the peak-fit maps' <em>Fit settings&hellip;</em>
+        change the shared setting itself. Bootstrap uses at most that many workers, and none with
+        <em>Serial</em>.</p>
 
         <h3 id="2d-correlation">2D Correlation (2D-COS) <a href="help://two_d_correlation" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
 
@@ -2132,6 +2138,42 @@ def get_user_guide_help_content():
                 <code>%LOCALAPPDATA%\SpecAnalytiXBase\autosave</code> and deleted when the
                 program is closed normally.</li>
         </ul>
+
+        <h3 id="settings">Settings and Saved Items</h3>
+        <p><strong>File &rarr; Settings and saved items&hellip;</strong> shows in one place everything
+        SpecAnalytiXBase remembers on this computer between sessions. Every copy of the program of
+        your Windows user &mdash; installed or run from source &mdash; uses the same settings and
+        saved items, and installing, updating or uninstalling the program does not change them.</p>
+        <ul>
+            <li><strong>Settings</strong> tab: every setting in groups (automatic saving, plotting
+                many spectra, CD data quality, the Import dialog, the peak-fit maps' Fit settings,
+                parallel processing, the Methods report, the theme, the What's New window), each
+                with its value and its default. <strong>Change a value directly in the table</strong>
+                &mdash; the same as in its own menu or dialog; the program follows at once (the theme
+                from the next start). Values that differ from the default are shown in <b>bold</b>;
+                point at a setting to see what it does. Click a group's heading to open or close it
+                (groups with changed values are open). Tick rows &mdash; or a heading's box for the
+                whole group &mdash; and click <strong>Reset selected&hellip;</strong>, or
+                <strong>Reset all settings&hellip;</strong>; you are asked first. The orange
+                <strong>?</strong> opens a window with the table below: what each setting means,
+                with a link to more help.<br>
+                <em>Not used by this version of the program</em> (only shown when there are any):
+                values stored by another version of SpecAnalytiXBase on this computer &mdash; left over
+                from an earlier version, or written by a newer one if you also use a newer version.
+                This version ignores them; resetting removes them.</li>
+            <li><strong>Your saved items</strong> tab: normalization presets, import profiles,
+                batch pipelines, the Open recent list and automatic saves of earlier sessions
+                (work not saved when the program ended unexpectedly). A reset of the settings never
+                touches them; <strong>Delete&hellip;</strong> lets you choose which ones to delete
+                (this cannot be undone). The automatic save of the session that is running is never
+                offered.</li>
+            <li>At the bottom: the folders where everything is stored, each with <strong>Open
+                folder</strong> &mdash; e.g. to back them up or to copy your presets and profiles to
+                another computer.</li>
+        </ul>
+        <p>What each setting does (the same text appears when you point at a setting in the
+        window):</p>
+        $SETTINGS_TABLE
 
         <h3 id="methods-report">Methods Report for Publications</h3>
         <p><strong>File → Methods report for publication…</strong> writes a readable
@@ -2514,4 +2556,6 @@ def get_user_guide_help_content():
     </html>
 """)
 
+    from src.modules.misc.user_settings import help_table_html
+    images = dict(images, SETTINGS_TABLE=help_table_html())
     return help_template.safe_substitute(images)

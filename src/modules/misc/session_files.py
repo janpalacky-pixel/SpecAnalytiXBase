@@ -277,6 +277,22 @@ class Preferences:
         except OSError as exc:
             logger.warning("Could not save preferences: %s", exc)
 
+    def all(self):
+        """Every stored preference (a copy)."""
+        return dict(read_json_store(self.path, 'preferences'))
+
+    def remove(self, *keys):
+        """Forget these preferences: their defaults apply again."""
+        data = read_json_store(self.path, 'preferences')
+        if not any(k in data for k in keys):
+            return
+        for k in keys:
+            data.pop(k, None)
+        try:
+            write_json_atomic(self.path, data)
+        except OSError as exc:
+            logger.warning("Could not save preferences: %s", exc)
+
     def autosave_minutes(self):
         value = self.get('autosave_minutes', DEFAULT_AUTOSAVE_MINUTES)
         return value if value in AUTOSAVE_CHOICES else DEFAULT_AUTOSAVE_MINUTES

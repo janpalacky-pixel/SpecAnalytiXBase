@@ -160,6 +160,13 @@ def run_replicates(replicate_fn, common, row_indices, progress_callback=None,
 
     if workers is None and rest:
         workers = bootstrap_worker_count(table_bytes)
+        # File > Settings and saved items... > Parallel processing
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        shared = default_parallel_settings()
+        if shared['processing_mode'] == 'serial':
+            workers = 1
+        elif shared['max_workers'] > 0:
+            workers = min(workers, shared['max_workers'])
     if (rest and min(workers, len(rest)) > 1 and table_bytes <= MAX_PARALLEL_TABLE_BYTES
             and per_rep * len(rest) >= MIN_PARALLEL_SECONDS):
         try:

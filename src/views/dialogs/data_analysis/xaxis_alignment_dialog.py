@@ -318,6 +318,13 @@ class XAxisAlignmentDialog(QDialog):
         self.processing_mode_combo.currentIndexChanged.connect(
             lambda _i: self.max_workers_spin.setEnabled(
                 self.processing_mode_combo.currentData() != 'serial'))
+        # start from the computer-wide setting (File > Settings and saved
+        # items... > Parallel processing); saved settings replace it
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        _default = default_parallel_settings()
+        self.processing_mode_combo.setCurrentIndex(
+            max(0, self.processing_mode_combo.findData(_default['processing_mode'])))
+        self.max_workers_spin.setValue(_default['max_workers'])
         return group
 
     def _build_range_group(self):
@@ -811,9 +818,12 @@ class XAxisAlignmentDialog(QDialog):
             self.range_group.setChecked(True)
             self.x_min_spin.setValue(float(x_range[0]))
             self.x_max_spin.setValue(float(x_range[1]))
-        mode_index = self.processing_mode_combo.findData(settings.get('processing_mode', 'auto'))
+        from src.modules.utils.parallel_utils import default_parallel_settings
+        default = default_parallel_settings()        # File > Settings... > Parallel processing
+        mode_index = self.processing_mode_combo.findData(
+            settings.get('processing_mode', default['processing_mode']))
         self.processing_mode_combo.setCurrentIndex(max(0, mode_index))
-        self.max_workers_spin.setValue(int(settings.get('max_workers', 0) or 0))
+        self.max_workers_spin.setValue(int(settings.get('max_workers', default['max_workers']) or 0))
 
 
     # ──────────────────────────────────────────────────────────────────

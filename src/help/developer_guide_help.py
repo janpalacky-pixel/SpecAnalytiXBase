@@ -3904,6 +3904,19 @@ def _natural_sort_key(cls, label):
             (<code>json_store.write_bytes_atomic</code>).</li>
         </ul>
 
+        <div class="tip">
+            <b>A new remembered setting?</b> Everything kept between sessions in
+            <code>preferences.json</code> is listed, and can be changed and reset, in File &rarr;
+            Settings and saved items&hellip; (<code>src/modules/misc/user_settings.py</code>,
+            <code>_build_settings()</code>): add a <code>Setting</code> there (its group, label,
+            kind &mdash; choice, on/off, whole number or number &mdash;, default, and how it is read and
+            stored), add its key to <code>KNOWN_KEYS</code>, and give it an <code>effect</code> if the
+            open program must follow a change at once (<code>MainController.settings_changed()</code>).
+            A stored key the program does not know appears under "Not used by this version" (it may
+            come from an older or a newer version, since all copies share the settings). Saved items
+            the user builds up (presets, profiles, ...) go to <code>saved_kinds()</code> &mdash; they are
+            deleted only one by one, never by a reset.
+        </div>
         <h2 id="cd-quality-design">CD Data Quality: Store the Evidence, Not the Verdict</h2>
         <p>
         <code>src/modules/data_io/cd_quality.py</code> (rule, Qt-free),
