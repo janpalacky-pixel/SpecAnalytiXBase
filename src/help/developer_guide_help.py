@@ -4195,6 +4195,57 @@ pytest tests/ -v
         importantly that the Spectral Calculator silently created undefined values (log/sqrt of negative
         CD data) which later made SVD/MCR-ALS/clustering fail with cryptic errors.</p>
 
+        <h3 id="tests-on-windows">When the suite fails only on Windows: lessons from October 2026</h3>
+        <p>After new tests were added on 19 October 2026, <code>pytest tests/ -v</code> on Windows
+        ended silently at about 20&nbsp;% and later hung at about 60&nbsp;%, while every test passed
+        on Linux and each test passed on its own. Four causes, each now fixed with a test:</p>
+        <ul>
+            <li><b>A timer outlived its window.</b> The Undo/Redo refresh timer had no parent, so it
+            kept firing after a test deleted its main window and touched the deleted buttons. An
+            exception inside a Qt callback (timer, signal, paint) is only printed by PyQt5 on Linux,
+            but on Windows PyQt5 aborts the process: exit code 3221226505 (0xC0000409), no Python
+            message at all. Rule: give every <code>QTimer</code> (and other helper object) its widget
+            as parent, so it dies with it, and let a slot that may run late check
+            <code>sip.isdeleted()</code> (<code>test_undo_redo_timer_after_window_closed.py</code>).</li>
+            <li><b>A chain reaction while closing.</b> <code>MainController.closeEvent</code> closes
+            all other top-level windows. In a test run many main windows are left over, and each of
+            them, while being closed, closed all windows again: with 4 main windows the loop ran
+            5&nbsp;419 times. It now runs once (<code>_closing_other_windows</code>,
+            <code>test_closing_with_several_main_windows.py</code>). Rule: code that closes or updates
+            "everything" must not be re-entered from inside itself.</li>
+            <li><b>Tests that passed only in company.</b> One test closed its main window without
+            answering the "close the application?" question (an earlier test's module fixture had
+            answered "Yes" for the whole file); another created <code>QApplication</code> without
+            keeping a reference (an earlier file had already created one). Rule: every test must
+            pass alone, <code>pytest tests/file.py::test_name</code>; patch
+            <code>QMessageBox.question</code> before closing a main window and keep
+            <code>app = QApplication.instance() or QApplication([])</code> in a variable.</li>
+            <li><b>Pixel sizes in the invisible test mode.</b> With
+            <code>QT_QPA_PLATFORM=offscreen</code> on Windows, text is measured with a substitute
+            font (Helvetica 12&nbsp;pt) about twice as wide as the real one (MS Shell Dlg 2,
+            8.25&nbsp;pt): Group Statistics "needed" 2&nbsp;457&nbsp;px instead of the real
+            1&nbsp;227&nbsp;px. Checks of widths in pixels are therefore skipped in that mode on
+            Windows (<code>test_panels_fit_on_open.py</code>).</li>
+        </ul>
+        <p><b>How they were found</b> (useful the next time):</p>
+        <ul>
+            <li><code>pytest.ini</code> sets <code>faulthandler_timeout = 300</code>: a test that runs
+            longer than 5&nbsp;minutes prints where every thread is &mdash; the chain reaction showed up
+            as nine nested <code>closeEvent</code> calls.</li>
+            <li>A run that simply ends without a summary is a crash; <code>echo %errorlevel%</code>
+            right after it gives the kind (3221226505 = the process aborted itself).</li>
+            <li>A crash in test X that does not happen when X runs alone comes from an earlier test:
+            run each earlier file together with X (<code>pytest tests/test_a.py
+            tests/test_x.py::test_name</code>) to find the one that matters.</li>
+            <li>To see errors inside Qt callbacks (which abort on Windows), run the suite with a
+            small pytest plugin that sets <code>sys.excepthook</code> to write each error with its
+            traceback to a file; on Linux this shows the same errors without the crash.</li>
+            <li>LAPACK's "On entry to DLASCL parameter number 4 had an illegal value" means a matrix
+            calculation received NaN. Found the same way: <code>np.polyfit</code> of a line through
+            points that all lie at x&nbsp;=&nbsp;0 in Melting Curve Analysis (now refused before the
+            fit, <code>_polyfit_checked</code>).</li>
+        </ul>
+
         <!-- ═══════════════════════════════════════════════════════════
              BUILD, PACKAGING & REPO HYGIENE
              ═══════════════════════════════════════════════════════════ -->
