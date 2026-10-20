@@ -384,7 +384,14 @@ def grid_plot_mode(graphics_view, spectra, nrows=1, ncols=1,
             if display_labels:
                 spectrum_label = display_labels.get(spectrum_label, spectrum_label)
             spectrum_settings = plot_settings.get(spectrum_key(spectrum)) if plot_settings else None
-            
+
+            # X-scale / Y-scale (Basic plot options), once per panel -- like
+            # overlay_plot_mode, which sets them once for its single axes.
+            # (apply_plot_settings no longer sets them; until 2026-10-20 the
+            # grid plot therefore ignored both settings.)
+            ax.set_xscale(x_scale)
+            ax.set_yscale(y_scale)
+
             apply_plot_settings(
                 ax,
                 spectrum['x_scale'],

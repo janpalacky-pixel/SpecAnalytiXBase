@@ -56,13 +56,11 @@ def test_scale_and_link_controls_redraw_without_an_error(mc, plot_type):
     v.x_scale_comboBox.setCurrentText("log")
     app.processEvents()
     assert mc.errors == []
-    if plot_type == "Overlay plot":
-        assert mc.static_canvas.figure.axes[0].get_xscale() == 'log'      # really redrawn
+    assert mc.static_canvas.figure.axes[0].get_xscale() == 'log'      # really redrawn
     v.y_scale_comboBox.setCurrentText("log")
     app.processEvents()
     assert mc.errors == []
-    if plot_type == "Overlay plot":
-        assert mc.static_canvas.figure.axes[0].get_yscale() == 'log'
+    assert mc.static_canvas.figure.axes[0].get_yscale() == 'log'
     v.x_scale_comboBox.setCurrentText("linear")
     v.y_scale_comboBox.setCurrentText("linear")
     for change in (lambda: _toggle(v.link_x_axes_checkBox), lambda: _toggle(v.link_y_axes_checkBox),
@@ -97,3 +95,29 @@ def test_a_real_progress_callback_is_still_used(mc):
     mc.plot_spectra(progress_callback=lambda: calls.append(1))
     assert calls and mc.errors == []
 
+
+def test_grid_plot_uses_x_scale_and_y_scale_in_every_panel(mc):
+    """The Grid plot ignored X-scale and Y-scale (since the first version);
+    now every panel uses them, also in Open in New Window."""
+    v = mc.view
+    mc.grid_settings['rows'] = mc.grid_settings['columns'] = 2
+    v.comboBox_plot_type_choice.setCurrentText("Grid plot")
+    v.x_scale_comboBox.setCurrentText("log")
+    v.y_scale_comboBox.setCurrentText("symlog")
+    app.processEvents()
+    panels = [ax for ax in mc.static_canvas.figure.axes if ax.get_visible()]
+    assert len(panels) == 4
+    assert all(ax.get_xscale() == 'log' and ax.get_yscale() == 'symlog' for ax in panels)
+    import matplotlib.pyplot as plt
+    from src.modules.visualization.external_figure import create_external_figure
+    fig = create_external_figure(mc)
+    try:
+        shown = [ax for ax in fig.axes if ax.get_visible()]
+        assert shown and all(ax.get_xscale() == 'log' for ax in shown)
+    finally:
+        plt.close('all')
+    v.x_scale_comboBox.setCurrentText("linear")
+    v.y_scale_comboBox.setCurrentText("linear")
+    app.processEvents()
+    assert all(ax.get_xscale() == 'linear' for ax in mc.static_canvas.figure.axes if ax.get_visible())
+    assert mc.errors == []
