@@ -3905,6 +3905,13 @@ def _natural_sort_key(cls, label):
         </ul>
 
         <div class="tip">
+            <b>A new keyboard shortcut?</b> Add it to <code>SHORTCUTS</code> in
+            <code>src/modules/misc/keyboard_shortcuts.py</code>: Help &rarr; Keyboard
+            shortcuts&hellip; and the User Guide's table are made from it, and
+            <code>tests/test_keyboard_shortcuts.py</code> fails when a main-window shortcut is
+            missing there (or listed but gone).
+        </div>
+        <div class="tip">
             <b>A new remembered setting?</b> Everything kept between sessions in
             <code>preferences.json</code> is listed, and can be changed and reset, in File &rarr;
             Settings and saved items&hellip; (<code>src/modules/misc/user_settings.py</code>,

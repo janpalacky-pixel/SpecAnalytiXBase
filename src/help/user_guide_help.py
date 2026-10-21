@@ -2390,13 +2390,9 @@ def get_user_guide_help_content():
              9. KEYBOARD SHORTCUTS
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="keyboard">9. Keyboard Shortcuts</h2>
-        <table>
-            <tr><th>Shortcut</th><th>Action</th></tr>
-            <tr><td><span class="kbd">Ctrl+A</span></td><td>Select all spectra</td></tr>
-            <tr><td><span class="kbd">Ctrl+U</span></td><td>Deselect all spectra</td></tr>
-            <tr><td><span class="kbd">Shift+click</span></td><td>Select contiguous range from last-clicked item to target (Excel-style)</td></tr>
-            <tr><td><span class="kbd">Ctrl+click</span></td><td>Toggle individual spectrum in / out of selection</td></tr>
-        </table>
+        <p>Also in the program: <strong>Help &rarr; Keyboard shortcuts&hellip;</strong>. On a Mac, Ctrl
+        is the Cmd key.</p>
+        $SHORTCUTS_TABLE
 
         <!-- ═══════════════════════════════════════════════════════════
              10. SPECTROSCOPY GUIDELINES
@@ -2601,5 +2597,6 @@ def get_user_guide_help_content():
 """)
 
     from src.modules.misc.user_settings import help_table_html
-    images = dict(images, SETTINGS_TABLE=help_table_html())
+    from src.modules.misc.keyboard_shortcuts import html_table as shortcuts_table
+    images = dict(images, SETTINGS_TABLE=help_table_html(), SHORTCUTS_TABLE=shortcuts_table())
     return help_template.safe_substitute(images)

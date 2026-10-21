@@ -1652,6 +1652,8 @@ class MainController(QMainWindow):
         self.view.actionAbout.triggered.connect(self.show_about_dialog)
         if hasattr(self.view, 'actionWhatsNew'):
             self.view.actionWhatsNew.triggered.connect(self.show_whats_new)
+        if hasattr(self.view, 'actionKeyboardShortcuts'):
+            self.view.actionKeyboardShortcuts.triggered.connect(self.show_keyboard_shortcuts)
         if hasattr(self.view, 'actionRunTests'):
             from src.modules.utils.self_test import availability
             ok, why = availability()
@@ -2168,6 +2170,12 @@ class MainController(QMainWindow):
         self._whats_new_window = dlg
         dlg.show()
         return dlg
+
+    def show_keyboard_shortcuts(self):
+        """Help -> Keyboard shortcuts... (a window that can stay open)."""
+        from src.views.dialogs.misc.keyboard_shortcuts_dialog import show_keyboard_shortcuts
+        self._shortcuts_window = show_keyboard_shortcuts(self.view)
+        return self._shortcuts_window
 
     def show_settings_dialog(self):
         """File -> Settings and saved items... (settings_dialog.py)."""
