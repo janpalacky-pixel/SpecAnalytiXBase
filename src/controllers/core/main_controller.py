@@ -203,6 +203,7 @@ class MainController(QMainWindow):
         if hasattr(self.view, 'menuFile'):
             self.view.menuFile.addAction(self.settings_action)
         self._add_methods_report_action()
+        self._add_copy_plot_action()
         self.webpage_controller = WebpageController()
         self.spectrum_selector = SpectrumSelector(self, self.spectrum_selection_widget)
         self.peak_detection_controller = PeakDetectionController(self)
@@ -2090,6 +2091,47 @@ class MainController(QMainWindow):
             menu.addAction(action)
         self.view.actionMethodsReport = action
 
+    def _add_copy_plot_action(self):
+        """File -> Copy plot to clipboard (Ctrl+Shift+C), after the Methods
+        report; also in the plot's right-click menu."""
+        from PyQt5.QtGui import QKeySequence
+        from PyQt5.QtWidgets import QAction
+        from src.views import icons as _icons
+        action = QAction("Copy plot to clipboard", self.view)
+        action.setObjectName("actionCopyPlot")
+        action.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        action.setIcon(_icons.plot_icon())
+        action.setStatusTip("The plot as a picture, to paste into Word, PowerPoint or an e-mail")
+        action.triggered.connect(self.copy_plot_to_clipboard)
+        menu = self.view.menuFile
+        report = getattr(self.view, 'actionMethodsReport', None)
+        actions = menu.actions()
+        if report in actions and actions.index(report) + 1 < len(actions):
+            menu.insertAction(actions[actions.index(report) + 1], action)
+        else:
+            menu.addAction(action)
+        self.view.actionCopyPlot = action
+
+    def copy_plot_to_clipboard(self):
+        """The main plot as a picture on the clipboard (Ctrl+Shift+C)."""
+        canvas = getattr(self, 'static_canvas', None)
+        figure = getattr(canvas, 'figure', None)
+        if figure is None or not figure.axes:
+            self._status("There is no plot to copy \u2014 select some spectra first.")
+            return None
+        from src.controllers.visualization.plot_clipboard import COPY_DPI, copy_figure
+        try:
+            image = copy_figure(figure)
+        except Exception:
+            logger.exception("Copying the plot to the clipboard failed")
+            image = None
+        if image is None:
+            self._status("The plot could not be copied.")
+            return None
+        self._status(f"Plot copied ({image.width()} \u00d7 {image.height()} pixels, {COPY_DPI} dpi) "
+                     "\u2014 paste it into Word, PowerPoint or an e-mail (Ctrl+V)", 6000)
+        return image
+
     def show_methods_report(self):
         from src.modules.misc.methods_report import report_for_main_controller
         from src.views.dialogs.misc.methods_report_dialog import MethodsReportDialog
@@ -2700,6 +2742,7 @@ class MainController(QMainWindow):
         # Add separator and new figure action
         context_menu.addSeparator()
         new_figure_action = context_menu.addAction("Open in New Window")        
+        copy_plot_action = context_menu.addAction("Copy plot to clipboard\tCtrl+Shift+C")
 
         # Pinned cursors (Cursor checkbox above the plot)
         cursor = getattr(self, 'plot_cursor_controller', None)
@@ -2735,6 +2778,8 @@ class MainController(QMainWindow):
             self.constrained_layout_controller.show_dialog()
         elif action == new_figure_action:
             self.open_external_figure()
+        elif action == copy_plot_action:
+            self.copy_plot_to_clipboard()
         elif copy_cursor_action is not None and action == copy_cursor_action:
             n = cursor.copy_table()
             self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "

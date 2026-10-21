@@ -16,6 +16,7 @@ SHORTCUTS = [
     ('Main window', 'Ctrl+O', 'Open snapshot'),
     ('Main window', 'Ctrl+S', 'Save (selected spectra or a snapshot)'),
     ('Main window', 'Ctrl+Shift+V', 'Paste data from the clipboard (numbers from Excel or a text file)'),
+    ('Main window', 'Ctrl+Shift+C', 'Copy the plot as a picture (to paste into Word, PowerPoint, e-mail)'),
     ('Spectra list', 'Ctrl+A', 'Select all spectra'),
     ('Spectra list', 'Ctrl+U', 'Unselect all spectra'),
     ('Spectra list', 'Ctrl+C', 'Copy the selected spectra (remembered for Ctrl+V)'),

@@ -64,3 +64,22 @@ def help_button(tooltip):
         'QPushButton:hover { background-color:#E65100; }'
         'QPushButton:pressed { background-color:#BF360C; }')
     return btn
+
+
+def plot_icon(size=16):
+    """A small plot (axes and a curve) for 'Copy plot to clipboard'."""
+    from PyQt5.QtGui import QPainterPath, QPen
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(QPen(QColor('#555555'), 1.2))
+    p.drawLine(2, 2, 2, size - 2)
+    p.drawLine(2, size - 2, size - 1, size - 2)
+    path = QPainterPath(QPointF(3, size - 4))
+    path.cubicTo(QPointF(6, size - 4), QPointF(7, 3), QPointF(9, 3))
+    path.cubicTo(QPointF(11, 3), QPointF(12, size - 6), QPointF(size - 1, size - 6))
+    p.setPen(QPen(QColor('#1F77B4'), 1.6))
+    p.drawPath(path)
+    p.end()
+    return QIcon(pix)

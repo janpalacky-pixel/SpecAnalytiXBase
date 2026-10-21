@@ -949,6 +949,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Show Legend</strong></td><td>Show or hide the legend of the plot (✓ = shown, the default)</td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
+            <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
         </table>
 
         <h3 id="legend-panel">Legend</h3>
@@ -2376,7 +2377,12 @@ def get_user_guide_help_content():
         workspace is only ever replaced once, at the very end, and only if
         the whole load succeeded.</p>
 
-        <h3>Plot Export</h3>
+        <h3 id="plot-export">Plot Export</h3>
+        <p><strong>Copy plot to clipboard</strong> (<span class="kbd">Ctrl+Shift+C</span>, File menu, or
+        right-click on the plot) puts the plot on the clipboard as a picture: paste it into Word,
+        PowerPoint or an e-mail with Ctrl+V. It is copied at 300 dpi (sharp also when printed), on a
+        white background, and is pasted in the size it has on the screen &mdash; make the program
+        window larger or smaller first for a larger or smaller picture.</p>
         <p>Use the Save icon in the matplotlib toolbar to export the current plot.
         For publication-quality output, use <strong>Open in new window</strong>
         (right-click on plot) which gives a full matplotlib window with all export
