@@ -383,6 +383,8 @@ class AutosaveController(QObject):
         file_menu = view.menuFile
         self.recent_menu = QMenu("Open recent", file_menu)
         self.recent_menu.setObjectName("menuOpenRecent")
+        from src.views import icons
+        self.recent_menu.setIcon(icons.standard('SP_FileDialogListView', view))
         self.recent_menu.aboutToShow.connect(self._fill_recent_menu)
         actions = file_menu.actions()
         anchor = None

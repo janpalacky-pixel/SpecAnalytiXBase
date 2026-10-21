@@ -1247,7 +1247,7 @@ class SomeController:
             </defs>
 
             <rect x="250" y="16" width="400" height="44" rx="6" fill="#2E7D32"/>
-            <text x="450" y="43" font-size="13" fill="#fff" text-anchor="middle">User: File &rarr; Import Snapshot</text>
+            <text x="450" y="43" font-size="13" fill="#fff" text-anchor="middle">User: File &rarr; Open snapshot&hellip;</text>
 
             <line x1="450" y1="60" x2="450" y2="92" stroke="#555" stroke-width="1.5" marker-end="url(#snapArrow)"/>
 
@@ -1553,11 +1553,11 @@ class SomeController:
             for the design with the fewest states to reason about over a
             cleverer one with more edge cases. The one real trade-off: on a
             failed load, whatever was on screen before
-            <strong>Import Snapshot</strong> was clicked stays on screen,
+            <strong>Open snapshot&hellip;</strong> was clicked stays on screen,
             completely unchanged &mdash; not because anything was deliberately
             preserved, but because nothing ever touched it. This also makes
             snapshot loading match the shape of a regular data import
-            (<strong>File &rarr; Import data &rarr; new</strong> only clears
+            (<strong>File &rarr; Import data &rarr; New&hellip;</strong> only clears
             existing spectra once a new file has actually loaded), instead of
             being the one exception to it.
         </div>
@@ -3133,8 +3133,8 @@ derived = {
             <code>import_parameters</code> and <code>duplicate_x_merge</code> —
             appeared with its keys fully alphabetised, at every nesting level,
             but <strong>only</strong> for spectra imported via <strong>File →
-            Import data → add</strong>. The exact same file imported via
-            <strong>new</strong> showed the correct, original insertion order.
+            Import data → Add to current&hellip;</strong>. The exact same file imported via
+            <strong>New&hellip;</strong> showed the correct, original insertion order.
             Python dicts have guaranteed insertion order since 3.7 — nothing in
             this codebase's own code sorts them — so two import paths producing
             different key order for identical input pointed at something outside

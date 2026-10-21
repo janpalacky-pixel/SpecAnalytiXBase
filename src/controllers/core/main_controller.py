@@ -195,6 +195,8 @@ class MainController(QMainWindow):
         from PyQt5.QtWidgets import QAction as _QAction
         self.settings_action = _QAction("Settings and saved items\u2026", self.view)
         self.settings_action.setObjectName("actionSettingsAndSavedItems")
+        from src.views import icons as _icons
+        self.settings_action.setIcon(_icons.standard('SP_ComputerIcon', self.view))
         self.settings_action.setStatusTip(
             "All settings remembered between sessions (reset them) and your saved items")
         self.settings_action.triggered.connect(self.show_settings_dialog)
@@ -520,7 +522,7 @@ class MainController(QMainWindow):
         """Files given on the command line -- also what Windows passes when
         a .snapx file is double-clicked or a data file is opened with
         "Open with -> SpecAnalytiXBase": a snapshot is opened (File ->
-        Import Snapshot), data files go through the Import dialog, as if
+        Open snapshot…), data files go through the Import dialog, as if
         dropped on the window. Missing files are named."""
         import os
         paths = [str(p) for p in paths if str(p).strip()]
@@ -766,6 +768,8 @@ class MainController(QMainWindow):
         layout.addWidget(self.interactive_mode_checkbox)
         
         self.refresh_plot_button = QPushButton("Refresh Plot")
+        from src.views import icons as _icons
+        self.refresh_plot_button.setIcon(_icons.standard('SP_BrowserReload', self.view))
         self.refresh_plot_button.setVisible(False)  # Initially hidden since interactive mode is on
         layout.addWidget(self.refresh_plot_button)
 
@@ -1084,6 +1088,8 @@ class MainController(QMainWindow):
         from PyQt5.QtWidgets import QAction
         self.paste_data_action = QAction("Paste data from clipboard (Excel, text)", self.view)
         self.paste_data_action.setShortcut(QKeySequence("Ctrl+Shift+V"))
+        from src.views import icons as _icons
+        self.paste_data_action.setIcon(_icons.standard('SP_FileDialogContentsView', self.view))
         self.paste_data_action.setStatusTip(
             "Numbers copied in Excel or any text table become new spectra: x in the first "
             "column, one spectrum per further column")
@@ -2061,6 +2067,8 @@ class MainController(QMainWindow):
         from PyQt5.QtWidgets import QAction
         action = QAction("Methods report for publication…", self.view)
         action.setObjectName("actionMethodsReport")
+        from src.views import icons as _icons
+        action.setIcon(_icons.standard('SP_FileIcon', self.view))
         action.setToolTip("Describe the processing applied to the spectra, with parameters "
                           "and references, for a paper's Methods section.")
         action.triggered.connect(self.show_methods_report)

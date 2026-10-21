@@ -146,7 +146,7 @@ def get_user_guide_help_content():
         <div class="tip">
             <strong>New user? Start here in five steps:</strong>
             <ol>
-                <li><strong>Import</strong> &mdash; File → Import data → new</li>
+                <li><strong>Import</strong> &mdash; File → Import data → New&hellip; (or the <strong>Import data</strong> button, Ctrl+I)</li>
                 <li><strong>Select</strong> spectra in the left-hand list</li>
                 <li><strong>Choose</strong> an operation from the Spectra Processing dropdown</li>
                 <li><strong>Run</strong> &mdash; click Run to open the operation's settings dialog</li>
@@ -277,6 +277,7 @@ def get_user_guide_help_content():
         <table>
             <tr><th>Area</th><th>Location</th><th>Purpose</th></tr>
             <tr><td>Menu bar</td><td>Top</td><td>File, View, Spectra processing, Analysis &amp; Visualization, Help access</td></tr>
+            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Help</strong> (the Help menu) &mdash; the same as in the File menu</td></tr>
             <tr><td>Spectrum list</td><td>Left panel</td><td>Select which spectra to view and process</td></tr>
             <tr><td>Plot canvas</td><td>Centre</td><td>Interactive plot of selected spectra</td></tr>
             <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours, show legend</td></tr>
@@ -389,8 +390,8 @@ def get_user_guide_help_content():
 
         <h3>Import Methods</h3>
         <ul>
-            <li><strong>File → Import data → new:</strong> Replace all current spectra. If every selected file fails to import, existing spectra are left untouched — nothing is cleared until at least one new file has actually loaded successfully.</li>
-            <li><strong>File → Import data → add:</strong> Append to existing spectra</li>
+            <li><strong>File → Import data → New&hellip;</strong> (Ctrl+I, or the <strong>Import data</strong> button under the menu): Replace all current spectra. If every selected file fails to import, existing spectra are left untouched — nothing is cleared until at least one new file has actually loaded successfully.</li>
+            <li><strong>File → Import data → Add to current&hellip;</strong> (Ctrl+Shift+I, or the arrow of the <strong>Import data</strong> button): Append to existing spectra</li>
             <li><strong>Drag and drop:</strong> drag spectrum files from your file manager and drop them anywhere on the application window — opens the same Import dialog with those files already selected. If spectra are already loaded it first asks whether to <strong>Add</strong> (keep them) or <strong>Replace all</strong>; <strong>Add</strong> is the default, so a stray drag can never discard your work. The same prompt appears for the built-in datasets under Help → Test datasets.</li>
             <li><strong>Paste data from clipboard</strong> (File menu, <strong>Ctrl+Shift+V</strong>,
                 or right-click on the spectra list): numbers copied in Excel or from any text table
@@ -2089,9 +2090,9 @@ def get_user_guide_help_content():
         </div>
 
         <ul>
-            <li><strong>Save snapshot:</strong> File → Save... → choose
+            <li><strong>Save snapshot:</strong> File → Save&hellip; (Ctrl+S, or the <strong>Save</strong> button) → choose
                 <strong>Snapshot</strong> as the File Format</li>
-            <li><strong>Load snapshot:</strong> File → Import Snapshot</li>
+            <li><strong>Load snapshot:</strong> File → Open snapshot&hellip; (Ctrl+O, or the <strong>Open snapshot</strong> button)</li>
             <li>Reload an earlier snapshot to go back to the workspace exactly as
                 it was when that snapshot was saved</li>
             <li><strong>Open recent:</strong> File → Open recent lists the last 10
@@ -2240,7 +2241,7 @@ def get_user_guide_help_content():
             </defs>
 
             <rect x="260" y="16" width="380" height="40" rx="8" fill="#2E7D32"/>
-            <text x="450" y="41" font-size="13" fill="#fff" text-anchor="middle">File &rarr; Import Snapshot</text>
+            <text x="450" y="41" font-size="13" fill="#fff" text-anchor="middle">File &rarr; Open snapshot&hellip;</text>
 
             <line x1="450" y1="56" x2="450" y2="76" stroke="#3A6AAF" stroke-width="2" marker-end="url(#ugArrow)"/>
 
@@ -2327,7 +2328,7 @@ def get_user_guide_help_content():
 
         <p style="font-size:8.5pt; color:#666;">This behaves the same way as
         a regular <a href="#import">data import</a>:
-        <strong>File → Import data → new</strong> also only clears your
+        <strong>File → Import data → New&hellip;</strong> also only clears your
         existing spectra once a new file has actually loaded successfully.
         Loading a snapshot follows the same rule &mdash; your current
         workspace is only ever replaced once, at the very end, and only if

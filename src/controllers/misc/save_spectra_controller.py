@@ -289,7 +289,7 @@ class SaveController:
             # small "?" info button can be added to it -- same orange,
             # context-help convention used elsewhere in the app (e.g.
             # SpectraSelectionDialog's "About Select Spectra" button).
-            # Import Snapshot has no dialog of its own to hang this on (it
+            # Open snapshot has no dialog of its own to hang this on (it
             # goes straight from the File menu to a native file picker), so
             # this confirmation -- the one moment before the action actually
             # happens -- is the natural place for it.
@@ -307,7 +307,7 @@ class SaveController:
                 'QPushButton { background-color:#F57C00; color:white; '
                 'font-weight:bold; border:none; border-radius:4px; }'
                 'QPushButton:hover { background-color:#EF6C00; }')
-            help_button.setToolTip('About Import Snapshot')
+            help_button.setToolTip('About Open snapshot')
             msg_box.addButton(help_button, QMessageBox.HelpRole)
 
             # QMessageBox closes on ANY of its buttons being clicked, whatever
@@ -326,7 +326,7 @@ class SaveController:
                 clicked_button = msg_box.clickedButton()
                 if clicked_button is help_button:
                     QMessageBox.information(
-                        self.controller.view, "About Import Snapshot",
+                        self.controller.view, "About Open snapshot",
                         "A snapshot (.snapx file) is a full save of this "
                         "application's workspace: every spectrum, your whole "
                         "Operations History (including which step is currently "

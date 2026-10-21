@@ -287,7 +287,7 @@ def get_som_help_content():
 
     <h3>1. Run both datasets</h3>
     <ol>
-        <li>File &rarr; Import data &rarr; open
+        <li>File &rarr; Import data &rarr; New&hellip;, open
             <span class="fm">som_raman_multiclass_demo.xlsx</span> (or use
             <strong>Help &rarr; Test datasets &rarr; Synthetic &rarr;
             Self-Organizing Map (SOM)</strong>), then select all 240

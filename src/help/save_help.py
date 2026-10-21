@@ -109,7 +109,7 @@ def get_save_help_content():
     <p>
         Use a snapshot when you want to continue working from exactly the
         same point in a future session. To restore a snapshot use
-        <b>File → Import Snapshot</b>.
+        <b>File → Open snapshot&hellip;</b> (Ctrl+O).
     </p>
     <div class="info">
         When Snapshot is selected, all other options (Save Mode, X-scale,

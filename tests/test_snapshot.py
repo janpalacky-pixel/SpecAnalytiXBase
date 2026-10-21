@@ -1391,7 +1391,7 @@ class TestSaveControllerLoadSnapshot:
         # rather than just a total count.
         assert mock_mb.information.call_count == 3
         help_calls = mock_mb.information.call_args_list[:2]
-        assert all("About Import Snapshot" in call.args[1] for call in help_calls)
+        assert all("About Open snapshot" in call.args[1] for call in help_calls)
         # The actual load only ever happens once, after the real answer.
         controller.save_manager.load_snapshot.assert_called_once()
 

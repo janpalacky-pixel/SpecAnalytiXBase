@@ -363,7 +363,7 @@ class ImportController(QObject):
             QMessageBox.critical(self.view, "Error", "Main controller not found")
 
     def open_snapshot_path(self, file_path: str) -> bool:
-        """Open a snapshot file directly (File -> Import Snapshot after its
+        """Open a snapshot file directly (File -> Open snapshot... after its
         file dialog, and File -> Open recent). Returns True on success."""
         success = False
         if not self.main_controller:

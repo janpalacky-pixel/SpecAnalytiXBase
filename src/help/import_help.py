@@ -910,7 +910,7 @@ spectrum_B    5.5      6.6      7.7      8.8
     <ol>
         <li>
             <b>Select files</b> in the OS file picker (File → Import data →
-            new / add), or skip the menu entirely and <b>drag files from
+            New&hellip; / Add to current&hellip;, or the <b>Import data</b> button), or skip the menu entirely and <b>drag files from
             your file manager and drop them onto the application
             window</b> — either way opens the same dialog below with the
             same files selected. You can select multiple files at once
@@ -970,8 +970,8 @@ spectrum_B    5.5      6.6      7.7      8.8
         and Replace would do the same thing.
         <br><br>
         The same prompt appears when you open one of the built-in datasets from
-        <b>Help → Test datasets</b>. Only the <b>File → Import data → add /
-        new</b> menu makes the choice up-front instead of asking.
+        <b>Help → Test datasets</b>. Only <b>File → Import data → New&hellip; /
+        Add to current&hellip;</b> makes the choice up-front instead of asking.
     </div>
 
     <h2>Importing Multiple Files</h2>
