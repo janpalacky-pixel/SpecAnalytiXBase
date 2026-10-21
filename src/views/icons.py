@@ -29,3 +29,38 @@ def run_icon(size=16):
                              QPointF(m, size - m * 0.8)]))
     p.end()
     return QIcon(pix)
+
+
+def table_icon(size=16):
+    """A small table (grid) for the Data table."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setPen(QColor('#3B5B8C'))
+    p.setBrush(QColor('#FFFFFF'))
+    m = 2
+    w = size - 2 * m - 1
+    p.drawRect(m, m, w, w)
+    p.fillRect(m + 1, m + 1, w - 1, w // 3 - 1, QColor('#9DB7DD'))       # header row
+    for k in (1, 2):
+        y = m + k * w // 3
+        p.drawLine(m, y, m + w, y)
+        x = m + k * w // 3
+        p.drawLine(x, m, x, m + w)
+    p.end()
+    return QIcon(pix)
+
+
+def help_button(tooltip):
+    """The small orange '?' of the program's context help."""
+    from PyQt5.QtWidgets import QPushButton
+    btn = QPushButton('?')
+    btn.setFixedSize(24, 24)
+    btn.setAutoDefault(False)
+    btn.setToolTip(tooltip)
+    btn.setStyleSheet(
+        'QPushButton { background-color:#F57C00; color:white; font-weight:bold; border:none; '
+        'border-radius:4px; }'
+        'QPushButton:hover { background-color:#E65100; }'
+        'QPushButton:pressed { background-color:#BF360C; }')
+    return btn

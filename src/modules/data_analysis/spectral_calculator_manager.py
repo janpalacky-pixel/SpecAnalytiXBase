@@ -1,6 +1,7 @@
 # src/modules/data_analysis/spectral_calculator_manager.py
 
 import ast
+import re
 import operator
 import uuid
 import numpy as np
@@ -166,6 +167,41 @@ class _SafeFormulaEvaluator:
         )
 
 
+def _stack(args):
+    """The spectra of a function call across spectra (``all`` counts as all of
+    them), stacked as rows."""
+    arrays = []
+    for a in args:
+        if isinstance(a, (list, tuple)):
+            arrays.extend(a)
+        else:
+            arrays.append(a)
+    if not arrays:
+        raise ValueError("needs at least one spectrum, e.g. mean(sp1, sp2) or mean(all)")
+    shape = np.shape(arrays[0])
+    return np.vstack([np.broadcast_to(np.asarray(a, float), shape) for a in arrays])
+
+
+def _std(rows):
+    """Standard deviation across spectra (n - 1); 0 for a single spectrum."""
+    return np.std(rows, axis=0, ddof=1) if len(rows) > 1 else np.zeros(rows.shape[1])
+
+
+# Point by point across several spectra (shared with the Data table):
+# mean(sp1, sp2, sp3) or mean(all) is the mean spectrum, etc.
+ACROSS_SPECTRA = {
+    'mean':    lambda *a: np.mean(_stack(a), axis=0),
+    'median':  lambda *a: np.median(_stack(a), axis=0),
+    'std':     lambda *a: _std(_stack(a)),
+    'sum':     lambda *a: np.sum(_stack(a), axis=0),
+    'minimum': lambda *a: np.min(_stack(a), axis=0),
+    'maximum': lambda *a: np.max(_stack(a), axis=0),
+}
+
+# Names every formula knows besides the spectra: the x values and all spectra.
+X_NAME, ALL_NAME = 'x', 'all'
+
+
 class SpectralCalculatorManager:
     """Business logic for the spectral calculator.
 
@@ -279,32 +315,48 @@ class SpectralCalculatorManager:
         for lbl in sorted(label_map, key=len, reverse=True):
             if lbl in working:
                 used_labels.append(lbl)
-                # NUL-wrapped random token: cannot collide with any real
-                # label text or formula syntax, and is trivially distinct
-                # from every other label's own placeholder.
-                placeholder = f'\x00{uuid.uuid4().hex}\x00'
+                # A token made only of control characters (NUL + n times
+                # \x01 + NUL): no label can contain them, so a later, shorter
+                # label is never found inside an earlier label's token. (A
+                # random hex token could: labels like "a1" matched inside it.)
+                placeholder = '\x00' + '\x01' * (len(placeholder_for_label) + 1) + '\x00'
                 placeholder_for_label[lbl] = placeholder
                 working = working.replace(lbl, placeholder)
 
-        if not used_labels:
+        # 'all' (every spectrum given, in their order) and 'x' (the x values)
+        uses_all = re.search(rf'\b{ALL_NAME}\b', working) is not None
+        if uses_all:
+            used_labels += [s['label'] for s in spectra if s['label'] not in used_labels]
+
+        # A formula of x alone (e.g. 1/x) uses the x-axis of the spectra given.
+        x_only = (not used_labels and bool(spectra)
+                  and re.search(rf'\b{X_NAME}\b', working) is not None)
+
+        if not used_labels and not x_only:
             raise ValueError(
                 "No spectrum labels found in the formula. "
                 "Make sure the labels in the formula exactly match the spectrum names."
             )
 
         eval_formula = working
-        for lbl in used_labels:
-            eval_formula = eval_formula.replace(placeholder_for_label[lbl], self._safe_var_name(lbl))
+        for lbl, placeholder in placeholder_for_label.items():     # (not the 'all'-only ones)
+            eval_formula = eval_formula.replace(placeholder, self._safe_var_name(lbl))
 
         # Verify all used spectra share an identical x-axis
         common_x, arrays = self._require_identical_x(
-            [label_map[lbl] for lbl in used_labels]
+            [label_map[lbl] for lbl in used_labels] if used_labels else list(spectra)
         )
+        if x_only:
+            arrays = []
 
         # Build the name -> array mapping for the safe evaluator.
         names = {}
         for lbl, arr in zip(used_labels, arrays):
             names[self._safe_var_name(lbl)] = arr
+        names[X_NAME] = common_x
+        if uses_all:
+            by_label = dict(zip(used_labels, arrays))
+            names[ALL_NAME] = [by_label[s['label']] for s in spectra if s['label'] in by_label]
 
         # Functions available to formulas. derivative/second_deriv are
         # overridden here (rather than used straight from SAFE_FUNCTIONS)
@@ -313,6 +365,7 @@ class SpectralCalculatorManager:
         functions = {k: v for k, v in self.SAFE_FUNCTIONS.items() if k not in ('pi', 'e')}
         functions['derivative']   = lambda y: np.gradient(y, common_x)
         functions['second_deriv'] = lambda y: np.gradient(np.gradient(y, common_x), common_x)
+        functions.update(ACROSS_SPECTRA)
         constants = {'pi': self.SAFE_FUNCTIONS['pi'], 'e': self.SAFE_FUNCTIONS['e']}
 
         logger.debug(f"Evaluating formula: '{eval_formula}'")
@@ -457,26 +510,30 @@ class SpectralCalculatorManager:
         """Return a list of (name, description) tuples for the reference panel."""
         return [
             # Element-wise — safe to use as formula result
-            ('abs(x)',           'Element-wise absolute value'),
-            ('sqrt(x)',          'Element-wise square root'),
-            ('log(x)',           'Natural logarithm ln(x)'),
-            ('log10(x)',         'Base-10 logarithm'),
-            ('log2(x)',          'Base-2 logarithm'),
-            ('exp(x)',           'Exponential e^x'),
-            ('sin(x)',           'Sine'),
-            ('cos(x)',           'Cosine'),
-            ('cumsum(x)',        'Cumulative sum (element-wise)'),
+            ('abs(sp1)',           'Element-wise absolute value'),
+            ('sqrt(sp1)',          'Element-wise square root'),
+            ('log(sp1)',           'Natural logarithm (ln)'),
+            ('log10(sp1)',         'Base-10 logarithm'),
+            ('log2(sp1)',          'Base-2 logarithm'),
+            ('exp(sp1)',           'Exponential (e to the power of the values)'),
+            ('sin(sp1)',           'Sine'),
+            ('cos(sp1)',           'Cosine'),
+            ('cumsum(sp1)',        'Cumulative sum (element-wise)'),
             # Spectroscopy transforms
-            ('absorbance(x)',    'A = -log10(T)  — transmittance to absorbance'),
-            ('transmittance(x)', 'T = 10^(-A)    — absorbance to transmittance'),
-            ('kubelka_munk(x)',  'F(R) = (1-R)^2 / (2R)  — diffuse reflectance'),
-            ('derivative(x)',    'First derivative (np.gradient)'),
-            ('second_deriv(x)',  'Second derivative'),
-            ('normalise(x)',     'Min-max normalisation to [0, 1]'),
-            ('snv(x)',           'Standard Normal Variate'),
+            ('absorbance(sp1)',    'A = -log10(T)  — transmittance to absorbance'),
+            ('transmittance(sp1)', 'T = 10^(-A)    — absorbance to transmittance'),
+            ('kubelka_munk(sp1)',  'F(R) = (1-R)^2 / (2R)  — diffuse reflectance'),
+            ('derivative(sp1)',    'First derivative (np.gradient)'),
+            ('second_deriv(sp1)',  'Second derivative'),
+            ('normalise(sp1)',     'Min-max normalisation to [0, 1]'),
+            ('snv(sp1)',           'Standard Normal Variate'),
             # Scalar reductions — use inside expressions only
-            ('mean_val(x)',      'Returns scalar mean — use inside expression: sp1 - mean_val(sp1)'),
-            ('sum_val(x)',       'Returns scalar sum — use inside expression: sp1 / sum_val(sp1)'),
-            ('min_val(x)',       'Returns scalar minimum — use inside expression: sp1 - min_val(sp1)'),
-            ('max_val(x)',       'Returns scalar maximum — use inside expression: sp1 / max_val(sp1)'),
+            ('mean_val(sp1)',      'Returns scalar mean — use inside expression: sp1 - mean_val(sp1)'),
+            ('sum_val(sp1)',       'Returns scalar sum — use inside expression: sp1 / sum_val(sp1)'),
+            ('min_val(sp1)',       'Returns scalar minimum — use inside expression: sp1 - min_val(sp1)'),
+            ('max_val(sp1)',       'Returns scalar maximum — use inside expression: sp1 / max_val(sp1)'),
+            # The x values and functions across spectra (point by point)
+            ('x',                 'The x values, e.g. sp1 * x, or 1e7 / x (nm → cm⁻¹)'),
+            ('mean(sp1, sp2)',    'Mean across spectra, point by point'),
+            ('mean(all)',         'Mean of all selected spectra (also median, std, sum, minimum, maximum)'),
         ]

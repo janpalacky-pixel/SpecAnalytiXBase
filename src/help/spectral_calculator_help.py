@@ -150,29 +150,37 @@ def get_spectral_calculator_help_content():
         <h3>Built-in Functions</h3>
         <table>
             <tr><th>Function</th><th>Description</th><th>Spectroscopic use</th></tr>
-            <tr><td>abs(x)</td><td>Absolute value</td><td>Remove negative artefacts</td></tr>
-            <tr><td>sqrt(x)</td><td>Square root</td><td>Noise reduction, Kubelka-Munk linearisation</td></tr>
-            <tr><td>log(x)</td><td>Natural logarithm ln(x)</td><td>Rate calculations</td></tr>
-            <tr><td>log10(x)</td><td>Base-10 logarithm</td><td>Absorbance calculations</td></tr>
-            <tr><td>log2(x)</td><td>Base-2 logarithm</td><td>Information/bit-depth calculations</td></tr>
-            <tr><td>exp(x)</td><td>Exponential e^x</td><td>Inverse of ln</td></tr>
-            <tr><td>sin(x), cos(x)</td><td>Trigonometric</td><td>Interferogram analysis</td></tr>
-            <tr><td>mean_val(x)</td><td>Mean value (scalar) &mdash; use inside an
+            <tr><td>abs(sp1)</td><td>Absolute value</td><td>Remove negative artefacts</td></tr>
+            <tr><td>sqrt(sp1)</td><td>Square root</td><td>Noise reduction, Kubelka-Munk linearisation</td></tr>
+            <tr><td>log(sp1)</td><td>Natural logarithm (ln)</td><td>Rate calculations</td></tr>
+            <tr><td>log10(sp1)</td><td>Base-10 logarithm</td><td>Absorbance calculations</td></tr>
+            <tr><td>log2(sp1)</td><td>Base-2 logarithm</td><td>Information/bit-depth calculations</td></tr>
+            <tr><td>exp(sp1)</td><td>Exponential (e to the power of the values)</td><td>Inverse of ln</td></tr>
+            <tr><td>sin(sp1), cos(x)</td><td>Trigonometric</td><td>Interferogram analysis</td></tr>
+            <tr><td>mean_val(sp1)</td><td>Mean value (scalar) &mdash; use inside an
                 expression, e.g. <code>sp1 - mean_val(sp1)</code></td><td>Mean-centring</td></tr>
-            <tr><td>sum_val(x)</td><td>Sum (scalar) &mdash; use inside an expression</td><td>Total integrated signal</td></tr>
-            <tr><td>min_val(x), max_val(x)</td><td>Minimum/maximum (scalar) &mdash; use inside an expression</td><td>Peak detection</td></tr>
-            <tr><td>cumsum(x)</td><td>Cumulative sum (spectrum)</td><td>Integration</td></tr>
-            <tr><td>absorbance(x)</td><td>A = &minus;log&#x2081;&#x2080;(T), with T clipped to a
+            <tr><td>sum_val(sp1)</td><td>Sum (scalar) &mdash; use inside an expression</td><td>Total integrated signal</td></tr>
+            <tr><td>min_val(sp1), max_val(x)</td><td>Minimum/maximum (scalar) &mdash; use inside an expression</td><td>Peak detection</td></tr>
+            <tr><td>cumsum(sp1)</td><td>Cumulative sum (spectrum)</td><td>Integration</td></tr>
+            <tr><td>absorbance(sp1)</td><td>A = &minus;log&#x2081;&#x2080;(T), with T clipped to a
                 small positive floor to avoid log(0) or log(negative)</td><td>Transmittance &rarr; absorbance</td></tr>
-            <tr><td>transmittance(x)</td><td>T = 10^(&minus;A) &mdash; exact inverse of absorbance()</td><td>Absorbance &rarr; transmittance</td></tr>
-            <tr><td>kubelka_munk(x)</td><td>F(R) = (1&minus;R)&sup2; / (2R), with R clipped to
+            <tr><td>transmittance(sp1)</td><td>T = 10^(&minus;A) &mdash; exact inverse of absorbance()</td><td>Absorbance &rarr; transmittance</td></tr>
+            <tr><td>kubelka_munk(sp1)</td><td>F(R) = (1&minus;R)&sup2; / (2R), with R clipped to
                 (0, 1)</td><td>Diffuse reflectance analysis</td></tr>
-            <tr><td>derivative(x)</td><td>First derivative, computed using the spectrum's
+            <tr><td>derivative(sp1)</td><td>First derivative, computed using the spectrum's
                 real x-axis spacing</td><td>Overlapping band resolution</td></tr>
-            <tr><td>second_deriv(x)</td><td>Second derivative, same real-spacing
+            <tr><td>second_deriv(sp1)</td><td>Second derivative, same real-spacing
                 handling</td><td>Peak position identification</td></tr>
-            <tr><td>normalise(x)</td><td>Min-max to [0, 1]</td><td>Comparison of band shapes</td></tr>
-            <tr><td>snv(x)</td><td>Standard Normal Variate</td><td>Scatter correction</td></tr>
+            <tr><td>normalise(sp1)</td><td>Min-max to [0, 1]</td><td>Comparison of band shapes</td></tr>
+            <tr><td>snv(sp1)</td><td>Standard Normal Variate</td><td>Scatter correction</td></tr>
+            <tr><td>x</td><td>The x values of the spectra (wavelength, wavenumber, &hellip;), e.g.
+                <code>sp1 * x</code>, or alone, e.g. <code>1/x</code></td><td>Unit conversions, e.g.
+                <code>1e7 / x</code></td></tr>
+            <tr><td>mean(sp1, sp2, &hellip;)<br>mean(all)</td><td>Mean across spectra, point by point;
+                <code>all</code> means all selected spectra. Also <code>median</code>,
+                <code>std</code> (sample standard deviation, divided by N&minus;1 as in Combine
+                Spectra), <code>sum</code>, <code>minimum</code>,
+                <code>maximum</code></td><td>Mean spectrum, <code>sp1 - mean(all)</code></td></tr>
         </table>
 
         <div class="tip">
@@ -270,9 +278,11 @@ def get_spectral_calculator_help_content():
         <p>Mean-centres a spectrum by subtracting its own mean value (a scalar).</p>
 
         <h3>Multiple outputs from one formula</h3>
-        <div class="code">[sp1 - mean_val(sp1), sp2 - mean_val(sp2)]</div>
-        <p>Wrapping several results in square brackets produces that many output
-        spectra in a single run, instead of one combined result. Each must be the
+        <div class="code">sp1 - mean_val(sp1), sp2 - mean_val(sp2)</div>
+        <p>Several results separated by commas produce that many output spectra in a
+        single run, instead of one combined result. Brackets around them are optional &mdash;
+        these three are the same: <code>sp1 - sp2, sp1 + sp2</code>,
+        <code>(sp1 - sp2, sp1 + sp2)</code>, <code>[sp1 - sp2, sp1 + sp2]</code>. Each must be the
         same length as the shared x-axis. Outputs are named automatically using the
         "New spectrum name" field as a base: a single output keeps the name as typed;
         multiple outputs are numbered <em>&lt;name&gt;_1</em>, <em>&lt;name&gt;_2</em>,
@@ -281,6 +291,15 @@ def get_spectral_calculator_help_content():
         <h3>Spectral index</h3>
         <div class="code">(sp1 - 0.5 * sp2) / (sp1 + 0.5 * sp2)</div>
         <p>A weighted normalised difference index with an adjustable coefficient.</p>
+
+        <h2>Show as table</h2>
+        <p><b>Show as table</b> opens the same spectra in the
+        <a href="help://user_guide#data-table">Data table</a> (Analysis &amp; Visualization &rarr;
+        Data Analysis &rarr; Data table), with the formula as its column(s): the numbers of the
+        spectra and of the result side by side, to copy into Excel or export, and room for more
+        formulas. The names <b>sp1, sp2, &hellip;</b> and the functions are the same in both. When
+        you add the table's formula columns as new spectra, the Calculator closes (the spectra
+        list has changed).</p>
 
         <h2>Output Options</h2>
         <ul>
@@ -386,10 +405,10 @@ def get_spectral_calculator_help_content():
         the current selection, so re-check the formula still says what you intend.</p>
 
         <h3>Only got one output spectrum, expected several</h3>
-        <p>Multiple outputs require the formula's final result to be a Python list,
-        e.g. <code>[sp1 - sp2, sp1 + sp2]</code>. A formula without the surrounding
-        square brackets always produces exactly one output, however many spectra it
-        combines internally.</p>
+        <p>Several outputs need several results separated by commas at the top level,
+        e.g. <code>sp1 - sp2, sp1 + sp2</code> (brackets around them are optional). Commas
+        inside a function call, as in <code>mean(sp1, sp2)</code>, belong to that function
+        and give one result.</p>
 
         <h3>"... is not allowed in a formula"</h3>
         <p>The formula uses a construct outside plain arithmetic, spectrum aliases,

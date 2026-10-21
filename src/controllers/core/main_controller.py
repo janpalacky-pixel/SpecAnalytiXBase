@@ -228,6 +228,8 @@ class MainController(QMainWindow):
         from src.controllers.visualization_analysis.group_statistics_controller import (
             GroupStatisticsController)
         self.group_statistics_controller = GroupStatisticsController(self)
+        from src.controllers.data_analysis.data_table_controller import DataTableController
+        self.data_table_controller = DataTableController(self)
         self.map2d_controller = Map2DController(self)
         self.interactive_subtraction_controller = InteractiveSubtractionController(self)
         
@@ -1550,6 +1552,8 @@ class MainController(QMainWindow):
             lambda: self.run_visualization_analysis("SOM"))
         self.view.actionMenuGroupStatistics.triggered.connect(
             lambda: self.run_visualization_analysis("Group Statistics"))
+        self.view.actionMenuDataTable.triggered.connect(
+            lambda: self.run_visualization_analysis("Data table"))
 
     def run_visualization_analysis(self, method_name=None):
         """
@@ -1587,6 +1591,9 @@ class MainController(QMainWindow):
         elif raw == "Group Statistics":
             # One value per spectrum from its own x-axis: different axes are fine.
             self.group_statistics_controller.show_dialog(selected_spectra)
+        elif raw == "Data table":
+            # Different x-axes are shown side by side (formulas need one axis).
+            self.data_table_controller.show_dialog(selected_spectra)
         else:
             # Covers SVD analysis, Cluster analysis, and any other method
             # dispatched generically below — these run their computation

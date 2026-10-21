@@ -16,6 +16,7 @@ _Description; anything without one still gets a generic sentence and all
 its simple settings in the table, so nothing is ever silently left out.
 """
 
+import re
 import html
 import math
 import os
@@ -537,6 +538,28 @@ def _describe_import(p, ctx):
 
 
 _DESCRIBERS['Import'] = _describe_import
+
+
+def _describe_data_table(p, ctx):
+    """Formula columns of the Data table added as new spectra."""
+    formulas = p.get('formulas') or []
+    if not formulas:
+        return _describe_generic('Data table (add as new)', p, ctx)
+    parts, rows, columns = [], [], {}
+    for f in formulas:
+        parts.append(f"“{f.get('name', '')}” = {f.get('formula', '')}")
+        rows.append((f.get('name', ''), f.get('formula', '')))
+        columns.update(f.get('columns') or {})
+    text = ("New spectr" + ("um was" if len(formulas) == 1 else "a were")
+            + " calculated point by point from the spectra: " + '; '.join(parts))
+    if columns:
+        names = sorted(columns.items(), key=lambda kv: (re.sub(r'\d', '', kv[0]), int(re.sub(r'\D', '', kv[0]) or 0)))
+        text += ", where " + ', '.join(f"{k} is “{v}”" for k, v in names)
+        rows += [(k, v) for k, v in names]
+    return _Description(text + '.', rows)
+
+
+_DESCRIBERS['Data table (add as new)'] = _describe_data_table
 
 # Operations that change nothing a reader of a Methods section needs to know.
 _SKIPPED = {'Rename'}

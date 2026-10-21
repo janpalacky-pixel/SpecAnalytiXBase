@@ -555,6 +555,7 @@ class AnalysisTreeComboBox(OperationTreeComboBox):
             "Kinetics Fitting",
             "QC / Outlier Detection",
             "Group Statistics",
+            "Data table",
         ]),
     ]
 
@@ -1429,6 +1430,15 @@ class MainWindow(QMainWindow):
         self.actionMenuGroupStatistics.setObjectName("actionMenuGroupStatistics")
         self.actionMenuGroupStatistics.setText("Group Statistics")
 
+        self.actionMenuDataTable = QAction(self)
+        self.actionMenuDataTable.setObjectName("actionMenuDataTable")
+        self.actionMenuDataTable.setText("Data table\u2026")
+        self.actionMenuDataTable.setIconText("Data table")
+        self.actionMenuDataTable.setIcon(icons.table_icon())
+        self.actionMenuDataTable.setStatusTip(
+            "The selected spectra as a table: copy to Excel, calculate new columns with formulas")
+        self.actionMenuDataTable.setToolTip(self.actionMenuDataTable.statusTip())
+
         self.menuAnalysisVisualizationData.addAction(self.actionMenuPeakFitting)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuBandRatio)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuReferenceMatching)
@@ -1437,6 +1447,7 @@ class MainWindow(QMainWindow):
         self.menuAnalysisVisualizationData.addAction(self.actionMenuKineticsFitting)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuQCOutlier)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuGroupStatistics)
+        self.menuAnalysisVisualizationData.addAction(self.actionMenuDataTable)
 
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationViz)
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationData)
@@ -2040,6 +2051,9 @@ class MainWindow(QMainWindow):
             action.setToolTip(f"{action.statusTip()}  [{key}]")
             tb.addAction(action)
             tb.widgetForAction(action).setObjectName(f"toolbar{text.replace(' ', '')}Button")
+        tb.addSeparator()
+        tb.addAction(self.actionMenuDataTable)
+        tb.widgetForAction(self.actionMenuDataTable).setObjectName("toolbarDataTableButton")
         tb.addSeparator()
         self.toolbarHelpButton = QToolButton(self)
         self.toolbarHelpButton.setObjectName("toolbarHelpButton")

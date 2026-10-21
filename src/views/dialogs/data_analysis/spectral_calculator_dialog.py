@@ -146,8 +146,14 @@ class SpectralCalculatorDialog(QDialog):
             'cursor.\n\n'
             'All selected spectra must share an identical x-axis — use Define '
             'Spectral Range \u2192 Apply linearisation first if needed.\n\n'
-            'A formula can return a list of results (e.g. "[sp1 - sp2, sp1 + '
-            'sp2]") to produce several output spectra at once.\n\n'
+            'A formula can return several results, separated by commas (e.g. '
+            '"sp1 - sp2, sp1 + sp2", with or without brackets) to produce several '
+            'output spectra at once.\n\n'
+            'x stands for the x values (e.g. sp1 * x), and mean(all), std(all), '
+            'median(all), sum(all), minimum(all), maximum(all) work point by point '
+            'across all selected spectra (or a few: mean(sp1, sp2)).\n\n'
+            '"Show as table" opens the same spectra in the Data table, with this '
+            'formula as a column.\n\n'
             'Whether the result replaces the source spectra or is added as new '
             'ones is controlled by the "Add as new" checkbox in the main '
             'window, not here.'
@@ -171,6 +177,11 @@ class SpectralCalculatorDialog(QDialog):
         help_btn = QPushButton('Help')
         validate_btn = QPushButton('Validate formula')
         save_btn = QPushButton('Save\u2026')
+        self.table_button = QPushButton('Show as table')
+        self.table_button.setToolTip(
+            'Open these spectra in the Data table (Analysis & Visualization \u203a Data '
+            'Analysis \u203a Data table), with this formula as a column: see the numbers, '
+            'copy them to Excel, add more formulas.')
         save_btn.setToolTip(
             'Save the current preview result(s) to a file, without closing '
             'this dialog or applying the operation to the main spectrum list.'
@@ -188,6 +199,7 @@ class SpectralCalculatorDialog(QDialog):
         self.button_box.addButton(help_btn, QDialogButtonBox.HelpRole)
         self.button_box.addButton(validate_btn, QDialogButtonBox.ActionRole)
         self.button_box.addButton(save_btn, QDialogButtonBox.ActionRole)
+        self.button_box.addButton(self.table_button, QDialogButtonBox.ActionRole)
         self.button_box.addButton(self.apply_button, QDialogButtonBox.ActionRole)
         self.button_box.addButton(self.add_as_new_button, QDialogButtonBox.ActionRole)
         self.button_box.addButton(self.close_button, QDialogButtonBox.RejectRole)
@@ -197,6 +209,7 @@ class SpectralCalculatorDialog(QDialog):
         help_btn.clicked.connect(self._show_help)
         validate_btn.clicked.connect(self._on_validate)
         save_btn.clicked.connect(self._save_preview_spectra)
+        self.table_button.clicked.connect(self.show_as_table)
         root.addWidget(self.button_box)
 
     def _build_left_panel(self):
@@ -229,7 +242,7 @@ class SpectralCalculatorDialog(QDialog):
         self.formula_edit = QTextEdit()
         self.formula_edit.setFont(QFont('Courier New', 11))
         self.formula_edit.setPlaceholderText(
-            'e.g.  2*sp1 + sp2 - sp3   or   [sp1 - sp2, sp1 + sp2]'
+            'e.g.  2*sp1 + sp2 - sp3   or   sp1 - sp2, sp1 + sp2   or   sp1 - mean(all)'
         )
         self.formula_edit.setTabChangesFocus(True)  # Tab moves focus, doesn't insert a tab
         self.formula_edit.setLineWrapMode(QTextEdit.WidgetWidth)
@@ -578,7 +591,11 @@ class SpectralCalculatorDialog(QDialog):
         """Insert 'funcname()' at cursor with cursor placed inside the parens."""
         row = item.row()
         func_name = self.fn_table.item(row, 0).text()
-        # Strip any argument placeholder like (x) — insert just the bare name + ()
+        if '(' not in func_name:                      # a name (x), not a function
+            self.formula_edit.insertPlainText(func_name)
+            self.formula_edit.setFocus()
+            return
+        # Strip any argument placeholder like (sp1) — insert just the bare name + ()
         bare = func_name.split('(')[0] + '()'
         self.formula_edit.insertPlainText(bare)
         # Move cursor back inside the parentheses
@@ -794,6 +811,26 @@ class SpectralCalculatorDialog(QDialog):
         colour = '#2E7D32' if ok else '#C62828'
         self.validation_label.setText(msg)
         self.validation_label.setStyleSheet(f'color: {colour}; font-weight: bold;')
+
+    def show_as_table(self):
+        """The same spectra in the Data table, with the formula (if valid) as
+        its first column(s). The names sp1, sp2, ... are the same in both.
+        When spectra are added there, this window closes (the spectra list
+        has changed)."""
+        from src.views.dialogs.data_analysis.data_table_dialog import DataTableDialog
+        main = self._main_controller
+        callback = (main.data_table_controller.add_spectra
+                    if main is not None and hasattr(main, 'data_table_controller') else None)
+        dlg = DataTableDialog(self, self.selected_spectra, commit_callback=callback)
+        formula = self.formula_edit.toPlainText().strip()
+        if formula and dlg.table.shared_x:
+            dlg.formula_edit.setText(' '.join(formula.split()))
+            dlg.name_edit.setText(self.name_edit.text().strip())
+            dlg.add_column()
+        self._table_dialog = dlg
+        if dlg.exec_() == QDialog.Accepted:
+            self.reject()
+        return dlg
 
     def _on_commit_clicked(self, add_as_new):
         """Apply or Add as New — validates the formula (same checks the

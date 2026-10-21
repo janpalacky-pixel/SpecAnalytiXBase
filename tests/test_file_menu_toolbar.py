@@ -57,7 +57,7 @@ def test_the_buttons_under_the_menu_bar(mc):
     assert not tb.isMovable() and not tb.toggleViewAction().isVisible()
     buttons = [w for w in tb.findChildren(QToolButton) if w.objectName().startswith('toolbar')]
     assert [b.text() for b in sorted(buttons, key=lambda b: b.x())] == \
-        ['Import data', 'Open snapshot', 'Save', 'Help']
+        ['Import data', 'Open snapshot', 'Save', 'Data table', 'Help']
     imp = v.toolbarImportButton
     assert imp.menu() is v.menuImport and imp.popupMode() == QToolButton.MenuButtonPopup
     assert 'Ctrl+I' in imp.toolTip()

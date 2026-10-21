@@ -277,7 +277,7 @@ def get_user_guide_help_content():
         <table>
             <tr><th>Area</th><th>Location</th><th>Purpose</th></tr>
             <tr><td>Menu bar</td><td>Top</td><td>File, View, Spectra processing, Analysis &amp; Visualization, Help access</td></tr>
-            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Help</strong> (the Help menu) &mdash; the same as in the File menu</td></tr>
+            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Data table</strong> (<a href="#data-table">the selected spectra as a table</a>), <strong>Help</strong> (the Help menu) &mdash; the same as in the menus</td></tr>
             <tr><td>Spectrum list</td><td>Left panel</td><td>Select which spectra to view and process</td></tr>
             <tr><td>Plot canvas</td><td>Centre</td><td>Interactive plot of selected spectra</td></tr>
             <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours, show legend</td></tr>
@@ -1425,9 +1425,16 @@ def get_user_guide_help_content():
             absorbance(sp1) &nbsp;&nbsp; (−log₁₀(T))<br>
             derivative(snv(sp1)) &nbsp;&nbsp; (SNV then first derivative)
         </div>
-        <p>Available built-in functions: <em>abs, sqrt, log, log10, exp, sin, cos,
-        mean, sum, min, max, cumsum, absorbance, transmittance, kubelka_munk,
-        derivative, second_deriv, normalise, snv.</em></p>
+        <p>Available built-in functions: <em>abs, sqrt, log, log10, log2, exp, sin, cos,
+        cumsum, absorbance, transmittance, kubelka_munk, derivative, second_deriv, normalise,
+        snv, mean_val, sum_val, min_val, max_val</em>; <b>x</b> (the x values, e.g.
+        <code>sp1 * x</code>); and across spectra, point by point: <em>mean, median, std, sum,
+        minimum, maximum</em> &mdash; e.g. <code>mean(sp1, sp2)</code> or <code>mean(all)</code>
+        (all selected spectra); <code>std</code> divides by N&minus;1, as in Combine Spectra. Several
+        results at once: separate them with commas, with or without brackets &mdash;
+        <code>sp1 - sp2, sp1 + sp2</code>, <code>(sp1 - sp2, sp1 + sp2)</code> and
+        <code>[sp1 - sp2, sp1 + sp2]</code> are the same. <b>Show as table</b> opens the same spectra and
+        formula in the <a href="#data-table">Data table</a>.</p>
         <ul>
             <li>Click spectrum labels or function names in the right-hand panel to
                 insert them at the cursor</li>
@@ -2000,6 +2007,41 @@ def get_user_guide_help_content():
         section) &mdash; 32 spectra sharing the same bands, each shifted by a
         different known amount along x. Open it under <b>Help &rarr; Test
         datasets &rarr; Synthetic &rarr; X-Axis Alignment</b>.</p>
+
+        <h3 id="data-table">Data table</h3>
+        <p><strong>Analysis &amp; Visualization &rarr; Data Analysis &rarr; Data table&hellip;</strong>
+        (or the <strong>Data table</strong> button under the menu bar) shows the selected spectra as a
+        spreadsheet: <b>x</b>, then one column per spectrum, named <b>sp1, sp2, &hellip;</b> as in the Spectral Calculator (the end of the
+        spectrum's name is shown under it). Select cells and press <span class="kbd">Ctrl+C</span> (or
+        <strong>Copy</strong>) to paste them into Excel with their column names;
+        <strong>Export&hellip;</strong> saves the whole table as Excel or CSV. The measured values cannot
+        be changed here.</p>
+        <ul>
+            <li><strong>New columns from a formula</strong> (green, named <b>f1, f2, &hellip;</b>): type it
+                after <em>New column =</em> and click <strong>Add column</strong> (or press Enter). Examples:
+                <code>sp1 / sp2</code>, <code>sp1 - sp2</code>, <code>log10(sp3)</code>,
+                <code>absorbance(sp1)</code>, <code>sp1 * x</code> (<b>x</b> is the x column),
+                <code>f1 * 100</code> (earlier formula columns), <code>mean(sp1, sp2, sp3)</code> or
+                <code>mean(all)</code> (point by point across columns; also <code>median</code>,
+                <code>std</code>, <code>sum</code>, <code>minimum</code>, <code>maximum</code>),
+                <code>sp1 - mean(all)</code>, <code>1/x</code>. Several formulas at once: separate them
+                with commas, one column each &mdash; with or without brackets, all three are the same:
+                <code>sp1 - sp2, sp1 / sp2</code>, <code>(sp1 - sp2, sp1 / sp2)</code>,
+                <code>[sp1 - sp2, sp1 / sp2]</code>. <code>std</code> is the sample standard deviation
+                (divided by N&minus;1), as in Combine Spectra. The functions are those of the
+                <a href="#calculator">Spectral Calculator</a> (list under <strong>Functions</strong>).
+                Points where a formula is undefined (log of a negative number, division by zero)
+                are shown as &mdash;.</li>
+            <li><strong>Add formula columns as new spectra</strong>: every formula column becomes a new
+                spectrum, named after <em>Name</em> (or the formula). This is one step in the
+                Operations History (<em>Data table (add as new)</em>): Undo removes the new spectra,
+                and the Methods report gives the formulas and which spectra sp1, sp2, &hellip; were.</li>
+            <li><strong>Different x-axes:</strong> the table shows each spectrum with its own x column,
+                but formulas need one x-axis (row by row the points must belong together) &mdash; use
+                <a href="#data-range">Data range</a> with <em>Apply linearization</em> first.</li>
+            <li>Remove a formula column: select one of its cells and click <strong>Remove
+                column</strong>, or right-click its heading.</li>
+        </ul>
 
         <!-- ═══════════════════════════════════════════════════════════
              7. LEGEND
