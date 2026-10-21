@@ -1563,6 +1563,8 @@ class MainController(QMainWindow):
             lambda: self.run_visualization_analysis("Group Statistics"))
         self.view.actionMenuDataTable.triggered.connect(
             lambda: self.run_visualization_analysis("Data table"))
+        self.view.actionMenuMixtureAnalysis.triggered.connect(
+            lambda: self.run_visualization_analysis("Mixture analysis"))
 
     def run_visualization_analysis(self, method_name=None):
         """
@@ -1603,6 +1605,11 @@ class MainController(QMainWindow):
         elif raw == "Data table":
             # Different x-axes are shown side by side (formulas need one axis).
             self.data_table_controller.show_dialog(selected_spectra)
+        elif raw == "Mixture analysis":
+            # Components are put on each spectrum's x values: different axes are fine.
+            from src.views.dialogs.data_analysis.mixture_analysis_dialog import MixtureAnalysisDialog
+            self._mixture_dialog = MixtureAnalysisDialog(self.view, selected_spectra)
+            self._mixture_dialog.exec_()
         else:
             # Covers SVD analysis, Cluster analysis, and any other method
             # dispatched generically below — these run their computation

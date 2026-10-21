@@ -2105,6 +2105,36 @@ def get_user_guide_help_content():
             <li>Copy (Ctrl+C) and Export&hellip; as in the first tab.</li>
         </ul>
 
+        <h3 id="mixture-analysis">Mixture analysis (known components)</h3>
+        <p><strong>Analysis &amp; Visualization &rarr; Data Analysis &rarr; Mixture analysis (known
+        components)&hellip;</strong> describes each spectrum as a sum of known component spectra
+        (classical least squares, CLS):</p>
+        <div class="pipeline">spectrum &asymp; a&#8321;&middot;component&#8321; + a&#8322;&middot;component&#8322;
+        + &hellip; [+ background]</div>
+        <ul>
+            <li>Select the spectra to analyse <b>and</b> the spectra of the known components (e.g. the
+                pure substances), open the window and <b>tick the components</b> in its list; all other
+                selected spectra are analysed. Click <strong>Calculate</strong>.</li>
+            <li><b>Amounts never negative</b> (on by default): non-negative least squares &mdash; a
+                substance cannot be present in a negative amount. Untick for plain least squares.</li>
+            <li><b>Background</b>: none, a constant offset, or an offset and a slope (e.g. a baseline
+                that was not fully removed). The constant is the background in the middle of the
+                range, the slope is per x unit.</li>
+            <li><b>Only the x-range</b>: use only part of the spectra (e.g. the bands, not the noisy
+                ends). Otherwise the range covered by every component and the spectrum is used; the
+                components are put on each spectrum's x values (linear interpolation), so the x-axes
+                need not be the same.</li>
+            <li>The table gives, per spectrum, the <b>amount</b> of each component (in the units of the
+                component spectra: 0.3 means 0.3 &times; that spectrum), its <b>fraction</b> of the total
+                amount, <b>R&sup2;</b> (1 = the sum describes the spectrum completely) and the
+                <b>residual</b> (RMS of what remains). Click a row to see the spectrum, the sum of the
+                components, each component's share and the residual below. A residual with structure
+                (bands) points to a component that is missing.</li>
+            <li>Copy (Ctrl+C) or Export&hellip; the table to Excel or CSV.</li>
+        </ul>
+        <p>For components that are <em>not</em> known, use NMF, MCR-ALS or, for maps, endmember
+        unmixing in the 2D Map.</p>
+
         <!-- ═══════════════════════════════════════════════════════════
              7. LEGEND
              ═══════════════════════════════════════════════════════════ -->

@@ -556,6 +556,7 @@ class AnalysisTreeComboBox(OperationTreeComboBox):
             "QC / Outlier Detection",
             "Group Statistics",
             "Data table",
+            "Mixture analysis",
         ]),
     ]
 
@@ -1462,6 +1463,12 @@ class MainWindow(QMainWindow):
         self.menuAnalysisVisualizationData.addAction(self.actionMenuQCOutlier)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuGroupStatistics)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuDataTable)
+        self.actionMenuMixtureAnalysis = QAction(self)
+        self.actionMenuMixtureAnalysis.setObjectName("actionMenuMixtureAnalysis")
+        self.actionMenuMixtureAnalysis.setText("Mixture analysis (known components)\u2026")
+        self.actionMenuMixtureAnalysis.setStatusTip(
+            "Describe each spectrum as a sum of known component spectra: how much of each")
+        self.menuAnalysisVisualizationData.addAction(self.actionMenuMixtureAnalysis)
 
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationViz)
         self.menuAnalysisVisualization.addMenu(self.menuAnalysisVisualizationData)
