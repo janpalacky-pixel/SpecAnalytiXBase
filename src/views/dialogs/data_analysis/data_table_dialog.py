@@ -10,7 +10,7 @@ from PyQt5.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PyQt5.QtGui import QBrush, QColor, QKeySequence
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QDialog, QFileDialog, QHBoxLayout,
                              QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QShortcut,
-                             QTableView, QToolButton, QVBoxLayout)
+                             QTableView, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 from src.modules.data_analysis.data_table import FUNCTION_HELP, DataTable
 
@@ -95,10 +95,11 @@ class DataTableDialog(QDialog):
 
         top = QHBoxLayout()
         intro = QLabel(
-            "The selected spectra: x and one column per spectrum (sp1, sp2, …, as in the Spectral Calculator). Select cells and "
-            "press Ctrl+C to paste them into Excel. New columns are calculated from a formula "
-            "(green) and can be added to the spectra list as new spectra. The measured values are "
-            "not changed here.")
+            "<b>Points</b>: x and one column per spectrum (sp1, sp2, …, as in the Spectral "
+            "Calculator); formula columns (green) can be added to the spectra list as new spectra. "
+            "<b>Values per spectrum</b>: one row per spectrum with its stored values and values you "
+            "choose (area, maximum, peak position, …), formulas and plots. Select cells and press "
+            "Ctrl+C to paste them into Excel. The measured values are not changed here.")
         intro.setWordWrap(True)
         top.addWidget(intro, 1)
         from src.views.icons import help_button
@@ -106,6 +107,13 @@ class DataTableDialog(QDialog):
         self.help_button.clicked.connect(self.show_help)
         top.addWidget(self.help_button, 0, Qt.AlignTop)
         layout.addLayout(top)
+        outer = layout
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("QTabBar::tab { min-width: 170px; padding: 6px 14px; }")
+        outer.addWidget(self.tabs, 1)
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        self.tabs.addTab(page, "Points (one row per x)")
 
         if not self.table.shared_x:
             note = QLabel(
@@ -189,8 +197,15 @@ class DataTableDialog(QDialog):
             buttons.addWidget(b)
         buttons.addStretch(1)
         buttons.addWidget(self.add_spectra_button)
-        buttons.addWidget(close)
         layout.addLayout(buttons)
+
+        from src.views.dialogs.data_analysis.value_table_panel import ValueTablePanel
+        self.values = ValueTablePanel(self, spectra)
+        self.tabs.addTab(self.values, "Values per spectrum")
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        bottom.addWidget(close)
+        outer.addLayout(bottom)
         for b in (self.copy_button, self.export_button, self.remove_button, self.add_spectra_button,
                   self.add_button):
             b.setAutoDefault(False)

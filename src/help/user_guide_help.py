@@ -2084,6 +2084,26 @@ def get_user_guide_help_content():
             <li>Remove a formula column: select one of its cells and click <strong>Remove
                 column</strong>, or right-click its heading.</li>
         </ul>
+        <h4 id="values-per-spectrum">Values per spectrum (second tab)</h4>
+        <p>One row per selected spectrum (sp1, sp2, &hellip;) with its name, the numbers stored with
+        it (e.g. <code>temperature_C</code> of a JASCO .jwb scan) and the numbers in its name
+        (<code>n1</code>, <code>n2</code>, &hellip;: in <code>TBA_45C : 0003</code> n1 is 45 and n2 is 3).</p>
+        <ul>
+            <li><strong>Add value&hellip;</strong> adds a column (blue, <b>v1, v2, &hellip;</b>) with one
+                value per spectrum &mdash; exactly the values of
+                <a href="help://group_statistics">Group Statistics</a>: area, baseline-corrected area or
+                mean over a range, maximum, peak position (also the top of a parabola), FWHM, fitted
+                peak values, intensity at x, two bands combined (A / B, &hellip;), PCA or SVD score.
+                A spectrum that does not cover the range gets no value (&mdash;).</li>
+            <li><strong>Formula columns</strong> (green, f1, f2, &hellip;) use the column names, e.g.
+                <code>v1 / v2</code>, <code>v1 / max_val(v1)</code> (scaled to 1),
+                <code>v1 * temperature_C</code>; commas give several at once. Rows without a value stay
+                without one (<code>max_val</code>, <code>mean_val</code>, &hellip; skip them).</li>
+            <li><strong>Plot &hellip; against &hellip;</strong>: one column against another in its own
+                window, e.g. the maximum at 280&ndash;300 nm against <code>temperature_C</code> gives a
+                melting curve; rows without both values are left out.</li>
+            <li>Copy (Ctrl+C) and Export&hellip; as in the first tab.</li>
+        </ul>
 
         <!-- ═══════════════════════════════════════════════════════════
              7. LEGEND
