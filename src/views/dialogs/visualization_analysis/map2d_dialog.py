@@ -4538,7 +4538,17 @@ class Map2DDialog(QDialog):
                              f"consensus among {pool_size} near-best)")
             else:
                 parts.append(f"best of {n_runs} runs")
-        self._decomp_status_label.setText("  |  ".join(parts))
+        text = "  |  ".join(parts)
+        # Raw spectra on a large shared background (e.g. a detector offset)
+        # make NMF / MCR-ALS components jagged - say so right here, in
+        # orange, instead of only in the help (background_check.py).
+        from src.modules.visualization_analysis import background_check
+        warning = background_check.warning_text(
+            self.spectra, 'NMF' if kind == 'nmf' else 'MCR-ALS')
+        if warning:
+            text = (text + "\n" if text else "") + "\u26a0 " + warning
+            self._decomp_status_label.setStyleSheet("font-size:8pt; color:#E65100;")
+        self._decomp_status_label.setText(text)
 
     # ── NMF/MCR-ALS: Bootstrap Uncertainty ──────────────────────────────
 

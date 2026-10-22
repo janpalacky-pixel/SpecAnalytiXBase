@@ -178,6 +178,9 @@ def get_mcr_als_help_content():
         interpret. <strong>Run Baseline correction (even an imperfect one)
         before MCR-ALS.</strong> Recommended pipeline: Data range
         &rarr; Baseline correction &rarr; Normalisation &rarr; MCR-ALS.
+        The program checks this for you: when the spectra still sit on a
+        large background (higher than their bands), the run ends with a
+        warning saying so.
     </div>
 
     <div class="warn">

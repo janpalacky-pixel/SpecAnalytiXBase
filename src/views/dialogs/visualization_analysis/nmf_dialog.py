@@ -30,6 +30,7 @@ import matplotlib.patheffects as mpl_path_effects
 
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import compute_distinguishing_labels, make_shorten_names_checkbox
+from src.modules.visualization_analysis import background_check
 from src.modules.visualization_analysis import ground_truth_comparison as gtc
 from src.views.dialogs.misc.ground_truth_picker_dialog import pick_ground_truth_dataset
 logger = get_logger(__name__)
@@ -1337,6 +1338,9 @@ class NMFDialog(QDialog):
                     'Apply baseline correction first, or use PCA/SVD instead.')
             if self._mgr.x_range_mismatch_warning:
                 warnings.append(self._mgr.x_range_mismatch_warning)
+            background = background_check.warning_text(self._fit_spectra(), 'NMF')
+            if background:
+                warnings.append(background)
             if warnings:
                 self._set_warning_text('\n\n⚠  '.join(warnings))
             else:
@@ -1619,6 +1623,9 @@ class NMFDialog(QDialog):
                     'Apply baseline correction first, or use PCA/SVD instead.')
             if self._mgr.x_range_mismatch_warning:
                 warnings.append(self._mgr.x_range_mismatch_warning)
+            background = background_check.warning_text(self._fit_spectra(), 'NMF')
+            if background:
+                warnings.append(background)
             if warnings:
                 self._set_warning_text('\n\n⚠  '.join(warnings))
             else:

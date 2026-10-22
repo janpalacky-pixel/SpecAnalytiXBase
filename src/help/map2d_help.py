@@ -665,16 +665,19 @@ missing baseline correction, not confirmation of a good fit.
 <strong>Apply Baseline correction (even an imperfect one) to your spectra
 before switching to NMF or MCR-ALS map mode</strong> &mdash; see the
 standalone NMF / MCR-ALS help pages' "Read this first" sections for why.
+The program checks this for you: when the spectra still sit on a large
+background (higher than their bands), the line under the Map Type panel
+adds an orange note after the fit.
 </div>
 
 <div class="screenshot">
     <img src="$TYPE_NMF" width="$TYPE_NMF_W" height="$TYPE_NMF_H" alt="Map Type panel with NMF selected" />
-    <p class="caption">Map Type panel in NMF mode: Components-to-fit spinner, Browse-component selector, and Configure NMF range&hellip; button.</p>
+    <p class="caption">Map Type panel in NMF mode: Components-to-fit spinner, Browse-component selector, and Configure NMF range&hellip; button. The map&rsquo;s spectra were baseline-corrected first, as advised above.</p>
 </div>
 
 <div class="screenshot">
     <img src="$TYPE_MCR" width="$TYPE_MCR_W" height="$TYPE_MCR_H" alt="Map Type panel with MCR-ALS selected" />
-    <p class="caption">Map Type panel in MCR-ALS mode: Components-to-fit spinner, Browse-component selector, and Configure MCR-ALS range&hellip; button.</p>
+    <p class="caption">Map Type panel in MCR-ALS mode: Components-to-fit spinner, Browse-component selector, and Configure MCR-ALS range&hellip; button. The map&rsquo;s spectra were baseline-corrected first, as advised above.</p>
 </div>
 
 <p>Unlike SVD (which yields every component from a single fit), NMF and
