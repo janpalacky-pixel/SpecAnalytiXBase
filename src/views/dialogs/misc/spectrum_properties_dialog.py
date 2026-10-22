@@ -10,7 +10,8 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor, QKeySequence
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                             QHeaderView, QInputDialog, QLabel, QMessageBox, QPushButton,
+                             QHeaderView, QInputDialog, QLabel, QListWidget,
+                             QMessageBox, QPushButton,
                              QShortcut, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout)
 
 from src.modules.misc import spectrum_properties as sp
@@ -43,6 +44,108 @@ takes it back; snapshots keep the values.</li>
 """
 
 
+def _natural_key(text):
+    """'raman_2' before 'raman_10': the numbers in a text compared as numbers."""
+    import re
+    return [(0, float(part), '') if part[:1].isdigit() else (1, 0.0, part.lower())
+            for part in re.split(r'(\d+(?:\.\d+)?)', str(text)) if part]
+
+
+class _NameItem(QTableWidgetItem):
+    """A spectrum name; sorts naturally (raman_2 before raman_10)."""
+
+    def __lt__(self, other):
+        return _natural_key(self.text()) < _natural_key(other.text())
+
+
+class _ValueItem(QTableWidgetItem):
+    """A value cell; sorts by the number (2 before 10), empty or not-a-number
+    cells after the numbers."""
+
+    def __lt__(self, other):
+        def key(item):
+            try:
+                v = sp.parse_value(item.text())
+            except ValueError:
+                v = None
+            return (0, v) if v is not None else (1, 0.0)
+        return key(self) < key(other)
+
+
+class AddPropertyDialog(QDialog):
+    """The name of a new property, three ways: type it (a suggestion is
+    completed while typing), pick it with the arrow of the field, or click it
+    in the list below (a double-click adds it at once). Add is possible only
+    for a good name; what is wrong is said at once below the field (no
+    message box afterwards)."""
+
+    def __init__(self, parent, suggestions, check):
+        super().__init__(parent)
+        self.check = check                  # name -> None, or why it cannot be used
+        self.setWindowTitle("Add property")
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        v = QVBoxLayout(self)
+        intro = QLabel("A property is one number for each spectrum (e.g. its temperature, pH or "
+                       "concentration). Type a name (it is completed from the suggestions), pick one "
+                       "with the arrow, or click one in the list:")
+        intro.setWordWrap(True)
+        v.addWidget(intro)
+        form = QFormLayout()
+        self.name_box = QComboBox()
+        self.name_box.setEditable(True)
+        self.name_box.setInsertPolicy(QComboBox.NoInsert)
+        self.name_box.addItems(suggestions)
+        self.name_box.setCurrentIndex(-1)            # empty at the start
+        self.name_edit = self.name_box.lineEdit()    # completes the suggestions while typing
+        self.name_edit.setPlaceholderText("type a name, or pick one with the arrow")
+        form.addRow("Name:", self.name_box)
+        # the suggestions as a visible list (a drop-down arrow is easy to miss)
+        self.suggestion_list = QListWidget()
+        self.suggestion_list.addItems(suggestions)
+        self.suggestion_list.setMaximumHeight(130)
+        self.suggestion_list.setToolTip("Click: put the name into the field. Double-click: add it.")
+        self.suggestion_list.itemClicked.connect(lambda item: self.name_box.setEditText(item.text()))
+        self.suggestion_list.itemDoubleClicked.connect(
+            lambda item: (self.name_box.setEditText(item.text()), self.accept()))
+        form.addRow("Suggestions:", self.suggestion_list)
+        v.addLayout(form)
+        rule = QLabel("Letters, digits and _ only (no spaces), starting with a letter – so the "
+                      "name also works in the formulas of the Data table.")
+        rule.setWordWrap(True)
+        rule.setStyleSheet("color: grey;")
+        v.addWidget(rule)
+        self.problem = QLabel("")
+        self.problem.setWordWrap(True)
+        self.problem.setStyleSheet("color: #C62828;")
+        v.addWidget(self.problem)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.ok_button = self.buttons.button(QDialogButtonBox.Ok)
+        self.ok_button.setText("Add")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        v.addWidget(self.buttons)
+        self.name_box.editTextChanged.connect(self._check)
+        self._check()
+        self.resize(460, self.sizeHint().height())
+        self.name_box.setFocus()
+
+    def name(self):
+        return self.name_box.currentText().strip()
+
+    def _check(self, *_):
+        """Add only for a good name; the reason shown at once (not for an
+        empty field - there is nothing wrong yet)."""
+        problem = self.check(self.name())
+        empty = not self.name()
+        self.ok_button.setEnabled(not problem)
+        self.problem.setText("" if empty else (problem or ""))
+        return problem
+
+    def accept(self):
+        if not self._check():
+            super().accept()
+
+
 class SpectrumPropertiesDialog(QDialog):
     """apply_callback(spectra, values) -> (ok, message); values: one
     {key: value or None} per spectrum (in `spectra` order). The window keeps
@@ -72,16 +175,16 @@ class SpectrumPropertiesDialog(QDialog):
 
         tools = QHBoxLayout()
         self.add_button = QPushButton("Add property…")
-        self.add_button.clicked.connect(self.add_property)
+        self.add_button.clicked.connect(lambda: self.add_property())   # not clicked(False) as an argument
         self.remove_button = QPushButton("Remove property")
         self.remove_button.setToolTip("Empty the whole current column (removed on Apply)")
         self.remove_button.clicked.connect(self.remove_property)
         self.name_button = QPushButton("Fill from the names…")
         self.name_button.setToolTip("A number written in the names, e.g. 45 from TBA_45C")
-        self.name_button.clicked.connect(self.fill_from_names)
+        self.name_button.clicked.connect(lambda: self.fill_from_names())   # not clicked(False) as an argument
         self.series_button = QPushButton("Fill a series…")
         self.series_button.setToolTip("start, start + step, start + 2 step, … down the table")
-        self.series_button.clicked.connect(self.fill_series)
+        self.series_button.clicked.connect(lambda: self.fill_series())   # not clicked(False) as an argument
         for b in (self.add_button, self.remove_button, self.name_button, self.series_button):
             b.setAutoDefault(False)
             tools.addWidget(b)
@@ -96,7 +199,7 @@ class SpectrumPropertiesDialog(QDialog):
         self.table.horizontalHeader().resizeSection(0, 340)
         self.table.setTextElideMode(Qt.ElideMiddle)          # start and end of long names
         for r, s in enumerate(self.spectra):
-            name = QTableWidgetItem(str(s.get('label', '')))
+            name = _NameItem(str(s.get('label', '')))
             name.setFlags(name.flags() & ~Qt.ItemIsEditable)
             name.setData(Qt.UserRole, r)                     # its place in self.spectra
             self.table.setItem(r, 0, name)
@@ -140,7 +243,7 @@ class SpectrumPropertiesDialog(QDialog):
             else:
                 pairs = list(zip(rows, values))
             for r, v in pairs:
-                item = QTableWidgetItem(sp.value_text(v))
+                item = _ValueItem(sp.value_text(v))
                 item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                 self.table.setItem(r, col, item)
         finally:
@@ -185,7 +288,9 @@ class SpectrumPropertiesDialog(QDialog):
         elif diff:
             self.summary.setText(f"{len(diff)} value(s) changed – Apply stores them.")
         elif not self.keys:
-            self.summary.setText("No properties yet – Add property… makes a column.")
+            self.summary.setText("No properties yet. Start with Add property… (e.g. pH): it "
+                                 "makes a column; then type the values, paste them from Excel "
+                                 "or use Fill from the names… / Fill a series…, and Apply.")
         else:
             self.summary.setText("")
         return diff
@@ -202,12 +307,15 @@ class SpectrumPropertiesDialog(QDialog):
 
     # -- tools
     def add_property(self, name=None):
+        """A new empty column. Without a name the Add property window asks
+        for it (the button must call it without arguments: clicked(False)
+        would arrive as the name)."""
         if name is None:
-            name, ok = QInputDialog.getItem(
-                self, "Add property", "Name (letters, digits and _, e.g. concentration_mM):",
-                [k for k in sp.SUGGESTED if k not in self.keys], 0, True)
-            if not ok:
+            dlg = AddPropertyDialog(self, [k for k in sp.SUGGESTED if k not in self.keys],
+                                    lambda n: sp.check_name(n, self.spectra, self.keys))
+            if dlg.exec_() != QDialog.Accepted:
                 return None
+            name = dlg.name()
         name = (name or '').strip()
         problem = sp.check_name(name, self.spectra, self.keys)
         if problem:
@@ -219,6 +327,9 @@ class SpectrumPropertiesDialog(QDialog):
         self._set_headers()
         self._fill_column(col, [None] * len(self.spectra))
         self.table.setCurrentCell(0, col)
+        self.table.clearSelection()     # the new column is current; Fill… fills all its rows
+        self.summary.setText(f"Added “{name}”: type its values into the column, paste them "
+                             "(Ctrl+V) or use Fill from the names… / Fill a series…; then Apply.")
         return name
 
     def remove_property(self):
@@ -235,6 +346,8 @@ class SpectrumPropertiesDialog(QDialog):
         return True
 
     def fill_from_names(self, number=None):
+        """Fill the current column (selected rows, or all) with a number from
+        the spectrum names; without `number` it asks which one (last, first, ...)."""
         col = self._current_column()
         if col is None:
             col = 1 if self.add_property() else None
@@ -291,6 +404,8 @@ class SpectrumPropertiesDialog(QDialog):
         return True
 
     def paste(self):
+        """Ctrl+V: a block copied from Excel fills the cells from the current
+        one down (and right, for several columns)."""
         text = QApplication.clipboard().text()
         if not text.strip():
             return 0
@@ -308,7 +423,7 @@ class SpectrumPropertiesDialog(QDialog):
                 for dc, cell in enumerate(line.split('\t')):
                     r, c = r0 + dr, c0 + dc
                     if r < self.table.rowCount() and c < self.table.columnCount():
-                        item = QTableWidgetItem(cell.strip())
+                        item = _ValueItem(cell.strip())
                         item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                         self.table.setItem(r, c, item)
                         n += 1
@@ -322,7 +437,7 @@ class SpectrumPropertiesDialog(QDialog):
         try:
             for index in self.table.selectedIndexes():
                 if index.column() >= 1:
-                    self.table.setItem(index.row(), index.column(), QTableWidgetItem(''))
+                    self.table.setItem(index.row(), index.column(), _ValueItem(''))
         finally:
             self.table.blockSignals(False)
         self._changed()

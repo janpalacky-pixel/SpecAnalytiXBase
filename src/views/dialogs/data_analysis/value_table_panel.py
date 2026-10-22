@@ -251,7 +251,7 @@ class ValueTablePanel(QWidget):
         self.add_value_button.setToolTip("A column of one value per spectrum: area or mean over a "
                                          "range, maximum, peak position, FWHM, fitted peak, "
                                          "intensity at x, two bands, PCA score …")
-        self.add_value_button.clicked.connect(self.add_value)
+        self.add_value_button.clicked.connect(lambda: self.add_value())   # not clicked(False) as settings
         row.addWidget(self.add_value_button)
         row.addSpacing(12)
         row.addWidget(QLabel("New column ="))

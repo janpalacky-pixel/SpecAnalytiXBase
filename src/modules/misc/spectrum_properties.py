@@ -16,8 +16,8 @@ from src.modules.visualization import color_by_value as cbv
 
 # a property name can also be used in formulas (Data table), e.g. v1 / pH
 NAME_RE = re.compile(r'^[A-Za-z][A-Za-z0-9_]*$')
-SUGGESTED = ['temperature_C', 'pH', 'concentration', 'concentration_mM', 'time_s', 'time_min',
-             'ionic_strength_mM', 'replicate']
+SUGGESTED = ['concentration', 'pH', 'temperature', 'time', 'replicate', 'sample_number',
+             'concentration_mM', 'temperature_C', 'time_s', 'time_min', 'ionic_strength_mM']
 
 
 def property_keys(spectra):

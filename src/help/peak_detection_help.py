@@ -112,7 +112,7 @@ def get_peak_detection_help_content():
             peak number (1st, 2nd, &hellip; peak of its spectrum; e.g. the position against the peak
             number shows how much the 1st, 2nd, &hellip; peak varies between the spectra);</li>
         <li><b>x = Peak by its position</b>: each peak at the position of its band &mdash; peaks
-            of different spectra closer than <b>same peak within &plusmn;</b> (in x units; set from
+            of different spectra closer than <b>same band within &plusmn;</b> (in x units; set from
             the widths of the peaks, half of the median FWHM) are the same band and get one common
             position (their median), so a band measured at 685 in one spectrum and 686 in the next
             is one column. <b>As labels</b> puts the bands side by side with their positions as
@@ -129,17 +129,27 @@ def get_peak_detection_help_content():
     <p>For example the position against the temperature shows how a band shifts through a
     melting series, and the height against the position shows which bands are strong. The
     points are coloured by the <b>peak number</b> (1st, 2nd, &hellip; peak of each spectrum from
-    low to high x), by <b>maximum / minimum</b>, or in one colour. <b>Join the same peak
-    number</b> draws lines through the 1st peak of each spectrum, the 2nd peak of each, &hellip;,
-    each line in its own colour (named in the legend). With x a value of the spectrum the line
-    runs along x; with x a number of the peak (e.g. the height) it runs from spectrum to spectrum
-    in the order of the list. It is greyed out when x is the peak itself (its number or its
-    position), where the points of one peak lie above each other. <b>Legend</b> shows or hides
-    the legend. The peak numbers count from
-    low x, so when a peak appears or disappears in some spectra the numbers after it shift: to
-    follow one band, sort the table by position, select its rows and tick <b>Only the selected
-    rows</b>. <b>Copy plot</b> puts the plot on the clipboard for Word or PowerPoint; the toolbar
-    zooms and saves it.</p>
+    low to high x), by <b>band</b> (the peaks of all spectra at the same position, within
+    <b>same band within &plusmn;</b>, get one colour whatever their number), by <b>maximum /
+    minimum</b>, or in one colour.</p>
+    <p><b>Join the same &hellip;</b> draws lines from spectrum to spectrum through the same peak,
+    each line in its own colour (named in the legend):</p>
+    <ul>
+        <li><b>peak number</b>: through the 1st peak of each spectrum, the 2nd, &hellip; The
+            numbers count from low x, so when a peak is missing in some spectra (e.g. a band that
+            disappears on heating) the numbers after it shift and a line jumps to the next
+            band.</li>
+        <li><b>band (peak by its position)</b>: through the peaks at the same position. A line
+            always stays on its band; where the band is not found it simply has no point. Use
+            this to follow bands through a melting series.</li>
+    </ul>
+    <p>With x a value of the spectrum the line runs along x; with x a number of the peak (e.g. the
+    height) it runs from spectrum to spectrum in the order of the list. Join is greyed out when x
+    is the peak itself (its number or its position), where the points of one peak lie above each
+    other. <b>Same band within &plusmn;</b> (shown when bands are used) sets how close two peaks
+    must be to count as one band. <b>Only the selected rows</b> draws the rows selected in the
+    table; <b>Legend</b> shows or hides the legend. <b>Copy plot</b> puts the plot on the
+    clipboard for Word or PowerPoint; the toolbar zooms and saves it.</p>
 
     <hr>
     <h2>Clearing markers</h2>

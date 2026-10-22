@@ -19,6 +19,7 @@ from src.views import icons
 from src.views.dialogs.data_analysis.peak_settings_help import tooltip_of
 
 _LINE_STYLES = ('-', '--', ':', '-.')
+BAND_COLOUR = "Band (peak by its position)"
 
 
 def _style(k, n):
@@ -31,6 +32,9 @@ def _style(k, n):
 
 
 class PeakListDialog(QDialog):
+    """The Peak list window: the settings of Detect Peaks (shared with it via
+    on_settings), the tab Table (one row per peak, see pl.COLUMNS) and the tab
+    Plot. self.rows are the table rows, self.row_spectrum the spectrum of each."""
 
     def __init__(self, parent, spectra, threshold=0.5, prominence=0.1, distance=0.05,
                  mode='Positive', on_settings=None):
@@ -129,6 +133,8 @@ class PeakListDialog(QDialog):
 
     # -- the Plot tab
     def _build_plot_tab(self):
+        """The tab Plot: x, y and Colour, the ± distance of a band, Join the
+        same peak number / band, Only the selected rows, Legend, Copy plot."""
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
         from matplotlib.figure import Figure
         page = QWidget()
@@ -142,10 +148,13 @@ class PeakListDialog(QDialog):
         self.y_combo = QComboBox()
         self.y_combo.addItems(pl.Y_CHOICES)
         self.colour_combo = QComboBox()
-        self.colour_combo.addItems(["Peak number", "Maximum / minimum", "One colour"])
-        self.colour_combo.setToolTip("Peak number: the 1st, 2nd, ... peak of each spectrum "
-                                     "(from low to high x)")
-        self.tolerance_label = QLabel("same peak within \u00b1")
+        self.colour_combo.addItems(["Peak number", "%s" % BAND_COLOUR, "Maximum / minimum",
+                                    "One colour"])
+        self.colour_combo.setToolTip(
+            "Peak number: the 1st, 2nd, ... peak of each spectrum (from low to high x) - it "
+            "shifts when a peak is missing in some spectra. Band: the peaks of all spectra at the "
+            "same position (within \u00b1) get one colour, whatever their number.")
+        self.tolerance_label = QLabel("same band within \u00b1")
         self.tolerance = QDoubleSpinBox()
         self.tolerance.setRange(0.0, 1e9)
         self.tolerance.setDecimals(3)
@@ -154,16 +163,22 @@ class PeakListDialog(QDialog):
             "Peaks of different spectra closer than this (in x units) are the same peak and get "
             "one common position (their median). Set from the peaks' widths (half of the median "
             "FWHM); raise it when one band is split into two, lower it when two bands are merged.")
-        self.join_check = QCheckBox("Join the same peak number")
-        self.join_check.setToolTip(
-            "Lines through the 1st peak of each spectrum, the 2nd peak of each, ... - to follow a "
-            "band through a series (e.g. its position against the temperature). Each line has its "
-            "own colour. With x a value of the spectrum the line goes along x; with x a number of "
-            "the peak (e.g. Height) it goes from spectrum to spectrum in the order of the list. "
-            "Not when x is the peak itself (its number or position): the points of one peak would "
-            "lie above each other. The peak numbers count from low x, so when a peak appears or "
-            "disappears in some spectra the numbers after it shift: to follow one band, sort the "
-            "table by position, select its rows and tick Only the selected rows.")
+        self.join_check = QCheckBox("Join the same")
+        self.join_by = QComboBox()
+        self.join_by.addItem("peak number", 'number')
+        self.join_by.addItem("band (peak by its position)", 'band')
+        join_tip = (
+            "Lines from spectrum to spectrum through the same peak - to follow a band through a "
+            "series (e.g. its position against the temperature). Each line has its own colour. "
+            "Peak number: through the 1st peak of each spectrum, the 2nd, ... - when a peak is "
+            "missing in some spectra the numbers after it shift and a line jumps to the next band. "
+            "Band: through the peaks at the same position (within \u00b1) - a line always stays on "
+            "its band and simply ends where the band is not found. With x a value of the spectrum "
+            "the line goes along x; with x a number of the peak (e.g. Height) it goes from spectrum "
+            "to spectrum in the order of the list. Not when x is the peak itself (its number or "
+            "position): the points of one peak would lie above each other.")
+        self.join_check.setToolTip(join_tip)
+        self.join_by.setToolTip(join_tip)
         self.selected_check = QCheckBox("Only the selected rows")
         self.selected_check.setToolTip("Draw only the rows selected in the tab Table")
         self.legend_check = QCheckBox("Legend")
@@ -180,6 +195,8 @@ class PeakListDialog(QDialog):
         v.addLayout(row)
         row = QHBoxLayout()                       # second row: what to draw
         row.addWidget(self.join_check)
+        row.addWidget(self.join_by)
+        row.addSpacing(10)
         row.addWidget(self.selected_check)
         row.addWidget(self.legend_check)
         row.addStretch(1)
@@ -194,9 +211,11 @@ class PeakListDialog(QDialog):
         v.addWidget(NavigationToolbar2QT(self.canvas, page))
         v.addWidget(self.canvas, 1)
         # the controls first, then the plot (so it is drawn with them up to date)
-        self.x_combo.currentIndexChanged.connect(self._join_possible)
+        for w in (self.x_combo, self.colour_combo, self.join_by):
+            w.currentIndexChanged.connect(self._join_possible)
+        self.join_check.toggled.connect(self._join_possible)
         self._join_possible()
-        for w in (self.x_combo, self.y_combo, self.colour_combo):
+        for w in (self.x_combo, self.y_combo, self.colour_combo, self.join_by):
             w.currentIndexChanged.connect(self._draw_if_shown)
         for w in (self.join_check, self.selected_check, self.legend_check):
             w.toggled.connect(self._draw_if_shown)
@@ -209,16 +228,27 @@ class PeakListDialog(QDialog):
         key = self.x_combo.currentData()
         return bool(key) and (key[0] == 'band' or key == ('column', 'Peak'))
 
+    def _joined_by_band(self):
+        """Lines are drawn and follow the bands (not the peak numbers)."""
+        return (self.join_check.isChecked() and self.join_check.isEnabled()
+                and self.join_by.currentData() == 'band')
+
     def _join_possible(self, *_):
         """Join is offered unless x is the peak itself; the tolerance only
-        for x = the peak by its position."""
+        when something groups the peaks by their position (x, Colour or
+        Join)."""
         key = self.x_combo.currentData()
-        self.join_check.setEnabled(bool(key) and not self._x_is_the_peak())
-        band = bool(key) and key[0] == 'band'
+        possible = bool(key) and not self._x_is_the_peak()
+        self.join_check.setEnabled(possible)
+        self.join_by.setEnabled(possible)
+        band = ((bool(key) and key[0] == 'band') or self.colour_combo.currentText() == BAND_COLOUR
+                or self._joined_by_band())
         self.tolerance_label.setVisible(band)
         self.tolerance.setVisible(band)
 
     def select_all_rows(self):
+        """Select all rows; the focus goes back to the table, so the selection
+        is shown in its full colour (not the pale one of an unfocused table)."""
         self.table.selectAll()
         self.table.setFocus()           # the selection shows in full colour
 
@@ -243,6 +273,11 @@ class PeakListDialog(QDialog):
         return list(range(len(self.rows)))
 
     def draw_plot(self):
+        """Draw the tab Plot; returns the number of points. Each point is
+        (x, y, row, spectrum index, band position): x and y as chosen; the
+        band position groups the peaks of all spectra that lie within the
+        ± distance (pl.band_positions) - used by x = Peak by its position,
+        Colour = Band and Join the same band."""
         import numpy as np
         self._plot_stale = False
         self._join_possible()
@@ -256,13 +291,17 @@ class PeakListDialog(QDialog):
         x_name, y_name = self.x_combo.currentText(), self.y_combo.currentText()
         xs, ys = pl.plot_values(rows, index, self.spectra, x_key, y_name,
                                 tolerance=self.tolerance.value())
+        bands = pl.band_positions(rows, self.tolerance.value())     # the band of each row
         labels = None
         if x_key == ('band', 'label') and xs:
             centres = sorted(set(xs))
             labels = [pl.band_label(c, centres) for c in centres]
             where = {c: i for i, c in enumerate(centres)}
             xs = [where[x] for x in xs]
-        points = [(x, y, r, i) for x, y, r, i in zip(xs, ys, rows, index) if x is not None]
+        points = [(x, y, r, i, b) for x, y, r, i, b in zip(xs, ys, rows, index, bands)
+                  if x is not None]
+        all_bands = sorted(set(bands))
+        band_name = lambda b: f"Band {pl.band_label(b, all_bands)}"
         if x_key and x_key[0] == 'band':
             ax.set_xlabel("Peak position" + (" (common for the peak in all spectra)"
                                              if x_key[1] == 'position' else ""))
@@ -281,30 +320,39 @@ class PeakListDialog(QDialog):
             ax.set_xticklabels(labels, rotation=90 if len(labels) > 8 else 0,
                                fontsize=8 if len(labels) > 8 else None)
         colour = self.colour_combo.currentText()
-        peak_numbers = sorted({r[1] for _, _, r, _ in points})
+        peak_numbers = sorted({p[2][1] for p in points})
         if colour == "Peak number":
-            groups, key, name = peak_numbers, (lambda r: r[1]), (lambda g: f"Peak {g}")
+            groups, key, name = peak_numbers, (lambda p: p[2][1]), (lambda g: f"Peak {g}")
+        elif colour == BAND_COLOUR:
+            groups = sorted({p[4] for p in points})
+            key, name = (lambda p: p[4]), band_name
         elif colour == "Maximum / minimum":
-            groups = [g for g in ('maximum', 'minimum') if any(r[2] == g for _, _, r, _ in points)]
-            key, name = (lambda r: r[2]), str
+            groups = [g for g in ('maximum', 'minimum') if any(p[2][2] == g for p in points)]
+            key, name = (lambda p: p[2][2]), str
         else:
-            groups, key, name = [None], (lambda r: None), (lambda g: None)
+            groups, key, name = [None], (lambda p: None), (lambda g: None)
         for k, g in enumerate(groups):
-            sel = [(x, y) for x, y, r, _ in points if key(r) == g]
+            sel = [(p[0], p[1]) for p in points if key(p) == g]
             col = _style(k, len(groups))[0] if g is not None else 'C0'
             gx, gy = np.array(sel).T
             ax.scatter(gx, gy, s=22, color=col, label=name(g) if g is not None else None,
                        zorder=3)
         if self.join_check.isChecked() and self.join_check.isEnabled():
             along_x = bool(x_key) and x_key[0] == 'spectrum'
-            for k, g in enumerate(peak_numbers):
-                sel = [(x, y, i) for x, y, r, i in points if r[1] == g]
+            if self.join_by.currentData() == 'band':
+                lines = sorted({p[4] for p in points})
+                of, line_name, same = (lambda p: p[4]), band_name, BAND_COLOUR
+            else:
+                lines = peak_numbers
+                of, line_name, same = (lambda p: p[2][1]), (lambda g: f"Peak {g}"), "Peak number"
+            for k, g in enumerate(lines):
+                sel = [(p[0], p[1], p[3]) for p in points if of(p) == g]
                 # along x (a value of the spectrum), else spectrum after spectrum
-                sel.sort(key=(lambda p: (p[0], p[2])) if along_x else (lambda p: (p[2], p[0])))
+                sel.sort(key=(lambda q: (q[0], q[2])) if along_x else (lambda q: (q[2], q[0])))
                 gx, gy = np.array([(x, y) for x, y, _ in sel]).T
-                col, style = _style(k, len(peak_numbers))
-                # with Colour = Peak number the points already name the peaks
-                label = None if colour == "Peak number" else f"Peak {g} (line)"
+                col, style = _style(k, len(lines))
+                # when the points are coloured the same way they already name the lines
+                label = None if colour == same else f"{line_name(g)} (line)"
                 ax.plot(gx, gy, style, color=col, lw=1.2, alpha=0.8, zorder=2, label=label)
         handles, texts = ax.get_legend_handles_labels()
         if self.legend_check.isChecked() and texts:
@@ -355,6 +403,8 @@ class PeakListDialog(QDialog):
                     distance=self.distance.value(), mode=self.mode.currentText())
 
     def refresh(self, *_):
+        """Find the peaks again with the current settings and fill the table
+        (and the plot, when shown); the first time also the ± distance."""
         s = self.settings()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:

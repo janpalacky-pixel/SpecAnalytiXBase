@@ -1081,7 +1081,7 @@ class MainController(QMainWindow):
 
     def _apply_stylesheet(self):
         """Apply a coherent light academic stylesheet to the entire application."""
-        self.view.setStyleSheet("""
+        self.view.setStyleSheet(self._with_arrow_images("""
             /* ── Main window background ── */
             QMainWindow, QWidget {
                 background-color: #F4F5F7;
@@ -1240,6 +1240,16 @@ class MainController(QMainWindow):
                 border: none;
                 width: 18px;
             }
+            /* the arrow shows that it is a list (styling the drop-down
+               above hides Qt's own arrow) */
+            QComboBox::down-arrow {
+                image: url(@COMBO_ARROW@);
+                width: 11px;
+                height: 11px;
+            }
+            QComboBox::down-arrow:disabled {
+                image: url(@COMBO_ARROW_DISABLED@);
+            }
             QComboBox QAbstractItemView {
                 background-color: #FFFFFF;
                 border: 1px solid #C8CDD6;
@@ -1324,8 +1334,22 @@ class MainController(QMainWindow):
                 background-color: #F4F5F7;
                 border: none;
             }
-        """)
+        """))
         
+    @staticmethod
+    def _with_arrow_images(css):
+        """The paths of the drop-down arrow pictures in the style sheet (light
+        or dark theme; forward slashes, as Qt wants them also on Windows)."""
+        import os
+        from src.modules.utils.resource_path import resource_path
+        from src.views import theme
+        dark = '_for_dark' if theme.saved_theme() == 'dark' else ''
+        for marker, name in (('@COMBO_ARROW_DISABLED@', f'combo_arrow_disabled{dark}.png'),
+                             ('@COMBO_ARROW@', f'combo_arrow{dark}.png')):
+            path = resource_path(os.path.join('resources', 'icons', name)).replace('\\', '/')
+            css = css.replace(marker, path)
+        return css
+
     def open_external_figure(self):
         """Open the current plot in a new external matplotlib window."""
         create_external_figure(self)        
