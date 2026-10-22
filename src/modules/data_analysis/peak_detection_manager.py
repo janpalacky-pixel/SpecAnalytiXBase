@@ -49,59 +49,13 @@ class PeakDetector:
                 if len(y_data) < 2:
                     continue
     
-                # Compute thresholds
-                # height_threshold below is deliberately NOT shared between
-                # positive and negative detection — it must be computed
-                # from whichever array find_peaks() is actually being
-                # applied to. Previously the same value (derived from the
-                # ORIGINAL, non-inverted y_data's own min/max) was reused
-                # unchanged for the inverted data too. That's only correct
-                # when a spectrum is perfectly symmetric around its own
-                # midpoint — for virtually any real asymmetric spectrum
-                # (e.g. a mostly-positive baseline with a genuine dip, or
-                # vice versa) it silently miscalibrates the negative-peak
-                # threshold. Verified directly: a deep, unambiguous trough
-                # (baseline ~5, dipping to ~1 — an 80%+ deep feature) was
-                # completely missed by "Negative" mode as a result,
-                # because the threshold required inverted_y to exceed a
-                # value mirrored from the POSITIVE side's own range, not
-                # computed from the inverted data's own range.
-                prominence_threshold = prominence * (np.max(y_data) - np.min(y_data))
-                distance_threshold = max(1, int(distance * len(y_data)))
-    
-                peaks_positive = []
-                peaks_negative = []
-    
-                # Detect peaks based on mode
-                if peak_mode in ["Positive", "Both"]:
-                    height_threshold_pos = np.min(y_data) + threshold * (np.max(y_data) - np.min(y_data))
-                    peaks_positive, _ = find_peaks(
-                        y_data,
-                        height=height_threshold_pos,
-                        prominence=prominence_threshold,
-                        distance=distance_threshold
-                    )
-    
-                if peak_mode in ["Negative", "Both"]:
-                    inverted_y_data = -y_data  # Invert for negative peaks
-                    # Threshold computed from inverted_y_data's OWN
-                    # min/max — not mirrored from the positive side's
-                    # threshold (see comment above).
-                    height_threshold_neg = (np.min(inverted_y_data)
-                                             + threshold * (np.max(inverted_y_data) - np.min(inverted_y_data)))
-                    peaks_negative, _ = find_peaks(
-                        inverted_y_data,
-                        height=height_threshold_neg,
-                        prominence=prominence_threshold,
-                        distance=distance_threshold
-                    )
-    
-                # Combine peaks if detecting both
-                peaks = np.unique(np.concatenate((peaks_positive, peaks_negative)))
-                
-                # Ensure peaks are integers
-                peaks = peaks.astype(int)
-    
+                # Which points are peaks: the same rule as the peak list
+                # (peak_list.peak_indices; each side - maxima, minima - is
+                # judged on its own range).
+                from src.modules.data_analysis.peak_list import peak_indices
+                peaks = peak_indices(np.asarray(y_data, dtype=float), threshold, prominence,
+                                     distance, peak_mode)
+
                 # Store peaks
                 key = (ax_idx, line_idx)
                 self.peak_indices[key] = peaks

@@ -63,6 +63,7 @@ _REGISTRY = {
     'spectral_calculator':    ('src.help.spectral_calculator_help', 'get_spectral_calculator_help_title', 'get_spectral_calculator_help_content'),
     'spike_removal':          ('src.help.spike_removal_help', 'get_spike_removal_help_title', 'get_spike_removal_help_content'),
     'peak_fitting':           ('src.help.peak_fitting_help', 'get_peak_fitting_help_title', 'get_peak_fitting_help_content'),
+    'peak_detection':         ('src.help.peak_detection_help', 'get_peak_detection_help_title', 'get_peak_detection_help_content'),
     'cosmic_ray':             ('src.help.cosmic_ray_help', 'get_cosmic_ray_help_title', 'get_cosmic_ray_help_content'),
     'resolution':             ('src.help.resolution_enhancement_help', 'get_resolution_help_title', 'get_resolution_help_content'),
     'xaxis_alignment':        ('src.help.xaxis_alignment_help', 'get_xaxis_alignment_help_title', 'get_xaxis_alignment_help_content'),
@@ -222,6 +223,7 @@ def _declare_help_modules_for_bundlers():
     import src.help.nmf_help  # noqa: F401
     import src.help.normalization_help  # noqa: F401
     import src.help.pca_scores_help  # noqa: F401
+    import src.help.peak_detection_help  # noqa: F401
     import src.help.peak_fitting_help  # noqa: F401
     import src.help.plot_controls_help  # noqa: F401
     import src.help.pls_help  # noqa: F401

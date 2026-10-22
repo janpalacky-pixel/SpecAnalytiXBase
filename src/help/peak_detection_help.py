@@ -24,8 +24,13 @@ def get_peak_detection_help_content():
     <p>Peak Detection marks local maxima or minima directly on the current
     plot — a quick visual aid, not a data-modifying operation. It doesn't
     change your spectra or save anything to their metadata; it just draws
-    markers and labels on top of whatever's currently plotted. Reopen the
-    dialog and click Detect again any time to update or clear the markers.</p>
+    markers and labels on top of whatever's currently plotted.</p>
+    <p><b>Right-click on the plot &rarr; Detect Peaks</b> opens the Peak Detection Settings.
+    <b>Apply</b> marks the peaks with the settings shown and the window stays open, so you can
+    change a setting and Apply again until the result fits; <b>Close</b> closes the window
+    (settings changed after the last Apply are not used). <b>Reset to defaults</b> puts every
+    setting back to its default value. The orange <b>?</b> shows what each setting means; the
+    same text appears when you hold the mouse over a setting.</p>
 
     <div class="note">
         This is different from <strong>Peak Fitting</strong>, which models
@@ -61,6 +66,8 @@ def get_peak_detection_help_content():
             <td>Purely cosmetic — control how (and whether) each marker's
             coordinates are labeled on the plot.</td></tr>
     </table>
+    <p>Defaults: threshold 0.5, prominence 0.1, distance 0.05, Positive; font size 10,
+    rotation 0, 2 decimal places, fixed point, x value only.</p>
 
     <hr>
     <h2>How detection works</h2>
@@ -73,6 +80,66 @@ def get_peak_detection_help_content():
     line's own range," not a fixed absolute value — so the same settings
     can be reused sensibly across lines with very different intensity
     scales.</p>
+
+    <hr>
+    <h2 id="peak-list">Peak list</h2>
+    <p><b>Right-click on the plot &rarr; Peak list&hellip;</b> (or the <b>Peak list&hellip;</b> button
+    in the Peak Detection Settings) lists every peak of <b>all selected spectra</b> in one table
+    &mdash; also of spectra a large selection does not draw. The peaks are found by exactly the same
+    rule and settings as the markers on the plot; change the settings in the list and the table
+    follows at once (Detect Peaks then uses them too). Columns:</p>
+    <ul>
+        <li><b>Peak</b>: its number within the spectrum, from low to high x; <b>Kind</b>: maximum
+            or minimum.</li>
+        <li><b>Position (x)</b> and <b>Height (y)</b>: of the highest (or lowest) measured point
+            &mdash; so the position is as precise as the point spacing. For a position between the
+            points, use Peak Fitting.</li>
+        <li><b>Prominence</b>: how far the peak stands out from its surroundings.</li>
+        <li><b>FWHM</b>: the width at half of the prominence, and where it starts and ends
+            (<b>Left / Right half-height x</b>), interpolated between the points (also for uneven
+            point spacing). Overlapping bands make it a rough estimate.</li>
+    </ul>
+    <p>Click a heading to sort by it. Select rows and press Ctrl+C (or <b>Copy</b>) to paste them
+    into Excel with the column names; <b>Export&hellip;</b> saves the list as Excel or CSV.
+    <b>Reset to defaults</b> and the orange <b>?</b> work as in the Peak Detection Settings (the
+    <b>?</b> also explains the columns).</p>
+    <h3 id="peak-plot">Plot</h3>
+    <p>The tab <b>Plot</b> draws one number of the peaks against another:</p>
+    <ul>
+        <li><b>x</b>: a value of the spectrum &mdash; its order in the list, a value stored with it
+            (e.g. <code>temperature_C</code> of a JASCO temperature scan) or a number in its name
+            (only values that differ between the spectra are offered) &mdash; or a number of the peak itself: position, height, prominence, FWHM or the
+            peak number (1st, 2nd, &hellip; peak of its spectrum; e.g. the position against the peak
+            number shows how much the 1st, 2nd, &hellip; peak varies between the spectra);</li>
+        <li><b>x = Peak by its position</b>: each peak at the position of its band &mdash; peaks
+            of different spectra closer than <b>same peak within &plusmn;</b> (in x units; set from
+            the widths of the peaks, half of the median FWHM) are the same band and get one common
+            position (their median), so a band measured at 685 in one spectrum and 686 in the next
+            is one column. <b>As labels</b> puts the bands side by side with their positions as
+            names (e.g. 686, 1093); <b>on the x scale</b> puts them at their positions. A peak
+            that is missing in some spectra (not found there) is not invented: its band simply has
+            no point for those spectra, and the other bands keep their place &mdash; unlike the
+            peak number, where the peaks after a missing one move up by one (the 2nd becomes the
+            1st, &hellip;). A band that shifts gradually through a series stays one band as long
+            as its neighbouring positions are within the &plusmn; distance; two bands closer than it
+            become one (then lower it). Unlike <b>Position (x)</b>, all spectra share the band's
+            position;</li>
+        <li><b>y</b>: position, height, prominence or FWHM.</li>
+    </ul>
+    <p>For example the position against the temperature shows how a band shifts through a
+    melting series, and the height against the position shows which bands are strong. The
+    points are coloured by the <b>peak number</b> (1st, 2nd, &hellip; peak of each spectrum from
+    low to high x), by <b>maximum / minimum</b>, or in one colour. <b>Join the same peak
+    number</b> draws lines through the 1st peak of each spectrum, the 2nd peak of each, &hellip;,
+    each line in its own colour (named in the legend). With x a value of the spectrum the line
+    runs along x; with x a number of the peak (e.g. the height) it runs from spectrum to spectrum
+    in the order of the list. It is greyed out when x is the peak itself (its number or its
+    position), where the points of one peak lie above each other. <b>Legend</b> shows or hides
+    the legend. The peak numbers count from
+    low x, so when a peak appears or disappears in some spectra the numbers after it shift: to
+    follow one band, sort the table by position, select its rows and tick <b>Only the selected
+    rows</b>. <b>Copy plot</b> puts the plot on the clipboard for Word or PowerPoint; the toolbar
+    zooms and saves it.</p>
 
     <hr>
     <h2>Clearing markers</h2>

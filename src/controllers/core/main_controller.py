@@ -2724,6 +2724,7 @@ class MainController(QMainWindow):
         # Add peak detection actions
         detect_peaks_action = context_menu.addAction("Detect Peaks")
         clear_peaks_action = context_menu.addAction("Clear Peaks")
+        peak_list_action = context_menu.addAction("Peak list\u2026")
 
         # Add separator and plot properties action
         context_menu.addSeparator()
@@ -2775,6 +2776,8 @@ class MainController(QMainWindow):
         
         if action == detect_peaks_action:
             self.detect_peaks_dialog()
+        elif action == peak_list_action:
+            self.peak_detection_controller.show_peak_list()
         elif action == clear_peaks_action:
             self.peak_detection_controller.clear_peaks()
             # self.plot_spectra()

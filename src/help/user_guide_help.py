@@ -981,6 +981,7 @@ def get_user_guide_help_content():
             <tr><th>Item</th><th>Description</th></tr>
             <tr><td><strong>Detect Peaks</strong></td><td>Automatically detect and mark peaks on the currently plotted spectra</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
+            <tr><td><strong>Peak list&hellip;</strong></td><td>Every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; same settings as Detect Peaks</td></tr>
             <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list)</td></tr>
             <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour)</td></tr>
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
