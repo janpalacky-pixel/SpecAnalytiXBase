@@ -105,6 +105,21 @@ def notes_path(version):
     return path if os.path.isfile(path) else None
 
 
+def earlier_versions(current, folder=None):
+    """All versions with notes that are older than `current`, newest first
+    (e.g. 1.6.0, 1.5.0 for 1.7.0). The start window shows their "in
+    brief" lists below the new one, the same for everyone - so also someone
+    who skipped versions sees what they brought."""
+    def key(version):            # '1.6.0' (not a file name: no extension to cut off)
+        return tuple(int(p) if p.isdigit() else 0 for p in re.split(r'[.\-]', str(version)))
+    out = []
+    for path in version_files(folder):             # newest first
+        name = os.path.splitext(os.path.basename(path))[0]
+        if key(name) < key(current):
+            out.append(name)
+    return out
+
+
 def brief_markdown(version):
     """The "<version> in brief" section of a version's notes (without its
     heading), or '' if there is none."""

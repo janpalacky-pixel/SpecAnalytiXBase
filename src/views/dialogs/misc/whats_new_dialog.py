@@ -2,7 +2,9 @@
 """The small window shown when a new version starts: the "in brief" list
 of resources/whats_new/<version>.md, a button for the full list (Help ->
 What's New) and "Don't show this again" (for this version; the next version
-shows its own list again)."""
+shows its own list again). Below it the "in brief" lists of all earlier
+versions, newest first (e.g. 1.6.0, 1.5.0 under 1.7.0), the same for
+everyone."""
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QCheckBox, QDialog, QHBoxLayout, QLabel, QPushButton,
@@ -24,6 +26,7 @@ class WhatsNewDialog(QDialog):
     def __init__(self, parent, version):
         super().__init__(parent)
         self.version = version
+        self.earlier = whats_new_help.earlier_versions(version)
         self.setWindowTitle(f"What's new in SpecAnalytiXBase {version}")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.resize(720, 560)
@@ -33,8 +36,12 @@ class WhatsNewDialog(QDialog):
         self.text = QTextBrowser()
         self.text.setOpenLinks(False)
         self.text.anchorClicked.connect(self._open_link)
-        self.text.setHtml(_STYLE + whats_new_help.markdown_to_html(
-            whats_new_help.brief_markdown(version)))
+        md = whats_new_help.brief_markdown(version)
+        for earlier in self.earlier:          # all earlier versions, newest first
+            brief = whats_new_help.brief_markdown(earlier)
+            if brief:
+                md += f"\n### Earlier: what was new in {earlier}\n\n" + brief
+        self.text.setHtml(_STYLE + whats_new_help.markdown_to_html(md))
         layout.addWidget(self.text, 1)
         self.dont_show = QCheckBox("Don't show this again")
         self.dont_show.setToolTip("At the start of the program, for this version. Untick it here "
