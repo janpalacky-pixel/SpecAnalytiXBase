@@ -23,8 +23,9 @@ _BAD = QColor('#ffcdd2')
 HELP_HTML = """
 <p><b>Spectrum properties</b> are numbers that belong to each spectrum: temperature, pH,
 concentration, time, &hellip; They are used by <i>Line colours &rsaquo; Colours by value</i>,
-the <i>Data table</i> (tab Values per spectrum, also in its formulas) and the plot of the
-<i>Peak list</i>. Values read from the file (e.g. <code>temperature_C</code> of a JASCO
+the <i>Data table</i> (tab Values per spectrum, also in its formulas), the plot of the
+<i>Peak list</i>, <i>Melting Curve Analysis</i> (X from) and <i>Group Statistics</i> (groups From a
+property). Values read from the file (e.g. <code>temperature_C</code> of a JASCO
 temperature scan) are shown too and can be corrected.</p>
 <ul>
 <li><b>Type</b> a value into a cell (a decimal comma is fine). An empty cell = no value.
@@ -167,8 +168,9 @@ class SpectrumPropertiesDialog(QDialog):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
         intro = QLabel("Numbers that belong to each spectrum – temperature, pH, concentration, "
-                       "time… They are used by Colours by value, the Data table and the Peak "
-                       "list plot. Type, paste (Ctrl+V) or fill them; an empty cell = no value.")
+                       "time… They are used by Colours by value, the Data table, the Peak list plot, "
+                       "Melting Curve Analysis and Group Statistics. Type, paste (Ctrl+V) or fill "
+                       "them; an empty cell = no value.")
         intro.setWordWrap(True)
         top.addWidget(intro, 1)
         self.help_button = icons.help_button("How to set the properties")

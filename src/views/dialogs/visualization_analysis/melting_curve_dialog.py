@@ -379,12 +379,23 @@ class MeltingCurveDialog(QDialog):
         self.checkBox_shorten_names.stateChanged.connect(
             lambda _state: self.temps_table.viewport().update())
         header_row.addWidget(self.checkBox_shorten_names)
+        # Where X (the temperature) comes from: the numbers in the names, or
+        # a value stored with the spectra (Spectrum properties, or read
+        # from the file, e.g. temperature_C of a JASCO .jwb scan).
+        header_row.addWidget(QLabel("X from:"))
+        self.temps_from_combo = QComboBox()
+        self.temps_from_combo.setToolTip(
+            "Where the temperatures (X) come from: a number in the spectrum names, or a\n"
+            "value stored with the spectra (e.g. temperature_C read from a JASCO file, or\n"
+            "one set in Spectrum properties). Always check them in the table.")
+        self.temps_from_combo.currentIndexChanged.connect(self._on_temps_source_changed)
+        header_row.addWidget(self.temps_from_combo)
         reset_btn = QPushButton("Reset")
         reset_btn.setMaximumWidth(55)
         reset_btn.setToolTip(
             "Restore every X (Temperature) value to what it was originally\n"
-            "guessed as when this dialog was first opened, discarding\n"
-            "any edits made since (asks for confirmation first).")
+            "guessed as (from the names or the stored value chosen in\n"
+            "\"X from:\"), discarding any edits made since (asks first).")
         reset_btn.clicked.connect(self.revert_to_original_temperatures)
         header_row.addWidget(reset_btn)
         header_row.addWidget(self._make_help_button(
@@ -393,8 +404,11 @@ class MeltingCurveDialog(QDialog):
             "temperature, <b>Y</b> is the signal at that temperature. Double-click "
             "a cell to edit it directly.\n\n"
             "In \"From spectra\" mode (see Curve Extraction below): one row per "
-            "selected spectrum. X is pre-filled by guessing from each spectrum's "
-            "label (never trusted as final — always check it); Y is filled in "
+            "selected spectrum. X is pre-filled from \"X from:\" - a value stored "
+            "with the spectra (e.g. temperature_C) or a number guessed from each "
+            "spectrum's label (never trusted as final — always check it). A spectrum "
+            "without a temperature gets an empty X (named in orange under the table; "
+            "the curve waits until you type it). Y is filled in "
             "automatically whenever you click Extract Curve, reading the signal at "
             "the chosen X position from each spectrum. The Spectrum column shows "
             "which row belongs to which spectrum — uncheck \"Show spectrum names\" "
@@ -447,6 +461,15 @@ class MeltingCurveDialog(QDialog):
         self.temps_table.setItemDelegateForColumn(
             0, make_display_text_delegate(self._display_labels_map, parent=self.temps_table))
         v.addWidget(self.temps_table)
+        # Spectra without a temperature (empty X): named here, in orange.
+        # Their X stays empty on purpose - no number is invented for them
+        # (see _guess_temperature) - and the curve waits until every
+        # spectrum has one (see _read_temperatures).
+        self.temps_missing_label = QLabel("")
+        self.temps_missing_label.setWordWrap(True)
+        self.temps_missing_label.setStyleSheet("color:#E65100;")
+        self.temps_missing_label.setVisible(False)
+        v.addWidget(self.temps_missing_label)
 
         group.setLayout(v)
         return group
@@ -471,7 +494,7 @@ class MeltingCurveDialog(QDialog):
         """A table cell for the X/Y columns that sorts numerically (see
         _NumericTableWidgetItem) rather than alphabetically as a plain
         QTableWidgetItem would."""
-        item = _NumericTableWidgetItem(f"{value:g}")
+        item = _NumericTableWidgetItem("" if value is None else f"{value:g}")
         if not editable:
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         return item
@@ -576,8 +599,8 @@ class MeltingCurveDialog(QDialog):
         """Delete/Backspace (or the second half of Cut): clear the
         selected X/Y cells. Left blank rather than e.g. reset to a
         guessed default — an empty cell is an obvious, unambiguous
-        "needs a value" state, and _read_temperatures() already refuses
-        to extract with a clear message if X is left blank."""
+        "needs a value" state: the orange note under the table names it and
+        no curve is drawn until it is filled in (_read_temperatures)."""
         self._suppress_auto_update = True
         for r, c in self._selected_temp_cells():
             self.temps_table.setItem(r, c, QTableWidgetItem(""))
@@ -1433,6 +1456,7 @@ class MeltingCurveDialog(QDialog):
         self._suppress_auto_update = True
         self._init_x_value_range()
         self._suppress_auto_update = False
+        self._fill_temps_sources()
         self.populate_temps_table()
         self._populate_saved_fits_list()
         self.load_settings()
@@ -1501,6 +1525,33 @@ class MeltingCurveDialog(QDialog):
                 lo, hi = min(x_mins), max(x_maxs)
             self.x_value_spin.setValue((lo + hi) / 2.0)
 
+    def _fill_temps_sources(self):
+        """The choices of "X from:": the names, then every number stored
+        with the spectra. Starts with a stored temperature (a name
+        beginning with "temp", e.g. temperature_C) when there is one -
+        a measured value is more reliable than a number read from a name."""
+        from src.modules.visualization import color_by_value as cbv
+        keys = cbv.metadata_keys(self.selected_spectra)
+        self.temps_from_combo.blockSignals(True)
+        self.temps_from_combo.clear()
+        self.temps_from_combo.addItem("the names", None)
+        for key in keys:
+            self.temps_from_combo.addItem(f"{key} (stored)", key)
+        start = next((i + 1 for i, k in enumerate(keys) if k.lower().startswith('temp')), 0)
+        self.temps_from_combo.setCurrentIndex(start)
+        self.temps_from_combo.setEnabled(bool(keys))
+        self.temps_from_combo.blockSignals(False)
+
+    def _temps_key(self):
+        """The stored value chosen in "X from:", or None for the names."""
+        combo = getattr(self, 'temps_from_combo', None)
+        return combo.currentData() if combo is not None and combo.count() else None
+
+    def _on_temps_source_changed(self, *_):
+        """Another "X from:" choice: fill the X column again from it."""
+        if self.temps_table.rowCount() and self.temps_table.rowCount() == len(self.selected_spectra):
+            self.populate_temps_table()
+
     def populate_temps_table(self):
         self._suppress_auto_update = True
         self.temps_table.setSortingEnabled(False)
@@ -1539,7 +1590,41 @@ class MeltingCurveDialog(QDialog):
             self.temps_table.setItem(row, 2, QTableWidgetItem(""))
         self.temps_table.setSortingEnabled(True)
         self._suppress_auto_update = False
+        self._update_missing_note()
         self._auto_update_curve()
+
+    def _missing_temperature_rows(self):
+        """Rows whose X (temperature) cell is empty."""
+        rows = []
+        for row in range(self.temps_table.rowCount()):
+            item = self.temps_table.item(row, 1)
+            if item is None or not item.text().strip():
+                rows.append(row)
+        return rows
+
+    def _update_missing_note(self):
+        """Name the spectra without a temperature under the table (only in
+        "From spectra" mode, where every row is a spectrum)."""
+        label = getattr(self, 'temps_missing_label', None)
+        if label is None:
+            return []
+        rows = (self._missing_temperature_rows()
+                if self.source_spectra_radio.isChecked() else [])
+        if not rows:
+            label.setVisible(False)
+            return rows
+        names = []
+        for row in rows[:5]:
+            item = self.temps_table.item(row, 0)
+            names.append(item.text() if item is not None else f"row {row + 1}")
+        more = f" and {len(rows) - 5} more" if len(rows) > 5 else ""
+        key = self._temps_key()
+        what = f"No {key} stored" if key else "No temperature in the name"
+        label.setText(f"{what} for {len(rows)} spectrum/spectra: {', '.join(names)}{more}. "
+                      "Type their temperatures in the X column (or leave those spectra out "
+                      "of the selection) - the curve is drawn when every spectrum has one.")
+        label.setVisible(True)
+        return rows
 
     def _on_show_spectrum_names_toggled(self, state):
         self.temps_table.setColumnHidden(0, not self.show_spectrum_names_check.isChecked())
@@ -1616,9 +1701,27 @@ class MeltingCurveDialog(QDialog):
            a per-spectrum index/temperature than a leading one that's part
            of a shared sample name, e.g. "sample_25C").
         3. Any existing 'temperature' metadata on the spectrum.
-        4. The spectrum's position in the selection order.
+        (A 4th step, the spectrum's position in the list, was dropped - see below.)
         Always user-editable afterwards in the table — this is only a
-        starting point, never trusted as the final value."""
+        starting point, never trusted as the final value.
+
+        When "X from:" names a stored value (e.g. temperature_C), only that
+        value is used: a spectrum without it gets None (an empty X cell),
+        not a number from its name - one curve should not mix measured
+        temperatures with guessed ones. With "the names", None too when
+        neither the name nor a stored 'temperature' has a number (step 4,
+        the position in the list, is no longer used: it looked like a real
+        temperature but meant nothing). An empty X is named under the
+        table and the curve waits until it is filled in."""
+        key = self._temps_key()
+        if key is not None:
+            value = (spec.get('metadata') or {}).get(key)
+            try:
+                if value is not None and np.isfinite(float(value)):
+                    return float(value)
+            except (TypeError, ValueError):
+                pass
+            return None
         if numbers_in_label is None:
             numbers_in_label = _NUMBER_RE.findall(spec.get('label', ''))
 
@@ -1640,7 +1743,7 @@ class MeltingCurveDialog(QDialog):
                 return float(existing_temp)
             except (TypeError, ValueError):
                 pass
-        return float(fallback_index)
+        return None
 
     def _compute_spectra_fingerprint(self):
         """A fast, stable fingerprint of self.selected_spectra's actual
@@ -1750,6 +1853,12 @@ class MeltingCurveDialog(QDialog):
         prev_suppress = self._suppress_auto_update
         self._suppress_auto_update = True
         try:
+            if 'temps_from' in cs:         # the "X from:" choice of that run
+                i = self.temps_from_combo.findData(cs['temps_from'])
+                if i >= 0:
+                    self.temps_from_combo.blockSignals(True)
+                    self.temps_from_combo.setCurrentIndex(i)
+                    self.temps_from_combo.blockSignals(False)
             temp_map = cs.get('temperatures', {})
             for row in range(self.temps_table.rowCount()):
                 label = self.temps_table.item(row, 0).text()
@@ -1855,6 +1964,15 @@ class MeltingCurveDialog(QDialog):
         message."""
         if rows is None:
             rows = range(self.temps_table.rowCount())
+        rows = list(rows)
+        # Empty X cells: no popup (this also runs on every live update) -
+        # the orange note under the table names those spectra; no curve
+        # until they have a temperature.
+        missing = [r for r in rows if r in set(self._missing_temperature_rows())]
+        if missing:
+            if self.source_spectra_radio.isChecked():
+                self._update_missing_note()
+            return None
         temps = []
         for row in rows:
             try:
@@ -1972,6 +2090,14 @@ class MeltingCurveDialog(QDialog):
         overwrite the very edit that just happened."""
         if self._suppress_auto_update:
             return
+        if self.source_spectra_radio.isChecked() and item is not None and item.column() == 1:
+            self._update_missing_note()
+            y_item = self.temps_table.item(item.row(), 2)
+            if y_item is None or not y_item.text().strip():
+                # a temperature typed where there was none: read its Y from
+                # the spectrum (the X values typed so far stay as they are)
+                self._auto_update_curve()
+                return
         self._rebuild_curve_from_table()
 
     def _auto_update_curve(self, *_args):
@@ -4707,6 +4833,7 @@ class MeltingCurveDialog(QDialog):
 
         return {
             'temperatures': temp_map,
+            'temps_from': self._temps_key(),
             'source_labels': self.curve['source_labels'] if self.curve else
                              [s['label'] for s in self.selected_spectra],
             'curve_name': self.curve_name_edit.text(),

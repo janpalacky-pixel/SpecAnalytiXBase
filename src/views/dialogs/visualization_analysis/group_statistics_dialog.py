@@ -79,7 +79,10 @@ _HELP_GROUPS = (
     "<p><b>Automatic:</b> if the data came from an Excel workbook with a sheet "
     "<i>Groups</i>, or a file <i>&lt;data file&gt;_groups.csv</i> lies next to the data file "
     "(columns: spectrum name, group, sample), the window fills both columns by itself when it "
-    "opens with no groups set. <b>From table file&hellip;</b> loads such a table by hand.</p>")
+    "opens with no groups set. <b>From table file&hellip;</b> loads such a table by hand.</p>"
+    "<p><b>From a property&hellip;</b>: groups from a number stored with the spectra "
+    "(Spectrum properties, e.g. pH) &mdash; every value a group, or two groups split at a "
+    "value.</p>")
 _HELP_VALUE = (
     "<h3>Value per spectrum</h3>"
     "<p>The test compares <b>one number per spectrum</b>. The list has three parts:</p>"
@@ -235,6 +238,93 @@ def _exact_p(p, method=None):
     return f" (p = {mant} × 10{str(int(exp)).translate(_SUPERSCRIPT)})"
 _GROUP_COLOURS = ['#1565C0', '#C62828', '#2E7D32', '#EF6C00', '#6A1B9A', '#00838F',
                   '#AD1457', '#5D4037', '#455A64', '#9E9D24']
+
+
+class PropertyToGroupsDialog(QDialog):
+    """Groups from a value stored with the spectra (Spectrum properties, or
+    read from the file): every value its own group, or two groups split at
+    a value. Shows how many spectra each group gets before OK."""
+
+    def __init__(self, spectra, parent=None):
+        super().__init__(parent)
+        from src.modules.visualization import color_by_value as cbv
+        self.spectra = spectra
+        self.setWindowTitle("Groups from a property")
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        v = QVBoxLayout(self)
+        intro = QLabel("Groups from a number stored with each spectrum (set in Spectrum "
+                       "properties, or read from the file, e.g. temperature_C).")
+        intro.setWordWrap(True)
+        v.addWidget(intro)
+        form = QFormLayout()
+        self.key_combo = QComboBox()
+        self.key_combo.addItems(cbv.metadata_keys(spectra))
+        form.addRow("Property:", self.key_combo)
+        self.each_radio = QRadioButton("Each value is a group (e.g. pH 7, pH 7.4, pH 8)")
+        self.split_radio = QRadioButton("Two groups, split at:")
+        self.each_radio.setChecked(True)
+        self.split_spin = QDoubleSpinBox()
+        self.split_spin.setRange(-1e12, 1e12)
+        self.split_spin.setDecimals(4)
+        self.split_spin.setToolTip("Below this value one group, from this value on the other")
+        split_row = QHBoxLayout()
+        split_row.addWidget(self.split_radio)
+        split_row.addWidget(self.split_spin, 1)
+        v.addLayout(form)
+        v.addWidget(self.each_radio)
+        v.addLayout(split_row)
+        self.preview = QLabel()
+        self.preview.setWordWrap(True)
+        v.addWidget(self.preview)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self.ok_button = buttons.button(QDialogButtonBox.Ok)
+        v.addWidget(buttons)
+        self.key_combo.currentIndexChanged.connect(self._key_changed)
+        for w in (self.each_radio, self.split_radio):
+            w.toggled.connect(self._update_preview)
+        self.split_spin.valueChanged.connect(lambda *_: self.split_radio.setChecked(True))
+        self.split_spin.valueChanged.connect(self._update_preview)
+        self._key_changed()
+        self.resize(460, self.sizeHint().height())
+
+    def _key_changed(self, *_):
+        """A new property: the split starts at the median of its values."""
+        values = [gs.property_value(s, self.key_combo.currentText()) for s in self.spectra]
+        values = [x for x in values if x is not None]
+        self.split_spin.blockSignals(True)
+        self.split_spin.setValue(float(np.median(values)) if values else 0.0)
+        self.split_spin.blockSignals(False)
+        self._update_preview()
+
+    def groups(self):
+        key = self.key_combo.currentText()
+        if not key:
+            return [gs.NO_GROUP] * len(self.spectra)
+        split = self.split_spin.value() if self.split_radio.isChecked() else None
+        return gs.groups_from_property(self.spectra, key, split)
+
+    def _update_preview(self, *_):
+        groups = self.groups()
+        counts = {}
+        for g in groups:
+            if g:
+                counts[g] = counts.get(g, 0) + 1
+        missing = sum(1 for g in groups if not g)
+        if not self.key_combo.count():
+            text = "The spectra have no stored numbers yet - set them in Spectrum properties."
+        elif not counts:
+            text = "No spectrum has this value."
+        else:
+            text = f"{len(counts)} group(s): " + ", ".join(f"{g} ({n})" for g, n in counts.items())
+            if missing:
+                text += f"; {missing} spectrum/spectra without a value (no group)"
+            if len(counts) > 8:
+                text += (". That is many groups - consider \"Two groups, split at\" "
+                         "(e.g. for a temperature series).")
+        self.preview.setText(text)
+        self.ok_button.setEnabled(bool(counts))
 
 
 class NamesToGroupsDialog(QDialog):
@@ -613,6 +703,10 @@ class GroupStatisticsDialog(QDialog):
         names_btn = QPushButton("From names…")
         names_btn.setToolTip("Groups from the spectrum names: a text they contain, or a part of the name")
         names_btn.clicked.connect(self.groups_from_names)
+        property_btn = QPushButton("From a property…")
+        property_btn.setToolTip("Groups from a number stored with the spectra (Spectrum "
+                                "properties, e.g. pH): each value a group, or split at a value")
+        property_btn.clicked.connect(lambda: self.groups_from_property())
         table_btn = QPushButton("From table file…")
         table_btn.setToolTip("A CSV or Excel file with two columns: spectrum name, group")
         table_btn.clicked.connect(self.groups_from_table_file)
@@ -621,6 +715,7 @@ class GroupStatisticsDialog(QDialog):
                              "only some, select their rows and press Delete (or right-click).")
         clear_btn.clicked.connect(lambda: self._set_groups([gs.NO_GROUP] * len(self.labels)))
         row2.addWidget(names_btn)
+        row2.addWidget(property_btn)
         row2.addWidget(table_btn)
         row2.addWidget(clear_btn)
         lay.addLayout(row2)
@@ -922,6 +1017,12 @@ class GroupStatisticsDialog(QDialog):
 
     def groups_from_names(self):
         dlg = NamesToGroupsDialog(self.labels, self)
+        if dlg.exec_() == QDialog.Accepted:
+            self.remembered_settings['group_order'] = []     # order of the spectra list
+            self._set_groups(dlg.groups())
+
+    def groups_from_property(self):
+        dlg = PropertyToGroupsDialog(self.spectra, self)
         if dlg.exec_() == QDialog.Accepted:
             self.remembered_settings['group_order'] = []     # order of the spectra list
             self._set_groups(dlg.groups())

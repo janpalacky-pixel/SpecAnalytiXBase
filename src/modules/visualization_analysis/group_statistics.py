@@ -46,6 +46,34 @@ _trapz = getattr(np, 'trapezoid', None) or np.trapz      # numpy 2 renamed trapz
 # Groups
 # ---------------------------------------------------------------------------
 
+def property_value(spectrum, key):
+    """A number stored with the spectrum (Spectrum properties, or read from
+    the file, e.g. temperature_C), or None."""
+    value = (spectrum.get('metadata') or {}).get(key)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if np.isfinite(value) else None
+
+
+def groups_from_property(spectra, key, split=None):
+    """Groups from a value stored with each spectrum: every value its own
+    group ("pH 7.4"), or - with `split` - two groups below and from that
+    value on ("pH < 7.2", "pH \u2265 7.2"). A spectrum without the value
+    gets no group."""
+    out = []
+    for s in spectra:
+        v = property_value(s, key)
+        if v is None:
+            out.append(NO_GROUP)
+        elif split is None:
+            out.append(f"{key} {v:g}")
+        else:
+            out.append(f"{key} < {split:g}" if v < split else f"{key} \u2265 {split:g}")
+    return out
+
+
 def groups_from_contains(labels, rules, case_sensitive=False):
     """rules: list of (text, group). A spectrum gets the group of the first
     rule whose text occurs in its name; NO_GROUP if none matches."""

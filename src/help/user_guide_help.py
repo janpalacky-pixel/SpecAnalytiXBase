@@ -621,8 +621,10 @@ def get_user_guide_help_content():
         concentration or time. Values read from the file (e.g. <code>temperature_C</code> of a JASCO
         temperature scan) are shown too and can be corrected. The properties are used by
         <a href="#line-colours">Line colours &rsaquo; Colours by value</a>, the
-        <a href="#data-table">Data table</a> (tab Values per spectrum, also in its formulas) and the
-        plot of the Peak list.</p>
+        <a href="#data-table">Data table</a> (tab Values per spectrum, also in its formulas), the
+        plot of the Peak list, <a href="help://melting_curve">Melting Curve Analysis</a> (the
+        temperatures: <b>X from</b>) and <a href="help://group_statistics">Group Statistics</a>
+        (groups <b>From a property&hellip;</b>).</p>
         <div class="screenshot">
             <img src="$SPECTRUM_PROPERTIES" width="$SPECTRUM_PROPERTIES_W" height="$SPECTRUM_PROPERTIES_H" alt="Spectrum properties window with a temperature_C and a pH column" />
             <p class="caption">Spectrum properties: temperature_C read from a JASCO file, pH typed in.</p>

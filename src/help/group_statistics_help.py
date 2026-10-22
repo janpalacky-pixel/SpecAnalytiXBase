@@ -145,6 +145,11 @@ Ctrl+click) and give them one group name.</li>
   </ul>
   A preview shows the groups and their sizes before you press OK; the window's
   <b>Help</b> button explains the three ways with examples.</li>
+<li><b>From a property&hellip;</b> &mdash; from a number stored with each spectrum (set in
+<a href="help://user_guide#spectrum-properties">Spectrum properties</a>, or read from the file,
+e.g. <code>temperature_C</code>): every value its own group (<i>pH 7</i>, <i>pH 7.4</i>, &hellip;),
+or two groups split at a value (<i>T &lt; 50</i>, <i>T &ge; 50</i>; the split starts at the
+median). A spectrum without the value gets no group; a preview shows the groups and their sizes.</li>
 <li><b>From table file&hellip;</b> &mdash; a text/CSV or Excel file with two columns, spectrum
 name and group (a header row "name, group" is recognised), and optionally a third column, the
 <b>sample</b>, which then fills the Sample column too (in a text file the three columns must
