@@ -126,7 +126,7 @@ def get_plot_controls_help_content():
     spectra (see <i>Limiting legend size</i> below). Only <em>Show all</em> with hundreds of
     spectra is slow &mdash; matplotlib must lay out and draw one text entry per spectrum, and
     beyond ~50 entries the legend is unreadable anyway. To switch it off: untick
-    <em>show legend</em> in <i>Basic plot options</i> (under <i>automatic line colors</i>; it
+    <em>show legend</em> in <i>Basic plot options</i> (under the line colours list; it
     hides the legend at once, without plotting again); ☰ Legend opens its settings.</p>
 
     <h3>When to enable the legend</h3>

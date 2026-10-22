@@ -510,6 +510,9 @@ class SaveManager:
             # restored. (The former "spectra ordering" dropdown no longer
             # exists; old snapshots that contain it are simply ignored.)
             'reverse_order':             self._safe_get(main_controller, 'checkBox_reverse_order', 'isChecked'),
+            # Line colours > Colours by value
+            'color_by_value':            dict(getattr(getattr(main_controller, 'color_by_value_controller', None),
+                                                  'settings', None) or {}) or None,
         }
         # Drop any field whose widget no longer exists in this build of the
         # UI (e.g. after a refactor) rather than storing None/False as if
@@ -1281,6 +1284,10 @@ class SaveManager:
                 if 'reverse_order' in s:
                     self._safe_set(main_controller, 'checkBox_reverse_order', 'setChecked',
                                    s['reverse_order'])
+                # snapshots from before "Colours by value" had the usual colours
+                cbc = getattr(main_controller, 'color_by_value_controller', None)
+                if cbc is not None:
+                    cbc.set_settings(s.get('color_by_value') or {}, replot=False)
 
             if 'link_axes' in state:
                 la = state['link_axes']

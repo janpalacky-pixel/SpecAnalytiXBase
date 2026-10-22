@@ -73,6 +73,12 @@ def create_external_figure(mc):
         display_labels           = display_labels,
     )
 
+    # Line colours > Colours by value: the same colours and colour bar
+    colour_by = getattr(mc, 'color_by_value_controller', None)
+    line_colors = colour_by.colours_for(spectra, plot_type) if colour_by is not None else None
+    if line_colors and plot_type in ('Grid plot', 'Waterfall plot', 'Overlay plot'):
+        common['line_colors'] = line_colors
+
     try:
         if plot_type == 'Grid plot':
             gs = mc.grid_settings
@@ -153,6 +159,8 @@ def create_external_figure(mc):
 
     # ── Detach figure from Qt and show in standalone window ───────────────
     fig = canvas.figure
+    if 'line_colors' in common:
+        colour_by.decorate(fig)
 
     # Apply constrained layout manager if available
     if cl_mgr is not None:

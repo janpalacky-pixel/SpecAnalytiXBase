@@ -913,7 +913,7 @@ class MainWindow(QMainWindow):
         
         self.gridLayout_4.addLayout(self.gridLayout_2, 0, 2, 1, 1)
         
-        # Plot type and options — automatic line colors sits below the
+        # Plot type and options — the line colours list sits below the
         # dropdown rather than beside it, trading unused vertical space
         # (this column is usually much shorter than the mode-specific one
         # next to it) for horizontal space saved.
@@ -927,11 +927,25 @@ class MainWindow(QMainWindow):
         self.comboBox_plot_type_choice.addItem("option2")
         self.gridLayout_3.addWidget(self.comboBox_plot_type_choice, 0, 0, 1, 1)
         
-        # Automatic line colors checkbox
-        self.automatic_line_colors_checkBox = QCheckBox(self.groupBox_basic_plot_options)
-        self.automatic_line_colors_checkBox.setObjectName("automatic_line_colors_checkBox")
-        self.automatic_line_colors_checkBox.setText("automatic line colors")
-        self.gridLayout_3.addWidget(self.automatic_line_colors_checkBox, 1, 0, 1, 1)
+        # Line colours: automatic / own (Plot Properties) / by value, and
+        # "…" for the Line colours window (line_colours_controller.py)
+        line_colours_row = QHBoxLayout()
+        line_colours_row.setSpacing(2)
+        self.line_colours_comboBox = QComboBox(self.groupBox_basic_plot_options)
+        self.line_colours_comboBox.setObjectName("line_colours_comboBox")
+        self.line_colours_comboBox.setToolTip(
+            "Line colours of the plot:\n"
+            "automatic colours \u2013 the standard sequence of colours\n"
+            "own colours \u2013 the colour set for each spectrum in Plot Properties\n"
+            "colours by value \u2013 along a colour scale, with a colour bar\n"
+            "\u2026 opens the Line colours window with all the settings.")
+        line_colours_row.addWidget(self.line_colours_comboBox, 1)
+        self.line_colours_button = QToolButton(self.groupBox_basic_plot_options)
+        self.line_colours_button.setObjectName("line_colours_button")
+        self.line_colours_button.setText("\u2026")
+        self.line_colours_button.setToolTip("Line colours\u2026 (all the settings)")
+        line_colours_row.addWidget(self.line_colours_button)
+        self.gridLayout_3.addLayout(line_colours_row, 1, 0, 1, 1)
 
         # Show / hide the legend (its settings: the ☰ Legend button)
         self.show_legend_checkBox = QCheckBox(self.groupBox_basic_plot_options)

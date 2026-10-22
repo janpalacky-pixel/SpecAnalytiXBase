@@ -270,7 +270,7 @@ def get_user_guide_help_content():
 
         <div class="screenshot">
             <img src="$OVERVIEW" width="$OVERVIEW_W" height="$OVERVIEW_H" alt="SpecAnalytiXBase main window overview" />
-            <p class="caption">The main window: menu bar, spectrum list on the left, plot canvas in the centre, and the plot-option / processing panels along the bottom.</p>
+            <p class="caption">The main window: menu bar and the buttons under it, spectrum list on the left, plot canvas in the centre, and the plot-option / processing panels along the bottom.</p>
         </div>
 
         <h3>Main Window Areas</h3>
@@ -563,6 +563,7 @@ def get_user_guide_help_content():
             <tr><th>Item</th><th>Description</th></tr>
             <tr><td><strong>Show Metadata</strong></td><td>Display metadata for the currently highlighted spectrum.</td></tr>
             <tr><td><strong>Plot Properties</strong></td><td>A submenu with three actions: <strong>Show Info</strong> (current colour/style for the selected spectra), <strong>Modify</strong> (change colour/line style), and <strong>Reset to default</strong>.</td></tr>
+            <tr><td><strong>Line colours&hellip;</strong></td><td>Automatic colours, own colours or colours by value &mdash; see <a href="#line-colours">Line colours</a>. Also in the Plot Properties button's menu.</td></tr>
             <tr><td><strong>Select All</strong></td><td>Select all spectra</td></tr>
             <tr><td><strong>Unselect All</strong></td><td>Deselect all spectra</td></tr>
             <tr><td><strong>Select spectra</strong></td><td>Open a dialog to select spectra by name pattern</td></tr>
@@ -835,10 +836,12 @@ def get_user_guide_help_content():
                 in snapshots.</li>
             <li><strong>Link x-axes / Link y-axes:</strong> Synchronise zoom across subplots
                 (Grid plot only &mdash; the Link axes box is hidden for other plot types)</li>
-            <li><strong>Automatic line colors:</strong> Assign distinct colours automatically
-                (sits directly below the plot-type dropdown in Basic plot options)</li>
+            <li><strong>Line colours</strong> (the list directly below the plot-type dropdown):
+                <em>automatic colours</em>, <em>own colours</em> or <em>colours by value</em>;
+                &hellip; opens the Line colours window &mdash; see <a href="#line-colours">Line
+                colours</a></li>
             <li><strong>show legend:</strong> show or hide the legend (on by default; below
-                <em>automatic line colors</em>). Settings: <strong>☰ Legend</strong> &mdash; see
+                the line colours list). Settings: <strong>☰ Legend</strong> &mdash; see
                 <a href="#legend">Legend</a>.</li>
         </ul>
 
@@ -910,6 +913,43 @@ def get_user_guide_help_content():
         <div class="tip">Band markers also appear in external figure windows opened via
         right-click &rarr; Open in New Window.</div>
 
+        <h3 id="line-colours">Line colours</h3>
+        <p>The lines of the plot get their colour in one of three ways, chosen in the
+        <strong>line colours</strong> list in <i>Basic plot options</i> (below the plot type):</p>
+        <ul>
+            <li><b>automatic colours</b> (the default) &mdash; the standard sequence of colours
+                (blue, orange, green, &hellip;);</li>
+            <li><b>own colours</b> &mdash; every spectrum in the colour set for it in
+                <em>Plot Properties &rarr; Modify</em> (blue when none is set). Setting a colour
+                there switches to own colours, so you see it at once;</li>
+            <li><b>colours by value</b> &mdash; along a colour scale, with a colour bar (below).</li>
+        </ul>
+        <p>The <b>&hellip;</b> button next to the list opens the <strong>Line colours</strong> window
+        with all three choices and their settings. The same window opens from <em>View &rarr; Line
+        colours&hellip;</em>, from the <em>Line colours</em> submenu of the plot's right-click menu
+        (where you can also switch directly), from the spectra list's right-click menu and from the
+        Plot Properties button. Line style, width and markers from Plot Properties are used with
+        every choice. The choice is kept in snapshots; Open in New Window and Copy plot to
+        clipboard use the same colours.</p>
+
+        <h4 id="color-by-value">Colours by value</h4>
+        <p>The lines of the <b>Overlay</b>, <b>Waterfall</b> and <b>Grid</b> plots get their colour
+        from a colour scale, with a <b>colour bar</b> next to the plot &mdash; e.g. blue for cold and
+        red for hot spectra of a melting curve. The colour can come from:</p>
+        <ul>
+            <li><b>the order in the spectra list</b> (first to last);</li>
+            <li><b>a number in the spectrum name</b> &mdash; choose which one: in
+                <code>TBA_45C : 0003</code> the first number is 45 and the last is 3; in
+                <code>&hellip; T=45.00C</code> the last is 45.00. A decimal comma counts (<code>pH 7,4</code>);</li>
+            <li><b>a value stored with the spectra</b> (metadata), e.g. <code>temperature_C</code> of a
+                JASCO .jwb temperature scan.</li>
+        </ul>
+        <p>The window lists the values of the selected spectra, so you see what will be used.
+        Choose the colour scale (viridis, coolwarm, &hellip;), reverse it if you like, and whether to
+        show the colour bar. Spectra without a value are drawn grey (the status bar says how many).
+        The other plot types keep their usual colours. When you switch to another choice and back,
+        your colours-by-value settings come back.</p>
+
         <h3>Navigation Toolbar</h3>
         <p>The matplotlib toolbar (below the plot) provides: Home, Back, Forward, Pan,
         Zoom, Axis properties, Curve properties, and Save figure. Its right end shows the
@@ -945,7 +985,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour)</td></tr>
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
             <tr><td><strong>Axis properties</strong></td><td>Set axis labels, tick marks, and limits</td></tr>
-            <tr><td><strong>Automatic Line Colors</strong></td><td>Toggle automatic colour assignment for plotted lines (✓ = enabled)</td></tr>
+            <tr><td><strong>Line colours</strong></td><td>A submenu: <em>Automatic colours</em>, <em>Own colours</em> or <em>Colours by value</em> (✓ = in use), and <em>Line colours&hellip;</em> for the window &mdash; see <a href="#line-colours">Line colours</a></td></tr>
             <tr><td><strong>Show Legend</strong></td><td>Show or hide the legend of the plot (✓ = shown, the default)</td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
@@ -1013,8 +1053,8 @@ def get_user_guide_help_content():
         exactly the same dialogs. The pipeline is:</p>
 
         <div class="screenshot">
-            <img src="$PIPELINE_PANEL" width="$PIPELINE_PANEL_W" height="$PIPELINE_PANEL_H" alt="Spectra Processing panel with operation dropdown and Run, History, question mark buttons" />
-            <p class="caption">The Spectra Processing panel: choose an operation from the dropdown, then Run, History, or the ? help button.</p>
+            <img src="$PIPELINE_PANEL" width="$PIPELINE_PANEL_W" height="$PIPELINE_PANEL_H" alt="Spectra Processing panel with operation dropdown and Run, Undo, Redo, History, question mark buttons" />
+            <p class="caption">The Spectra Processing panel: choose an operation from the dropdown, then Run; Undo, Redo, History, or the ? help button.</p>
         </div>
 
         <div class="pipeline">
@@ -2049,7 +2089,7 @@ def get_user_guide_help_content():
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="legend">7. Legend</h2>
         <p>Show or hide the legend with <strong>show legend</strong> in <i>Basic plot
-        options</i>, under <i>automatic line colors</i> (on by default). Its settings: the
+        options</i>, under the line colours list (on by default). Its settings: the
         <strong>☰ Legend</strong> button below the spectrum list, or right-click on the plot →
         Legend.</p>
 

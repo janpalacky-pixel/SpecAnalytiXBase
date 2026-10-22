@@ -41,8 +41,15 @@ class CustomPlotPropertiesController:
 
         if dialog.exec_() == QDialog.Accepted:
             new_settings = dialog.get_settings()
+            colour_changed = any(
+                self.manager.get_properties(s).get('linecolor') != new_settings.get('linecolor')
+                for s in selected_spectra)
             for spectrum in selected_spectra:
                 self.manager.spectrum_properties[spectrum_key(spectrum)] = new_settings.copy()
+            # a new colour is seen only with "own colours" (Line colours)
+            line_colours = getattr(self.controller, 'line_colours_controller', None)
+            if colour_changed and line_colours is not None:
+                line_colours.own_colour_set()
 
             # Update plot immediately after applying new settings
             if self.controller.interactive_mode_checkbox.isChecked():

@@ -185,6 +185,11 @@ class MainController(QMainWindow):
         # (View -> Plotting many spectra…)
         from src.controllers.visualization.large_plot_controller import LargePlotController
         self.large_plot_controller = LargePlotController(self)
+        from src.controllers.visualization.color_by_value_controller import ColorByValueController
+        self.color_by_value_controller = ColorByValueController(self)
+        # Line colours: automatic / own / by value, in one place
+        from src.controllers.visualization.line_colours_controller import LineColoursController
+        self.line_colours_controller = LineColoursController(self)
         # 'Cursor' above the plot: vertical cursor with the spectra's values
         from src.controllers.visualization.plot_cursor_controller import PlotCursorController
         self.plot_cursor_controller = PlotCursorController(self)
@@ -415,6 +420,7 @@ class MainController(QMainWindow):
         plot_properties_menu.addSeparator()
         set_properties_action = plot_properties_menu.addAction("Modify")
         reset_properties_action = plot_properties_menu.addAction("Reset to default")
+        line_colours_action = context_menu.addAction("Line colours\u2026")
         context_menu.addSeparator()
         select_all_action = context_menu.addAction("Select All")
         unselect_all_action = context_menu.addAction("Unselect All")
@@ -457,6 +463,9 @@ class MainController(QMainWindow):
 
         elif action == reset_properties_action:
             self.custom_plot_properties_manager.reset_selected_properties(selected_spectra)
+
+        elif action == line_colours_action:
+            self.line_colours_controller.show_dialog()
             
         elif action == select_all_action:
             self.spectrum_selector.select_all_items()
@@ -948,6 +957,9 @@ class MainController(QMainWindow):
         modify_action.triggered.connect(lambda: self.custom_plot_properties_controller.show_dialog())
         reset_action = plot_properties_menu.addAction("Reset to default")
         reset_action.triggered.connect(self._reset_selected_plot_properties)
+        plot_properties_menu.addSeparator()
+        plot_properties_menu.addAction("Line colours\u2026").triggered.connect(
+            lambda: self.line_colours_controller.show_dialog())
         self.plot_properties_button.setMenu(plot_properties_menu)
 
         layout.addWidget(self.plot_properties_button)
@@ -1032,10 +1044,7 @@ class MainController(QMainWindow):
         self.view.comboBox_linking_y_axes.addItems(["all", "row", "col"])
         self.view.comboBox_linking_y_axes.setCurrentText("all")
         
-        # Set automatic line colors checkbox to checked by default
-        self.view.automatic_line_colors_checkBox.setChecked(True)
-        
-        self.use_automatic_line_colors = True  # Default to enabled
+        self.use_automatic_line_colors = True  # Default: automatic line colours
 
         # Set visibility of plot-type-specific controls
         self.toggle_grid_controls(self.view.comboBox_plot_type_choice.currentText() == "Grid plot")
@@ -1449,7 +1458,6 @@ class MainController(QMainWindow):
             self.view.reverse_x_checkBox.toggled.connect(self._on_reverse_x_toggled)
         self.view.y_scale_comboBox.currentIndexChanged.connect(self.plot_spectra)
         
-        self.view.automatic_line_colors_checkBox.stateChanged.connect(self.toggle_automatic_line_colors)
         
         # NOTE: QPushButton.clicked emits a bool 'checked' argument. Connecting
         # it directly to run_visualization_analysis(method_name=None) would pass
@@ -2299,13 +2307,6 @@ class MainController(QMainWindow):
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'two_d_correlation')
         
-    def toggle_automatic_line_colors(self, state):
-        """
-        Toggle the automatic line colors feature based on checkbox state.
-        """
-        self.use_automatic_line_colors = (state == Qt.Checked)
-        self.plot_spectra()  # Redraw with the new setting        
-
     def handle_single_spectrum_selection(self):
         """
         Handle spectrum selection changes specifically for Single spectrum mode.
@@ -2498,6 +2499,9 @@ class MainController(QMainWindow):
         plot_settings = self.custom_plot_properties_manager.spectrum_properties
         use_automatic_line_colors = self.use_automatic_line_colors
         use_default_points = self.use_default_points
+        # Line colours > Colours by value (Overlay, Waterfall, Grid)
+        colour_by = getattr(self, 'color_by_value_controller', None)
+        line_colors = colour_by.colours_for(plot_spectra, plot_type) if colour_by else None
 
         # Legend text only — mirrors the main spectra list's "shorten
         # names" checkbox (see label_shortening.py). Everything else
@@ -2544,6 +2548,7 @@ class MainController(QMainWindow):
                                                                      band_marker_manager=self.band_marker_manager,
                                                                      progress_callback=progress_callback,
                                                                      display_labels=display_labels,
+                                                                     line_colors=line_colors,
             )
 
         elif plot_type == "Overlay plot":
@@ -2562,6 +2567,7 @@ class MainController(QMainWindow):
                                                                         progress_callback=progress_callback,
                                                                         display_labels=display_labels,
                                                                         draw=not progressive,
+                                                                        line_colors=line_colors,
                                                                         )
     
         elif plot_type == "Waterfall plot":
@@ -2578,6 +2584,7 @@ class MainController(QMainWindow):
                 axis_manager=self.axis_manager,
                 band_marker_manager=self.band_marker_manager,
                 display_labels=display_labels,
+                line_colors=line_colors,
             )
 
         elif plot_type == "Mean ± SD":
@@ -2654,6 +2661,11 @@ class MainController(QMainWindow):
                                                                             display_labels=display_labels,
                                                                             )
 
+        # The colour bar of "Colours by value" (Line colours)
+        if line_colors and getattr(self, 'static_canvas', None) is not None:
+            if colour_by.decorate(self.static_canvas.figure) is not None and not progressive:
+                self.static_canvas.draw_idle()
+
         # Grey shading where CD is unreliable (see cd_quality.py)
         cd_quality = getattr(self, 'cd_quality_controller', None)
         if cd_quality is not None and getattr(self, 'static_canvas', None) is not None:
@@ -2729,12 +2741,10 @@ class MainController(QMainWindow):
         context_menu.addSeparator()
         axis_properties_action = context_menu.addAction("Axis properties")  
         
-        # Add separator and automatic line colors option
+        # Line colours: automatic / own / by value, and the Line colours window
         context_menu.addSeparator()
-        automatic_line_colors_action = context_menu.addAction("Automatic Line Colors")
-        automatic_line_colors_action.setCheckable(True)
-        automatic_line_colors_action.setChecked(self.use_automatic_line_colors)  
-        
+        self.line_colours_controller.add_to_menu(context_menu)
+
         default_points_action = context_menu.addAction("Default Points")
         default_points_action.setCheckable(True)
         default_points_action.setChecked(self.use_default_points)        
@@ -2786,16 +2796,6 @@ class MainController(QMainWindow):
                          f"\u2014 paste them into Excel")
         elif clear_cursor_action is not None and action == clear_cursor_action:
             cursor.clear_pinned()
-        elif action == automatic_line_colors_action:
-            # Toggle the checkbox state and update the plot
-            self.use_automatic_line_colors = automatic_line_colors_action.isChecked()
-            
-            # Block signals temporarily to avoid triggering the event twice
-            self.view.automatic_line_colors_checkBox.blockSignals(True)
-            self.view.automatic_line_colors_checkBox.setChecked(self.use_automatic_line_colors)
-            self.view.automatic_line_colors_checkBox.blockSignals(False)            
- 
-            self.plot_spectra() 
         elif action == default_points_action:
             # Update the state and redraw the plot
             self.use_default_points = default_points_action.isChecked()

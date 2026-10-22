@@ -22,7 +22,7 @@ def get_default_plot_settings():
         'markerfacecolor': 'black',
     }
 
-def apply_plot_settings(ax, x_data, y_data, label, plot_settings=None, use_automatic_line_colors=False, use_default_points=False, x_scale="linear", y_scale="linear" ):
+def apply_plot_settings(ax, x_data, y_data, label, plot_settings=None, use_automatic_line_colors=False, use_default_points=False, x_scale="linear", y_scale="linear", color=None):
     """
     Apply plot settings to a single plot.
 
@@ -69,8 +69,11 @@ def apply_plot_settings(ax, x_data, y_data, label, plot_settings=None, use_autom
         'linewidth': settings['linewidth']
     }
     
-    # Only set color if not using automatic colors
-    if not use_automatic_line_colors:
+    # Only set color if not using automatic colors. `color` (Colour by
+    # value, color_by_value.py) wins over both.
+    if color is not None:
+        plot_kwargs['color'] = color
+    elif not use_automatic_line_colors:
         plot_kwargs['color'] = settings['linecolor']
 
     line = ax.plot(x_data, y_data, **plot_kwargs)
@@ -102,7 +105,9 @@ def apply_plot_settings(ax, x_data, y_data, label, plot_settings=None, use_autom
             })
         
         # Only set color if not using automatic colors
-        if not use_automatic_line_colors and not use_default_points:
+        if color is not None:
+            marker_kwargs['color'] = color
+        elif not use_automatic_line_colors and not use_default_points:
             marker_kwargs['color'] = settings['linecolor']
         elif use_default_points and use_automatic_line_colors:
             # For default points with automatic colors, get the color from the line
@@ -180,7 +185,8 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
                       use_default_points=False, x_scale="linear", y_scale="linear",
                       grid_manager=None, legend_manager=None, axis_manager=None,
                       constrained_layout_manager=None, band_marker_manager=None,
-                      progress_callback=None, display_labels=None, draw=True):
+                      progress_callback=None, display_labels=None, draw=True,
+                      line_colors=None):
     """
     Sets up the 'Overlay Plot Mode' where all spectra are plotted on a single axis.
 
@@ -254,7 +260,8 @@ def overlay_plot_mode(graphics_view, spectra, plot_settings=None, use_automatic_
             use_automatic_line_colors,
             use_default_points,
             x_scale,
-            y_scale
+            y_scale,
+            color=line_colors[i] if line_colors else None,
         )
         spectrum_artists.append(list(ax.lines[n_before:]))
 
@@ -332,7 +339,7 @@ def grid_plot_mode(graphics_view, spectra, nrows=1, ncols=1,
                   plot_settings=None, use_automatic_line_colors=False, use_default_points=False,
                   x_scale="linear", y_scale="linear", grid_manager=None,
                   legend_manager=None, axis_manager=None, constrained_layout_manager=None,
-                  band_marker_manager=None, progress_callback=None, display_labels=None):
+                  band_marker_manager=None, progress_callback=None, display_labels=None, line_colors=None):
     """
     Sets up the 'Grid Plot Mode' with a dynamic grid of subplots in the graphics_view.
 
@@ -401,7 +408,8 @@ def grid_plot_mode(graphics_view, spectra, nrows=1, ncols=1,
                 use_automatic_line_colors,
                 use_default_points,
                 x_scale,
-                y_scale
+                y_scale,
+                color=line_colors[i] if line_colors else None,
             )
             # See overlay_plot_mode's comment for why the eager
             # ax.legend() call that used to sit here was removed —
@@ -467,6 +475,7 @@ def waterfall_plot_mode(
     legend_manager=None,
     axis_manager=None,
     display_labels=None,
+    line_colors=None,
     **kwargs,
 ):
     """
@@ -533,6 +542,8 @@ def waterfall_plot_mode(
         sp    = (plot_settings.get(spectrum_key(spectrum)) or {})
         color = (_PLOT_COLORS[i % len(_PLOT_COLORS)] if use_automatic_line_colors
                  else sp.get('linecolor', _PLOT_COLORS[i % len(_PLOT_COLORS)]))
+        if line_colors:
+            color = line_colors[i]
         lw    = sp.get('linewidth', 1.0)
         ls    = sp.get('linestyle', '-')
 
