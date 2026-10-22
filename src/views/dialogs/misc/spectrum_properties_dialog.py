@@ -31,12 +31,15 @@ temperature scan) are shown too and can be corrected.</p>
 <b>Delete</b> empties the selected cells.</li>
 <li><b>Paste</b> (Ctrl+V) a column copied from Excel: it fills the cells from the current one
 downward (several columns fill several properties).</li>
-<li><b>Add property&hellip;</b>: a new column. Its name starts with a letter and has only letters,
-digits and _ (e.g. <code>concentration_mM</code>), so it also works in formulas.</li>
+<li><b>Add property&hellip;</b>: a new column. Type its name (completed from the suggestions), pick
+it with the &#9662; arrow of the field, or click it in the list (double-click adds it). It starts with
+a letter and has only letters, digits and _ (e.g. <code>concentration_mM</code>), so it also works
+in formulas.</li>
 <li><b>Fill from the names&hellip;</b>: e.g. 45 from <code>TBA_45C</code> &mdash; choose which number
 of the name. <b>Fill a series&hellip;</b>: start and step, e.g. 20, 25, 30, &hellip; in the order of
 the table (sort it first by clicking a heading if needed). Both fill the selected rows of the
 current column, or all rows when none is selected.</li>
+<li><b>Sort</b>: click a heading (values as numbers, empty cells last; names naturally).</li>
 <li><b>Remove property</b> empties its whole column (removed on Apply).</li>
 <li><b>Apply</b> stores the values. It is one step in the Operations History, so <b>Undo</b>
 takes it back; snapshots keep the values.</li>

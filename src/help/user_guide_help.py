@@ -631,13 +631,21 @@ def get_user_guide_help_content():
             <li><b>Type</b> a value into a cell (a decimal comma is fine); an empty cell means no value,
                 <b>Delete</b> empties the selected cells. <b>Ctrl+V</b> pastes a column copied from
                 Excel, from the current cell downward.</li>
-            <li><b>Add property&hellip;</b> makes a new column. Its name starts with a letter and has
-                only letters, digits and _ (e.g. <code>concentration_mM</code>), so it also works in
-                formulas. <b>Remove property</b> empties a whole column.</li>
+            <li><b>Add property&hellip;</b> makes a new column. A small window asks for its name:
+                type it (it is completed from the suggestions), pick it with the &#9662; arrow of the
+                field, or click it in the list of suggestions (a double-click adds it at once). The
+                name starts with a letter and has only letters, digits and _ (e.g.
+                <code>concentration_mM</code>), so it also works in formulas; what is wrong with a
+                name is shown at once. <b>Remove property</b> empties a whole column.</li>
             <li><b>Fill from the names&hellip;</b> takes a number written in the names (e.g. 45 from
                 <code>TBA_45C</code>); <b>Fill a series&hellip;</b> writes start, start + step, &hellip;
                 down the table (click a heading first to sort it). Both fill the selected rows of the
-                current column, or all rows.</li>
+                current column, or all rows. A click on a heading sorts the table: values as numbers
+                (2 before 10, empty cells last), names in their natural order (raman_2 before
+                raman_10).</li>
+            <li>For example: add <code>pH</code>, fill it, Apply &mdash; then colour the spectra by
+                pH, or in the Data table (Values per spectrum) add a band's area and plot it
+                against pH.</li>
             <li><b>Apply</b> stores the values as one step in the <a href="#history">Operations
                 History</a>, so <b>Undo</b> takes it back; snapshots keep them. The orange <b>?</b>
                 explains all this in the window.</li>

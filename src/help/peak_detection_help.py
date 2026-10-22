@@ -139,7 +139,8 @@ def get_peak_detection_help_content():
             numbers count from low x, so when a peak is missing in some spectra (e.g. a band that
             disappears on heating) the numbers after it shift and a line jumps to the next
             band.</li>
-        <li><b>band (peak by its position)</b>: through the peaks at the same position. A line
+        <li><b>band (peak by its position)</b> (chosen at the start): through the peaks at the
+            same position. A line
             always stays on its band; where the band is not found it simply has no point. Use
             this to follow bands through a melting series.</li>
     </ul>

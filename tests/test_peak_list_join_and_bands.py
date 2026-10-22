@@ -52,6 +52,7 @@ def test_join_for_a_peak_number_on_x_and_kept_when_the_colour_changes(mc, monkey
     dlg = _plot(mc, monkeypatch)
     dlg.x_combo.setCurrentText('Height (y)')
     assert dlg.join_check.isEnabled()
+    dlg.join_by.setCurrentIndex(dlg.join_by.findData('number'))   # band is the default now
     dlg.join_check.setChecked(True)
     ax = dlg.figure.axes[0]
     n_peaks = len({r[1] for r in dlg.rows})
@@ -66,6 +67,7 @@ def test_join_for_a_peak_number_on_x_and_kept_when_the_colour_changes(mc, monkey
 
 def test_join_greyed_out_when_x_is_the_peak_and_redrawn_at_once(mc, monkeypatch):
     dlg = _plot(mc, monkeypatch)
+    dlg.join_by.setCurrentIndex(dlg.join_by.findData('number'))   # band is the default now
     dlg.join_check.setChecked(True)
     assert dlg.figure.axes[0].lines
     for text in (BAND_LABELS, BAND_SCALE):

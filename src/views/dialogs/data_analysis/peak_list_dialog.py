@@ -167,6 +167,7 @@ class PeakListDialog(QDialog):
         self.join_by = QComboBox()
         self.join_by.addItem("peak number", 'number')
         self.join_by.addItem("band (peak by its position)", 'band')
+        self.join_by.setCurrentIndex(1)      # band: a line stays on its band (the better start)
         join_tip = (
             "Lines from spectrum to spectrum through the same peak - to follow a band through a "
             "series (e.g. its position against the temperature). Each line has its own colour. "

@@ -36,6 +36,7 @@ def _plot():
 
 def test_join_by_peak_number_jumps_join_by_band_does_not():
     dlg = _plot()
+    dlg.join_by.setCurrentIndex(dlg.join_by.findData('number'))   # band is the default now
     dlg.join_check.setChecked(True)
     assert not dlg.tolerance.isVisibleTo(dlg)
     first = dlg.figure.axes[0].lines[0].get_ydata()          # "Peak 1"
