@@ -190,6 +190,9 @@ class MainController(QMainWindow):
         # Line colours: automatic / own / by value, in one place
         from src.controllers.visualization.line_colours_controller import LineColoursController
         self.line_colours_controller = LineColoursController(self)
+        # Spectrum properties: temperature, pH, concentration, ... per spectrum
+        from src.controllers.misc.spectrum_properties_controller import SpectrumPropertiesController
+        self.spectrum_properties_controller = SpectrumPropertiesController(self)
         # 'Cursor' above the plot: vertical cursor with the spectra's values
         from src.controllers.visualization.plot_cursor_controller import PlotCursorController
         self.plot_cursor_controller = PlotCursorController(self)
@@ -409,6 +412,8 @@ class MainController(QMainWindow):
         
         # Add previous buttons as menu actions
         show_metadata_action = context_menu.addAction("Show Metadata")
+        properties_action = context_menu.addAction("Spectrum properties\u2026")
+        properties_action.setToolTip("Temperature, pH, concentration, ... of each spectrum")
         context_menu.addSeparator()
         
         # Create submenu for plot properties
@@ -455,6 +460,9 @@ class MainController(QMainWindow):
         if action == show_metadata_action:
             self.spectrum_selector.show_selected_spectrum_metadata()
             
+        elif action == properties_action:
+            self.spectrum_properties_controller.show_dialog()
+
         elif action == show_info_action:
             self.custom_plot_properties_manager.show_properties_table(selected_spectra)
 

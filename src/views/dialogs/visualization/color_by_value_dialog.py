@@ -118,7 +118,8 @@ class ColorByValuePanel(QWidget):
             return
         if mode == 'metadata' and self.key_combo.count() == 0:
             self.summary.setText("The selected spectra have no stored numbers (metadata) to colour "
-                                 "by. Try a number in the name.")
+                                 "by. Try a number in the name, or set them: right-click on "
+                                 "the spectra list \u203a Spectrum properties\u2026")
             return
         vals = cbv.values(self.spectra, s)
         cols = cbv.colours(vals, s)

@@ -42,6 +42,7 @@ _SCREENSHOT_FILES = {
     "HISTORY_DIALOG":              "operations_history_dialog.png",
     "SAVE_DIALOG":                 "save_options_dialog.png",
     "SNAPSHOT_CONFIRM_DIALOG":     "snapshot_confirmation_dialog.png",
+    "SPECTRUM_PROPERTIES":         "spectrum_properties_dialog.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -562,6 +563,7 @@ def get_user_guide_help_content():
         <table>
             <tr><th>Item</th><th>Description</th></tr>
             <tr><td><strong>Show Metadata</strong></td><td>Display metadata for the currently highlighted spectrum.</td></tr>
+            <tr><td><strong>Spectrum properties&hellip;</strong></td><td>Temperature, pH, concentration, &hellip; of each spectrum &mdash; see <a href="#spectrum-properties">Spectrum properties</a>.</td></tr>
             <tr><td><strong>Plot Properties</strong></td><td>A submenu with three actions: <strong>Show Info</strong> (current colour/style for the selected spectra), <strong>Modify</strong> (change colour/line style), and <strong>Reset to default</strong>.</td></tr>
             <tr><td><strong>Line colours&hellip;</strong></td><td>Automatic colours, own colours or colours by value &mdash; see <a href="#line-colours">Line colours</a>. Also in the Plot Properties button's menu.</td></tr>
             <tr><td><strong>Select All</strong></td><td>Select all spectra</td></tr>
@@ -611,6 +613,35 @@ def get_user_guide_help_content():
             will be available in the list simultaneously, so you can select both and use
             an overlay plot to compare before and after.
         </div>
+
+        <h3 id="spectrum-properties">Spectrum properties</h3>
+        <p><strong>Right-click on the spectra list &rarr; Spectrum properties&hellip;</strong> shows a
+        table with one row per spectrum (the selected ones, or all when none is selected) and one
+        column per property: numbers that belong to each spectrum, such as the temperature, pH,
+        concentration or time. Values read from the file (e.g. <code>temperature_C</code> of a JASCO
+        temperature scan) are shown too and can be corrected. The properties are used by
+        <a href="#line-colours">Line colours &rsaquo; Colours by value</a>, the
+        <a href="#data-table">Data table</a> (tab Values per spectrum, also in its formulas) and the
+        plot of the Peak list.</p>
+        <div class="screenshot">
+            <img src="$SPECTRUM_PROPERTIES" width="$SPECTRUM_PROPERTIES_W" height="$SPECTRUM_PROPERTIES_H" alt="Spectrum properties window with a temperature_C and a pH column" />
+            <p class="caption">Spectrum properties: temperature_C read from a JASCO file, pH typed in.</p>
+        </div>
+        <ul>
+            <li><b>Type</b> a value into a cell (a decimal comma is fine); an empty cell means no value,
+                <b>Delete</b> empties the selected cells. <b>Ctrl+V</b> pastes a column copied from
+                Excel, from the current cell downward.</li>
+            <li><b>Add property&hellip;</b> makes a new column. Its name starts with a letter and has
+                only letters, digits and _ (e.g. <code>concentration_mM</code>), so it also works in
+                formulas. <b>Remove property</b> empties a whole column.</li>
+            <li><b>Fill from the names&hellip;</b> takes a number written in the names (e.g. 45 from
+                <code>TBA_45C</code>); <b>Fill a series&hellip;</b> writes start, start + step, &hellip;
+                down the table (click a heading first to sort it). Both fill the selected rows of the
+                current column, or all rows.</li>
+            <li><b>Apply</b> stores the values as one step in the <a href="#history">Operations
+                History</a>, so <b>Undo</b> takes it back; snapshots keep them. The orange <b>?</b>
+                explains all this in the window.</li>
+        </ul>
 
         <h3>Shorten Names</h3>
         <p>The <strong>Shorten names</strong> checkbox (next to the spectrum list) strips

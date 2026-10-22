@@ -561,6 +561,23 @@ def _describe_data_table(p, ctx):
 
 _DESCRIBERS['Data table (add as new)'] = _describe_data_table
 
+
+def _describe_spectrum_properties(p, ctx):
+    """Values typed in (or corrected) in Spectrum properties."""
+    props = p.get('properties') or {}
+    per_key = {}
+    for values in props.values():
+        for key in values:
+            per_key[key] = per_key.get(key, 0) + 1
+    if not per_key:
+        return _describe_generic('Spectrum properties', p, ctx)
+    parts = [f"{k} ({n} spectr{'um' if n == 1 else 'a'})" for k, n in per_key.items()]
+    return _Description("Sample properties were entered for the spectra: " + ', '.join(parts) + '.',
+                        [(k, f"{n} spectra") for k, n in per_key.items()])
+
+
+_DESCRIBERS['Spectrum properties'] = _describe_spectrum_properties
+
 # Operations that change nothing a reader of a Methods section needs to know.
 _SKIPPED = {'Rename'}
 
