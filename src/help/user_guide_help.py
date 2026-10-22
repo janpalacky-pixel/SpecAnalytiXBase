@@ -564,8 +564,8 @@ def get_user_guide_help_content():
             <tr><th>Item</th><th>Description</th></tr>
             <tr><td><strong>Show Metadata</strong></td><td>Display metadata for the currently highlighted spectrum.</td></tr>
             <tr><td><strong>Spectrum properties&hellip;</strong></td><td>Temperature, pH, concentration, &hellip; of each spectrum &mdash; see <a href="#spectrum-properties">Spectrum properties</a>.</td></tr>
-            <tr><td><strong>Plot Properties</strong></td><td>A submenu with three actions: <strong>Show Info</strong> (current colour/style for the selected spectra), <strong>Modify</strong> (change colour/line style), and <strong>Reset to default</strong>.</td></tr>
-            <tr><td><strong>Line colours&hellip;</strong></td><td>Automatic colours, own colours or colours by value &mdash; see <a href="#line-colours">Line colours</a>. Also in the Plot Properties button's menu.</td></tr>
+            <tr><td><strong>Plot Properties&hellip;</strong></td><td>One window for the line colour, style, width and markers of the selected spectra: a table of what they have now, the new properties (<strong>Apply</strong> keeps the window open, <strong>OK</strong> applies and closes), <strong>Reset to defaults</strong> (blue solid line, no markers) and <strong>Line colours&hellip;</strong>. Same as the <strong>Plot Properties&hellip;</strong> button below the list.</td></tr>
+            <tr><td><strong>Line colours&hellip;</strong></td><td>Automatic colours, own colours or colours by value &mdash; see <a href="#line-colours">Line colours</a>. Also a button in the Plot Properties window.</td></tr>
             <tr><td><strong>Select All</strong></td><td>Select all spectra</td></tr>
             <tr><td><strong>Unselect All</strong></td><td>Deselect all spectra</td></tr>
             <tr><td><strong>Select spectra</strong></td><td>Open a dialog to select spectra by name pattern</td></tr>
@@ -951,7 +951,7 @@ def get_user_guide_help_content():
             <li><b>automatic colours</b> (the default) &mdash; the standard sequence of colours
                 (blue, orange, green, &hellip;);</li>
             <li><b>own colours</b> &mdash; every spectrum in the colour set for it in
-                <em>Plot Properties &rarr; Modify</em> (blue when none is set). Setting a colour
+                <em>Plot Properties&hellip;</em> (blue when none is set). Setting a colour
                 there switches to own colours, so you see it at once;</li>
             <li><b>colours by value</b> &mdash; along a colour scale, with a colour bar (below).</li>
         </ul>
@@ -959,7 +959,7 @@ def get_user_guide_help_content():
         with all three choices and their settings. The same window opens from <em>View &rarr; Line
         colours&hellip;</em>, from the <em>Line colours</em> submenu of the plot's right-click menu
         (where you can also switch directly), from the spectra list's right-click menu and from the
-        Plot Properties button. Line style, width and markers from Plot Properties are used with
+        Plot Properties window (button below the spectra list). Line style, width and markers from Plot Properties are used with
         every choice. The choice is kept in snapshots; Open in New Window and Copy plot to
         clipboard use the same colours.</p>
 

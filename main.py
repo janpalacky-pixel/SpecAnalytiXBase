@@ -145,6 +145,12 @@ def main():
     # Light or dark theme (View -> Theme), before the first window exists
     from src.views.theme import apply_saved_theme
     apply_saved_theme(app)
+    # Icons on the buttons of the dialogs (Close, Save..., Copy, Add as New, ...)
+    from src.views import button_icons
+    button_icons.install(app)
+    # Long tooltips in several lines instead of one very long line
+    from src.views import tooltips
+    tooltips.install(app)
 
     main_controller = MainController()
     main_controller.show()

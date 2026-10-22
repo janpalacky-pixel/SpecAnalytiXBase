@@ -30,7 +30,7 @@ CHOICE_HINT = {
 
 class LineColoursDialog(QDialog):
     """apply_callback(mode, by_value_settings); set_own_colours() opens
-    Plot Properties > Modify for the selected spectra."""
+    the Plot Properties window for the selected spectra."""
 
     def __init__(self, parent, spectra, mode, by_value_settings=None,
                  apply_callback=None, set_own_colours=None):
@@ -68,7 +68,7 @@ class LineColoursDialog(QDialog):
             box_layout.addWidget(hint)
             if m == 'own':
                 self.own_button = QPushButton("Set the colour of the selected spectra…")
-                self.own_button.setToolTip("Plot Properties › Modify (colour, line style, "
+                self.own_button.setToolTip("Plot Properties (colour, line style, "
                                            "width, markers)")
                 self.own_button.clicked.connect(self._own)
                 row = QHBoxLayout()

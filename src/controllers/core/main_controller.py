@@ -416,15 +416,9 @@ class MainController(QMainWindow):
         properties_action.setToolTip("Temperature, pH, concentration, ... of each spectrum")
         context_menu.addSeparator()
         
-        # Create submenu for plot properties
-        plot_properties_menu = QMenu("Plot Properties", context_menu)
-        context_menu.addMenu(plot_properties_menu)           
-        
-        # Add actions to the plot properties submenu
-        show_info_action = plot_properties_menu.addAction("Show Info")
-        plot_properties_menu.addSeparator()
-        set_properties_action = plot_properties_menu.addAction("Modify")
-        reset_properties_action = plot_properties_menu.addAction("Reset to default")
+        # Plot Properties: one window (what the spectra have now, new
+        # properties, Reset to defaults)
+        set_properties_action = context_menu.addAction("Plot Properties\u2026")
         line_colours_action = context_menu.addAction("Line colours\u2026")
         context_menu.addSeparator()
         select_all_action = context_menu.addAction("Select All")
@@ -463,14 +457,8 @@ class MainController(QMainWindow):
         elif action == properties_action:
             self.spectrum_properties_controller.show_dialog()
 
-        elif action == show_info_action:
-            self.custom_plot_properties_manager.show_properties_table(selected_spectra)
-
         elif action == set_properties_action:
             self.custom_plot_properties_controller.show_dialog()
-
-        elif action == reset_properties_action:
-            self.custom_plot_properties_manager.reset_selected_properties(selected_spectra)
 
         elif action == line_colours_action:
             self.line_colours_controller.show_dialog()
@@ -935,40 +923,15 @@ class MainController(QMainWindow):
         self.metadata_button.clicked.connect(lambda: self.spectrum_selector.show_selected_spectrum_metadata())
         layout.addWidget(self.metadata_button)
 
-        # A dropdown button offering all 3 Plot Properties actions from
-        # the context menu's own submenu (Show Info / Modify / Reset to
-        # default) — a plain QPushButton could only ever trigger one of
-        # them, so this uses the same InstantPopup pattern as Map2D's
-        # own session menu button: clicking it always shows the menu,
-        # there's no separate "main" action vs. "more" arrow to click
-        # through first.
-        self.plot_properties_button = QToolButton()
-        self.plot_properties_button.setText("Plot Properties")
+        # Plot Properties: one window - what the selected spectra have now,
+        # the new properties, Reset to defaults and Line colours...
+        self.plot_properties_button = QPushButton("Plot Properties\u2026")
         self.plot_properties_button.setToolTip(
-            "Show, modify, or reset plot properties (colour, line style) for the selected spectra."
+            "Line colour, style, width and markers of the selected spectra: what they have now, "
+            "new ones, or back to the defaults."
         )
-        self.plot_properties_button.setPopupMode(QToolButton.InstantPopup)
-        # Without this, Qt draws the dropdown arrow directly on top of
-        # the button's own text instead of reserving space for it —
-        # padding-right pushes the text left enough to leave the arrow
-        # room of its own.
-        self.plot_properties_button.setStyleSheet(
-            "QToolButton { padding-right: 18px; } "
-            "QToolButton::menu-indicator { subcontrol-position: right center; right: 4px; }"
-        )
-
-        plot_properties_menu = QMenu(self.plot_properties_button)
-        show_info_action = plot_properties_menu.addAction("Show Info")
-        show_info_action.triggered.connect(self._show_plot_properties_info)
-        plot_properties_menu.addSeparator()
-        modify_action = plot_properties_menu.addAction("Modify")
-        modify_action.triggered.connect(lambda: self.custom_plot_properties_controller.show_dialog())
-        reset_action = plot_properties_menu.addAction("Reset to default")
-        reset_action.triggered.connect(self._reset_selected_plot_properties)
-        plot_properties_menu.addSeparator()
-        plot_properties_menu.addAction("Line colours\u2026").triggered.connect(
-            lambda: self.line_colours_controller.show_dialog())
-        self.plot_properties_button.setMenu(plot_properties_menu)
+        self.plot_properties_button.clicked.connect(
+            lambda: self.custom_plot_properties_controller.show_dialog())
 
         layout.addWidget(self.plot_properties_button)
 
@@ -983,20 +946,6 @@ class MainController(QMainWindow):
             spectrum for spectrum in self.original_spectra
             if spectrum_key(spectrum) in selected_ids
         ]
-
-    def _show_plot_properties_info(self):
-        """Same action as the context menu's Plot Properties -> Show
-        Info — computes the current selection fresh at click time,
-        rather than capturing a stale list at button-construction time."""
-        selected_spectra = self._selected_spectra_by_identity()
-        self.custom_plot_properties_manager.show_properties_table(selected_spectra)
-
-    def _reset_selected_plot_properties(self):
-        """Same action as the context menu's Plot Properties -> Reset to
-        default — see _show_plot_properties_info for why the selection
-        is computed fresh here rather than passed in at construction."""
-        selected_spectra = self._selected_spectra_by_identity()
-        self.custom_plot_properties_manager.reset_selected_properties(selected_spectra)
 
     def initialize_attributes(self):
         """
@@ -1249,6 +1198,30 @@ class MainController(QMainWindow):
             }
             QCheckBox::indicator:hover {
                 border-color: #7A9CC8;
+            }
+
+            /* ── Switched-off (disabled) controls look greyed out ── */
+            QWidget:disabled {
+                color: #A0A8B8;
+            }
+            QCheckBox::indicator:disabled {
+                background-color: #ECEEF1;
+                border-color: #D0D3DA;
+            }
+            QCheckBox::indicator:checked:disabled {
+                background-color: #B4C4DA;
+                border-color: #B4C4DA;
+            }
+            QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QLineEdit:disabled {
+                background-color: #F0F1F3;
+                border-color: #D0D3DA;
+            }
+
+            /* ── Tables: the selection keeps its colour when the table
+               is not focused (e.g. after a "Select all" button) ── */
+            QTableView, QTreeView {
+                selection-background-color: #4A7FC1;
+                selection-color: #FFFFFF;
             }
 
             /* ── ComboBoxes ── */

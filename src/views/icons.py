@@ -3,7 +3,7 @@
 icons of Windows / Qt (folder, disk, arrows, list, ...) and one drawn here,
 the green "play" triangle of the Run buttons."""
 
-from PyQt5.QtCore import QPointF, Qt
+from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygonF
 from PyQt5.QtWidgets import QApplication, QStyle
 
@@ -81,5 +81,73 @@ def plot_icon(size=16):
     path.cubicTo(QPointF(11, 3), QPointF(12, size - 6), QPointF(size - 1, size - 6))
     p.setPen(QPen(QColor('#1F77B4'), 1.6))
     p.drawPath(path)
+    p.end()
+    return QIcon(pix)
+
+
+def copy_icon(size=16):
+    """Two overlapping sheets (copy to the clipboard)."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(QColor('#555555'))
+    p.setBrush(QColor('#FFFFFF'))
+    s = int(size * 0.6)
+    p.drawRoundedRect(1, 1, s, s + 1, 1.5, 1.5)
+    p.setBrush(QColor('#DCE8F7'))
+    p.setPen(QColor('#3B5B8C'))
+    p.drawRoundedRect(size - s - 2, size - s - 3, s, s + 1, 1.5, 1.5)
+    p.end()
+    return QIcon(pix)
+
+
+def add_icon(size=16):
+    """A green plus (add)."""
+    from PyQt5.QtGui import QPen
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    pen = QPen(QColor(RUN_GREEN), max(2.0, size / 7))
+    pen.setCapStyle(Qt.RoundCap)
+    p.setPen(pen)
+    m = size * 0.2
+    p.drawLine(QPointF(size / 2, m), QPointF(size / 2, size - m))
+    p.drawLine(QPointF(m, size / 2), QPointF(size - m, size / 2))
+    p.end()
+    return QIcon(pix)
+
+
+def stop_icon(size=16):
+    """A red square (stop)."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor('#C62828'))
+    m = size * 0.22
+    p.drawRoundedRect(QRectF(m, m, size - 2 * m, size - 2 * m), 1.5, 1.5)
+    p.end()
+    return QIcon(pix)
+
+
+def help_icon(size=16):
+    """A blue circle with a white question mark (Help)."""
+    from PyQt5.QtGui import QFont
+    pix = QPixmap(size, size)
+    pix.fill(Qt.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor('#1976D2'))
+    p.drawEllipse(QRectF(0.5, 0.5, size - 1, size - 1))
+    font = QFont()
+    font.setBold(True)
+    font.setPixelSize(int(size * 0.72))
+    p.setFont(font)
+    p.setPen(QColor('#FFFFFF'))
+    p.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, '?')
     p.end()
     return QIcon(pix)

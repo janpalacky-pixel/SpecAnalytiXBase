@@ -23,7 +23,9 @@ class CustomPlotPropertiesController:
         ]
 
     def show_dialog(self):
-        """Show the custom plot properties dialog for selected spectra."""
+        """Plot Properties: one window with what the selected spectra have now,
+        the new properties (Apply keeps the window open, OK applies and
+        closes), Reset to defaults and Line colours..."""
         selected_spectra = self._get_selected_spectra()
 
         if not selected_spectra:
@@ -32,30 +34,47 @@ class CustomPlotPropertiesController:
 
         multiple_selection = len(selected_spectra) > 1
         current_settings = self.manager.get_properties(selected_spectra[0]) if selected_spectra else self.manager.default_properties
+        line_colours = getattr(self.controller, 'line_colours_controller', None)
 
         dialog = CustomPlotPropertiesDialog(
             self.controller.view,
             current_settings,
-            multiple_selection
+            multiple_selection,
+            spectra=selected_spectra,
+            manager=self.manager,
+            apply_callback=lambda settings: self.apply_settings(selected_spectra, settings),
+            reset_callback=lambda: self.reset_to_defaults(selected_spectra),
+            line_colours_callback=line_colours.show_dialog if line_colours is not None else None,
         )
+        self.dialog = dialog
 
         if dialog.exec_() == QDialog.Accepted:
-            new_settings = dialog.get_settings()
-            colour_changed = any(
-                self.manager.get_properties(s).get('linecolor') != new_settings.get('linecolor')
-                for s in selected_spectra)
-            for spectrum in selected_spectra:
-                self.manager.spectrum_properties[spectrum_key(spectrum)] = new_settings.copy()
-            # a new colour is seen only with "own colours" (Line colours)
-            line_colours = getattr(self.controller, 'line_colours_controller', None)
-            if colour_changed and line_colours is not None:
-                line_colours.own_colour_set()
-
-            # Update plot immediately after applying new settings
-            if self.controller.interactive_mode_checkbox.isChecked():
-                self.controller.plot_spectra()
+            self.apply_settings(selected_spectra, dialog.get_settings())
             return True
         return False
+
+    def apply_settings(self, selected_spectra, new_settings):
+        """Give the spectra these properties and redraw."""
+        colour_changed = any(
+            self.manager.get_properties(s).get('linecolor') != new_settings.get('linecolor')
+            for s in selected_spectra)
+        for spectrum in selected_spectra:
+            self.manager.spectrum_properties[spectrum_key(spectrum)] = dict(new_settings)
+        # a new colour is seen only with "own colours" (Line colours)
+        line_colours = getattr(self.controller, 'line_colours_controller', None)
+        if colour_changed and line_colours is not None:
+            line_colours.own_colour_set()
+        # Update plot immediately after applying new settings
+        if self.controller.interactive_mode_checkbox.isChecked():
+            self.controller.plot_spectra()
+
+    def reset_to_defaults(self, selected_spectra):
+        """The spectra get the default properties again (no question: the
+        window shows the result)."""
+        for spectrum in selected_spectra:
+            self.manager.spectrum_properties.pop(spectrum_key(spectrum), None)
+        if self.controller.interactive_mode_checkbox.isChecked():
+            self.controller.plot_spectra()
 
     def show_properties_info(self, selected_spectra):
         """Display plot properties information for selected spectra (list of spectrum dicts)."""

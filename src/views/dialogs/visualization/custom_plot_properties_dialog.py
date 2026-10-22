@@ -1,16 +1,41 @@
 
 # src/views/dialogs/visualization/custom_plot_properties_dialog.py
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                           QComboBox, QDoubleSpinBox, QDialogButtonBox, 
-                           QPushButton, QColorDialog)
+"""Plot Properties (the button below the spectra list, or right-click on the
+list): one window for the line colour, style, width and markers of the
+selected spectra - a table of what they have now, the settings to give them
+(Apply / OK), Reset to defaults, and Line colours... (the colours are used
+when Line colours is "own colours")."""
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
+                           QComboBox, QDoubleSpinBox, QDialogButtonBox,
+                           QPushButton, QColorDialog, QGroupBox, QHeaderView,
+                           QTableWidget, QTableWidgetItem)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QIcon, QPixmap
+
+MARKER_NAMES = {'None': 'None', '.': 'Point (.)', 'o': 'Circle (o)', 's': 'Square (s)',
+                '^': 'Triangle Up (^)', 'v': 'Triangle Down (v)', '*': 'Star (*)',
+                '+': 'Plus (+)', 'x': 'Cross (x)'}
+STYLE_NAMES = {'-': 'solid', '--': 'dashed', ':': 'dotted', '-.': 'dash-dot'}
+
 
 class CustomPlotPropertiesDialog(QDialog):
-    def __init__(self, parent=None, current_settings=None, multiple_selection=False):
+    """spectra + manager: the table of their current properties.
+    apply_callback(settings): Apply (the window stays open; OK applies too,
+    through the controller). reset_callback(): Reset to defaults.
+    line_colours_callback(): the Line colours window."""
+
+    def __init__(self, parent=None, current_settings=None, multiple_selection=False,
+                 spectra=None, manager=None, apply_callback=None, reset_callback=None,
+                 line_colours_callback=None):
         super().__init__(parent)
-        self.setWindowTitle("Custom Plot Properties")
+        self.setWindowTitle("Plot Properties")
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.multiple_selection = multiple_selection
+        self.spectra = list(spectra or [])
+        self.manager = manager
+        self.apply_callback = apply_callback
+        self.reset_callback = reset_callback
+        self.line_colours_callback = line_colours_callback
         
         # Define default settings
         self.default_settings = {
@@ -43,6 +68,32 @@ class CustomPlotPropertiesDialog(QDialog):
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
+        n = len(self.spectra)
+        if self.manager is not None and n:
+            intro = QLabel(f"The line colour, style and markers of the {n} selected "
+                           f"spectr{'um' if n == 1 else 'a'}: what they have now, and below what to "
+                           "give them.")
+            intro.setWordWrap(True)
+            layout.addWidget(intro)
+            self.table = QTableWidget(0, 6)
+            self.table.setHorizontalHeaderLabels(
+                ["Spectrum", "Line colour", "Line style", "Width", "Marker", "Set"])
+            self.table.verticalHeader().setVisible(False)
+            self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+            self.table.setSelectionMode(QTableWidget.NoSelection)
+            self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            for c in range(1, 6):
+                self.table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+            self.table.setMinimumHeight(130)
+            layout.addWidget(self.table, 1)
+            self.refresh_table()
+        else:
+            self.table = None
+
+        edit_box = QGroupBox("New properties" + (" for all of them" if n > 1 else ""))
+        edit_layout = QVBoxLayout(edit_box)
+        layout.addWidget(edit_box)
+        outer_layout, layout = layout, edit_layout
 
         # Line properties
         line_group = QVBoxLayout()
@@ -165,19 +216,89 @@ class CustomPlotPropertiesDialog(QDialog):
         # Add groups to main layout
         layout.addLayout(line_group)
         layout.addLayout(marker_group)
-        
-        # Add Set Default button
-        default_button = QPushButton("Set Default")
-        default_button.clicked.connect(self.set_default_values)
-        layout.addWidget(default_button)
+        layout = outer_layout
+
+        note = QHBoxLayout()
+        note_label = QLabel("The line colour is used when Line colours is \u201cown colours\u201d "
+                            "(it switches to it by itself when you change the colour).")
+        note_label.setWordWrap(True)
+        note.addWidget(note_label, 1)
+        self.line_colours_button = QPushButton("Line colours\u2026")
+        self.line_colours_button.setToolTip("Automatic colours, own colours or colours by value")
+        self.line_colours_button.clicked.connect(self._line_colours)
+        self.line_colours_button.setEnabled(self.line_colours_callback is not None)
+        note.addWidget(self.line_colours_button)
+        layout.addLayout(note)
+
+        self.status = QLabel("")
+        layout.addWidget(self.status)
 
         # Dialog buttons
         buttons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            QDialogButtonBox.Ok | QDialogButtonBox.Apply | QDialogButtonBox.Cancel,
             Qt.Horizontal, self)
+        self.reset_button = QPushButton("Reset to defaults")
+        self.reset_button.setToolTip("The selected spectra get the default properties again "
+                                     "(blue solid line, width 1, no markers)")
+        self.reset_button.clicked.connect(self.reset_defaults)
+        buttons.addButton(self.reset_button, QDialogButtonBox.ResetRole)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        self.apply_button = buttons.button(QDialogButtonBox.Apply)
+        self.apply_button.setToolTip("Give the selected spectra these properties (the window "
+                                     "stays open)")
+        self.apply_button.clicked.connect(self.apply)
+        self.apply_button.setEnabled(self.apply_callback is not None)
+        self.button_box = buttons
         layout.addWidget(buttons)
+
+    # -- the table of what the spectra have now
+    @staticmethod
+    def _swatch(colour):
+        pix = QPixmap(14, 14)
+        try:
+            pix.fill(QColor(colour) if colour != 'none' else QColor(0, 0, 0, 0))
+        except Exception:
+            pix.fill(QColor(0, 0, 0, 0))
+        return QIcon(pix)
+
+    def refresh_table(self):
+        if self.table is None or self.manager is None:
+            return
+        from src.modules.utils.spectrum_identity import spectrum_key
+        own = getattr(self.manager, 'spectrum_properties', {})
+        self.table.setRowCount(len(self.spectra))
+        for r, s in enumerate(self.spectra):
+            p = self.manager.get_properties(s)
+            colour = QTableWidgetItem(str(p['linecolor']))
+            colour.setIcon(self._swatch(p['linecolor']))
+            cells = [QTableWidgetItem(str(s.get('label', ''))), colour,
+                     QTableWidgetItem(STYLE_NAMES.get(p['linestyle'], str(p['linestyle']))),
+                     QTableWidgetItem(f"{p['linewidth']:.1f}"),
+                     QTableWidgetItem(MARKER_NAMES.get(p['marker'], str(p['marker']))),
+                     QTableWidgetItem("own" if spectrum_key(s) in own else "default")]
+            for c, item in enumerate(cells):
+                self.table.setItem(r, c, item)
+
+    # -- actions
+    def apply(self):
+        if self.apply_callback is None:
+            return False
+        self.apply_callback(self.get_settings())
+        self.refresh_table()
+        self.status.setText("Applied.")
+        return True
+
+    def reset_defaults(self):
+        self.set_default_values()
+        if self.reset_callback is not None:
+            self.reset_callback()
+            self.refresh_table()
+            self.status.setText("The selected spectra have the default properties again.")
+
+    def _line_colours(self):
+        if self.line_colours_callback is not None:
+            self.line_colours_callback()
     
     def pick_color(self, combo_box):
         """Handle color picking with a dedicated button."""

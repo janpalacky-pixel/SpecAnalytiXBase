@@ -88,7 +88,7 @@ class LineColoursController:
         if mode and mode != self.mode():
             self.set_mode(mode)
 
-    # -- Plot Properties > Modify set a colour
+    # -- Plot Properties set a colour
     def own_colour_set(self):
         """A colour was set in Plot Properties: show it (switch to own colours)."""
         if self.mode() == 'own':

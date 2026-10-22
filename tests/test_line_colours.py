@@ -96,8 +96,11 @@ def test_menus_and_the_button(mc, monkeypatch):
     assert [a.isChecked() for a in sub.actions()[:3]] == [True, False, False]
     sub.actions()[2].trigger()                                 # Colours by value
     assert lc.mode() == 'value' and _colorbars(mc)
-    names = [a.text() for a in mc.plot_properties_button.menu().actions()]
-    assert 'Line colours…' in names
+    assert mc.plot_properties_button.menu() is None             # a plain button now
+    from src.views.dialogs.visualization.custom_plot_properties_dialog import (
+        CustomPlotPropertiesDialog)
+    dlg = CustomPlotPropertiesDialog(None, line_colours_callback=lambda: None)
+    assert dlg.line_colours_button.text() == 'Line colours…'
 
 
 def test_the_window(mc):
