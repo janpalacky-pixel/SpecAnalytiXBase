@@ -2270,7 +2270,7 @@ def get_user_guide_help_content():
                 the complete current state; no check is involved.</li>
             <li>If a save takes longer than the interval (a very large workspace), the
                 next one is simply skipped; saves never overlap. The files are kept in
-                <code>%LOCALAPPDATA%\SpecAnalytiXBase\autosave</code> and deleted when the
+                <code>%LOCALAPPDATA%\\SpecAnalytiXBase\\autosave</code> and deleted when the
                 program is closed normally.</li>
         </ul>
 

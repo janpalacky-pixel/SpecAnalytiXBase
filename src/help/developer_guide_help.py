@@ -3235,7 +3235,7 @@ _NATSORT_CHUNK_RE = re.compile(r'((?&lt;![A-Za-z0-9])-?\\d+)')
 @classmethod
 def _natural_sort_key(cls, label):
     return tuple(
-        (0, int(chunk)) if re.fullmatch(r'-?\d+', chunk) else (1, chunk.lower())
+        (0, int(chunk)) if re.fullmatch(r'-?\\d+', chunk) else (1, chunk.lower())
         for chunk in cls._NATSORT_CHUNK_RE.split(label) if chunk != ''
     )
         </div>
@@ -3867,7 +3867,7 @@ def _natural_sort_key(cls, label):
         <p><code>src/modules/misc/session_files.py</code> (no Qt) +
         <code>src/controllers/misc/autosave_controller.py</code> (timer, menus, the
         recovery question). Files live in the per-user folder
-        (<code>%LOCALAPPDATA%\SpecAnalytiXBase</code>, overridable with the environment
+        (<code>%LOCALAPPDATA%\\SpecAnalytiXBase</code>, overridable with the environment
         variable <code>SPECANALYTIXBASE_DATA_DIR</code> &mdash; <code>tests/conftest.py</code>
         points it at a temporary folder for every test run, so tests never touch a
         user's real files).</p>

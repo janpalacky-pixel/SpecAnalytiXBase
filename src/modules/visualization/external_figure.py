@@ -16,6 +16,44 @@ from src.modules.utils.label_shortening import shorten_spectra_labels
 logger = get_logger(__name__)
 
 
+def move_window_handlers(fig, holder, manager):
+    """After our figure is put into the new window (create_external_figure),
+    the mouse and keyboard reach the figure's own list of handlers. That list
+    still held the handlers of the throw-away toolbar the plot was first
+    drawn with, and not those of the new window's toolbar: moving the mouse
+    printed "wrapped C/C++ object of type QLabel has been deleted" (the old
+    toolbar's coordinate label) over and over, and the window's zoom, pan and
+    x/y read-out did nothing. This drops the old toolbar's handlers and moves
+    the new window's handlers (toolbar, keyboard shortcuts, "make this the
+    active figure") from the empty `holder` figure to ours."""
+    from matplotlib import backend_bases as bb
+    from matplotlib.backend_bases import NavigationToolbar2
+
+    toolbar = getattr(manager, 'toolbar', None)
+    ours = fig._canvas_callbacks
+    for handlers in list(ours.callbacks.values()):
+        for cid, ref in list(handlers.items()):
+            owner = getattr(ref(), '__self__', None)
+            if isinstance(owner, NavigationToolbar2) and owner is not toolbar:
+                ours.disconnect(cid)
+
+    figure_own = {getattr(bb, '_key_handler', None), getattr(bb, '_mouse_handler', None)}
+    new_id = {}
+    for signal, handlers in list(holder._canvas_callbacks.callbacks.items()):
+        for cid, ref in list(handlers.items()):
+            func = ref()
+            if func is None or func in figure_own or getattr(func, '__self__', None) is holder:
+                continue
+            new_id[cid] = ours.connect(signal, func)
+    # the ids the toolbar and the window keep, to disconnect later
+    for obj, names in ((toolbar, ('_id_press', '_id_release', '_id_drag')),
+                       (manager, ('key_press_handler_id', 'button_press_handler_id'))):
+        for name in names:
+            cid = getattr(obj, name, None)
+            if cid in new_id:
+                setattr(obj, name, new_id[cid])
+
+
 def create_external_figure(mc):
     """
     Replicate the current main-window plot in a new standalone window.
@@ -193,6 +231,7 @@ def create_external_figure(mc):
     new_canvas = holder.canvas
     new_canvas.figure = fig
     fig.set_canvas(new_canvas)
+    move_window_handlers(fig, holder, new_manager)
     new_fig = fig
 
     # CD quality shading (grey "too little light" regions), as in the main
