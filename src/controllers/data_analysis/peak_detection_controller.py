@@ -14,6 +14,7 @@ class PeakDetectionController:
         self.peak_prominence = DEFAULTS['prominence']
         self.peak_distance = DEFAULTS['distance']
         self.peak_detection_mode = DEFAULTS['peak_mode']
+        self.peak_snr = DEFAULTS['snr']                 # minimum signal-to-noise
         self.peak_font_size = DEFAULTS['font_size']
         self.peak_rotation = DEFAULTS['rotation']
         self.peak_decimals = DEFAULTS['decimals']
@@ -38,6 +39,7 @@ class PeakDetectionController:
             number_format=self.peak_number_format,
             apply_callback=self.apply_settings,
             labels=self.peak_labels,
+            snr=self.peak_snr,
         )
         dialog.peak_controller = self              # its "Peak list..." button
         self.dialog = dialog
@@ -56,6 +58,7 @@ class PeakDetectionController:
         self.peak_distance = settings['distance']
         self.peak_detection_mode = settings['peak_mode']
         self.peak_labels = settings.get('labels', self.peak_labels)
+        self.peak_snr = settings.get('snr', self.peak_snr)
         self.detect_peaks()
 
     def detect_peaks(self):
@@ -75,6 +78,7 @@ class PeakDetectionController:
             self.peak_detection_mode,
             labels=self.peak_labels,
             current_label=self._current_line_label(),
+            snr=self.peak_snr,
         )
 
     def _current_line_label(self):
@@ -112,11 +116,12 @@ class PeakDetectionController:
             self.peak_prominence = settings['prominence']
             self.peak_distance = settings['distance']
             self.peak_detection_mode = settings['mode']
+            self.peak_snr = settings.get('snr', self.peak_snr)
 
         dialog = PeakListDialog(self.controller.view, spectra,
                                 threshold=self.peak_threshold, prominence=self.peak_prominence,
                                 distance=self.peak_distance, mode=self.peak_detection_mode,
-                                on_settings=keep)
+                                snr=self.peak_snr, on_settings=keep)
         self.peak_list_dialog = dialog
         dialog.exec_()
         return dialog

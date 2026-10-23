@@ -118,7 +118,7 @@ def test_the_controller_keeps_the_choice_and_finds_the_current_spectrum(tmp_path
         pdc.peak_detector.detect_peaks = lambda *a, **k: seen.update(k)
         pdc.apply_settings(dict(DEFAULTS, labels='current'))
         assert pdc.peak_labels == 'current'
-        assert seen == {'labels': 'current', 'current_label': 'raman_1'}
+        assert seen == {'labels': 'current', 'current_label': 'raman_1', 'snr': 8.0}
     finally:
         mc.autosave_controller.shutdown()
         mc.view.deleteLater()

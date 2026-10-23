@@ -29,19 +29,23 @@ class PeakDetector:
 
     def detect_peaks(self, canvas, threshold, font_size, rotation, decimals, number_format,
                      format_type, show_labels, prominence, distance, peak_mode,
-                     labels='all', current_label=None):
+                     labels='all', current_label=None, snr=None):
         """Mark the peaks of every plotted line (a red dot each) and write
         their positions. labels: 'band' - one number per band, above its
         highest peak (the peaks of all lines of one plot at about the same
         position are one band, as in the Peak list; the number is the
         band's position); 'all' - on every peak; 'current' - only on the
         line whose label is current_label (the spectrum highlighted in the
-        list); 'none' - the dots only."""
+        list); 'none' - the dots only. snr: a peak must stand out at least
+        snr x the noise of its line (peak_list.noise_level); 0 = off, None =
+        the default (as in the Peak list)."""
         if canvas is None:
             return
         from src.modules.data_analysis import peak_list as pl
 
         self.clear_peaks(canvas)
+        if snr is None:
+            snr = pl.DEFAULTS['snr']
         if not show_labels:
             labels = 'none'
 
@@ -58,7 +62,7 @@ class PeakDetector:
                 # Which points are peaks: the same rule as the peak list
                 # (each side - maxima, minima - judged on its own range)
                 peaks = pl.spectrum_peaks(x_data, y_data, threshold, prominence, distance,
-                                          peak_mode)
+                                          peak_mode, snr)
                 self.peak_indices[(ax_idx, line_idx)] = np.array([p['index'] for p in peaks],
                                                                  dtype=int)
                 for p in peaks:

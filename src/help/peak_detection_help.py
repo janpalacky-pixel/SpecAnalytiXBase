@@ -60,6 +60,16 @@ def get_peak_detection_help_content():
             <td>Minimum spacing between detected peaks, as a fraction of the
             number of points in the line. Raise this to avoid multiple
             markers crowding around what's really one broad peak.</td></tr>
+        <tr><td><strong>Signal-to-noise (min.)</strong></td>
+            <td>A peak must also stand out (its prominence) at least this many times
+            the <b>noise</b> of its spectrum. The noise is estimated from each spectrum itself,
+            from its point-to-point scatter, which the bands hardly affect. Prominence alone is a
+            fraction of a spectrum's own range, so in a series the <i>weakest</i> spectra (whose
+            range is not much bigger than their noise) gave many peaks that were only noise. Noise
+            alone makes bumps up to about 6&ndash;7 times its standard deviation, so with the
+            default <b>8</b> they are gone (e.g. a noisy CD series, Peaks: Both: at most 3 peaks
+            per spectrum instead of 17). Lower it for very weak bands; <b>0</b> switches it off.
+            Clean, smooth spectra are not affected.</td></tr>
         <tr><td><strong>Peak Detection Mode</strong></td>
             <td><em>Positive</em> finds local maxima (upward peaks),
             <em>Negative</em> finds local minima (downward dips/troughs),
@@ -83,7 +93,7 @@ def get_peak_detection_help_content():
             <td>Purely cosmetic — control how (and whether) each marker's
             coordinates are labeled on the plot.</td></tr>
     </table>
-    <p>Defaults: threshold 0, prominence 0.1, distance 0.05, Positive; labels once per band; font size 10,
+    <p>Defaults: threshold 0, prominence 0.1, distance 0.05, signal-to-noise 8, Positive; labels once per band; font size 10,
     rotation 0, 2 decimal places, fixed point, x value only.</p>
 
     <hr>

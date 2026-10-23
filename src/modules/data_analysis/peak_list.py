@@ -36,7 +36,12 @@ FIT_MIN_POINTS = 5         # ... but at least 5 points on each side
 # Threshold 0: a peak is judged only by its prominence - how much it stands
 # out from the valleys around it, i.e. locally - not by its height compared
 # with the tallest peak of the spectrum (which missed clear smaller peaks).
-DEFAULTS = {'threshold': 0.0, 'prominence': 0.1, 'distance': 0.05, 'mode': 'Positive'}
+# S/N 8: a peak must also stand out at least 8 x the noise (standard
+# deviation) of its spectrum - so the noise of weak spectra in a series is
+# not taken for peaks. Noise alone makes bumps up to about 6-7 x its
+# standard deviation in a spectrum of a few hundred points (tested), so 5
+# still let some through; 8 stays above them.
+DEFAULTS = {'threshold': 0.0, 'prominence': 0.1, 'distance': 0.05, 'mode': 'Positive', 'snr': 8.0}
 
 # What each setting means (the "?" of Detect Peaks and of the Peak list):
 # (name, what it does, default)
@@ -54,6 +59,13 @@ SETTINGS_HELP = [
      "The smallest gap between two peaks, as a fraction of the number of points: 0.05 = 5 % of "
      "the points. Raise it when one broad or noisy band gives several peaks next to each other.",
      "0.05"),
+    ("Signal-to-noise",
+     "A peak must also stand out (its prominence) at least this many times the noise of its "
+     "spectrum (its standard deviation, estimated from the spectrum itself, from the "
+     "point-to-point scatter, which bands hardly affect). Noise alone makes bumps up to about "
+     "6-7 times its standard deviation, so 8 keeps the noise of weak spectra from being taken "
+     "for peaks. Lower it for very weak bands; 0 switches it off. Clean (smooth) spectra are "
+     "not affected.", "8"),
     ("Peaks (mode)",
      "Positive: the maxima. Negative: the minima (dips). Both: maxima and minima. For the "
      "minima the same settings are measured downward (on the spectrum turned upside down).",
@@ -82,25 +94,45 @@ COLUMNS_HELP = [
 ]
 
 
-def _side(y, threshold, prominence, distance):
+NOISE_MIN_POINTS = 50
+
+
+def noise_level(y):
+    """The noise (standard deviation) of a spectrum, estimated from itself:
+    from the scatter of its second differences (robust median absolute
+    deviation, so the few points of the bands hardly matter). Smooth bands
+    give almost 0; white noise of standard deviation s gives about s. With
+    fewer than NOISE_MIN_POINTS points the bands are too large a part of
+    the spectrum to tell them from noise: 0 (no noise limit)."""
+    y = np.asarray(y, dtype=float)
+    y = y[np.isfinite(y)]
+    if len(y) < NOISE_MIN_POINTS:
+        return 0.0
+    d2 = np.diff(y, 2)
+    return float(1.4826 * np.median(np.abs(d2 - np.median(d2))) / np.sqrt(6.0))
+
+
+def _side(y, threshold, prominence, distance, min_prominence=0.0):
     span = float(np.max(y) - np.min(y))
     height = np.min(y) + threshold * span
-    idx, _ = find_peaks(y, height=height, prominence=prominence * span,
+    idx, _ = find_peaks(y, height=height, prominence=max(prominence * span, min_prominence),
                         distance=max(1, int(distance * len(y))))
     return idx
 
 
-def peak_indices(y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_indices(y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive', snr=8.0):
     """Indices of the peaks of *y* (sorted), as Detect Peaks finds them. For
     'Negative', the minima: each side is judged on its own range (see
-    peak_detection_manager.py for why)."""
+    peak_detection_manager.py for why). snr: the prominence must also be at
+    least snr x the noise of y (noise_level); 0 = off."""
     y = np.asarray(y, dtype=float)
     if len(y) < 2 or not np.all(np.isfinite(y)):
         y = np.nan_to_num(y, nan=np.nanmin(y) if np.isfinite(y).any() else 0.0)
     if len(y) < 2:
         return np.array([], dtype=int)
-    pos = _side(y, threshold, prominence, distance) if mode in ('Positive', 'Both') else []
-    neg = _side(-y, threshold, prominence, distance) if mode in ('Negative', 'Both') else []
+    floor = float(snr) * noise_level(y) if snr else 0.0
+    pos = _side(y, threshold, prominence, distance, floor) if mode in ('Positive', 'Both') else []
+    neg = _side(-y, threshold, prominence, distance, floor) if mode in ('Negative', 'Both') else []
     return np.unique(np.concatenate((np.asarray(pos, int), np.asarray(neg, int)))).astype(int)
 
 
@@ -109,14 +141,14 @@ def _x_at(x, positions):
     return np.interp(positions, np.arange(len(x)), x)
 
 
-def spectrum_peaks(x, y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
+def spectrum_peaks(x, y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive', snr=8.0):
     """[{'kind', 'index', 'x', 'y', 'prominence', 'fwhm', 'left', 'right'}] of one spectrum."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     out = []
     if len(y) < 3:
         return out
-    idx = peak_indices(y, threshold, prominence, distance, mode)
+    idx = peak_indices(y, threshold, prominence, distance, mode, snr)
     if not len(idx):
         return out
     # a maximum when it is higher than its neighbours' mean, else a minimum
@@ -138,17 +170,19 @@ def _prominence(sig, i):
     return peak_prominences(sig, [i])[0][0]
 
 
-def peak_table(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_table(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive', snr=8.0):
     """Rows (lists, in COLUMNS order) for all spectra, peaks by position."""
-    return peak_table_with_index(spectra, threshold, prominence, distance, mode)[0]
+    return peak_table_with_index(spectra, threshold, prominence, distance, mode, snr)[0]
 
 
-def peak_table_with_index(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_table_with_index(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive',
+                          snr=8.0):
     """(rows, index): the rows of peak_table and, for every row, the place of
     its spectrum in `spectra` (names can repeat)."""
     rows, index = [], []
     for i, sp in enumerate(spectra):
-        peaks = spectrum_peaks(sp['x_scale'], sp['y_scale'], threshold, prominence, distance, mode)
+        peaks = spectrum_peaks(sp['x_scale'], sp['y_scale'], threshold, prominence, distance, mode,
+                               snr)
         peaks.sort(key=lambda p: p['x'])
         for k, p in enumerate(peaks, 1):
             rows.append([str(sp.get('label', '')), k, 'maximum' if p['kind'] == 'max' else 'minimum',

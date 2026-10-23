@@ -18,6 +18,7 @@ DEFAULTS = {
     'prominence': pl.DEFAULTS['prominence'],
     'distance': pl.DEFAULTS['distance'],
     'peak_mode': pl.DEFAULTS['mode'],
+    'snr': pl.DEFAULTS['snr'],
     'font_size': 10,
     'rotation': 0,
     'decimals': 2,
@@ -35,7 +36,8 @@ class PeakDetectionDialog(QDialog):
 
     def __init__(self, parent=None, threshold=0.0, font_size=10, rotation=0, decimals=2,
                  format_type="x_only", number_format="fixed", show_labels=True, prominence=0.1,
-                 distance=0.05, peak_mode="Positive", apply_callback=None, labels='band'):
+                 distance=0.05, peak_mode="Positive", apply_callback=None, labels='band',
+                 snr=None):
         super().__init__(parent)
         self.setWindowTitle("Peak Detection Settings")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
@@ -43,6 +45,7 @@ class PeakDetectionDialog(QDialog):
         self.setup_ui(threshold, font_size, rotation, decimals, format_type, number_format,
                       show_labels, prominence, distance, peak_mode)
         self.labels_combo.setCurrentIndex(max(self.labels_combo.findData(labels), 0))
+        self.snr_input.setValue(pl.DEFAULTS['snr'] if snr is None else snr)
 
     def setup_ui(self, threshold, font_size, rotation, decimals, format_type, number_format,
                  show_labels, prominence, distance, peak_mode):
@@ -81,6 +84,13 @@ class PeakDetectionDialog(QDialog):
         self.distance_input.setValue(distance)
         self.distance_input.setToolTip(tooltip_of("Distance"))
         layout.addRow("Distance Threshold (Relative):", self.distance_input)
+
+        self.snr_input = QDoubleSpinBox(self)
+        self.snr_input.setRange(0.0, 100.0)
+        self.snr_input.setDecimals(1)
+        self.snr_input.setSingleStep(0.5)
+        self.snr_input.setToolTip(tooltip_of("Signal-to-noise"))
+        layout.addRow("Signal-to-noise (min.):", self.snr_input)
 
         self.peak_mode_combo = QComboBox(self)
         self.peak_mode_combo.addItems(["Positive", "Negative", "Both"])
@@ -159,6 +169,7 @@ class PeakDetectionDialog(QDialog):
             'distance': self.distance_input.value(),
             'peak_mode': self.peak_mode_combo.currentText(),
             'labels': self.labels_combo.currentData(),
+            'snr': self.snr_input.value(),
         }
 
     def set_settings(self, s):
@@ -166,6 +177,7 @@ class PeakDetectionDialog(QDialog):
         self.prominence_input.setValue(s['prominence'])
         self.distance_input.setValue(s['distance'])
         self.peak_mode_combo.setCurrentText(s['peak_mode'])
+        self.snr_input.setValue(s.get('snr', pl.DEFAULTS['snr']))
         self.font_size_input.setValue(s['font_size'])
         self.rotation_input.setValue(s['rotation'])
         self.decimals_input.setValue(s['decimals'])
@@ -202,10 +214,12 @@ class PeakDetectionDialog(QDialog):
         s = self.get_settings()
         controller.peak_threshold, controller.peak_prominence = s['threshold'], s['prominence']
         controller.peak_distance, controller.peak_detection_mode = s['distance'], s['peak_mode']
+        controller.peak_snr = s['snr']
         dialog = controller.show_peak_list()
         if dialog is not None:                       # settings changed in the list come back here
             self.threshold_input.setValue(controller.peak_threshold)
             self.prominence_input.setValue(controller.peak_prominence)
             self.distance_input.setValue(controller.peak_distance)
             self.peak_mode_combo.setCurrentText(controller.peak_detection_mode)
+            self.snr_input.setValue(controller.peak_snr)
         return dialog

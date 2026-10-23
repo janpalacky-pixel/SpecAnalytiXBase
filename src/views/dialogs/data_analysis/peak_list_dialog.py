@@ -40,7 +40,7 @@ class PeakListDialog(QDialog):
     Plot. self.rows are the table rows, self.row_spectrum the spectrum of each."""
 
     def __init__(self, parent, spectra, threshold=0.0, prominence=0.1, distance=0.05,
-                 mode='Positive', on_settings=None):
+                 mode='Positive', on_settings=None, snr=None):
         super().__init__(parent)
         self.spectra = list(spectra)
         self.on_settings = on_settings
@@ -68,17 +68,23 @@ class PeakListDialog(QDialog):
         self.threshold = self._spin(threshold, 0.0, 1.0, "Threshold (height)")
         self.prominence = self._spin(prominence, 0.0, 1.0, "Prominence")
         self.distance = self._spin(distance, 0.0, 1.0, "Distance")
+        self.snr = self._spin(pl.DEFAULTS['snr'] if snr is None else snr, 0.0, 100.0,
+                              "Signal-to-noise")
+        self.snr.setDecimals(1)
+        self.snr.setSingleStep(0.5)
         self.mode = QComboBox()
         self.mode.addItems(["Positive", "Negative", "Both"])
         self.mode.setCurrentText(mode)
         self.mode.setToolTip(tooltip_of("Peaks (mode)"))
         for label, w in (("Threshold:", self.threshold), ("Prominence:", self.prominence),
-                         ("Distance:", self.distance), ("Peaks:", self.mode)):
+                         ("Distance:", self.distance), ("S/N:", self.snr),
+                         ("Peaks:", self.mode)):
             form.addWidget(QLabel(label))
             form.addWidget(w)
         self.reset_button = QPushButton("Reset to defaults")
         self.reset_button.setAutoDefault(False)
-        self.reset_button.setToolTip("Threshold 0.5, prominence 0.1, distance 0.05, Positive")
+        self.reset_button.setToolTip("Threshold 0, prominence 0.1, distance 0.05, "
+                                     "signal-to-noise 8, Positive")
         self.reset_button.clicked.connect(self.reset_defaults)
         form.addWidget(self.reset_button)
         form.addStretch(1)
@@ -163,7 +169,7 @@ class PeakListDialog(QDialog):
         buttons.addWidget(close)
         layout.addLayout(buttons)
 
-        for w in (self.threshold, self.prominence, self.distance):
+        for w in (self.threshold, self.prominence, self.distance, self.snr):
             w.valueChanged.connect(self.refresh)
         self.mode.currentIndexChanged.connect(self.refresh)
         self.refine_check.toggled.connect(self._refine_toggled)
@@ -513,13 +519,14 @@ class PeakListDialog(QDialog):
 
     # -- settings
     def reset_defaults(self):
-        for w in (self.threshold, self.prominence, self.distance, self.mode):
+        for w in (self.threshold, self.prominence, self.distance, self.snr, self.mode):
             w.blockSignals(True)
+        self.snr.setValue(pl.DEFAULTS['snr'])
         self.threshold.setValue(pl.DEFAULTS['threshold'])
         self.prominence.setValue(pl.DEFAULTS['prominence'])
         self.distance.setValue(pl.DEFAULTS['distance'])
         self.mode.setCurrentText(pl.DEFAULTS['mode'])
-        for w in (self.threshold, self.prominence, self.distance, self.mode):
+        for w in (self.threshold, self.prominence, self.distance, self.snr, self.mode):
             w.blockSignals(False)
         self.refresh()
 
@@ -542,7 +549,8 @@ class PeakListDialog(QDialog):
 
     def settings(self):
         return dict(threshold=self.threshold.value(), prominence=self.prominence.value(),
-                    distance=self.distance.value(), mode=self.mode.currentText())
+                    distance=self.distance.value(), mode=self.mode.currentText(),
+                    snr=self.snr.value())
 
     def refresh(self, *_):
         """Find the peaks again with the current settings and fill the table
