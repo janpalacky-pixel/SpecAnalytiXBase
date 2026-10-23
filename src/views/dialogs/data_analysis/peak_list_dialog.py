@@ -39,7 +39,7 @@ class PeakListDialog(QDialog):
     on_settings), the tab Table (one row per peak, see pl.COLUMNS) and the tab
     Plot. self.rows are the table rows, self.row_spectrum the spectrum of each."""
 
-    def __init__(self, parent, spectra, threshold=0.5, prominence=0.1, distance=0.05,
+    def __init__(self, parent, spectra, threshold=0.0, prominence=0.1, distance=0.05,
                  mode='Positive', on_settings=None):
         super().__init__(parent)
         self.spectra = list(spectra)
@@ -65,7 +65,7 @@ class PeakListDialog(QDialog):
         layout.addLayout(top)
 
         form = QHBoxLayout()
-        self.threshold = self._spin(threshold, 0.0001, 1.0, "Threshold (height)")
+        self.threshold = self._spin(threshold, 0.0, 1.0, "Threshold (height)")
         self.prominence = self._spin(prominence, 0.0, 1.0, "Prominence")
         self.distance = self._spin(distance, 0.0, 1.0, "Distance")
         self.mode = QComboBox()

@@ -29,7 +29,7 @@ _FORMATS = ["fixed", "sci", "general", "mixed"]
 
 class PeakDetectionDialog(QDialog):
 
-    def __init__(self, parent=None, threshold=0.5, font_size=10, rotation=0, decimals=2,
+    def __init__(self, parent=None, threshold=0.0, font_size=10, rotation=0, decimals=2,
                  format_type="x_only", number_format="fixed", show_labels=True, prominence=0.1,
                  distance=0.05, peak_mode="Positive", apply_callback=None):
         super().__init__(parent)
@@ -54,7 +54,7 @@ class PeakDetectionDialog(QDialog):
 
         layout = QFormLayout()
         self.threshold_input = QDoubleSpinBox(self)
-        self.threshold_input.setRange(0.0001, 1)
+        self.threshold_input.setRange(0.0, 1)
         self.threshold_input.setDecimals(4)
         self.threshold_input.setSingleStep(0.001)
         self.threshold_input.setValue(threshold)

@@ -33,15 +33,19 @@ NUMERIC.update({name: ALL_COLUMNS.index(name) for name in FIT_COLUMNS})
 FIT_EXTENT = 1.5           # the fit window: the peak \u00b1 1.5 \u00d7 its FWHM ...
 FIT_MIN_POINTS = 5         # ... but at least 5 points on each side
 # the settings of Detect Peaks and the Peak list when nothing was changed
-DEFAULTS = {'threshold': 0.5, 'prominence': 0.1, 'distance': 0.05, 'mode': 'Positive'}
+# Threshold 0: a peak is judged only by its prominence - how much it stands
+# out from the valleys around it, i.e. locally - not by its height compared
+# with the tallest peak of the spectrum (which missed clear smaller peaks).
+DEFAULTS = {'threshold': 0.0, 'prominence': 0.1, 'distance': 0.05, 'mode': 'Positive'}
 
 # What each setting means (the "?" of Detect Peaks and of the Peak list):
 # (name, what it does, default)
 SETTINGS_HELP = [
     ("Threshold (height)",
      "A point counts as a peak only if it is higher than min + threshold \u00d7 (max \u2212 min) "
-     "of its own spectrum: 0.5 = only the upper half of the spectrum's range. Lower it to find "
-     "smaller peaks.", "0.5"),
+     "of its own spectrum: 0.5 = only the upper half of the spectrum's range. 0 (the default) = "
+     "no height limit: every peak that stands out enough (Prominence) counts, also a small one "
+     "next to a strong band. Raise it to keep only the tall peaks.", "0"),
     ("Prominence",
      "How much the peak must stand out above the valleys around it, as a fraction of the "
      "spectrum's range (max \u2212 min). Raise it to ignore small bumps and noise riding on a "
@@ -86,7 +90,7 @@ def _side(y, threshold, prominence, distance):
     return idx
 
 
-def peak_indices(y, threshold=0.5, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_indices(y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
     """Indices of the peaks of *y* (sorted), as Detect Peaks finds them. For
     'Negative', the minima: each side is judged on its own range (see
     peak_detection_manager.py for why)."""
@@ -105,7 +109,7 @@ def _x_at(x, positions):
     return np.interp(positions, np.arange(len(x)), x)
 
 
-def spectrum_peaks(x, y, threshold=0.5, prominence=0.1, distance=0.05, mode='Positive'):
+def spectrum_peaks(x, y, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
     """[{'kind', 'index', 'x', 'y', 'prominence', 'fwhm', 'left', 'right'}] of one spectrum."""
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -134,12 +138,12 @@ def _prominence(sig, i):
     return peak_prominences(sig, [i])[0][0]
 
 
-def peak_table(spectra, threshold=0.5, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_table(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
     """Rows (lists, in COLUMNS order) for all spectra, peaks by position."""
     return peak_table_with_index(spectra, threshold, prominence, distance, mode)[0]
 
 
-def peak_table_with_index(spectra, threshold=0.5, prominence=0.1, distance=0.05, mode='Positive'):
+def peak_table_with_index(spectra, threshold=0.0, prominence=0.1, distance=0.05, mode='Positive'):
     """(rows, index): the rows of peak_table and, for every row, the place of
     its spectrum in `spectra` (names can repeat)."""
     rows, index = [], []

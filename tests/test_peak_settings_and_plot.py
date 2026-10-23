@@ -127,7 +127,7 @@ def test_reset_to_defaults_in_the_peak_list(mc, monkeypatch):
     assert dlg.table.rowCount() != n_default
     dlg.reset_button.click()
     assert dlg.settings() == pl.DEFAULTS and dlg.table.rowCount() == n_default
-    assert mc.peak_detection_controller.peak_threshold == 0.5        # Detect Peaks follows
+    assert mc.peak_detection_controller.peak_threshold == pl.DEFAULTS['threshold']   # Detect Peaks follows
 
 
 def test_plot_position_against_temperature(mc, monkeypatch):

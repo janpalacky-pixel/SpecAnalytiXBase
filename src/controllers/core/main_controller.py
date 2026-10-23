@@ -1015,7 +1015,7 @@ class MainController(QMainWindow):
         self.view.band_markers_btn.clicked.connect(self._show_band_marker_dialog)
         
         # Peak detection settings (these are the default values, you can adjust as needed)
-        self.peak_threshold = 0.5
+        self.peak_threshold = 0.0
         self.peak_prominence = 0.1
         self.peak_distance = 0.05
         self.peak_detection_mode = "Positive"  # Default to detecting positive peaks

@@ -47,7 +47,10 @@ def get_peak_detection_help_content():
         <tr><td><strong>Peak Detection Threshold</strong></td>
             <td>Minimum height, as a fraction (0&ndash;1) of each line's own
             intensity range, a point must reach before it's even considered
-            as a candidate peak.</td></tr>
+            as a candidate peak. The default <b>0</b> sets no height limit: a peak
+            is then judged only <i>locally</i>, by its prominence, so a small but
+            clear band next to a strong one is found too. Raise it (e.g. 0.5 =
+            only the upper half of the range) to keep only the tall peaks.</td></tr>
         <tr><td><strong>Prominence Threshold (Relative)</strong></td>
             <td>How much a candidate peak must stand out from its
             surrounding baseline, as a fraction of the line's intensity
@@ -66,7 +69,7 @@ def get_peak_detection_help_content():
             <td>Purely cosmetic — control how (and whether) each marker's
             coordinates are labeled on the plot.</td></tr>
     </table>
-    <p>Defaults: threshold 0.5, prominence 0.1, distance 0.05, Positive; font size 10,
+    <p>Defaults: threshold 0, prominence 0.1, distance 0.05, Positive; font size 10,
     rotation 0, 2 decimal places, fixed point, x value only.</p>
 
     <hr>

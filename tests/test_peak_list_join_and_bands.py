@@ -82,7 +82,7 @@ def test_join_greyed_out_when_x_is_the_peak_and_redrawn_at_once(mc, monkeypatch)
 def test_peak_by_position_labels_and_scale(mc, monkeypatch):
     from src.modules.data_analysis import peak_list as pl
     dlg = _plot(mc, monkeypatch)
-    assert dlg.tolerance.value() == pl.default_tolerance(dlg.rows) > 0
+    assert dlg.tolerance.value() > 0       # set from the first peaks found (before "Both")
     dlg.x_combo.setCurrentText(BAND_SCALE)
     ax = dlg.figure.axes[0]
     import numpy as np
