@@ -123,7 +123,10 @@ def get_peak_detection_help_content():
     </ul>
     <p>A peak whose fit is rejected (e.g. two overlapping bands in its window, or too few points)
     gets empty cells; the line next to the settings says how many. The fitted columns are copied,
-    exported and offered in the tab Plot too. Long lists are fitted on several processor cores,
+    exported and offered in the tab Plot and the Band table too. When you tick Refine by fitting,
+    the Plot and the Band table switch to the fitted value at once (Position (x) &rarr; Fitted
+    position, Height (y) &rarr; Fitted height, FWHM &rarr; Fitted FWHM), and back when you untick
+    it. Long lists are fitted on several processor cores,
     with a progress bar and Cancel. For several overlapping peaks of one spectrum fitted together,
     use the Peak Fitting tool.</p>
     <h3 id="peak-plot">Plot</h3>

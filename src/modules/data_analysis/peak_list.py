@@ -245,6 +245,21 @@ def export(rows, path, columns=COLUMNS):
 Y_CHOICES = ['Position (x)', 'Height (y)', 'Prominence', 'FWHM']
 
 
+# With Refine by fitting the plot and the band table show the fitted value
+# instead of the measured one (and the measured one again without it).
+FITTED_VALUE = {'Position (x)': 'Fitted position', 'Height (y)': 'Fitted height',
+                'FWHM': 'Fitted FWHM'}
+
+
+def matching_value(text, fitted):
+    """The value to show after Refine by fitting is switched on (fitted=True)
+    or off: e.g. 'Position (x)' <-> 'Fitted position'; other values stay."""
+    if fitted:
+        return FITTED_VALUE.get(text, text)
+    measured = {v: k for k, v in FITTED_VALUE.items()}
+    return measured.get(text, text)
+
+
 def y_choices(fitted=False):
     """The y-axis choices; with Refine by fitting also the fitted values."""
     return Y_CHOICES + (FIT_COLUMNS if fitted else [])

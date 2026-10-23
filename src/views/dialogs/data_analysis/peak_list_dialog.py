@@ -188,6 +188,8 @@ class PeakListDialog(QDialog):
                                 "it, a number in its name) or a number of the peak")
         self.y_combo = QComboBox()
         self.y_combo.addItems(pl.Y_CHOICES)
+        for combo in (self.x_combo, self.y_combo):      # wide enough for the fitted values
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.colour_combo = QComboBox()
         self.colour_combo.addItems(["Peak number", "%s" % BAND_COLOUR, "Maximum / minimum",
                                     "One colour"])
@@ -311,6 +313,8 @@ class PeakListDialog(QDialog):
         row = QHBoxLayout()
         self.band_value_combo = QComboBox()
         self.band_value_combo.addItems(pl.y_choices(False))
+        # wide enough for the fitted values added later (e.g. Fitted position)
+        self.band_value_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.band_value_combo.setToolTip("What each cell holds: the position, height, prominence "
                                          "or FWHM of that spectrum's peak in that band (with "
                                          "Refine by fitting also the fitted values)")
@@ -626,21 +630,25 @@ class PeakListDialog(QDialog):
             QApplication.restoreOverrideCursor()
             if dialog is not None:
                 dialog.close()
-        self.fit_info.setText(text)
+        self.fit_info.setText(text + " Shown: the fitted values.")
         return True
 
     def _refill_plot_choices(self):
-        """x and y of the tab Plot, with the fitted values when Refine by
-        fitting is on; the current choices are kept when still there."""
+        """x and y of the tab Plot and the value of the Band table, with the
+        fitted values when Refine by fitting is on. A measured value switches
+        to its fitted one when it is switched on (Position (x) -> Fitted
+        position, Height, FWHM) and back when it is switched off; the other
+        choices are kept when still there."""
         fitted = self.refine_check.isChecked()
-        x_text, y_text = self.x_combo.currentText(), self.y_combo.currentText()
+        x_text = pl.matching_value(self.x_combo.currentText(), fitted)
+        y_text = pl.matching_value(self.y_combo.currentText(), fitted)
         for combo in (self.x_combo, self.y_combo):
             combo.blockSignals(True)
             combo.clear()
         for text, key in pl.x_choices(self.spectra, fitted=fitted):
             self.x_combo.addItem(text, key)
         self.y_combo.addItems(pl.y_choices(fitted))
-        band_text = self.band_value_combo.currentText()
+        band_text = pl.matching_value(self.band_value_combo.currentText(), fitted)
         self.band_value_combo.blockSignals(True)
         self.band_value_combo.clear()
         self.band_value_combo.addItems(pl.y_choices(fitted))
