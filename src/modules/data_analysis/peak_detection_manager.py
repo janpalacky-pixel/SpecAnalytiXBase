@@ -27,74 +27,85 @@ class PeakDetector:
                 return f"{value:.{decimals}f}"
         return str(value)
 
-    def detect_peaks(self, canvas, threshold, font_size, rotation, decimals, number_format, format_type, show_labels, prominence, distance, peak_mode):
+    def detect_peaks(self, canvas, threshold, font_size, rotation, decimals, number_format,
+                     format_type, show_labels, prominence, distance, peak_mode,
+                     labels='all', current_label=None):
+        """Mark the peaks of every plotted line (a red dot each) and write
+        their positions. labels: 'band' - one number per band, above its
+        highest peak (the peaks of all lines of one plot at about the same
+        position are one band, as in the Peak list; the number is the
+        band's position); 'all' - on every peak; 'current' - only on the
+        line whose label is current_label (the spectrum highlighted in the
+        list); 'none' - the dots only."""
         if canvas is None:
             return
-    
+        from src.modules.data_analysis import peak_list as pl
+
         self.clear_peaks(canvas)
+        if not show_labels:
+            labels = 'none'
 
-        axes = canvas.figure.get_axes()
-        
-
-    
-        for ax_idx, ax in enumerate(axes):
-            lines = [line for line in ax.get_lines() 
-                    if line.get_color() not in ('r', 'red') or line.get_marker() != 'o']
-    
+        for ax_idx, ax in enumerate(canvas.figure.get_axes()):
+            lines = [line for line in ax.get_lines()
+                     if line.get_color() not in ('r', 'red') or line.get_marker() != 'o']
+            found = []            # (line_idx, line label, peak) of this plot
             for line_idx, line in enumerate(lines):
-                x_data = line.get_xdata()
-                y_data = line.get_ydata()
+                x_data = np.asarray(line.get_xdata(), dtype=float)
+                y_data = np.asarray(line.get_ydata(), dtype=float)
                 line_label = line.get_label() or f"Line {line_idx+1}"
-    
-                if len(y_data) < 2:
+                if len(y_data) < 3:
                     continue
-    
                 # Which points are peaks: the same rule as the peak list
-                # (peak_list.peak_indices; each side - maxima, minima - is
-                # judged on its own range).
-                from src.modules.data_analysis.peak_list import peak_indices
-                peaks = peak_indices(np.asarray(y_data, dtype=float), threshold, prominence,
-                                     distance, peak_mode)
+                # (each side - maxima, minima - judged on its own range)
+                peaks = pl.spectrum_peaks(x_data, y_data, threshold, prominence, distance,
+                                          peak_mode)
+                self.peak_indices[(ax_idx, line_idx)] = np.array([p['index'] for p in peaks],
+                                                                 dtype=int)
+                for p in peaks:
+                    found.append((line_idx, line_label, p))
+                    x_str = self.format_number(p['x'], number_format, decimals)
+                    # one dot per peak; a label starting with "_" keeps it out of the legend
+                    dot = ax.plot([p['x']], [p['y']], 'ro', markersize=8,
+                                  label=f"_Peak at {x_str} from {line_label}")[0]
+                    self.peak_lines.append(dot)
 
-                # Store peaks
-                key = (ax_idx, line_idx)
-                self.peak_indices[key] = peaks
-    
-                # Instead of plotting all peaks at once, plot each peak individually
-                # This allows us to set unique labels for each peak
-                if len(peaks) > 0:
-                    for i, peak_idx in enumerate(peaks):
-                        x_val = x_data[peak_idx]
-                        y_val = y_data[peak_idx]
-                        
-                        x_str = self.format_number(x_val, number_format, decimals)
-                        y_str = self.format_number(y_val, number_format, decimals)
-                        
-                        # Create a unique identifier for each peak
-                        peak_identifier = f"Peak at {x_str} from {line_label}"
-                        
-                        # Plot individual peak with unique label that starts with "_"
-                        # This keeps it out of the legend but allows unique identification
-                        peak_line = ax.plot(
-                            [x_val], [y_val],
-                            'ro', markersize=8,
-                            label=f"_{peak_identifier}"  # Prefixing with underscore to hide from legend
-                        )[0]
-                        self.peak_lines.append(peak_line)
-                        
-                        # Add peak text label
-                        if show_labels:
-                            display_label = f"({x_str}, {y_str})" if format_type == "both" else f"{x_str}"
-                            
-                            text = ax.text(
-                                x_val, y_val, display_label,
-                                fontsize=font_size,
-                                ha='center', va='bottom',
-                                rotation=rotation
-                            )
-                            self.peak_texts.append(text)
-    
-            canvas.draw()    
+            for x_val, y_val, kind in self._label_places(found, labels, current_label, pl):
+                x_str = self.format_number(x_val, number_format, decimals)
+                y_str = self.format_number(y_val, number_format, decimals)
+                text = f"({x_str}, {y_str})" if format_type == "both" else x_str
+                self.peak_texts.append(ax.text(
+                    x_val, y_val, text, fontsize=font_size,
+                    ha='center', va='bottom' if kind == 'max' else 'top', rotation=rotation))
+        canvas.draw()
+
+    @staticmethod
+    def _label_places(found, labels, current_label, pl):
+        """[(x written, y of the peak it stands on, kind)] of one plot."""
+        if labels == 'none' or not found:
+            return []
+        if labels == 'current':
+            return [(p['x'], p['y'], p['kind']) for _, lab, p in found if lab == current_label]
+        if labels != 'band':
+            return [(p['x'], p['y'], p['kind']) for _, _, p in found]
+        out = []
+        for kind in ('max', 'min'):
+            peaks = [p for _, _, p in found if p['kind'] == kind]
+            if not peaks:
+                continue
+            rows = []
+            for p in peaks:
+                r = [None] * len(pl.COLUMNS)
+                r[pl.NUMERIC['Position (x)']] = p['x']
+                r[pl.NUMERIC['FWHM']] = p['fwhm']
+                rows.append(r)
+            centres = pl.band_positions(rows, pl.default_tolerance(rows))
+            bands = {}
+            for p, c in zip(peaks, centres):
+                bands.setdefault(c, []).append(p)
+            for c, members in bands.items():
+                top = (max if kind == 'max' else min)(members, key=lambda p: p['y'])
+                out.append((c, top['y'], kind))
+        return out
 
     def clear_peaks(self, canvas):
         if canvas is None:

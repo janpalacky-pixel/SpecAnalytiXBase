@@ -23,7 +23,11 @@ DEFAULTS = {
     'decimals': 2,
     'number_format': 'fixed',
     'format_type': 'x_only',
+    'labels': 'band',
 }
+# Which peaks get their number written (see peak_settings_help.LABEL_HELP)
+LABEL_MODES = [('band', "Once per band (above the highest peak)"), ('all', "On every peak"),
+               ('current', "Only the current spectrum"), ('none', "None (dots only)")]
 _FORMATS = ["fixed", "sci", "general", "mixed"]
 
 
@@ -31,13 +35,14 @@ class PeakDetectionDialog(QDialog):
 
     def __init__(self, parent=None, threshold=0.0, font_size=10, rotation=0, decimals=2,
                  format_type="x_only", number_format="fixed", show_labels=True, prominence=0.1,
-                 distance=0.05, peak_mode="Positive", apply_callback=None):
+                 distance=0.05, peak_mode="Positive", apply_callback=None, labels='band'):
         super().__init__(parent)
         self.setWindowTitle("Peak Detection Settings")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.apply_callback = apply_callback
         self.setup_ui(threshold, font_size, rotation, decimals, format_type, number_format,
                       show_labels, prominence, distance, peak_mode)
+        self.labels_combo.setCurrentIndex(max(self.labels_combo.findData(labels), 0))
 
     def setup_ui(self, threshold, font_size, rotation, decimals, format_type, number_format,
                  show_labels, prominence, distance, peak_mode):
@@ -82,6 +87,12 @@ class PeakDetectionDialog(QDialog):
         self.peak_mode_combo.setCurrentText(peak_mode)
         self.peak_mode_combo.setToolTip(tooltip_of("Peaks (mode)"))
         layout.addRow("Peak Detection Mode:", self.peak_mode_combo)
+
+        self.labels_combo = QComboBox(self)
+        for key, text in LABEL_MODES:
+            self.labels_combo.addItem(text, key)
+        self.labels_combo.setToolTip(tooltip_of("Labels"))
+        layout.addRow("Labels:", self.labels_combo)
 
         self.font_size_input = QSpinBox(self)
         self.font_size_input.setRange(6, 20)
@@ -146,7 +157,8 @@ class PeakDetectionDialog(QDialog):
                            else "x_only",
             'prominence': self.prominence_input.value(),
             'distance': self.distance_input.value(),
-            'peak_mode': self.peak_mode_combo.currentText()
+            'peak_mode': self.peak_mode_combo.currentText(),
+            'labels': self.labels_combo.currentData(),
         }
 
     def set_settings(self, s):
@@ -160,6 +172,7 @@ class PeakDetectionDialog(QDialog):
         self.number_format_combo.setCurrentIndex(_FORMATS.index(s['number_format']))
         self.format_type_combo.setCurrentText("X and Y values" if s['format_type'] == "both"
                                               else "X value only")
+        self.labels_combo.setCurrentIndex(max(self.labels_combo.findData(s.get('labels', 'band')), 0))
 
     def reset_defaults(self):
         self.set_settings(DEFAULTS)

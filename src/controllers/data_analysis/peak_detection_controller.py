@@ -19,6 +19,7 @@ class PeakDetectionController:
         self.peak_decimals = DEFAULTS['decimals']
         self.peak_number_format = DEFAULTS['number_format']
         self.peak_format_type = DEFAULTS['format_type']
+        self.peak_labels = DEFAULTS['labels']          # once per band, every peak, ...
         self.show_labels = True
 
     def show_dialog(self):
@@ -36,6 +37,7 @@ class PeakDetectionController:
             format_type=self.peak_format_type,
             number_format=self.peak_number_format,
             apply_callback=self.apply_settings,
+            labels=self.peak_labels,
         )
         dialog.peak_controller = self              # its "Peak list..." button
         self.dialog = dialog
@@ -53,6 +55,7 @@ class PeakDetectionController:
         self.peak_prominence = settings['prominence']
         self.peak_distance = settings['distance']
         self.peak_detection_mode = settings['peak_mode']
+        self.peak_labels = settings.get('labels', self.peak_labels)
         self.detect_peaks()
 
     def detect_peaks(self):
@@ -69,8 +72,27 @@ class PeakDetectionController:
             self.show_labels,
             self.peak_prominence,
             self.peak_distance,
-            self.peak_detection_mode
+            self.peak_detection_mode,
+            labels=self.peak_labels,
+            current_label=self._current_line_label(),
         )
+
+    def _current_line_label(self):
+        """The legend text of the spectrum highlighted in the spectra list
+        (what its line on the plot is called), or None."""
+        from PyQt5.QtCore import Qt
+        from src.modules.utils.spectrum_identity import spectrum_key
+        widget = getattr(self.controller, 'spectra_list_widget', None)
+        item = widget.currentItem() if widget is not None else None
+        if item is None:
+            return None
+        key = item.data(Qt.UserRole)
+        for sp in getattr(self.controller, 'original_spectra', []) or []:
+            if spectrum_key(sp) == key:
+                label = sp.get('label', '')
+                shown = getattr(self.controller, '_display_labels', None) or {}
+                return shown.get(label, label)
+        return None
 
     def show_peak_list(self, spectra=None):
         """Right-click on the plot -> Peak list...: every peak of the selected

@@ -64,12 +64,22 @@ def get_peak_detection_help_content():
             <td><em>Positive</em> finds local maxima (upward peaks),
             <em>Negative</em> finds local minima (downward dips/troughs),
             <em>Both</em> finds both at once.</td></tr>
+        <tr><td><strong>Labels</strong></td>
+            <td>Which peaks get their position written. <em>Once per band</em> (the
+            default): one number per band, above its highest peak &mdash; the peaks of all
+            plotted spectra at about the same position (within half of their typical FWHM, as
+            &ldquo;same band within &plusmn;&rdquo; in the <a href="#peak-list">Peak list</a>) are
+            one band, and the number is the band's position (the median of its peaks). So eleven
+            similar spectra show 7 numbers, not 70. <em>On every peak</em>: each peak its own
+            number. <em>Only the current spectrum</em>: the peaks of the spectrum highlighted in
+            the spectra list. <em>None</em>: no numbers. The red dots mark every peak in all
+            cases.</td></tr>
         <tr><td><strong>Peak Value Font Size / Text Rotation / Decimal
             Places / Number Format / Display Format</strong></td>
             <td>Purely cosmetic — control how (and whether) each marker's
             coordinates are labeled on the plot.</td></tr>
     </table>
-    <p>Defaults: threshold 0, prominence 0.1, distance 0.05, Positive; font size 10,
+    <p>Defaults: threshold 0, prominence 0.1, distance 0.05, Positive; labels once per band; font size 10,
     rotation 0, 2 decimal places, fixed point, x value only.</p>
 
     <hr>

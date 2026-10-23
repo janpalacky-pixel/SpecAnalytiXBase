@@ -9,6 +9,13 @@ from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QPushButton, QTextBrowser
 from src.modules.data_analysis import peak_list as pl
 
 LABEL_HELP = [
+    ("Labels", "Which peaks get their number written. Once per band: one number per band, "
+               "above its highest peak - the peaks of all spectra at about the same position are "
+               "one band (as in the Peak list) and the number is the band's position; so many "
+               "similar spectra do not cover the plot with the same numbers. On every peak: each "
+               "peak its own number. Only the current spectrum: the peaks of the spectrum "
+               "highlighted in the spectra list. None: no numbers. The red dots mark every peak "
+               "in all cases.", "Once per band"),
     ("Font size", "The size of the numbers written next to the peaks.", "10"),
     ("Text rotation", "The angle of those numbers, in degrees (0 = horizontal).", "0"),
     ("Decimal places", "How many decimals the numbers have.", "2"),

@@ -2526,6 +2526,7 @@ class MainController(QMainWindow):
         display_labels = shorten_spectra_labels(
             plot_spectra, self.checkBox_shorten_names.isChecked()
         )
+        self._display_labels = display_labels      # Detect Peaks: which line is which spectrum
 
         if plot_type == "Grid plot":
 
