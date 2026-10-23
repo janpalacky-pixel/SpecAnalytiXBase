@@ -5,7 +5,8 @@ spectra - position, height, prominence and width at half height (FWHM) -
 to copy into Excel or export (right-click on the plot -> Peak list...).
 "Refine by fitting" fits every found peak (refine_by_fitting, with the
 2D map's peak fit, peak_fit_map.py) for a position between the points,
-FWHM, height above the background, area and R\u00b2. Qt-free.
+FWHM, height above the background, area and R\u00b2; band_table turns the
+list round (one row per spectrum, one column per band). Qt-free.
 
 The settings are those of Detect Peaks, all relative to the spectrum:
   threshold   a peak must be higher than min + threshold * (max - min)
@@ -224,6 +225,8 @@ def refine_by_fitting(rows, index, spectra, shape='Gaussian', baseline='Linear',
 def rows_as_text(rows, columns=COLUMNS):
     """Tab-separated, with a header line (Excel pastes it into cells)."""
     def cell(v):
+        if v is None or (isinstance(v, float) and not np.isfinite(v)):
+            return ''                                  # no value (e.g. no peak in that band)
         return repr(v) if isinstance(v, float) else str(v)
     return '\n'.join(['\t'.join(columns)] + ['\t'.join(cell(v) for v in r) for r in rows]) + '\n'
 
@@ -326,6 +329,39 @@ def band_label(value, all_values):
     if span >= 50 or abs(value) >= 1000:
         return f'{value:.0f}'
     return f'{value:.4g}'
+
+
+def band_table(rows, index, spectra, value_column, tolerance, stored_keys=()):
+    """The peak list turned round, for Excel: one row per spectrum (in the
+    order of `spectra`), one column per band - the peaks of all spectra at
+    the same position (within the tolerance, band_positions) - holding
+    `value_column` of that peak (e.g. its height or fitted area); before the
+    bands, the values stored with each spectrum (`stored_keys`, e.g.
+    temperature_C). A spectrum without a peak in a band gets None (an
+    empty cell). Two peaks of one spectrum in one band (the tolerance is
+    larger than their distance): the one nearer the band's position is
+    used and counted in `merged`.
+    Returns (columns, table_rows, merged)."""
+    from src.modules.visualization_analysis import group_statistics as gs
+    bands = band_positions(rows, tolerance)
+    centres = sorted(set(bands))
+    labels = [band_label(c, centres) for c in centres]
+    pos, value = NUMERIC['Position (x)'], ALL_COLUMNS.index(value_column)
+    cells, merged = {}, 0
+    for row, i, b in zip(rows, index, bands):
+        distance = abs(float(row[pos]) - b)
+        v = row[value] if value < len(row) else None
+        if (i, b) in cells:
+            merged += 1
+            if distance >= cells[(i, b)][0]:
+                continue
+        cells[(i, b)] = (distance, v)
+    table = []
+    for i, s in enumerate(spectra):
+        table.append([str(s.get('label', ''))]
+                     + [gs.property_value(s, k) for k in stored_keys]
+                     + [cells.get((i, c), (0, None))[1] for c in centres])
+    return ['Spectrum'] + list(stored_keys) + labels, table, merged
 
 
 def plot_values(rows, index, spectra, x_key, y_name, tolerance=0.0):

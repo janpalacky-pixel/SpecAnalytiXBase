@@ -175,6 +175,19 @@ def get_peak_detection_help_content():
     must be to count as one band. <b>Only the selected rows</b> draws the rows selected in the
     table; <b>Legend</b> shows or hides the legend. <b>Copy plot</b> puts the plot on the
     clipboard for Word or PowerPoint; the toolbar zooms and saves it.</p>
+    <h3 id="band-table">Band table</h3>
+    <p>The tab <b>Band table</b> turns the list round for Excel: <b>one row per spectrum</b> (in the
+    order of the spectra list) and <b>one column per band</b> &mdash; the peaks of all spectra at the
+    same position, within <b>same band within &plusmn;</b> (the same setting as in the tab Plot),
+    named by their position (686, 1093, &hellip;). Each cell holds the chosen <b>Value</b> of that
+    spectrum's peak in that band: position, height, prominence or FWHM &mdash; with <b>Refine by
+    fitting</b> also the fitted position, FWHM, height, area or R&sup2;. An empty cell: the spectrum
+    has no peak in that band (e.g. a band that disappears on heating). <b>Stored values</b> adds the
+    values stored with the spectra (e.g. <code>temperature_C</code>, pH) as columns before the
+    bands, so for example the area of every band against the temperature is ready to plot in
+    Excel. If one spectrum has two peaks in one band, the one nearer the band's position is shown
+    and the line under the table says so &mdash; lower the &plusmn; distance to split them. With
+    this tab open, <b>Copy</b> (Ctrl+C) and <b>Export&hellip;</b> take the whole band table.</p>
 
     <hr>
     <h2>Clearing markers</h2>

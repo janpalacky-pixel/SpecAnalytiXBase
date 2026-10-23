@@ -6,7 +6,8 @@ to copy into Excel or export; the tab "Plot" draws one number of the peaks
 against another (e.g. the position against the spectrum, to follow a band
 through a series). Reset to defaults and the orange "?" (what each setting
 means). "Refine by fitting" adds fitted position, FWHM, height, area and R\u00b2
-columns. src/modules/data_analysis/peak_list.py."""
+columns; the tab "Band table" turns the list round for Excel (one row per
+spectrum, one column per band). src/modules/data_analysis/peak_list.py."""
 
 import numpy as np
 from PyQt5.QtCore import Qt
@@ -125,19 +126,23 @@ class PeakListDialog(QDialog):
         self.table.setSortingEnabled(True)            # a click on a heading sorts by it
         self.tabs.addTab(self.table, "Table")
         self.tabs.addTab(self._build_plot_tab(), "Plot")
+        self.tabs.addTab(self._build_band_tab(), "Band table")
         self.tabs.currentChanged.connect(lambda _: self._draw_if_shown())
         layout.addWidget(self.tabs, 1)
         QShortcut(QKeySequence.Copy, self.table, activated=self.copy)
+        QShortcut(QKeySequence.Copy, self.band_table_widget, activated=self.copy)
         self.summary = QLabel("")
         layout.addWidget(self.summary)
 
         buttons = QHBoxLayout()
         self.copy_button = QPushButton("Copy")
         self.copy_button.setToolTip("Copy the selected rows (or all, when none is selected) with the "
-                                    "column names, e.g. into Excel")
+                                    "column names, e.g. into Excel; in the tab Band table: the "
+                                    "whole band table")
         self.copy_button.clicked.connect(self.copy)
         self.export_button = QPushButton("Export…")
-        self.export_button.setToolTip("Save the peak list as Excel or CSV")
+        self.export_button.setToolTip("Save the peak list (in the tab Band table: the band table) "
+                                      "as Excel or CSV")
         self.export_button.clicked.connect(self.export)
         self.select_all_button = QPushButton("Select all")
         self.select_all_button.setToolTip("Select all rows of the table (also Ctrl+A)")
@@ -293,6 +298,101 @@ class PeakListDialog(QDialog):
         self._plot_stale = True
         if self.tabs.currentIndex() == 1:
             self.draw_plot()
+        elif self.tabs.currentIndex() == 2:
+            self.fill_band_table()
+
+    # -- the tab Band table
+    def _build_band_tab(self):
+        """One row per spectrum, one column per band (the peaks of all
+        spectra at the same position), holding the chosen value - the
+        peak list turned round for Excel (pl.band_table)."""
+        page = QWidget()
+        v = QVBoxLayout(page)
+        row = QHBoxLayout()
+        self.band_value_combo = QComboBox()
+        self.band_value_combo.addItems(pl.y_choices(False))
+        self.band_value_combo.setToolTip("What each cell holds: the position, height, prominence "
+                                         "or FWHM of that spectrum's peak in that band (with "
+                                         "Refine by fitting also the fitted values)")
+        self.band_tolerance = QDoubleSpinBox()
+        self.band_tolerance.setRange(0.0, 1e9)
+        self.band_tolerance.setDecimals(3)
+        self.band_tolerance.setKeyboardTracking(False)
+        self.band_tolerance.setToolTip(
+            "Peaks of different spectra closer than this (in x units) are one band - the same "
+            "setting as \"same band within \u00b1\" in the tab Plot. Raise it when one band is "
+            "split into two columns, lower it when two bands share one.")
+        self.band_stored_check = QCheckBox("Stored values")
+        self.band_stored_check.setChecked(True)
+        self.band_stored_check.setToolTip("Also the values stored with the spectra (e.g. "
+                                          "temperature_C, pH) as columns before the bands")
+        for label, w in (("Value:", self.band_value_combo),
+                         ("same band within \u00b1", self.band_tolerance)):
+            row.addWidget(QLabel(label))
+            row.addWidget(w)
+        row.addWidget(self.band_stored_check)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.band_table_widget = QTableWidget(0, 1)
+        self.band_table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        # in the order of the spectra list until a heading is clicked
+        self.band_table_widget.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+        self.band_table_widget.setSortingEnabled(True)
+        self.band_table_widget.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        self.band_table_widget.horizontalHeader().resizeSection(0, 260)
+        v.addWidget(self.band_table_widget, 1)
+        self.band_info = QLabel("")
+        self.band_info.setWordWrap(True)
+        v.addWidget(self.band_info)
+        # one tolerance for the Plot and the Band table
+        self.band_tolerance.valueChanged.connect(
+            lambda val: self.tolerance.value() != val and self.tolerance.setValue(val))
+        self.tolerance.valueChanged.connect(
+            lambda val: self.band_tolerance.value() != val and self.band_tolerance.setValue(val))
+        self.band_value_combo.currentIndexChanged.connect(self._draw_if_shown)
+        self.band_stored_check.toggled.connect(self._draw_if_shown)
+        return page
+
+    def fill_band_table(self):
+        """Fill the tab Band table from the current peaks; returns
+        (columns, rows) as shown (also used by Copy and Export)."""
+        from src.modules.visualization import color_by_value as cbv
+        if abs(self.band_tolerance.value() - self.tolerance.value()) > 1e-12:
+            self.band_tolerance.blockSignals(True)
+            self.band_tolerance.setValue(self.tolerance.value())
+            self.band_tolerance.blockSignals(False)
+        keys = cbv.metadata_keys(self.spectra) if self.band_stored_check.isChecked() else []
+        columns, rows, merged = pl.band_table(
+            self.rows, self.row_spectrum, self.spectra, self.band_value_combo.currentText(),
+            self.tolerance.value(), keys)
+        t = self.band_table_widget
+        t.setSortingEnabled(False)
+        t.clear()
+        t.setColumnCount(len(columns))
+        t.setHorizontalHeaderLabels(columns)
+        t.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            for c, val in enumerate(row):
+                item = QTableWidgetItem()
+                if isinstance(val, (int, float)) and np.isfinite(val):
+                    item.setData(Qt.DisplayRole, float(f'{val:.6g}'))
+                    item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                elif isinstance(val, str):
+                    item.setText(val)
+                t.setItem(r, c, item)                       # empty: no peak in that band
+        for c in range(1, len(columns)):
+            t.resizeColumnToContents(c)
+        t.setSortingEnabled(True)
+        n_bands = len(columns) - 1 - len(keys)
+        text = (f"{len(rows)} spectra \u00d7 {n_bands} bands, value: "
+                f"{self.band_value_combo.currentText()}. Empty cell: no peak of that spectrum "
+                "in that band. Copy (Ctrl+C) or Export\u2026 for Excel.")
+        if merged:
+            text += (f" {merged} spectrum/spectra had two peaks in one band - the one nearer the "
+                     "band's position is shown; lower \"same band within \u00b1\" to split them.")
+        self.band_info.setText(text)
+        self._band_shown = (columns, rows)
+        return columns, rows
 
     def _selection_changed(self):
         if self.selected_check.isChecked():
@@ -540,6 +640,13 @@ class PeakListDialog(QDialog):
         for text, key in pl.x_choices(self.spectra, fitted=fitted):
             self.x_combo.addItem(text, key)
         self.y_combo.addItems(pl.y_choices(fitted))
+        band_text = self.band_value_combo.currentText()
+        self.band_value_combo.blockSignals(True)
+        self.band_value_combo.clear()
+        self.band_value_combo.addItems(pl.y_choices(fitted))
+        i = self.band_value_combo.findText(band_text)
+        self.band_value_combo.setCurrentIndex(max(i, 0))
+        self.band_value_combo.blockSignals(False)
         for combo, text in ((self.x_combo, x_text), (self.y_combo, y_text)):
             i = combo.findText(text)
             combo.setCurrentIndex(max(i, 0))
@@ -562,20 +669,31 @@ class PeakListDialog(QDialog):
         return out
 
     def copy(self):
+        if self.tabs.currentIndex() == 2:                # the tab Band table: all of it
+            columns, rows = self.fill_band_table()
+            QApplication.clipboard().setText(pl.rows_as_text(rows, columns))
+            self.summary.setText(f"Copied the band table ({len(rows)} rows, with the column "
+                                 "names).")
+            return
         rows = self._shown_rows(selected_only=True)
         QApplication.clipboard().setText(pl.rows_as_text(rows, self.columns))
         self.summary.setText(f"Copied {len(rows)} rows (with the column names).")
 
     def export(self):
         path, chosen = QFileDialog.getSaveFileName(
-            self, "Export the peak list", "peak_list.xlsx",
+            self, "Export the peak list",
+            "band_table.xlsx" if self.tabs.currentIndex() == 2 else "peak_list.xlsx",
             "Excel (*.xlsx);;CSV (*.csv);;Text, tab-separated (*.txt)")
         if not path:
             return None
         if '.' not in path.replace('\\', '/').split('/')[-1]:
             path += {'CSV': '.csv', 'Text': '.txt'}.get(chosen.split(' ')[0], '.xlsx')
         try:
-            pl.export(self.rows, path, self.columns)
+            if self.tabs.currentIndex() == 2:            # the tab Band table
+                columns, rows = self.fill_band_table()
+                pl.export(rows, path, columns)
+            else:
+                pl.export(self.rows, path, self.columns)
         except Exception as exc:
             QMessageBox.warning(self, "Export", f"The peak list could not be saved:\n\n{exc}")
             return None
