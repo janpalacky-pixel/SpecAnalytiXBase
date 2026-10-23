@@ -12,7 +12,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.backend_bases import MouseEvent
+from PyQt5.QtCore import QEvent, QPointF, Qt
+from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 app = QApplication.instance() or QApplication([])
@@ -54,12 +55,32 @@ def _new_window(mc, plot_type):
     fig = create_external_figure(mc)
     gc.collect()                    # the throw-away widget and its toolbar are gone
     app.processEvents()
-    fig.canvas.callbacks.exception_handler = None      # an error in a handler fails the test
+    fig.handler_errors = []         # an error in a mouse handler fails the test
+    fig.canvas.callbacks.exception_handler = fig.handler_errors.append
     return fig
 
 
-def _mouse(fig, kind, xy, button=None):
-    fig.canvas.callbacks.process(kind, MouseEvent(kind, fig.canvas, *xy, button=button))
+_QT_KIND = {'button_press_event': QEvent.MouseButtonPress,
+            'motion_notify_event': QEvent.MouseMove,
+            'button_release_event': QEvent.MouseButtonRelease}
+
+
+def _mouse(fig, kind, xy, held=False):
+    """The mouse at xy (pixels from the bottom left, as transData gives them),
+    with the left button pressed, moved (held down or not) or released.
+
+    Sent to the plot as a real mouse event of Qt, the way a real mouse sends
+    it: matplotlib reads the position and the buttons from it itself, so the
+    test does not depend on what a matplotlib version needs to know."""
+    canvas = fig.canvas
+    ratio = canvas.device_pixel_ratio
+    pos = QPointF(xy[0] / ratio, (canvas.figure.bbox.height - xy[1]) / ratio)
+    button = Qt.NoButton if kind == 'motion_notify_event' else Qt.LeftButton
+    held_now = kind == 'button_press_event' or (kind == 'motion_notify_event' and held)
+    QApplication.sendEvent(canvas, QMouseEvent(_QT_KIND[kind], pos, button,
+                                               Qt.LeftButton if held_now else Qt.NoButton,
+                                               Qt.NoModifier))
+    assert not fig.handler_errors, fig.handler_errors[0]
 
 
 @pytest.mark.parametrize('plot_type', PLOT_TYPES)
@@ -86,9 +107,9 @@ def test_zoom_works_in_the_new_window(mc):
         fig.canvas.manager.toolbar.zoom()
         start = ax.transData.transform((a, y + 0.1 * np.ptp(ax.get_ylim())))
         end = ax.transData.transform((b, y - 0.1 * np.ptp(ax.get_ylim())))
-        _mouse(fig, 'button_press_event', start, button=1)
-        _mouse(fig, 'motion_notify_event', end, button=1)
-        _mouse(fig, 'button_release_event', end, button=1)
+        _mouse(fig, 'button_press_event', start)
+        _mouse(fig, 'motion_notify_event', end, held=True)
+        _mouse(fig, 'button_release_event', end)
         assert sorted(ax.get_xlim()) == pytest.approx([a, b], rel=0.02)
     finally:
         plt.close(fig)

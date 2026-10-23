@@ -91,7 +91,8 @@ def test_narrow_row_gets_no_icons(installed):
 
 def test_text_change_follows(installed):
     dlg = QDialog()
-    b = QPushButton('Close', dlg)
+    b = QPushButton('Close')
+    QVBoxLayout(dlg).addWidget(b)          # the layout makes the button wider for its icon
     dlg.show()
     _pump()
     assert b.property('_autoIconName') == 'std:SP_DialogCloseButton'
