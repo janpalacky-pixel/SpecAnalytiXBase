@@ -5,8 +5,10 @@ height, prominence, width at half height - with the settings of Detect Peaks,
 to copy into Excel or export; the tab "Plot" draws one number of the peaks
 against another (e.g. the position against the spectrum, to follow a band
 through a series). Reset to defaults and the orange "?" (what each setting
-means). src/modules/data_analysis/peak_list.py."""
+means). "Refine by fitting" adds fitted position, FWHM, height, area and R\u00b2
+columns. src/modules/data_analysis/peak_list.py."""
 
+import numpy as np
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog,
@@ -81,6 +83,37 @@ class PeakListDialog(QDialog):
         form.addStretch(1)
         layout.addLayout(form)
 
+        # Refine by fitting: each found peak fitted with a model band plus a
+        # background (the same fit as the 2D map's peak-fit maps) - its
+        # position between the measured points, width, height above the
+        # background, area and fit quality, in extra columns.
+        from src.modules.visualization_analysis import peak_fit_map as pfm
+        fit_row = QHBoxLayout()
+        self.refine_check = QCheckBox("Refine by fitting")
+        self.refine_check.setToolTip(
+            "Fit every found peak with a model band plus a background (least squares, the same "
+            "fit as the 2D map's peak-fit maps): adds Fitted position (between the measured "
+            "points), Fitted FWHM, Fitted height (above the background), Fitted area and R\u00b2. "
+            "Each peak is fitted over \u00b1 1.5 FWHM around it, at most halfway to the next peak.")
+        self.fit_shape = QComboBox()
+        self.fit_shape.addItems(pfm.SHAPES)
+        self.fit_shape.setToolTip("Gaussian: broad bands, solids. Lorentzian: narrow bands of "
+                                  "liquids and gases. Pseudo-Voigt: a mix of both (fitted).")
+        self.fit_baseline = QComboBox()
+        self.fit_baseline.addItems(pfm.BASELINES)
+        self.fit_baseline.setCurrentText('Linear')
+        self.fit_baseline.setToolTip("The background under each peak: Linear (a sloping one), "
+                                     "Constant, or None (baseline-corrected spectra).")
+        self.fit_info = QLabel("")
+        self.fit_info.setStyleSheet("color: grey;")
+        fit_row.addWidget(self.refine_check)
+        for label, w in (("shape:", self.fit_shape), ("background:", self.fit_baseline)):
+            fit_row.addWidget(QLabel(label))
+            fit_row.addWidget(w)
+        fit_row.addWidget(self.fit_info, 1)
+        layout.addLayout(fit_row)
+        self._fit_controls_enabled()
+
         self.tabs = QTabWidget()
         self.table = QTableWidget(0, len(pl.COLUMNS))
         self.table.setHorizontalHeaderLabels(pl.COLUMNS)
@@ -128,6 +161,9 @@ class PeakListDialog(QDialog):
         for w in (self.threshold, self.prominence, self.distance):
             w.valueChanged.connect(self.refresh)
         self.mode.currentIndexChanged.connect(self.refresh)
+        self.refine_check.toggled.connect(self._refine_toggled)
+        for w in (self.fit_shape, self.fit_baseline):
+            w.currentIndexChanged.connect(lambda *_: self.refine_check.isChecked() and self.refresh())
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.refresh()
 
@@ -142,7 +178,7 @@ class PeakListDialog(QDialog):
         row = QHBoxLayout()
         self.x_combo = QComboBox()
         for text, key in pl.x_choices(self.spectra):
-            self.x_combo.addItem(text, key)
+            self.x_combo.addItem(text, key)      # refilled by _refill_plot_choices
         self.x_combo.setToolTip("x-axis: a value of the spectrum (its order, a value stored with "
                                 "it, a number in its name) or a number of the peak")
         self.y_combo = QComboBox()
@@ -412,12 +448,25 @@ class PeakListDialog(QDialog):
             self.rows, self.row_spectrum = pl.peak_table_with_index(self.spectra, **s)
         finally:
             QApplication.restoreOverrideCursor()
+        self.fit_info.setText("")
+        if self.refine_check.isChecked() and self.rows:
+            if not self._refine_rows():
+                self.refine_check.blockSignals(True)
+                self.refine_check.setChecked(False)      # cancelled: the plain list
+                self.refine_check.blockSignals(False)
+                self._fit_controls_enabled()
+                self._refill_plot_choices()
+        self.columns = pl.ALL_COLUMNS if self.refine_check.isChecked() else pl.COLUMNS
         self.table.setSortingEnabled(False)
+        self.table.setColumnCount(len(self.columns))
+        self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setRowCount(len(self.rows))
         for r, row in enumerate(self.rows):
             for c, v in enumerate(row):
                 item = QTableWidgetItem()
-                if isinstance(v, (int, float)):
+                if isinstance(v, float) and not np.isfinite(v):
+                    pass                                    # a rejected fit: an empty cell
+                elif isinstance(v, (int, float)):
                     item.setData(Qt.DisplayRole, float(f'{v:.6g}') if isinstance(v, float) else v)
                     item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                 else:
@@ -437,6 +486,66 @@ class PeakListDialog(QDialog):
             self.on_settings(s)
         self._draw_if_shown()
 
+    # -- Refine by fitting
+    def _fit_controls_enabled(self):
+        on = self.refine_check.isChecked()
+        self.fit_shape.setEnabled(on)
+        self.fit_baseline.setEnabled(on)
+
+    def _refine_toggled(self, *_):
+        self._fit_controls_enabled()
+        self._refill_plot_choices()
+        self.refresh()
+
+    def _refine_rows(self):
+        """Fit every peak (self.rows gets the fitted columns). A progress
+        window with Cancel for long lists; False when cancelled."""
+        from PyQt5.QtWidgets import QProgressDialog
+        from src.modules.utils.progress_utils import OperationCancelled
+        dialog = None
+        if len(self.rows) > 200:
+            dialog = QProgressDialog("Fitting the peaks\u2026", "Cancel", 0, len(self.rows), self)
+            dialog.setWindowTitle("Refine by fitting")
+            dialog.setMinimumDuration(300)
+
+        def progress(done, total):
+            if dialog is not None:
+                dialog.setMaximum(total)
+                dialog.setValue(done)
+                QApplication.processEvents()
+                if dialog.wasCanceled():
+                    raise OperationCancelled()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            self.rows, text = pl.refine_by_fitting(
+                self.rows, self.row_spectrum, self.spectra, self.fit_shape.currentText(),
+                self.fit_baseline.currentText(), progress=progress)
+        except OperationCancelled:
+            return False
+        finally:
+            QApplication.restoreOverrideCursor()
+            if dialog is not None:
+                dialog.close()
+        self.fit_info.setText(text)
+        return True
+
+    def _refill_plot_choices(self):
+        """x and y of the tab Plot, with the fitted values when Refine by
+        fitting is on; the current choices are kept when still there."""
+        fitted = self.refine_check.isChecked()
+        x_text, y_text = self.x_combo.currentText(), self.y_combo.currentText()
+        for combo in (self.x_combo, self.y_combo):
+            combo.blockSignals(True)
+            combo.clear()
+        for text, key in pl.x_choices(self.spectra, fitted=fitted):
+            self.x_combo.addItem(text, key)
+        self.y_combo.addItems(pl.y_choices(fitted))
+        for combo, text in ((self.x_combo, x_text), (self.y_combo, y_text)):
+            i = combo.findText(text)
+            combo.setCurrentIndex(max(i, 0))
+            combo.blockSignals(False)
+        self._join_possible()
+
     def _shown_rows(self, selected_only):
         rows = range(self.table.rowCount())
         if selected_only:
@@ -448,13 +557,13 @@ class PeakListDialog(QDialog):
             for c in range(self.table.columnCount()):
                 item = self.table.item(r, c)
                 d = item.data(Qt.DisplayRole) if item is not None else ''
-                vals.append(d)
+                vals.append('' if d is None else d)          # an empty cell (rejected fit)
             out.append(vals)
         return out
 
     def copy(self):
         rows = self._shown_rows(selected_only=True)
-        QApplication.clipboard().setText(pl.rows_as_text(rows))
+        QApplication.clipboard().setText(pl.rows_as_text(rows, self.columns))
         self.summary.setText(f"Copied {len(rows)} rows (with the column names).")
 
     def export(self):
@@ -466,7 +575,7 @@ class PeakListDialog(QDialog):
         if '.' not in path.replace('\\', '/').split('/')[-1]:
             path += {'CSV': '.csv', 'Text': '.txt'}.get(chosen.split(' ')[0], '.xlsx')
         try:
-            pl.export(self.rows, path)
+            pl.export(self.rows, path, self.columns)
         except Exception as exc:
             QMessageBox.warning(self, "Export", f"The peak list could not be saved:\n\n{exc}")
             return None

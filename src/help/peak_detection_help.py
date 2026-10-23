@@ -93,7 +93,7 @@ def get_peak_detection_help_content():
             or minimum.</li>
         <li><b>Position (x)</b> and <b>Height (y)</b>: of the highest (or lowest) measured point
             &mdash; so the position is as precise as the point spacing. For a position between the
-            points, use Peak Fitting.</li>
+            points, tick <b>Refine by fitting</b> (below).</li>
         <li><b>Prominence</b>: how far the peak stands out from its surroundings.</li>
         <li><b>FWHM</b>: the width at half of the prominence, and where it starts and ends
             (<b>Left / Right half-height x</b>), interpolated between the points (also for uneven
@@ -103,6 +103,29 @@ def get_peak_detection_help_content():
     into Excel with the column names; <b>Export&hellip;</b> saves the list as Excel or CSV.
     <b>Reset to defaults</b> and the orange <b>?</b> work as in the Peak Detection Settings (the
     <b>?</b> also explains the columns).</p>
+    <h3 id="refine-by-fitting">Refine by fitting</h3>
+    <p>Finding a peak and measuring it are two different jobs. The list <i>finds</i> the peaks from
+    the measured points, so its position and height are those of one measured point and the
+    width is read between the neighbouring valleys. Tick <b>Refine by fitting</b> to also
+    <i>measure</i> every found peak precisely: a model band (<b>shape</b>: Gaussian, Lorentzian or
+    Pseudo-Voigt) plus a <b>background</b> (Linear, Constant or None) is fitted by least squares
+    to the points around the peak &mdash; &plusmn; 1.5 &times; its FWHM, at least 5 points on each
+    side, but never beyond halfway to the next peak, so a neighbour is not fitted instead. It is
+    the same fit as the <a href="help://map2d#peak-fit">peak-fit maps of the 2D map</a>. Five
+    columns are added:</p>
+    <ul>
+        <li><b>Fitted position</b>: the centre of the fitted band &mdash; it can lie between the
+            measured points, so shifts smaller than the point spacing become visible.</li>
+        <li><b>Fitted FWHM</b>, <b>Fitted height</b> (above the fitted background) and
+            <b>Fitted area</b> (the band's own area, without the background &mdash; usually the
+            best measure of the amount).</li>
+        <li><b>R&sup2;</b>: how well the model describes the points (1 = perfectly).</li>
+    </ul>
+    <p>A peak whose fit is rejected (e.g. two overlapping bands in its window, or too few points)
+    gets empty cells; the line next to the settings says how many. The fitted columns are copied,
+    exported and offered in the tab Plot too. Long lists are fitted on several processor cores,
+    with a progress bar and Cancel. For several overlapping peaks of one spectrum fitted together,
+    use the Peak Fitting tool.</p>
     <h3 id="peak-plot">Plot</h3>
     <p>The tab <b>Plot</b> draws one number of the peaks against another:</p>
     <ul>
@@ -124,7 +147,8 @@ def get_peak_detection_help_content():
             as its neighbouring positions are within the &plusmn; distance; two bands closer than it
             become one (then lower it). Unlike <b>Position (x)</b>, all spectra share the band's
             position;</li>
-        <li><b>y</b>: position, height, prominence or FWHM.</li>
+        <li><b>y</b>: position, height, prominence or FWHM &mdash; with <b>Refine by fitting</b>
+            also the fitted values (also offered as x).</li>
     </ul>
     <p>For example the position against the temperature shows how a band shifts through a
     melting series, and the height against the position shows which bands are strong. The

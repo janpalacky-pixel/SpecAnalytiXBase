@@ -3,7 +3,9 @@
 Peaks, which labels them on the plot) and a list of them for all selected
 spectra - position, height, prominence and width at half height (FWHM) -
 to copy into Excel or export (right-click on the plot -> Peak list...).
-Qt-free.
+"Refine by fitting" fits every found peak (refine_by_fitting, with the
+2D map's peak fit, peak_fit_map.py) for a position between the points,
+FWHM, height above the background, area and R\u00b2. Qt-free.
 
 The settings are those of Detect Peaks, all relative to the spectrum:
   threshold   a peak must be higher than min + threshold * (max - min)
@@ -20,6 +22,15 @@ COLUMNS = ['Spectrum', 'Peak', 'Kind', 'Position (x)', 'Height (y)', 'Prominence
 # the numbers of a peak that can be plotted (column name -> index in a row)
 NUMERIC = {name: COLUMNS.index(name) for name in
            ('Position (x)', 'Height (y)', 'Prominence', 'FWHM', 'Peak')}
+# "Refine by fitting": each peak fitted with a model band plus a background
+# (the same fit as the 2D map's peak-fit maps, peak_fit_map.py) - its
+# position between the measured points, width, height above the
+# background, area and fit quality.
+FIT_COLUMNS = ['Fitted position', 'Fitted FWHM', 'Fitted height', 'Fitted area', 'R\u00b2']
+ALL_COLUMNS = COLUMNS + FIT_COLUMNS
+NUMERIC.update({name: ALL_COLUMNS.index(name) for name in FIT_COLUMNS})
+FIT_EXTENT = 1.5           # the fit window: the peak \u00b1 1.5 \u00d7 its FWHM ...
+FIT_MIN_POINTS = 5         # ... but at least 5 points on each side
 # the settings of Detect Peaks and the Peak list when nothing was changed
 DEFAULTS = {'threshold': 0.5, 'prominence': 0.1, 'distance': 0.05, 'mode': 'Positive'}
 
@@ -53,6 +64,13 @@ COLUMNS_HELP = [
      "Of the highest (or lowest) measured point, so as precise as the point spacing. For a "
      "position between the points use Peak Fitting.", ""),
     ("Prominence", "How far the peak stands out from the valleys around it (in y units).", ""),
+    ("Fitted position, FWHM, height, area, R\u00b2",
+     "With Refine by fitting: a model band (Gaussian, Lorentzian or Pseudo-Voigt) plus a "
+     "background fitted by least squares to the points around the peak (\u00b1 1.5 FWHM, at most "
+     "halfway to the next peak) - the same fit as the 2D map's peak-fit maps. The position can "
+     "fall between the measured points; the height is above the fitted background; the area "
+     "is the band's own. R\u00b2: 1 = the model describes the points perfectly. Empty when the "
+     "fit is rejected (e.g. overlapping bands, too few points).", ""),
     ("FWHM, Left / Right half-height x",
      "The width at half of the prominence and where it starts and ends, interpolated between "
      "the points. Overlapping bands make it a rough estimate.", ""),
@@ -144,6 +162,65 @@ def settings_help_html(entries):
     return f'<table border="1" cellspacing="0" cellpadding="5" width="100%">{head}{body}</table>'
 
 
+def fit_windows(rows, index, spectra, extent=FIT_EXTENT, min_points=FIT_MIN_POINTS):
+    """For each row (peak) the points of its spectrum to fit: the peak
+    \u00b1 extent \u00d7 its FWHM, at least min_points on each side, but never
+    beyond halfway to the neighbouring peaks of the same spectrum (so a
+    neighbour is not fitted instead)."""
+    pos = NUMERIC['Position (x)']
+    fwhm_col = COLUMNS.index('FWHM')
+    by_spectrum = {}
+    for r, i in enumerate(index):
+        by_spectrum.setdefault(i, []).append(r)
+    windows = [None] * len(rows)
+    for i, members in by_spectrum.items():
+        x = np.asarray(spectra[i]['x_scale'], dtype=float)
+        y = np.asarray(spectra[i]['y_scale'], dtype=float)
+        order = np.argsort(x)
+        x, y = x[order], y[order]
+        centres = sorted((float(rows[r][pos]), r) for r in members)
+        for k, (x0, r) in enumerate(centres):
+            w = rows[r][fwhm_col]
+            w = float(w) if isinstance(w, (int, float)) and np.isfinite(w) and w > 0 else 0.0
+            j = int(np.argmin(np.abs(x - x0)))
+            lo_i = int(np.searchsorted(x, x0 - extent * w, side='left'))
+            hi_i = int(np.searchsorted(x, x0 + extent * w, side='right')) - 1
+            lo_i, hi_i = min(lo_i, j - min_points), max(hi_i, j + min_points)
+            if k > 0:                          # halfway to the previous peak
+                lo_i = max(lo_i, int(np.searchsorted(x, 0.5 * (centres[k - 1][0] + x0))))
+            if k + 1 < len(centres):           # ... and to the next one
+                hi_i = min(hi_i, int(np.searchsorted(x, 0.5 * (x0 + centres[k + 1][0]))) - 1)
+            lo_i, hi_i = max(lo_i, 0), min(hi_i, len(x) - 1)
+            windows[r] = (x[lo_i:hi_i + 1], y[lo_i:hi_i + 1])
+    return windows
+
+
+def refine_by_fitting(rows, index, spectra, shape='Gaussian', baseline='Linear', progress=None):
+    """(rows with the FIT_COLUMNS added, summary text). A rejected fit
+    gives NaN (an empty cell). progress(done, total) may raise
+    OperationCancelled. Large lists are fitted on several processor
+    cores, like a peak-fit map (same results, only faster)."""
+    from src.modules.visualization_analysis.peak_fit_map import PeakFitMapper
+    if not rows:
+        return [], ''
+    mapper = PeakFitMapper()
+    res = mapper.results(fit_windows(rows, index, spectra),
+                         {'shape': shape, 'baseline': baseline}, progress=progress)
+    out = []
+    for r, row in enumerate(rows):
+        ok = bool(res['ok'][r])
+        vals = [float(res[k][r]) if ok else float('nan')
+                for k in ('center', 'fwhm', 'height', 'area', 'r2')]
+        out.append(list(row[:len(COLUMNS)]) + vals)
+    n, ok = len(rows), int(np.sum(res['ok']))
+    info = mapper.last_run_info or {}
+    how = (f", on {info['workers']} processor cores" if info.get('mode') == 'parallel' else '')
+    text = f"Fitted {ok} of {n} peaks ({info.get('seconds', 0.0):.1f} s{how})."
+    if ok < n:
+        text += f" {n - ok} could not be fitted (empty cells): e.g. overlapping bands."
+    return out, text
+
+
 def rows_as_text(rows, columns=COLUMNS):
     """Tab-separated, with a header line (Excel pastes it into cells)."""
     def cell(v):
@@ -151,9 +228,9 @@ def rows_as_text(rows, columns=COLUMNS):
     return '\n'.join(['\t'.join(columns)] + ['\t'.join(cell(v) for v in r) for r in rows]) + '\n'
 
 
-def export(rows, path):
+def export(rows, path, columns=COLUMNS):
     import pandas as pd
-    frame = pd.DataFrame(rows, columns=COLUMNS)
+    frame = pd.DataFrame(rows, columns=list(columns))
     if path.lower().endswith('.xlsx'):
         frame.to_excel(path, index=False, sheet_name='Peaks')
     else:
@@ -165,7 +242,12 @@ def export(rows, path):
 Y_CHOICES = ['Position (x)', 'Height (y)', 'Prominence', 'FWHM']
 
 
-def x_choices(spectra):
+def y_choices(fitted=False):
+    """The y-axis choices; with Refine by fitting also the fitted values."""
+    return Y_CHOICES + (FIT_COLUMNS if fitted else [])
+
+
+def x_choices(spectra, fitted=False):
     """[(text, key)] for the x-axis of the peak plot: a value of the spectrum
     (its order, a value stored with it, a number in its name) or a number of
     the peak itself."""
@@ -190,7 +272,8 @@ def x_choices(spectra):
             settings = {'mode': 'name', 'number': i}
             if varies(settings):
                 out.append((f"Spectrum: {text} in the name", ('spectrum', settings)))
-    for name in ('Position (x)', 'Height (y)', 'Prominence', 'FWHM'):
+    for name in ('Position (x)', 'Height (y)', 'Prominence', 'FWHM') + \
+            (tuple(FIT_COLUMNS) if fitted else ()):
         out.append((name, ('column', name)))
     out.append(("Peak by its position, as labels (e.g. 686, 1093)", ('band', 'label')))
     out.append(("Peak by its position, on the x scale", ('band', 'position')))
