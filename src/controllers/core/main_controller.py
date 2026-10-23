@@ -1315,15 +1315,19 @@ class MainController(QMainWindow):
             QTabBar::tab {
                 background-color: #ECEEF2;
                 border: 1px solid #D0D3DA;
+                border-top: 2px solid #D0D3DA;
                 border-bottom: none;
                 border-radius: 4px 4px 0 0;
                 padding: 4px 12px;
                 color: #3A4A6B;
             }
+            /* The open tab: white, darker text and a blue line on top. Not in
+               bold: Qt measures a tab with the normal font, so a bold name
+               would be cut off. Only colours change here, never sizes. */
             QTabBar::tab:selected {
                 background-color: #FFFFFF;
                 color: #1A1A2E;
-                font-weight: bold;
+                border-top-color: #3A6EA5;
             }
             QTabBar::tab:hover {
                 background-color: #E3EAF4;
