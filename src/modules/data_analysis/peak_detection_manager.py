@@ -70,7 +70,13 @@ class PeakDetector:
                     self.peak_lines.append(dot)
 
             for x_val, y_val, kind in self._label_places(found, labels, current_label, pl):
-                x_str = self.format_number(x_val, number_format, decimals)
+                if isinstance(x_val, tuple):         # a band that moves: its range
+                    lo, hi, _ = x_val
+                    x_str = (f"{self.format_number(lo, number_format, decimals)}\u2013"
+                             f"{self.format_number(hi, number_format, decimals)}")
+                    x_val = x_val[2]
+                else:
+                    x_str = self.format_number(x_val, number_format, decimals)
                 y_str = self.format_number(y_val, number_format, decimals)
                 text = f"({x_str}, {y_str})" if format_type == "both" else x_str
                 self.peak_texts.append(ax.text(
@@ -80,7 +86,12 @@ class PeakDetector:
 
     @staticmethod
     def _label_places(found, labels, current_label, pl):
-        """[(x written, y of the peak it stands on, kind)] of one plot."""
+        """[(x written, y of the peak it stands on, kind)] of one plot. For
+        'band': x written is the band's position (the median of its peaks),
+        or - when its peaks spread over more than half of the "same band"
+        distance (a quarter of the typical peak width), i.e. the band moves
+        through the series, e.g. a CD minimum from 247 to 256 nm -
+        (lowest, highest, where to write it): written as a range."""
         if labels == 'none' or not found:
             return []
         if labels == 'current':
@@ -98,13 +109,17 @@ class PeakDetector:
                 r[pl.NUMERIC['Position (x)']] = p['x']
                 r[pl.NUMERIC['FWHM']] = p['fwhm']
                 rows.append(r)
-            centres = pl.band_positions(rows, pl.default_tolerance(rows))
+            tolerance = pl.default_tolerance(rows)
+            centres = pl.band_positions(rows, tolerance)
             bands = {}
             for p, c in zip(peaks, centres):
                 bands.setdefault(c, []).append(p)
             for c, members in bands.items():
                 top = (max if kind == 'max' else min)(members, key=lambda p: p['y'])
-                out.append((c, top['y'], kind))
+                lo = min(p['x'] for p in members)
+                hi = max(p['x'] for p in members)
+                written = (lo, hi, c) if hi - lo > tolerance / 2 else c
+                out.append((written, top['y'], kind))
         return out
 
     def clear_peaks(self, canvas):

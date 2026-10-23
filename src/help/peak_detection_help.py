@@ -70,7 +70,11 @@ def get_peak_detection_help_content():
             plotted spectra at about the same position (within half of their typical FWHM, as
             &ldquo;same band within &plusmn;&rdquo; in the <a href="#peak-list">Peak list</a>) are
             one band, and the number is the band's position (the median of its peaks). So eleven
-            similar spectra show 7 numbers, not 70. <em>On every peak</em>: each peak its own
+            similar spectra show 7 numbers, not 70. A band whose peaks <i>move</i> through the
+            series (spread over more than a quarter of the typical peak width) is written as its
+            range, e.g. <code>247.19&ndash;256.18</code>: in CD, an extremum of overlapping
+            positive and negative bands often shifts when the mixture changes, and one number
+            would hide that. <em>On every peak</em>: each peak its own
             number. <em>Only the current spectrum</em>: the peaks of the spectrum highlighted in
             the spectra list. <em>None</em>: no numbers. The red dots mark every peak in all
             cases.</td></tr>

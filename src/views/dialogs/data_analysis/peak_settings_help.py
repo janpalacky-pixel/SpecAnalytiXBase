@@ -11,7 +11,8 @@ from src.modules.data_analysis import peak_list as pl
 LABEL_HELP = [
     ("Labels", "Which peaks get their number written. Once per band: one number per band, "
                "above its highest peak - the peaks of all spectra at about the same position are "
-               "one band (as in the Peak list) and the number is the band's position; so many "
+               "one band (as in the Peak list) and the number is the band's position, or its range "
+               "(e.g. 247.2\u2013256.2) when the peaks move through the series; so many "
                "similar spectra do not cover the plot with the same numbers. On every peak: each "
                "peak its own number. Only the current spectrum: the peaks of the spectrum "
                "highlighted in the spectra list. None: no numbers. The red dots mark every peak "
