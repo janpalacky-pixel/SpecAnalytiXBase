@@ -353,9 +353,9 @@ def band_table(rows, index, spectra, value_column, tolerance, stored_keys=()):
     `value_column` of that peak (e.g. its height or fitted area); before the
     bands, the values stored with each spectrum (`stored_keys`, e.g.
     temperature_C). A spectrum without a peak in a band gets None (an
-    empty cell). Two peaks of one spectrum in one band (the tolerance is
-    larger than their distance): the one nearer the band's position is
-    used and counted in `merged`.
+    empty cell). Two or more peaks of one spectrum in one band (the
+    tolerance is larger than their distance): only the one nearest the
+    band's position is used; `merged` is the number of peaks left out.
     Returns (columns, table_rows, merged)."""
     from src.modules.visualization_analysis import group_statistics as gs
     bands = band_positions(rows, tolerance)

@@ -188,8 +188,9 @@ def get_peak_detection_help_content():
     has no peak in that band (e.g. a band that disappears on heating). <b>Stored values</b> adds the
     values stored with the spectra (e.g. <code>temperature_C</code>, pH) as columns before the
     bands, so for example the area of every band against the temperature is ready to plot in
-    Excel. If one spectrum has two peaks in one band, the one nearer the band's position is shown
-    and the line under the table says so &mdash; lower the &plusmn; distance to split them. With
+    Excel. If one spectrum has two or more peaks in one band (e.g. a band split in two), only the
+    one nearest the band's position is shown and the line under the table says how many peaks
+    were left out &mdash; lower the &plusmn; distance to give them their own columns. With
     this tab open, <b>Copy</b> (Ctrl+C) and <b>Export&hellip;</b> take the whole band table.</p>
 
     <hr>

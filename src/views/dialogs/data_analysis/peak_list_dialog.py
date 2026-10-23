@@ -392,8 +392,9 @@ class PeakListDialog(QDialog):
                 f"{self.band_value_combo.currentText()}. Empty cell: no peak of that spectrum "
                 "in that band. Copy (Ctrl+C) or Export\u2026 for Excel.")
         if merged:
-            text += (f" {merged} spectrum/spectra had two peaks in one band - the one nearer the "
-                     "band's position is shown; lower \"same band within \u00b1\" to split them.")
+            text += (f" {merged} peak(s) not shown: another peak of the same spectrum in the same "
+                     "band is nearer the band's position. Lower \"same band within \u00b1\" to "
+                     "give them their own columns.")
         self.band_info.setText(text)
         self._band_shown = (columns, rows)
         return columns, rows

@@ -1263,9 +1263,8 @@ class GroupStatisticsDialog(QDialog):
         lay.addLayout(controls)
 
         self.tabs = QTabWidget()
-        # The selected tab is drawn bold (application style) but Qt sizes
-        # tabs for the normal font, so "Box plot" was cut off; a minimum
-        # width leaves room for the bold text
+        # A minimum width for the tabs (it once left room for the open tab's
+        # bold name; the open tab is no longer bold, see _apply_stylesheet)
         self.tabs.setStyleSheet("QTabBar::tab { min-width: 70px; }")
         self.figure = Figure(figsize=(6, 4))
         self.canvas = FigureCanvas(self.figure)
