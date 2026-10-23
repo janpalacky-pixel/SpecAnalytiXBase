@@ -4,7 +4,14 @@ def get_peak_detection_help_title():
     return "Peak Detection — Help"
 
 def get_peak_detection_help_content():
-    return """
+    from src.help.help_figures import figure_html
+    page = _PAGE
+    for key in ('PEAK_DIALOG', 'PEAK_LABELS', 'PEAK_NOISE', 'PEAK_MOVING', 'PEAK_BAND_TABLE'):
+        page = page.replace(f'@@{key}@@', figure_html(key))
+    return page
+
+
+_PAGE = """
     <html><head><style>
         body  { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; font-size: 13px; }
         h1    { color: #2E7D32; border-bottom: 2px solid #2E7D32; }
@@ -31,6 +38,27 @@ def get_peak_detection_help_content():
     (settings changed after the last Apply are not used). <b>Reset to defaults</b> puts every
     setting back to its default value. The orange <b>?</b> shows what each setting means; the
     same text appears when you hold the mouse over a setting.</p>
+
+    <h2 id="how-to">How to use it, in short</h2>
+    <ol>
+        <li>Select the spectra so that they are plotted.</li>
+        <li><b>Right-click on the plot &rarr; Detect Peaks &rarr; Apply.</b> The defaults suit most
+            data: every peak that stands out clearly from its surroundings and from the noise is
+            marked with a red dot.</li>
+        <li>With many similar spectra, each band's position is written <b>once</b>, above its
+            highest peak (<i>Labels: once per band</i>). A range such as
+            <code>247.19&ndash;256.18</code> means the peak <b>moves</b> through the series &mdash;
+            see <a href="#good-to-know">Good to know</a>.</li>
+        <li>A clear peak is missing? Lower <b>Prominence</b> (a small band next to a big one) or
+            <b>Signal-to-noise</b> (a very weak band). Noise is marked? Raise
+            <b>Signal-to-noise</b>. One broad band gives two dots? Raise <b>Distance</b>. Only the
+            tall peaks wanted? Raise <b>Threshold</b>.</li>
+        <li>The numbers of all peaks for Excel: <b>Peak list&hellip;</b> (a table, a plot and a
+            Band table, below). A precise position, width or area: tick <b>Refine by fitting</b> in
+            the Peak list, or use Peak Fitting for overlapping bands.</li>
+    </ol>
+    @@PEAK_DIALOG@@
+    @@PEAK_LABELS@@
 
     <div class="note">
         This is different from <strong>Peak Fitting</strong>, which models
@@ -102,11 +130,55 @@ def get_peak_detection_help_content():
     mode, the line's y-values are inverted first, then searched the same
     way <em>Positive</em> mode searches the original — so a "negative peak"
     is really a local minimum (a downward-pointing dip) in your data.</p>
-    <p>All three thresholds are computed from each line's own data — a
+    <p>Threshold, Prominence and Distance are fractions of each line's own data — a
     threshold of 0.5, for instance, always means "half of this particular
     line's own range," not a fixed absolute value — so the same settings
     can be reused sensibly across lines with very different intensity
-    scales.</p>
+    scales. The <b>signal-to-noise</b> limit is the exception that makes this safe for weak
+    lines: the noise of each line is estimated from the line itself (from the scatter of
+    neighbouring points, which the bands hardly affect), and a peak must stand out at least
+    8&times; that noise. Lines of fewer than 50 points have no noise limit (the bands would
+    be mistaken for noise).</p>
+
+    <hr>
+    <h2 id="good-to-know">Good to know: what the peaks tell you, and what they do not</h2>
+    <ul>
+        <li><b>Peaks are judged locally.</b> A peak counts when it stands out from the valleys
+            around it (Prominence) and from the noise (Signal-to-noise) &mdash; not when it is
+            tall compared with the tallest peak of the spectrum. That is why Threshold is 0 by
+            default: with 0.5, a small but clear band next to a strong one was missed (the band at
+            344 in the picture above).</li>
+        <li><b>Weak spectra and noise.</b> In a series, the weakest spectra have a range not much
+            bigger than their noise; without the signal-to-noise limit their noise is taken for
+            peaks. Noise alone makes bumps up to about 6&ndash;7&times; its standard deviation, so
+            the default 8 keeps them out. Lower it only for very weak bands you trust.
+            @@PEAK_NOISE@@</li>
+        <li><b>A peak position is not always a band position.</b> Where bands overlap &mdash;
+            above all in CD, where positive and negative bands partly cancel &mdash; the top or
+            bottom of the sum lies between the bands and <b>moves when the mixture changes</b>,
+            although no band moves. Detect Peaks then writes the range of positions. The tops and
+            bottoms are fine for a quick look; for quantitative work use the signal at a fixed
+            wavelength (e.g. 222&nbsp;nm in <a href="help://melting_curve">Melting Curve
+            Analysis</a>, or a value in the Data table), band positions from
+            <a href="help://peak_fitting">Peak Fitting</a> with several bands, or the components
+            from <a href="help://mcr_als">MCR-ALS</a> or SVD.
+            @@PEAK_MOVING@@</li>
+        <li><b>Shoulders are not peaks.</b> A band on the side of a stronger one has no top of
+            its own, so no setting finds it; Peak Fitting fits it together with its neighbour.</li>
+        <li><b>The measured FWHM is too wide where bands overlap</b>, because it is read from the
+            points and includes the neighbours. <b>Refine by fitting</b> fits a model band to each
+            peak: choose the <b>shape</b> with the best R&sup2; (Gaussian for broad bands; a
+            Lorentzian fitted to Gaussian bands gives widths about 10&nbsp;% too large; Pseudo-Voigt
+            can become either). In a test with known Gaussian bands of FWHM 50.3: measured 53.6,
+            Gaussian fit 50.6, Lorentzian fit 55.2.</li>
+        <li><b>CD: use Peaks: Both.</b> Maxima and minima are each judged on their own range, so
+            a small positive band is found next to a big negative one.</li>
+        <li><b>A point where all spectra cross is not always an isodichroic (isosbestic)
+            point.</b> If all spectra are near zero there (e.g. where a band changes sign), it
+            holds for any mixture and says nothing about two states; a real isosbestic or
+            isodichroic point also needs the total amount to stay constant. See
+            <a href="help://isosbestic_point">Isosbestic / Isodichroic Point Detection</a>.</li>
+    </ul>
 
     <hr>
     <h2 id="peak-list">Peak list</h2>
@@ -219,6 +291,7 @@ def get_peak_detection_help_content():
     one nearest the band's position is shown and the line under the table says how many peaks
     were left out &mdash; lower the &plusmn; distance to give them their own columns. With
     this tab open, <b>Copy</b> (Ctrl+C) and <b>Export&hellip;</b> take the whole band table.</p>
+    @@PEAK_BAND_TABLE@@
 
     <hr>
     <h2>Clearing markers</h2>
@@ -228,9 +301,9 @@ def get_peak_detection_help_content():
 
     <div class="tip">
         <strong>Tip:</strong> if a real, obvious dip or peak isn't being
-        picked up, try lowering the Prominence or Distance threshold before
-        the main Threshold — prominence and distance are usually what's
-        filtering it out, not the height threshold itself.
+        picked up, lower Prominence (a small band next to a big one), Signal-to-noise
+        (a very weak band) or Distance (two bands close together) &mdash; Threshold is
+        already 0. If noise is marked, raise Signal-to-noise.
     </div>
 
     </body></html>

@@ -73,6 +73,22 @@ def get_isosbestic_point_help_content():
     side reactions or intermediates &mdash; a third species would
     generally not share that same crossing value, and the clean common
     crossing would degrade or disappear.</p>
+    <div class="cat">
+    <p><b>Isosbestic or isodichroic?</b> The same idea in two kinds of spectroscopy:
+    <i>isosbestic</i> (&ldquo;equal extinction&rdquo;) for absorption (UV-Vis), where the two
+    species absorb equally; <i>isodichroic</i> for circular dichroism, where they have the same
+    CD signal.</p>
+    <p><b>When it means something:</b> only if the <b>total amount stays constant</b> while one
+    species turns into the other (melting, a pH titration, A&nbsp;&rarr;&nbsp;B kinetics). If the
+    amounts of both change independently (a mixture series, a dilution), there is no such point
+    in general.</p>
+    <p><b>A crossing near zero is not one.</b> Where both species have (almost) no signal &mdash;
+    e.g. where a CD band changes sign and the other species is weak &mdash; all spectra read
+    about 0 for any mixture; that says nothing about two states, and this tool leaves such points
+    out (Minimum Signal Level, below). Example: in the test dataset cd_2comp_clean all 30 spectra
+    meet at 225.3&nbsp;nm, but both components are almost 0 there and the amounts are not
+    constant &mdash; it is correctly <i>not</i> reported.</p>
+    </div>
 
     <hr>
     <h2 id="how-it-works">How detection works</h2>

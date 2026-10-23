@@ -1,7 +1,10 @@
 # src/help/help_figures.py
 """Explanatory figures shared by several help pages (how a calculation
 works), kept in resources/images/help_screenshots/calculations/ and drawn by
-dev_notes/make_calculation_figures.py. figure_html(key) gives a complete
+dev_notes/make_calculation_figures.py (a file name with a folder, e.g.
+"peak_detection/...", lies in that folder of help_screenshots instead - the
+Peak Detection figures, drawn by dev_notes/make_peak_detection_figures.py,
+and the Peak Detection windows, by make_tool_screenshots.py). figure_html(key) gives a complete
 <div><img><caption></div> block (empty if the file is missing), resolved
 with resource_path() so it works from source and in the installed build."""
 
@@ -11,7 +14,8 @@ from pathlib import Path
 
 from src.modules.utils.resource_path import resource_path
 
-_DIR = os.path.join("resources", "images", "help_screenshots", "calculations")
+_ROOT = os.path.join("resources", "images", "help_screenshots")
+_DIR = os.path.join(_ROOT, "calculations")
 _MAX_WIDTH = 760
 
 FIGURES = {
@@ -46,6 +50,44 @@ FIGURES = {
         "profile's value at the centre. Before 1.5 it was integrated numerically over "
         "&plusmn;50 widths, which cut off the slowly decaying sides (red hatched) &mdash; up "
         "to 0.6&nbsp;% of the area for Lorentzian-like peaks."),
+    'PEAK_LABELS': (
+        "peak_detection/labels_threshold_before_now.png",
+        "Eleven Raman spectra with their peaks: before, a number on every peak and a band "
+        "missed; now every band found and each number written once",
+        "Eleven similar Raman spectra (test dataset raman_2comp_clean). Top &ndash; the old "
+        "settings: Threshold 0.5 compares a peak with the tallest one, so the clear band at 344 "
+        "is missed; every peak gets its number, so they pile up. Bottom &ndash; the defaults now: "
+        "Threshold 0 and signal-to-noise 8 judge each peak locally, so all 7 bands are found; "
+        "<i>Labels: once per band</i> writes each band's position once, above its highest peak. "
+        "The red dots still mark every peak."),
+    'PEAK_NOISE': (
+        "peak_detection/noisy_cd_signal_to_noise.png",
+        "A noisy CD series with and without the signal-to-noise limit",
+        "A noisy CD series (cd_2comp_noisy, Peaks: Both). Top &ndash; without a noise limit the "
+        "weakest spectra, whose range is not much bigger than their noise, give many peaks that "
+        "are only noise (121 dots, 20 numbers). Bottom &ndash; signal-to-noise 8 (the default): "
+        "the three real bands. Two of them are written as a range because their extremum moves "
+        "through the series."),
+    'PEAK_MOVING': (
+        "peak_detection/cd_moving_minimum.png",
+        "Why the minimum of a CD series moves: it is the sum of overlapping bands",
+        "Why a peak position is not always a band position (cd_2comp_clean, whose true bands "
+        "are known). Left &ndash; the minimum near 250 nm is the sum of three overlapping "
+        "negative bands (241.6 of component 2; 253.5 and 259.8 of component 1); the first "
+        "spectrum has its minimum at 247.2, the last at 255.9. Right &ndash; the minimum moves "
+        "step by step from 247 to 256 nm as the mixture changes, although no band moves. "
+        "Detect Peaks writes it as the range 247.19&ndash;256.18."),
+    'PEAK_DIALOG': (
+        "peak_detection/detect_peaks_dialog.png",
+        "The Peak Detection Settings window",
+        "Right-click on the plot &rarr; Detect Peaks: the settings, Apply (the window stays "
+        "open), Reset to defaults, Peak list&hellip; and the orange ? (what each setting "
+        "means)."),
+    'PEAK_BAND_TABLE': (
+        "peak_detection/peak_list_band_table.png",
+        "The Peak list, tab Band table",
+        "Peak list, tab Band table: one row per spectrum, one column per band, here with the "
+        "fitted FWHM (Refine by fitting) &mdash; ready to paste into Excel."),
 }
 
 
@@ -59,7 +101,8 @@ def _png_size(path):
 
 def figure_html(key, max_width=_MAX_WIDTH):
     filename, alt, caption = FIGURES[key]
-    path = resource_path(os.path.join(_DIR, filename))
+    folder = _ROOT if '/' in filename else _DIR
+    path = resource_path(os.path.join(folder, *filename.split('/')))
     if not os.path.isfile(path):
         return ''
     try:

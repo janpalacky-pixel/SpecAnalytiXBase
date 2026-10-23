@@ -1020,7 +1020,7 @@ def get_user_guide_help_content():
 
         <table>
             <tr><th>Item</th><th>Description</th></tr>
-            <tr><td><strong>Detect Peaks</strong></td><td>Automatically detect and mark peaks on the currently plotted spectra</td></tr>
+            <tr><td><strong>Detect Peaks</strong></td><td>Mark the peaks of the plotted spectra with red dots. A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peak Detection</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
             <tr><td><strong>Peak list&hellip;</strong></td><td>Every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; same settings as Detect Peaks. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel</td></tr>
             <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list)</td></tr>
@@ -2633,6 +2633,14 @@ def get_user_guide_help_content():
         <strong>Reference spectra</strong> lifts that recovery to near-perfect. Run these
         datasets once before trusting either method on real data; the contrast is the whole
         lesson.</div>
+
+        <p>They are also good for trying <a href="help://peak_detection">Peak Detection</a>,
+        because the true band positions are on the <code>Ground_truth</code> sheet:
+        <em>raman_2comp_clean</em> shows that small clear bands are found next to strong ones;
+        <em>cd_2comp_noisy</em> (Peaks: Both) that the noise of the weak spectra is not taken for
+        peaks; and <em>cd_2comp_clean</em> that the minimum of overlapping CD bands moves from 247
+        to 256&nbsp;nm through the series although no band moves &mdash; a peak position is not
+        always a band position.</p>
 
         <h2 id="troubleshooting">12. Troubleshooting</h2>
 
