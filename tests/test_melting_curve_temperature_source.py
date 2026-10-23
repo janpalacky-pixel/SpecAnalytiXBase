@@ -32,7 +32,8 @@ def test_a_stored_temperature_is_used_first():
     d = MeltingCurveDialog(None, _spectra())
     assert d.temps_from_combo.currentData() == 'temperature_C'
     assert [d.temps_from_combo.itemText(i) for i in range(d.temps_from_combo.count())] == \
-        ['the names', 'temperature_C (stored)', 'scan (stored)']
+        ['the names', 'the second number in the names (1, 2, 3, \u2026)',
+         'temperature_C (stored)', 'scan (stored)']
     assert sorted(_x_column(d)) == [20.0, 35.5, 50.0, 64.5, 80.0]
     d.temps_from_combo.setCurrentIndex(0)                       # the names: run 1, 2, ...
     assert sorted(_x_column(d)) == [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -47,5 +48,6 @@ def test_without_stored_values_the_names_as_before():
     for s in spectra:
         s['metadata'] = {}
     d = MeltingCurveDialog(None, spectra)
-    assert d.temps_from_combo.currentData() is None and not d.temps_from_combo.isEnabled()
+    assert d.temps_from_combo.currentData() is None and d.temps_from_combo.isEnabled()
+    assert d.temps_from_combo.count() == 2       # the names, the second number in the names
     assert sorted(_x_column(d)) == [1.0, 2.0, 3.0, 4.0, 5.0]

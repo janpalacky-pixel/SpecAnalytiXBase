@@ -101,6 +101,17 @@ class _NumericTableWidgetItem(QTableWidgetItem):
             return super().__lt__(other)
 
 
+
+# The data of an "X from:" choice that takes one number of the names: this
+# prefix + its index (0 = the first number, 1 = the second, -1 = the last).
+# A stored value's data is its name, which never starts like this.
+NAME_NUMBER = "name number:"
+
+
+def _ordinal_word(i):
+    words = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth']
+    return words[i] if 0 <= i < len(words) else f"{i + 1}th"
+
 class MeltingCurveDialog(QDialog):
     """Dialog for extracting a thermal melting curve from a series of
     spectra (one signal value per spectrum, read at a chosen x-value) and
@@ -385,9 +396,12 @@ class MeltingCurveDialog(QDialog):
         header_row.addWidget(QLabel("X from:"))
         self.temps_from_combo = QComboBox()
         self.temps_from_combo.setToolTip(
-            "Where the temperatures (X) come from: a number in the spectrum names, or a\n"
-            "value stored with the spectra (e.g. temperature_C read from a JASCO file, or\n"
-            "one set in Spectrum properties). Always check them in the table.")
+            "Where the temperatures (X) come from:\n"
+            "- the names: the number that differs between the names, found automatically;\n"
+            "- the first / second / ... / last number in the names: that number of each name;\n"
+            "- a value stored with the spectra (e.g. temperature_C read from a JASCO file, or\n"
+            "  one set in Spectrum properties).\n"
+            "Always check them in the table.")
         self.temps_from_combo.currentIndexChanged.connect(self._on_temps_source_changed)
         header_row.addWidget(self.temps_from_combo)
         reset_btn = QPushButton("Reset")
@@ -1526,26 +1540,68 @@ class MeltingCurveDialog(QDialog):
             self.x_value_spin.setValue((lo + hi) / 2.0)
 
     def _fill_temps_sources(self):
-        """The choices of "X from:": the names, then every number stored
-        with the spectra. Starts with a stored temperature (a name
-        beginning with "temp", e.g. temperature_C) when there is one -
-        a measured value is more reliable than a number read from a name."""
+        """The choices of "X from:": the names (the number that differs
+        between the names, found automatically), one particular number of
+        the names (the first, second, ... or the last - as in Line colours
+        by value), then every number stored with the spectra. Only numbers
+        that differ between the spectra are offered (a number that is the
+        same in every name, e.g. the "2" of "raman_2comp", would put every
+        point at one X), and one that gives the same X as an earlier choice
+        is left out. Starts with a stored temperature (a name beginning with
+        "temp", e.g. temperature_C) when there is one - a measured value is
+        more reliable than a number read from a name."""
         from src.modules.visualization import color_by_value as cbv
-        keys = cbv.metadata_keys(self.selected_spectra)
+        spectra = self.selected_spectra
+        keys = cbv.metadata_keys(spectra)
         self.temps_from_combo.blockSignals(True)
         self.temps_from_combo.clear()
         self.temps_from_combo.addItem("the names", None)
+        seen = []
+        choices = sorted(cbv.name_number_choices(spectra), key=lambda c: (c[0] < 0, c[0]))
+        for index, text in choices:                     # the first, second, ..., the last
+            found = [self._name_number(sp, index) for sp in spectra]
+            known = [v for v in found if v is not None]
+            if len(set(known)) < 2 or found in seen:
+                continue
+            seen.append(found)
+            example = ", ".join(f"{v:g}" for v in known[:3]) + (", \u2026" if len(known) > 3 else "")
+            self.temps_from_combo.addItem(f"{text} in the names ({example})",
+                                          f"{NAME_NUMBER}{index}")
         for key in keys:
             self.temps_from_combo.addItem(f"{key} (stored)", key)
-        start = next((i + 1 for i, k in enumerate(keys) if k.lower().startswith('temp')), 0)
+        n_names = self.temps_from_combo.count() - len(keys)
+        start = next((i + n_names for i, k in enumerate(keys) if k.lower().startswith('temp')), 0)
         self.temps_from_combo.setCurrentIndex(start)
-        self.temps_from_combo.setEnabled(bool(keys))
+        self.temps_from_combo.setEnabled(self.temps_from_combo.count() > 1)
         self.temps_from_combo.blockSignals(False)
+
+    @staticmethod
+    def _name_number(spec, index):
+        """The index-th number of the spectrum's name (-1: the last), or None."""
+        from src.modules.visualization import color_by_value as cbv
+        numbers = cbv.numbers_in(spec.get('label', ''))
+        if not numbers or index >= len(numbers):
+            return None
+        return float(numbers[index])
+
+    def _temps_choice(self):
+        """The data of the "X from:" choice: None (the names, automatic),
+        NAME_NUMBER + index (one number of the names) or a stored key."""
+        combo = getattr(self, 'temps_from_combo', None)
+        return combo.currentData() if combo is not None and combo.count() else None
 
     def _temps_key(self):
         """The stored value chosen in "X from:", or None for the names."""
-        combo = getattr(self, 'temps_from_combo', None)
-        return combo.currentData() if combo is not None and combo.count() else None
+        choice = self._temps_choice()
+        return None if choice is None or str(choice).startswith(NAME_NUMBER) else choice
+
+    def _temps_name_index(self):
+        """The number of the names chosen in "X from:" (0 = the first,
+        -1 = the last), or None."""
+        choice = self._temps_choice()
+        if choice is not None and str(choice).startswith(NAME_NUMBER):
+            return int(str(choice)[len(NAME_NUMBER):])
+        return None
 
     def _on_temps_source_changed(self, *_):
         """Another "X from:" choice: fill the X column again from it."""
@@ -1619,7 +1675,13 @@ class MeltingCurveDialog(QDialog):
             names.append(item.text() if item is not None else f"row {row + 1}")
         more = f" and {len(rows) - 5} more" if len(rows) > 5 else ""
         key = self._temps_key()
-        what = f"No {key} stored" if key else "No temperature in the name"
+        index = self._temps_name_index()
+        if key:
+            what = f"No {key} stored"
+        elif index is not None:
+            what = f"No {'last' if index < 0 else _ordinal_word(index)} number in the name"
+        else:
+            what = "No temperature in the name"
         label.setText(f"{what} for {len(rows)} spectrum/spectra: {', '.join(names)}{more}. "
                       "Type their temperatures in the X column (or leave those spectra out "
                       "of the selection) - the curve is drawn when every spectrum has one.")
@@ -1705,6 +1767,8 @@ class MeltingCurveDialog(QDialog):
         Always user-editable afterwards in the table — this is only a
         starting point, never trusted as the final value.
 
+        When "X from:" names one number of the names (e.g. the second), only
+        that number is used: a name without it gives None (an empty X cell).
         When "X from:" names a stored value (e.g. temperature_C), only that
         value is used: a spectrum without it gets None (an empty X cell),
         not a number from its name - one curve should not mix measured
@@ -1713,6 +1777,9 @@ class MeltingCurveDialog(QDialog):
         the position in the list, is no longer used: it looked like a real
         temperature but meant nothing). An empty X is named under the
         table and the curve waits until it is filled in."""
+        index = self._temps_name_index()
+        if index is not None:                   # one chosen number of the name, or empty
+            return self._name_number(spec, index)
         key = self._temps_key()
         if key is not None:
             value = (spec.get('metadata') or {}).get(key)
@@ -4833,7 +4900,7 @@ class MeltingCurveDialog(QDialog):
 
         return {
             'temperatures': temp_map,
-            'temps_from': self._temps_key(),
+            'temps_from': self._temps_choice(),
             'source_labels': self.curve['source_labels'] if self.curve else
                              [s['label'] for s in self.selected_spectra],
             'curve_name': self.curve_name_edit.text(),
