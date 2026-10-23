@@ -23,7 +23,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QSplitter,
     QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -80,9 +80,14 @@ _HELP_GROUPS = (
     "<i>Groups</i>, or a file <i>&lt;data file&gt;_groups.csv</i> lies next to the data file "
     "(columns: spectrum name, group, sample), the window fills both columns by itself when it "
     "opens with no groups set. <b>From table file&hellip;</b> loads such a table by hand.</p>"
-    "<p><b>From a property&hellip;</b>: groups from a number stored with the spectra "
-    "(Spectrum properties, e.g. pH) &mdash; every value a group, or two groups split at a "
-    "value.</p>")
+    "<p><b>The buttons</b> &mdash; the same five for both columns (row <b>Group:</b> and row "
+    "<b>Sample:</b>): <i>Set for selected rows&hellip;</i>, <i>From names&hellip;</i>, <i>From a "
+    "property&hellip;</i> (a number stored with the spectra, Spectrum properties, e.g. pH: every "
+    "value its own, or two split at a value), <i>From table file&hellip;</i>, <i>Clear</i>.</p>"
+    "<p>A column made <i>From a property</i> or <i>From names</i> is <b>worked out again from "
+    "the current values</b> each time the window opens (a changed or deleted property, an "
+    "earlier state in the History, a renamed spectrum); the green line under the buttons says "
+    "so. Edit the column yourself to keep it fixed.</p>")
 _HELP_VALUE = (
     "<h3>Value per spectrum</h3>"
     "<p>The test compares <b>one number per spectrum</b>. The list has three parts:</p>"
@@ -245,15 +250,16 @@ class PropertyToGroupsDialog(QDialog):
     read from the file): every value its own group, or two groups split at
     a value. Shows how many spectra each group gets before OK."""
 
-    def __init__(self, spectra, parent=None):
+    def __init__(self, spectra, parent=None, what="Groups"):
         super().__init__(parent)
         from src.modules.visualization import color_by_value as cbv
         self.spectra = spectra
-        self.setWindowTitle("Groups from a property")
+        self.setWindowTitle(f"{what} from a property")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         v = QVBoxLayout(self)
-        intro = QLabel("Groups from a number stored with each spectrum (set in Spectrum "
-                       "properties, or read from the file, e.g. temperature_C).")
+        intro = QLabel(f"{what} from a number stored with each spectrum (set in Spectrum "
+                       "properties, or read from the file, e.g. temperature_C). They are worked "
+                       "out again from the current values each time Group Statistics opens.")
         intro.setWordWrap(True)
         v.addWidget(intro)
         form = QFormLayout()
@@ -298,12 +304,19 @@ class PropertyToGroupsDialog(QDialog):
         self.split_spin.blockSignals(False)
         self._update_preview()
 
-    def groups(self):
+    def recipe(self):
+        """How the column is made (gs.column_from_recipe), or None."""
         key = self.key_combo.currentText()
         if not key:
-            return [gs.NO_GROUP] * len(self.spectra)
+            return None
         split = self.split_spin.value() if self.split_radio.isChecked() else None
-        return gs.groups_from_property(self.spectra, key, split)
+        return {'kind': 'property', 'key': key, 'split': split}
+
+    def groups(self):
+        recipe = self.recipe()
+        if recipe is None:
+            return [gs.NO_GROUP] * len(self.spectra)
+        return gs.column_from_recipe(recipe, self.spectra, [])
 
     def _update_preview(self, *_):
         groups = self.groups()
@@ -446,13 +459,18 @@ class NamesToGroupsDialog(QDialog):
             rules.append((text.strip(), group.strip() or text.strip()))
         return rules
 
-    def groups(self):
+    def recipe(self):
+        """How the column is made (gs.column_from_recipe)."""
         if self.root_radio.isChecked():
-            return gs.groups_from_root_name(self.labels)
+            return {'kind': 'names', 'mode': 'root'}
         if self.contains_radio.isChecked():
-            return gs.groups_from_contains(self.labels, self.rules())
-        return gs.groups_from_part(self.labels, self.separators_edit.text() or '_',
-                                   self.part_spin.value())
+            return {'kind': 'names', 'mode': 'contains',
+                    'rules': [list(r) for r in self.rules()]}
+        return {'kind': 'names', 'mode': 'part', 'separators': self.separators_edit.text() or '_',
+                'part': self.part_spin.value()}
+
+    def groups(self):
+        return gs.column_from_recipe(self.recipe(), [{} for _ in self.labels], self.labels)
 
     def _update_preview(self, *_):
         groups = self.groups()
@@ -591,6 +609,7 @@ class GroupStatisticsDialog(QDialog):
         bottom.addWidget(help_btn)
         bottom.addWidget(close_btn)
         layout.addLayout(bottom)
+        self._apply_recipes()         # columns from a property / the names: current values
         self._update_group_summary()
         if source_note:
             self.table_source.setText(source_note)
@@ -674,51 +693,61 @@ class GroupStatisticsDialog(QDialog):
             "• right-click for more")
         lay.addWidget(self.table, 1)
 
-        row1 = QHBoxLayout()
-        set_btn = QPushButton("Set group of selected rows…")
-        set_btn.setToolTip("Select rows (click, Shift+click, Ctrl+click), then give them a group")
-        set_btn.clicked.connect(self.set_group_of_selected)
-        row1.addWidget(set_btn)
-        row1.addWidget(_help_button(self, "Groups and samples", _HELP_GROUPS,
+        # The same five ways for the Group and the Sample column, in two rows
+        # (one column of the grid = one way): by hand for the selected rows,
+        # from the names, from a stored value, from a table file, clear.
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(6)
+        G, S = "Group", "Sample"
+        rows = (
+            (G, (("Set for selected rows\u2026", self.set_group_of_selected,
+                  "Select rows (click, Shift+click, Ctrl+click), then give them a group"),
+                 ("From names\u2026", self.groups_from_names,
+                  "Groups from the spectrum names: a text they contain, or a part of the name"),
+                 ("From a property\u2026", lambda: self.groups_from_property(),
+                  "Groups from a number stored with the spectra (Spectrum properties, e.g. "
+                  "pH): each value a group, or split at a value"),
+                 ("From table file\u2026", self.groups_from_table_file,
+                  "A CSV or Excel file with two columns: spectrum name, group (a third column: "
+                  "the sample)"),
+                 ("Clear all groups", lambda: self._set_groups([gs.NO_GROUP] * len(self.labels)),
+                  "Remove the groups of all spectra (Ctrl+Z brings them back). To remove\n"
+                  "only some, select their rows and press Delete (or right-click)."))),
+            (S, (("Set for selected rows\u2026", self.set_sample_of_selected,
+                  "Optional Sample column: which independent sample the selected spectra "
+                  "come from"),
+                 ("From names\u2026", self.samples_from_names,
+                  "Sample column from the spectrum names (e.g. the file part of the name)"),
+                 ("From a property\u2026", lambda: self.samples_from_property(),
+                  "Sample column from a number stored with the spectra (e.g. a cuvette or "
+                  "culture number set in Spectrum properties)"),
+                 ("From table file\u2026", self.samples_from_table_file,
+                  "A CSV or Excel file with two columns: spectrum name, sample (or three: "
+                  "name, group, sample)"),
+                 ("Clear all samples",
+                  lambda: self.table.set_values([''] * len(self.labels), col=2),
+                  "Remove the samples of all spectra (Ctrl+Z brings them back)"))),
+        )
+        self.column_buttons = {}
+        for r, (what, entries) in enumerate(rows):
+            label = QLabel(f"<b>{what}:</b>")
+            grid.addWidget(label, r, 0)
+            for c, (text, slot, tip) in enumerate(entries, start=1):
+                b = QPushButton(text)
+                b.setToolTip(tip)
+                b.clicked.connect(lambda _checked=False, f=slot: f())
+                grid.addWidget(b, r, c)
+                self.column_buttons[(what, c)] = b
+        grid.addWidget(_help_button(self, "Groups and samples", _HELP_GROUPS,
                                     "What the Group and Sample columns are, and how to fill "
-                                    "them"))
-        lay.addLayout(row1)
-        row_s = QHBoxLayout()
-        sample_btn = QPushButton("Set sample of selected rows…")
-        sample_btn.setToolTip("Optional Sample column: which independent sample the selected "
-                              "spectra come from")
-        sample_btn.clicked.connect(self.set_sample_of_selected)
-        samples_names_btn = QPushButton("Samples from names…")
-        samples_names_btn.setToolTip("Sample column from the spectrum names (e.g. the file part "
-                                     "of the name)")
-        samples_names_btn.clicked.connect(self.samples_from_names)
-        clear_s_btn = QPushButton("Clear samples")
-        clear_s_btn.clicked.connect(
-            lambda: self.table.set_values([''] * len(self.labels), col=2))
-        row_s.addWidget(sample_btn)
-        row_s.addWidget(samples_names_btn)
-        row_s.addWidget(clear_s_btn)
-        lay.addLayout(row_s)
-        row2 = QHBoxLayout()
-        names_btn = QPushButton("From names…")
-        names_btn.setToolTip("Groups from the spectrum names: a text they contain, or a part of the name")
-        names_btn.clicked.connect(self.groups_from_names)
-        property_btn = QPushButton("From a property…")
-        property_btn.setToolTip("Groups from a number stored with the spectra (Spectrum "
-                                "properties, e.g. pH): each value a group, or split at a value")
-        property_btn.clicked.connect(lambda: self.groups_from_property())
-        table_btn = QPushButton("From table file…")
-        table_btn.setToolTip("A CSV or Excel file with two columns: spectrum name, group")
-        table_btn.clicked.connect(self.groups_from_table_file)
-        clear_btn = QPushButton("Clear all groups")
-        clear_btn.setToolTip("Remove the groups of all spectra (Ctrl+Z brings them back). To remove\n"
-                             "only some, select their rows and press Delete (or right-click).")
-        clear_btn.clicked.connect(lambda: self._set_groups([gs.NO_GROUP] * len(self.labels)))
-        row2.addWidget(names_btn)
-        row2.addWidget(property_btn)
-        row2.addWidget(table_btn)
-        row2.addWidget(clear_btn)
-        lay.addLayout(row2)
+                                    "them"), 0, 6)
+        lay.addLayout(grid)
+        # where the columns come from, when they are worked out again on opening
+        self.recipe_note = QLabel()
+        self.recipe_note.setWordWrap(True)
+        self.recipe_note.setStyleSheet("color:#2E7D32;")
+        self.recipe_note.setVisible(False)
+        lay.addWidget(self.recipe_note)
         self.table_source = QLabel()
         self.table_source.setWordWrap(True)
         self.table_source.setStyleSheet("color:#2E7D32;")
@@ -797,12 +826,112 @@ class GroupStatisticsDialog(QDialog):
     def samples_from_names(self):
         dlg = NamesToGroupsDialog(self.labels, self, title="Samples from spectrum names")
         if dlg.exec_() == QDialog.Accepted:
-            self.table.set_values(dlg.groups(), col=2)
+            self._fill_from_recipe('sample', dlg.recipe())
+
+    def samples_from_property(self):
+        dlg = PropertyToGroupsDialog(self.spectra, self, what="Samples")
+        if dlg.exec_() == QDialog.Accepted and dlg.recipe() is not None:
+            self._fill_from_recipe('sample', dlg.recipe())
+
+    def samples_from_table_file(self):
+        """The Sample column from a table file: spectrum name, sample (or
+        name, group, sample: then the third column)."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Table of samples", "",
+            "Tables (*.csv *.txt *.tsv *.xlsx *.xls);;All files (*)")
+        if not path:
+            return
+        try:
+            second, third = gs.read_group_sample_table(path, labels=self.labels)
+        except Exception as exc:
+            logger.exception("Reading the sample table failed")
+            QMessageBox.warning(self, "Group Statistics", f"The table could not be read:\n{exc}")
+            return
+        mapping = third or second
+        samples = gs.groups_from_table(self.labels, mapping)
+        self.table.set_values(samples, col=2)
+        found = sum(1 for v in samples if v)
+        QMessageBox.information(self, "Group Statistics",
+                                f"{found} of {len(samples)} spectra were found in the table "
+                                f"(column {'3' if third else '2'}: the sample).")
+
+    # -- columns worked out from a recipe ("From a property...", "From names...")
+    _COLUMN = {'group': 1, 'sample': 2}
+
+    def _fill_from_recipe(self, which, recipe):
+        """Fill the Group or Sample column from the recipe now (one undo
+        step) and remember the recipe, so the column is worked out again
+        from the current values each time the window opens."""
+        values = gs.column_from_recipe(recipe, self.spectra, self.labels)
+        if values is None:
+            return
+        self.remembered_settings[f'{which}_recipe'] = recipe
+        if which == 'group':
+            self.remembered_settings['group_order'] = []     # order of the spectra list
+        self._applying_recipe = True
+        try:
+            self.table.set_values(values, col=self._COLUMN[which])
+        finally:
+            self._applying_recipe = False
+        self._update_recipe_note()
+
+    def _apply_recipes(self):
+        """On opening: the columns made by a recipe, from the current values
+        (a changed or deleted property, an earlier state in the History, a
+        renamed spectrum) - not the remembered, possibly stale ones."""
+        changed = []
+        for which in ('group', 'sample'):
+            recipe = self.remembered_settings.get(f'{which}_recipe')
+            values = gs.column_from_recipe(recipe, self.spectra, self.labels) if recipe else None
+            if values is None:
+                self.remembered_settings.pop(f'{which}_recipe', None)
+                continue
+            col = self._COLUMN[which]
+            if [v.strip() for v in self.table.values(col)] != values:
+                self._applying_recipe = True
+                try:
+                    self.table.set_values(values, record_undo=False, col=col)
+                finally:
+                    self._applying_recipe = False
+                changed.append(which)
+        self._update_recipe_note(updated=changed)
+
+    def _forget_changed_recipes(self):
+        """A column edited by hand (typed, pasted, set for rows, a table
+        file, cleared) is no longer the recipe's: keep it as it is."""
+        if getattr(self, '_applying_recipe', False):
+            return
+        for which in ('group', 'sample'):
+            recipe = self.remembered_settings.get(f'{which}_recipe')
+            if recipe is None:
+                continue
+            col = self._COLUMN[which]
+            if [v.strip() for v in self.table.values(col)] != \
+                    gs.column_from_recipe(recipe, self.spectra, self.labels):
+                self.remembered_settings.pop(f'{which}_recipe', None)
+        self._update_recipe_note()
+
+    def _update_recipe_note(self, updated=()):
+        note = getattr(self, 'recipe_note', None)
+        if note is None:
+            return
+        parts = []
+        for which, name in (('group', 'Groups'), ('sample', 'Samples')):
+            recipe = self.remembered_settings.get(f'{which}_recipe')
+            if recipe:
+                parts.append(f"{name} from {gs.recipe_text(recipe)}"
+                             + (" \u2013 updated from the current values" if which in updated
+                                else ""))
+        if parts:
+            note.setText("; ".join(parts) + ". Worked out again from the current values each "
+                         "time this window opens; edit the column yourself to keep it fixed.")
+        note.setVisible(bool(parts))
 
     def _set_groups(self, groups):
         self.table.set_values(groups)          # one undo step; emits valuesChanged
 
     def _on_groups_changed(self):
+        self._forget_changed_recipes()
         self._remember()
         self._update_group_summary()
         if hasattr(self, 'reference_combo'):
@@ -1018,14 +1147,17 @@ class GroupStatisticsDialog(QDialog):
     def groups_from_names(self):
         dlg = NamesToGroupsDialog(self.labels, self)
         if dlg.exec_() == QDialog.Accepted:
-            self.remembered_settings['group_order'] = []     # order of the spectra list
-            self._set_groups(dlg.groups())
+            recipe = dlg.recipe() if hasattr(dlg, 'recipe') else None
+            if recipe is not None:
+                self._fill_from_recipe('group', recipe)
+            else:                                   # a window that only gives the groups
+                self.remembered_settings['group_order'] = []
+                self._set_groups(dlg.groups())
 
     def groups_from_property(self):
         dlg = PropertyToGroupsDialog(self.spectra, self)
-        if dlg.exec_() == QDialog.Accepted:
-            self.remembered_settings['group_order'] = []     # order of the spectra list
-            self._set_groups(dlg.groups())
+        if dlg.exec_() == QDialog.Accepted and dlg.recipe() is not None:
+            self._fill_from_recipe('group', dlg.recipe())
 
     def groups_from_table_file(self):
         path, _ = QFileDialog.getOpenFileName(

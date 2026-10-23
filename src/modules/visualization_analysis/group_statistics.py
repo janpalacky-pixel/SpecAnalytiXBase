@@ -74,6 +74,55 @@ def groups_from_property(spectra, key, split=None):
     return out
 
 
+# How a Group (or Sample) column was filled - "From a property..." or "From
+# names..." - kept with the settings, so the column can be worked out again
+# from the current values each time Group Statistics opens (a property that
+# was changed or deleted, an earlier state chosen in the History, a renamed
+# spectrum): {'kind': 'property', 'key': 'conc', 'split': 45.0 or None} or
+# {'kind': 'names', 'mode': 'root' | 'contains' | 'part', 'rules':
+# [[text, group], ...], 'separators': '_', 'part': 1}.
+
+def column_from_recipe(recipe, spectra, labels):
+    """The column (one text per spectrum) the recipe gives for these
+    spectra now, or None for an unknown recipe."""
+    if not recipe:
+        return None
+    kind = recipe.get('kind')
+    if kind == 'property' and recipe.get('key'):
+        return groups_from_property(spectra, recipe['key'], recipe.get('split'))
+    if kind == 'names':
+        mode = recipe.get('mode')
+        if mode == 'root':
+            return groups_from_root_name(labels)
+        if mode == 'contains':
+            return groups_from_contains(labels, [tuple(r) for r in recipe.get('rules') or []])
+        if mode == 'part':
+            return groups_from_part(labels, recipe.get('separators') or '_',
+                                    int(recipe.get('part', 1)))
+    return None
+
+
+def recipe_text(recipe):
+    """Where a column comes from, in words: 'the property conc (split at 45)'."""
+    if not recipe:
+        return ''
+    if recipe.get('kind') == 'property':
+        split = recipe.get('split')
+        how = f"split at {split:g}" if split is not None else "each value its own"
+        return f"the property {recipe.get('key')} ({how})"
+    mode = recipe.get('mode')
+    if mode == 'root':
+        return "the names (common root name)"
+    if mode == 'contains':
+        rules = ", ".join(f"{t} = {g}" for t, g in (recipe.get('rules') or [])[:3])
+        more = ", \u2026" if len(recipe.get('rules') or []) > 3 else ""
+        return f"the names (containing: {rules}{more})"
+    if mode == 'part':
+        return (f"the names (part {recipe.get('part', 1)}, split at "
+                f"\u201c{recipe.get('separators') or '_'}\u201d)")
+    return ''
+
+
 def groups_from_contains(labels, rules, case_sensitive=False):
     """rules: list of (text, group). A spectrum gets the group of the first
     rule whose text occurs in its name; NO_GROUP if none matches."""

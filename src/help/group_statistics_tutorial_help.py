@@ -470,8 +470,8 @@ say the difference is large or important. p &gt; 0.05 means "not shown", not "no
 difference".</p>
 
 <h2 id="own">Using your own data</h2>
-<p>Give the groups by hand (type, <i>Set group of selected rows&hellip;</i>, <i>From
-names&hellip;</i>) or, like the demos, prepare them once next to the data:</p>
+<p>Give the groups by hand (type, <i>Set for selected rows&hellip;</i>, <i>From
+names&hellip;</i>, <i>From a property&hellip;</i>) or, like the demos, prepare them once next to the data:</p>
 <ul>
 <li>in your Excel workbook add a sheet named <b>Groups</b>, or</li>
 <li>next to your data file <code>measurement.txt</code> put a file

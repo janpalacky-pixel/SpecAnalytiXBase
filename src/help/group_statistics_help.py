@@ -123,7 +123,12 @@ can be combined:</p>
   <li>right-click: the same actions, plus <b>Select spectra&hellip;</b> (by name, range or every
   n-th, as in the main window) to select rows before giving them a group.</li>
   </ul></li>
-<li><b>Set group of selected rows&hellip;</b> &mdash; select rows (click, Shift+click,
+<li><b>The buttons:</b> two rows with the same five buttons, <b>Group:</b> for the Group
+column and <b>Sample:</b> for the Sample column &mdash; <i>Set for selected rows&hellip;</i>,
+<i>From names&hellip;</i>, <i>From a property&hellip;</i>, <i>From table file&hellip;</i> and
+<i>Clear all groups / Clear all samples</i>. What each does is described below for the groups;
+for the samples it is the same.</li>
+<li><b>Set for selected rows&hellip;</b> &mdash; select rows (click, Shift+click,
 Ctrl+click) and give them one group name.</li>
 <li><b>From names&hellip;</b> &mdash; from the spectrum names:
   <ul>
@@ -149,7 +154,17 @@ Ctrl+click) and give them one group name.</li>
 <a href="help://user_guide#spectrum-properties">Spectrum properties</a>, or read from the file,
 e.g. <code>temperature_C</code>): every value its own group (<i>pH 7</i>, <i>pH 7.4</i>, &hellip;),
 or two groups split at a value (<i>T &lt; 50</i>, <i>T &ge; 50</i>; the split starts at the
-median). A spectrum without the value gets no group; a preview shows the groups and their sizes.</li>
+median). A spectrum without the value gets no group; a preview shows the groups and their sizes.
+For example, with <i>Two groups, split at 45</i> a spectrum whose stored <code>conc</code> is 30
+gets the group <i>conc &lt; 45</i>, one with 50 the group <i>conc &ge; 45</i>.</li>
+<li><b>Groups that follow your data.</b> A column filled <i>From a property&hellip;</i> or
+<i>From names&hellip;</i> is <b>worked out again from the current values each time the window
+opens</b>: change or delete the property in Spectrum properties, go back to an earlier state in
+the History, or rename a spectrum, and the groups follow (a spectrum that no longer has the value
+gets no group). A green line under the buttons says where the groups and samples come from, and
+&ldquo;updated from the current values&rdquo; when they changed. Once you edit such a column
+yourself (type, paste, <i>Set for selected rows</i>, a table file, Clear), it is kept exactly as
+it is.</li>
 <li><b>From table file&hellip;</b> &mdash; a text/CSV or Excel file with two columns, spectrum
 name and group (a header row "name, group" is recognised), and optionally a third column, the
 <b>sample</b>, which then fills the Sample column too (in a text file the three columns must
@@ -160,9 +175,11 @@ separated by a tab, comma, semicolon or space, and the names may contain spaces 
 start of each line. The message afterwards says how many spectra were found and lists table
 names that match no spectrum. Useful for larger studies: keep the
 table with your data and reuse it.</li>
-<li><b>Clear all groups</b> removes the groups of all spectra. To remove only some, select
-their rows and press <b>Delete</b> (or right-click &rarr; <i>Remove group of selected
-rows</i>); in the Sample column the same clears the samples.</li>
+<li><b>Clear all groups</b> removes the groups of all spectra (<b>Clear all samples</b>: the
+samples). To remove only some, select their rows and press <b>Delete</b> (or right-click
+&rarr; <i>Remove group of selected rows</i>); in the Sample column the same clears the samples.
+A spectrum without a group is left out of the comparison; the line under the buttons then says
+how many (&ldquo;1 spectrum without a group (left out)&rdquo;).</li>
 <li><b>Automatically</b> &mdash; when the window opens and no spectrum has a group yet, it looks
 for a group table that belongs to the spectra's own data file: a sheet named <i>Groups</i> in
 the Excel workbook they were imported from, or a file <code>&lt;data file name&gt;_groups.csv</code>
@@ -454,6 +471,17 @@ sentence.</li>
 </ul>
 
 <h2 id="replicates">Replicates: spectra of one sample are not independent</h2>
+<p><b>Why it matters, with an example.</b> A test asks whether the difference between the group
+means is bigger than the scatter <i>between independent samples</i> would make by chance. The
+more independent samples, the better that scatter is known and the smaller the difference that
+counts as real &mdash; the p-value falls with the number of samples. Say you compare two cell
+cultures, one treated, one not, and measure 10 spectra of each culture. The 10 spectra of one
+culture differ only by measurement noise; they do not show how much two cultures treated the
+same way would differ. Counted as 10 samples per group, the test thinks it knows the scatter
+between cultures from 20 samples and gives a small p-value &mdash; yet any difference between
+two cultures, treated or not, would look &ldquo;significant&rdquo; this way. Honestly it is
+1 sample per group, and nothing can be concluded. <b>One value per sample</b> (below) averages
+the 10 spectra of each culture, so the test counts cultures, not spectra.</p>
 <p>The tests assume that every value is an <b>independent</b> measurement. Many spectra of the
 <i>same</i> sample &mdash; the pixels of one map, the temperatures of one melt, repeated scans
 of one cuvette &mdash; are not: they share everything that makes that sample special. Testing
@@ -463,9 +491,11 @@ sample per group was measured &mdash; the test then compares two maps, not two t
 spectroscopy papers.</p>
 <ul>
 <li>The optional <b>Sample</b> column says which independent sample (specimen, culture,
-cuvette, map, &hellip;) each spectrum comes from. Fill it like the Group column, with
-<b>Set sample of selected rows&hellip;</b> or <b>Samples from names&hellip;</b> (e.g. the
-common root name = the file or map).</li>
+cuvette, map, &hellip;) each spectrum comes from. Fill it with the <b>Sample:</b> row of
+buttons, the same as for the groups: <i>Set for selected rows&hellip;</i>, <i>From
+names&hellip;</i> (e.g. the common root name = the file or map), <i>From a property&hellip;</i>
+(e.g. a cuvette or culture number set in Spectrum properties), <i>From table file&hellip;</i>
+(spectrum name, sample; or name, group, sample).</li>
 <li>Tick <b>One value per sample</b> (box 3): the spectra of each sample are averaged first,
 so the test uses one value per independent sample. The plot, the summary and n then count
 samples. Spectra without a sample count as their own sample.</li>
