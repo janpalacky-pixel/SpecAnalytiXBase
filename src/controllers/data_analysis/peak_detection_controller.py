@@ -121,10 +121,27 @@ class PeakDetectionController:
         dialog = PeakListDialog(self.controller.view, spectra,
                                 threshold=self.peak_threshold, prominence=self.peak_prominence,
                                 distance=self.peak_distance, mode=self.peak_detection_mode,
-                                snr=self.peak_snr, on_settings=keep)
+                                snr=self.peak_snr, on_settings=keep,
+                                open_data_table=self.open_bands_in_data_table)
         self.peak_list_dialog = dialog
         dialog.exec_()
         return dialog
+
+    def open_bands_in_data_table(self, parent, spectra, value_name, bands):
+        """Peak list > Band table > Open in the Data table: the Data table of
+        the same spectra, on its tab Values per spectrum, with one column per
+        band (b1, b2, ...). Formula columns of its tab Points can be added to
+        the spectra list as usual."""
+        from src.views.dialogs.data_analysis.data_table_dialog import DataTableDialog
+        main = self.controller
+        tables = getattr(main, 'data_table_controller', None)
+        dlg = DataTableDialog(parent, spectra,
+                              commit_callback=tables.add_spectra if tables is not None else None)
+        dlg.values.add_bands(value_name, bands)
+        dlg.tabs.setCurrentWidget(dlg.values)
+        self.band_data_table_dialog = dlg
+        dlg.exec_()
+        return dlg
 
     def clear_peaks(self):
         """Clear all detected peaks."""

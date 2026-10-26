@@ -1035,7 +1035,7 @@ def get_user_guide_help_content():
             <tr><th>Item</th><th>Description</th></tr>
             <tr><td><strong>Detect Peaks</strong></td><td>Mark the peaks of the plotted spectra with red dots. A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peak Detection</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
-            <tr><td><strong>Peak list&hellip;</strong></td><td>Every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; same settings as Detect Peaks. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel</td></tr>
+            <tr><td><strong>Peak list&hellip;</strong></td><td>Every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; same settings as Detect Peaks. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel or (<i>Open in the Data table</i>) for formulas and plots in the Data table</td></tr>
             <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list)</td></tr>
             <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour)</td></tr>
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
@@ -2149,6 +2149,11 @@ def get_user_guide_help_content():
                 mean over a range, maximum, peak position (also the top of a parabola), FWHM, fitted
                 peak values, intensity at x, two bands combined (A / B, &hellip;), PCA or SVD score.
                 A spectrum that does not cover the range gets no value (&mdash;).</li>
+            <li><strong>Bands of the Peak list</strong> (blue, <b>b1, b2, &hellip;</b>): in the
+                <a href="help://peak_detection#band-table">Peak list</a>, tab Band table,
+                <i>Open in the Data table</i> opens this tab with one column per band (e.g. the height
+                of the band at 686 in every spectrum); a spectrum without a peak there gets no
+                value.</li>
             <li><strong>Formula columns</strong> (green, f1, f2, &hellip;) use the column names, e.g.
                 <code>v1 / v2</code>, <code>v1 / max_val(v1)</code> (scaled to 1),
                 <code>v1 * temperature_C</code>; commas give several at once. Rows without a value stay

@@ -4,8 +4,9 @@ selected spectrum - sp1, sp2, ... with its name, the numbers stored with it
 (e.g. temperature_C) and the number(s) in its name - plus columns of values
 chosen by the user (v1, v2, ...: area or mean over a range, maximum, peak
 position, FWHM, fitted peak values, intensity at x, two bands combined, PCA /
-SVD score), computed exactly as in Group Statistics (group_values.py), and
-formula columns (f1, f2, ...: e.g. v1 / v2). Any two columns can be plotted
+SVD score), computed exactly as in Group Statistics (group_values.py), the
+bands of the Peak list (b1, b2, ...: e.g. the height of each band, sent from
+its Band table), and formula columns (f1, f2, ...: e.g. v1 / v2). Any two columns can be plotted
 against each other (e.g. area against temperature)."""
 
 import re
@@ -32,7 +33,7 @@ class ValueColumn:
     name: str                # 'name', 'temperature_C', 'n1', 'v2', 'f1'
     title: str               # shown under the name
     values: np.ndarray       # float (NaN = no value); text for 'name'
-    kind: str                # 'name', 'metadata', 'number', 'value', 'formula'
+    kind: str                # 'name', 'metadata', 'number', 'value', 'band', 'formula'
     settings: Optional[dict] = None
     formula: str = ''
 
@@ -81,7 +82,7 @@ class ValueTable:
 
     def _next(self, prefix):
         used = [int(c.name[1:]) for c in self.columns
-                if c.name[:1] == prefix and c.name[1:].isdigit() and c.kind in ('value', 'formula')]
+                if c.name[:1] == prefix and c.name[1:].isdigit() and c.kind in ('value', 'band', 'formula')]
         return f'{prefix}{max(used, default=0) + 1}'
 
     # -- value columns
@@ -99,6 +100,22 @@ class ValueTable:
         if info.get('note'):
             self.notes.append(f"{col.name}: {info['note']}")
         return col
+
+    def add_bands(self, value_name, bands):
+        """Columns b1, b2, ... from the Peak list's Band table: bands =
+        [(position text, [value or None per spectrum, in this table's
+        order])], value_name e.g. 'Height (y)'. A spectrum without a peak in
+        a band gets no value."""
+        what = value_name.split(' (')[0]
+        added = []
+        for position, values in bands:
+            if len(values) != self.n_rows:
+                raise ValueError("The Peak list has other spectra than this table.")
+            col = ValueColumn(self._next('b'), f"{what} of the band at {position}",
+                              _floats(values), 'band')
+            self.columns.append(col)
+            added.append(col)
+        return added
 
     # -- formula columns
     def add_formula(self, formula, title=''):
@@ -156,7 +173,7 @@ class ValueTable:
 
     def remove_column(self, name):
         col = self.column(name)
-        if col is None or col.kind not in ('value', 'formula'):
+        if col is None or col.kind not in ('value', 'band', 'formula'):
             return False
         users = [c.name for c in self.columns
                  if c.kind == 'formula' and c is not col and re.search(rf'\b{name}\b', c.formula)]

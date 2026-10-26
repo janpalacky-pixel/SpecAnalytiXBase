@@ -40,10 +40,13 @@ class PeakListDialog(QDialog):
     Plot. self.rows are the table rows, self.row_spectrum the spectrum of each."""
 
     def __init__(self, parent, spectra, threshold=0.0, prominence=0.1, distance=0.05,
-                 mode='Positive', on_settings=None, snr=None):
+                 mode='Positive', on_settings=None, snr=None, open_data_table=None):
         super().__init__(parent)
         self.spectra = list(spectra)
         self.on_settings = on_settings
+        # open_data_table(parent, spectra, value_name, bands): the Data table with
+        # the bands as columns (given by the controller; None = no such button)
+        self.open_data_table = open_data_table
         self._tolerance_set = False
         n = len(self.spectra)
         self.setWindowTitle(f"Peak list – {n} spectr{'um' if n == 1 else 'a'}")
@@ -342,6 +345,15 @@ class PeakListDialog(QDialog):
             row.addWidget(w)
         row.addWidget(self.band_stored_check)
         row.addStretch(1)
+        self.band_to_data_table_button = QPushButton("Open in the Data table")
+        self.band_to_data_table_button.setToolTip(
+            "The Data table (tab Values per spectrum) with one column per band (b1, b2, …) of "
+            "the value shown here, next to the values stored with the spectra: compute with them "
+            "(e.g. b2 / b1) or plot them against e.g. the temperature")
+        self.band_to_data_table_button.setAutoDefault(False)
+        self.band_to_data_table_button.clicked.connect(lambda: self.bands_to_data_table())
+        self.band_to_data_table_button.setVisible(self.open_data_table is not None)
+        row.addWidget(self.band_to_data_table_button)
         v.addLayout(row)
         self.band_table_widget = QTableWidget(0, 1)
         self.band_table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -362,6 +374,26 @@ class PeakListDialog(QDialog):
         self.band_value_combo.currentIndexChanged.connect(self._draw_if_shown)
         self.band_stored_check.toggled.connect(self._draw_if_shown)
         return page
+
+    def band_values(self):
+        """(value name, [(band position text, [value or None per spectrum])]) of
+        the Band table as set now (value and tolerance), spectra in list order."""
+        value_name = self.band_value_combo.currentText()
+        columns, rows, _ = pl.band_table(self.rows, self.row_spectrum, self.spectra, value_name,
+                                         self.tolerance.value(), ())
+        bands = [(columns[c], [r[c] for r in rows]) for c in range(1, len(columns))]
+        return value_name, bands
+
+    def bands_to_data_table(self):
+        """Open in the Data table: the bands as columns b1, b2, ... there."""
+        if self.open_data_table is None:
+            return None
+        value_name, bands = self.band_values()
+        if not bands:
+            QMessageBox.information(self, "Peak list", "No peaks found: there are no bands to "
+                                    "open in the Data table.")
+            return None
+        return self.open_data_table(self, self.spectra, value_name, bands)
 
     def fill_band_table(self):
         """Fill the tab Band table from the current peaks; returns

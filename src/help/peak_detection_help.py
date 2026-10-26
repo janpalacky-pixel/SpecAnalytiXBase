@@ -291,6 +291,12 @@ _PAGE = """
     one nearest the band's position is shown and the line under the table says how many peaks
     were left out &mdash; lower the &plusmn; distance to give them their own columns. With
     this tab open, <b>Copy</b> (Ctrl+C) and <b>Export&hellip;</b> take the whole band table.</p>
+    <p><b>Open in the Data table</b> opens the <a href="help://user_guide#values-per-spectrum">Data
+    table</a> of the same spectra on its tab <i>Values per spectrum</i>, with one column per band
+    (<b>b1, b2, &hellip;</b>, e.g. &ldquo;Height of the band at 686&rdquo;) of the value shown here,
+    next to the values stored with the spectra. There you can calculate with them &mdash; e.g.
+    <code>b2 / b1</code>, the ratio of two bands in every spectrum &mdash; and plot them against
+    e.g. <code>temperature_C</code> without Excel.</p>
     @@PEAK_BAND_TABLE@@
 
     <hr>
