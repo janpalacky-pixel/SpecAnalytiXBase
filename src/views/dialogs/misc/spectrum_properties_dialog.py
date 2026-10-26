@@ -2,14 +2,15 @@
 """Right-click on the spectra list -> Spectrum properties...: a table with one
 row per spectrum and one column per property (temperature, pH,
 concentration, ...). Type the values, paste a column from Excel, fill them
-from the names or as a series; Apply stores them (one step in the
+from the names, as a series or from a table file; Apply stores them (one step in the
 Operations History, so Undo takes it back).
 src/modules/misc/spectrum_properties.py."""
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QBrush, QColor, QKeySequence
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
-                             QDialogButtonBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
+                             QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
+                             QHBoxLayout,
                              QHeaderView, QInputDialog, QLabel, QListWidget,
                              QMessageBox, QPushButton,
                              QShortcut, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout)
@@ -40,6 +41,30 @@ in formulas.</li>
 of the name. <b>Fill a series&hellip;</b>: start and step, e.g. 20, 25, 30, &hellip; in the order of
 the table (sort it first by clicking a heading if needed). Both fill the selected rows of the
 current column, or all rows when none is selected.</li>
+<li><b>Fill from a file&hellip;</b>: a table in Excel, CSV or TXT &mdash; the spectrum names in
+the first column, then one column per property with its name in the first row, e.g.
+<pre>spectrum     pH    temperature_C
+control_01   7.4   25
+control_02   7.4   30</pre>
+Each spectrum is looked for under its names in this order: its <b>full name</b> as in the
+list (<code>day1 : control_01</code>), its <b>original name</b> (before a rename), then its
+<b>short name</b> &mdash; the part after &ldquo; : &rdquo;, the column name in the data file
+(<code>control_01</code>). Case, spaces and punctuation do not matter (<code>Control 01</code> =
+<code>control_01</code>). When it is not clear, nothing is filled and the window says why: a name
+that is in the table twice, or a short name that fits several spectra (<code>control_01</code>
+when the list holds <code>day1 : control_01</code> and <code>day2 : control_01</code> &mdash; write
+the full names in the table then). A new property gets a column (a heading like
+<i>Temperature (&deg;C)</i> becomes <code>Temperature_C</code>); only the spectra in the table and
+the cells with a number change: a cell that is not a number (e.g. <i>n.d.</i>) and a column of
+text (e.g. notes) are left out. Excel: the sheet <i>Properties</i> if there is one, else the first
+sheet.<br>
+A window says what was filled and, line by line, what was not used and why.<br>
+<b>Example:</b> load <i>Help &rsaquo; Test datasets &rsaquo; Synthetic &rsaquo; Group Statistics
+&rsaquo; three treatment groups</i>, select all, open this window and fill it from the example
+table: <a href="example:save">save a copy of the example table&hellip;</a> &middot;
+<a href="example:open">open it</a> (Excel; also as <a href="example:save-csv">CSV&hellip;</a>).
+The example contains on purpose a row <i>ghost_99</i> (no such spectrum), a cell <i>n.d.</i> (not a
+number) and a text column <i>note</i>, to show what is left out.</li>
 <li><b>Sort</b>: click a heading (values as numbers, empty cells last; names naturally).</li>
 <li><b>Remove property</b> empties its whole column (removed on Apply).</li>
 <li><b>Apply</b> stores the values. It is one step in the Operations History, so <b>Undo</b>
@@ -190,7 +215,13 @@ class SpectrumPropertiesDialog(QDialog):
         self.series_button = QPushButton("Fill a series…")
         self.series_button.setToolTip("start, start + step, start + 2 step, … down the table")
         self.series_button.clicked.connect(lambda: self.fill_series())   # not clicked(False) as an argument
-        for b in (self.add_button, self.remove_button, self.name_button, self.series_button):
+        self.file_button = QPushButton("Fill from a file…")
+        self.file_button.setToolTip("A table (Excel, CSV, TXT): the spectrum names in the first "
+                                    "column, then one column per property with its name in the "
+                                    "first row")
+        self.file_button.clicked.connect(lambda: self.fill_from_file())   # not clicked(False) as an argument
+        for b in (self.add_button, self.remove_button, self.name_button, self.series_button,
+                  self.file_button):
             b.setAutoDefault(False)
             tools.addWidget(b)
         tools.addStretch(1)
@@ -295,7 +326,8 @@ class SpectrumPropertiesDialog(QDialog):
         elif not self.keys:
             self.summary.setText("No properties yet. Start with Add property… (e.g. pH): it "
                                  "makes a column; then type the values, paste them from Excel "
-                                 "or use Fill from the names… / Fill a series…, and Apply.")
+                                 "or use Fill from the names… / Fill a series…, and Apply. "
+                                 "Fill from a file… reads a whole table (names + properties).")
         else:
             self.summary.setText("")
         return diff
@@ -408,6 +440,50 @@ class SpectrumPropertiesDialog(QDialog):
         self._fill_column(col, sp.series(len(rows), start, step), rows)
         return True
 
+    def fill_from_file(self, path=None):
+        """Fill properties from a table file: the spectrum names in the first
+        column, one column per property (its name in the first row). New
+        properties get a column; only the spectra found in the table and
+        the cells with a number change. Nothing is stored until Apply.
+        Returns the result of sp.from_table (None if cancelled or unreadable)."""
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "Fill from a file", "", sp.TABLE_FILTER)
+            if not path:
+                return None
+        try:
+            header, rows = sp.read_table(path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Fill from a file", f"The table could not be read:\n{exc}")
+            return None
+        result = sp.from_table(self.spectra, header, rows)
+        where = {self._row_spectrum(r): r for r in range(self.table.rowCount())}
+        for key in result['keys']:
+            if key not in self.keys:
+                self.keys.append(key)
+                col = self.table.columnCount()
+                self.table.insertColumn(col)
+                self._set_headers()
+                self._fill_column(col, [None] * len(self.spectra))
+            col = self.keys.index(key) + 1
+            pairs = [(where[i], v) for i, v in enumerate(result['values'][key]) if v is not None]
+            if pairs:
+                self._fill_column(col, [v for _, v in pairs], [r for r, _ in pairs])
+        report = sp.table_report(result)
+        diff = self._changed()
+        if result['keys']:
+            change = (f"{len(diff)} value(s) will change \u2013 Apply stores them."
+                      if diff else "Nothing changed: the values are already there.")
+            report += "\n" + change
+            self.summary.setText(f"From the file: {result['found']} of {len(self.spectra)} "
+                                 f"spectra. {change}")
+        else:
+            self.summary.setText(report.split('\n')[0])
+        if result['keys']:
+            QMessageBox.information(self, "Fill from a file", report)
+        else:
+            QMessageBox.warning(self, "Fill from a file", report)
+        return result
+
     def paste(self):
         """Ctrl+V: a block copied from Excel fills the cells from the current
         one down (and right, for several columns)."""
@@ -471,12 +547,45 @@ class SpectrumPropertiesDialog(QDialog):
                 return
         super().reject()
 
+    EXAMPLE = 'resources/test_data/examples/treatment_properties'
+
+    def example_link(self, link, target=None):
+        """The links of the help: example:save / example:save-csv - a copy of
+        the example table where the user wants it; example:open - open it
+        (Excel). Returns the path saved or opened (None if cancelled)."""
+        import os
+        import shutil
+        from PyQt5.QtCore import QUrl
+        from PyQt5.QtGui import QDesktopServices
+        from src.modules.utils.resource_path import resource_path
+        ext = '.csv' if link == 'example:save-csv' else '.xlsx'
+        source = resource_path(self.EXAMPLE + ext)
+        if link == 'example:open':
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(source)))
+            return source
+        if link not in ('example:save', 'example:save-csv'):
+            return None
+        if target is None:
+            target, _ = QFileDialog.getSaveFileName(
+                self, "Save a copy of the example table", os.path.basename(source),
+                "CSV (*.csv)" if ext == '.csv' else "Excel (*.xlsx)")
+            if not target:
+                return None
+        try:
+            shutil.copyfile(source, target)
+        except OSError as exc:
+            QMessageBox.warning(self, "Example table", f"It could not be saved:\n{exc}")
+            return None
+        return target
+
     def show_help(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Spectrum properties – help")
         dlg.resize(640, 460)
         v = QVBoxLayout(dlg)
         text = QTextBrowser()
+        text.setOpenLinks(False)                     # the example links are handled here
+        text.anchorClicked.connect(lambda url: self.example_link(url.toString()))
         text.setHtml(HELP_HTML)
         v.addWidget(text)
         bb = QDialogButtonBox(QDialogButtonBox.Close)

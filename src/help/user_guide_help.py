@@ -645,6 +645,19 @@ def get_user_guide_help_content():
                 current column, or all rows. A click on a heading sorts the table: values as numbers
                 (2 before 10, empty cells last), names in their natural order (raman_2 before
                 raman_10).</li>
+            <li><b>Fill from a file&hellip;</b> reads a whole table (Excel, CSV or TXT): the spectrum
+                names in the first column, then one column per property with its name in the first
+                row (e.g. <code>spectrum | pH | temperature_C</code>). Each spectrum is looked for
+                under its full name (<code>day1 : control_01</code>), then its original name (before
+                a rename), then its short name &mdash; the part after &ldquo; : &rdquo;, the column
+                name in the data file (<code>control_01</code>); case, spaces and punctuation do not
+                matter. When it is not clear &mdash; a name twice in the table, or a short name that
+                fits several spectra &mdash; nothing is filled and the window says why. New
+                properties get a column (<i>Temperature (&deg;C)</i> becomes
+                <code>Temperature_C</code>); only the spectra in the table and the cells with a
+                number change, and a window says what was found and what not. Nothing is stored
+                until Apply. The window's orange <b>?</b> has an example table to save or open, for
+                the test dataset <i>Group Statistics &rsaquo; three treatment groups</i>.</li>
             <li>For example: add <code>pH</code>, fill it, Apply &mdash; then colour the spectra by
                 pH, or in the Data table (Values per spectrum) add a band's area and plot it
                 against pH.</li>
