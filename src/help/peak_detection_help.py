@@ -228,6 +228,13 @@ _PAGE = """
     it. Long lists are fitted on several processor cores,
     with a progress bar and Cancel. For several overlapping peaks of one spectrum fitted together,
     use the Peak Fitting tool.</p>
+    <p><b>Show on the main plot</b> (next to the fit settings) draws each fitted peak &mdash; the
+    model band plus its background over the points it was fitted to &mdash; as a dashed black line
+    over its spectrum on the main plot (also in a Waterfall plot), so you can see at once
+    whether a fit describes the band. It draws the peaks of the selected rows of the table, or all
+    peaks when no row is selected (at most 300 at once); select a few rows to check them one by one.
+    The view of the plot does not change. Untick it, use <i>Clear Peaks</i> (right-click on the
+    plot) or draw a new plot to remove them.</p>
     <h3 id="peak-plot">Plot</h3>
     <p>The tab <b>Plot</b> draws one number of the peaks against another:</p>
     <ul>

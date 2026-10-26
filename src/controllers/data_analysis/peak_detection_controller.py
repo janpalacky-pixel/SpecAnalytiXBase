@@ -7,6 +7,7 @@ class PeakDetectionController:
     def __init__(self, main_controller):
         self.controller = main_controller
         self.peak_detector = PeakDetector()
+        self.fit_artists = []              # Peak list > Show on the main plot
         
         # Default settings (Reset to defaults in the window puts these back)
         from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
@@ -122,7 +123,8 @@ class PeakDetectionController:
                                 threshold=self.peak_threshold, prominence=self.peak_prominence,
                                 distance=self.peak_distance, mode=self.peak_detection_mode,
                                 snr=self.peak_snr, on_settings=keep,
-                                open_data_table=self.open_bands_in_data_table)
+                                open_data_table=self.open_bands_in_data_table,
+                                show_fits=self.show_fits_on_plot)
         self.peak_list_dialog = dialog
         dialog.exec_()
         return dialog
@@ -143,7 +145,59 @@ class PeakDetectionController:
         dlg.exec_()
         return dlg
 
+    FIT_GID = 'peak_list_fit'
+
+    def show_fits_on_plot(self, curves):
+        """Peak list > Show on the main plot: draw the fitted peaks, curves =
+        [(spectrum, x, y)], dashed over their spectra on the main plot (also
+        a stacked plot: each curve gets its line's offset); None or [] removes
+        them. The axis limits stay as they are. Returns the number drawn - a
+        spectrum that is not on the plot now is left out."""
+        import numpy as np
+        from src.modules.data_analysis import peak_list as pl
+        canvas = getattr(self.controller, 'static_canvas', None)
+        self._remove_fits()
+        if canvas is None:
+            return 0
+        drawn = 0
+        if curves:
+            for ax in canvas.figure.get_axes():
+                lines = [ln for ln in ax.get_lines() if ln.get_gid() != self.FIT_GID]
+                limits = ax.get_xlim(), ax.get_ylim()
+                cache = {}
+                for spectrum, x, y in curves:
+                    key = id(spectrum)
+                    if key not in cache:
+                        sx = np.asarray(spectrum.get('x_scale', []), dtype=float)
+                        sy = np.asarray(spectrum.get('y_scale', []), dtype=float)
+                        cache[key] = next(
+                            ((b, ln) for ln in lines
+                             for b in [pl.line_offset(ln.get_xdata(), ln.get_ydata(), sx, sy)]
+                             if b is not None), None)
+                    hit = cache[key]
+                    if hit is None:
+                        continue
+                    offset, _line = hit
+                    artist, = ax.plot(x, np.asarray(y, dtype=float) + offset, ls='--', lw=1.2,
+                                      color='black', alpha=0.85, zorder=5, label='_nolegend_',
+                                      gid=self.FIT_GID)
+                    self.fit_artists.append(artist)
+                    drawn += 1
+                ax.set_xlim(limits[0])
+                ax.set_ylim(limits[1])
+        canvas.draw_idle()
+        return drawn
+
+    def _remove_fits(self):
+        for artist in self.fit_artists:
+            try:
+                artist.remove()
+            except (ValueError, AttributeError):       # already gone with a new plot
+                pass
+        self.fit_artists = []
+
     def clear_peaks(self):
-        """Clear all detected peaks."""
+        """Clear all detected peaks (and the fitted peaks of the Peak list)."""
         canvas = self.controller.static_canvas
+        self._remove_fits()
         self.peak_detector.clear_peaks(canvas)

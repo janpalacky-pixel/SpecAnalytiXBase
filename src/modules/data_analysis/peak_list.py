@@ -432,3 +432,47 @@ def plot_values(rows, index, spectra, x_key, y_name, tolerance=0.0):
         xs = [float(r[NUMERIC[what]]) for r in rows]
     ys = [float(r[NUMERIC[y_name]]) for r in rows]
     return xs, ys
+
+
+def fit_curves(rows, index, spectra, shape='Gaussian', baseline='Linear', which=None,
+               points=200):
+    """The fitted curves of the peaks, to draw them over the spectra: for
+    each row (or only the rows in `which`) whose fit is accepted, (spectrum
+    index, x, y) - the model band plus its background over the peak's fit
+    window (the same window and fit as Refine by fitting), on `points`
+    evenly spaced x values."""
+    from src.modules.visualization_analysis.peak_fit_map import fit_single_peak, model_curve
+    chosen = range(len(rows)) if which is None else sorted(set(which))
+    windows = fit_windows(rows, index, spectra)
+    out = []
+    for r in chosen:
+        if windows[r] is None:
+            continue
+        x, y = windows[r]
+        result = fit_single_peak(x, y, shape, baseline)
+        if not result.get('ok'):
+            continue
+        xs = np.linspace(float(np.min(x)), float(np.max(x)), points)
+        curve, _ = model_curve(xs, result, shape, baseline)
+        if curve is not None:
+            out.append((index[r], xs, curve))
+    return out
+
+
+def line_offset(line_x, line_y, x, y):
+    """How a plotted line relates to a spectrum: the offset b with
+    line_y = y + b (a stacked plot shifts every spectrum), or None if the
+    line is not this spectrum."""
+    line_x, line_y = np.asarray(line_x, dtype=float), np.asarray(line_y, dtype=float)
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    if line_x.shape != x.shape or line_y.shape != y.shape or not len(x):
+        return None
+    if not np.allclose(line_x, x, equal_nan=True):
+        return None
+    d = line_y - y
+    d = d[np.isfinite(d)]
+    if not len(d):
+        return None
+    b = float(np.median(d))
+    scale = max(float(np.nanmax(np.abs(y))), 1e-300)
+    return b if np.allclose(d, b, atol=1e-9 * scale, rtol=0) else None

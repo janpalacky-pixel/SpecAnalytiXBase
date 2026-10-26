@@ -40,13 +40,17 @@ class PeakListDialog(QDialog):
     Plot. self.rows are the table rows, self.row_spectrum the spectrum of each."""
 
     def __init__(self, parent, spectra, threshold=0.0, prominence=0.1, distance=0.05,
-                 mode='Positive', on_settings=None, snr=None, open_data_table=None):
+                 mode='Positive', on_settings=None, snr=None, open_data_table=None,
+                 show_fits=None):
         super().__init__(parent)
         self.spectra = list(spectra)
         self.on_settings = on_settings
         # open_data_table(parent, spectra, value_name, bands): the Data table with
         # the bands as columns (given by the controller; None = no such button)
         self.open_data_table = open_data_table
+        # show_fits([(spectrum, x, y), ...] or None): draw the fitted peaks on the
+        # main plot / remove them (given by the controller; None = no such tick)
+        self.show_fits = show_fits
         self._tolerance_set = False
         n = len(self.spectra)
         self.setWindowTitle(f"Peak list – {n} spectr{'um' if n == 1 else 'a'}")
@@ -120,8 +124,20 @@ class PeakListDialog(QDialog):
         for label, w in (("shape:", self.fit_shape), ("background:", self.fit_baseline)):
             fit_row.addWidget(QLabel(label))
             fit_row.addWidget(w)
+        self.fits_on_plot_check = QCheckBox("Show on the main plot")
+        self.fits_on_plot_check.setToolTip(
+            "Draw each fitted peak (the model band plus its background, dashed) over its spectrum "
+            "on the main plot - the selected rows of the table, or all peaks when none is "
+            "selected. Untick, Clear Peaks or a new plot removes them.")
+        self.fits_on_plot_check.setVisible(self.show_fits is not None)
+        self.fits_on_plot_info = QLabel("")
+        self.fits_on_plot_info.setStyleSheet("color: grey;")
+        self.fits_on_plot_info.setWordWrap(True)
         fit_row.addWidget(self.fit_info, 1)
+        fit_row.addWidget(self.fits_on_plot_check)
         layout.addLayout(fit_row)
+        layout.addWidget(self.fits_on_plot_info)
+        self.fits_on_plot_info.setVisible(False)
         self._fit_controls_enabled()
 
         self.tabs = QTabWidget()
@@ -179,6 +195,7 @@ class PeakListDialog(QDialog):
         for w in (self.fit_shape, self.fit_baseline):
             w.currentIndexChanged.connect(lambda *_: self.refine_check.isChecked() and self.refresh())
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.fits_on_plot_check.toggled.connect(lambda *_: self.draw_fits_on_plot())
         self.refresh()
 
     # -- the Plot tab
@@ -440,6 +457,68 @@ class PeakListDialog(QDialog):
     def _selection_changed(self):
         if self.selected_check.isChecked():
             self._draw_if_shown()
+        if self.fits_on_plot_check.isChecked():
+            self.draw_fits_on_plot()
+
+    MAX_FITS_ON_PLOT = 300
+
+    def selected_rows(self):
+        """Indices (into self.rows) of the rows selected in the table."""
+        picked = set()
+        for i in self.table.selectionModel().selectedRows():
+            item = self.table.item(i.row(), 0)
+            if item is not None and item.data(Qt.UserRole) is not None:
+                picked.add(int(item.data(Qt.UserRole)))
+        return sorted(picked)
+
+    def _select_rows(self, rows):
+        """Select these rows (indices into self.rows) of the table, quietly."""
+        from PyQt5.QtCore import QItemSelectionModel
+        wanted = set(rows)
+        model = self.table.selectionModel()
+        self.table.blockSignals(True)
+        try:
+            self.table.clearSelection()
+            for r in range(self.table.rowCount()):
+                item = self.table.item(r, 0)
+                if item is not None and item.data(Qt.UserRole) in wanted:
+                    model.select(self.table.model().index(r, 0),
+                                 QItemSelectionModel.Select | QItemSelectionModel.Rows)
+        finally:
+            self.table.blockSignals(False)
+
+    def draw_fits_on_plot(self):
+        """Show on the main plot: the fitted peaks of the selected rows (all
+        rows when none is selected) drawn over their spectra, or removed when
+        the tick is off. Returns the number of curves drawn."""
+        if self.show_fits is None:
+            return 0
+        if not (self.fits_on_plot_check.isChecked() and self.refine_check.isChecked()
+                and self.rows):
+            self.show_fits(None)
+            self.fits_on_plot_info.setVisible(False)
+            return 0
+        which = self.selected_rows() or list(range(len(self.rows)))
+        note = ""
+        if len(which) > self.MAX_FITS_ON_PLOT:
+            note = (f" Only the first {self.MAX_FITS_ON_PLOT} of {len(which)} peaks are drawn; "
+                    "select rows to draw others.")
+            which = which[:self.MAX_FITS_ON_PLOT]
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            curves = pl.fit_curves(self.rows, self.row_spectrum, self.spectra,
+                                   self.fit_shape.currentText(), self.fit_baseline.currentText(),
+                                   which)
+        finally:
+            QApplication.restoreOverrideCursor()
+        drawn = self.show_fits([(self.spectra[i], x, y) for i, x, y in curves])
+        drawn = len(curves) if drawn is None else drawn
+        text = f"On the main plot: {drawn} fitted peak(s)."
+        if drawn < len(curves):
+            text += " (Spectra not on the main plot now are left out.)"
+        self.fits_on_plot_info.setText(text + note)
+        self.fits_on_plot_info.setVisible(True)
+        return drawn
 
     def _plotted_rows(self):
         """Indices (into self.rows) of the rows to draw."""
@@ -588,6 +667,10 @@ class PeakListDialog(QDialog):
         """Find the peaks again with the current settings and fill the table
         (and the plot, when shown); the first time also the ± distance."""
         s = self.settings()
+        # the selected rows stay selected when the same peaks come back (e.g.
+        # ticking Refine by fitting only adds columns)
+        keep = ({tuple(self.rows[r][:4]) for r in self.selected_rows()}
+                if getattr(self, "rows", None) else set())
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             self.rows, self.row_spectrum = pl.peak_table_with_index(self.spectra, **s)
@@ -620,6 +703,8 @@ class PeakListDialog(QDialog):
                     item.setData(Qt.UserRole, r)            # the row in self.rows (also sorted)
                 self.table.setItem(r, c, item)
         self.table.setSortingEnabled(True)
+        if keep:
+            self._select_rows([r for r, row in enumerate(self.rows) if tuple(row[:4]) in keep])
         if not self._tolerance_set and self.rows:      # from the first peaks found
             self._tolerance_set = True
             self.tolerance.blockSignals(True)
@@ -630,12 +715,16 @@ class PeakListDialog(QDialog):
         if self.on_settings is not None:
             self.on_settings(s)
         self._draw_if_shown()
+        if self.fits_on_plot_check.isChecked():
+            self.draw_fits_on_plot()
 
     # -- Refine by fitting
     def _fit_controls_enabled(self):
         on = self.refine_check.isChecked()
         self.fit_shape.setEnabled(on)
         self.fit_baseline.setEnabled(on)
+        if hasattr(self, 'fits_on_plot_check'):
+            self.fits_on_plot_check.setEnabled(on)
 
     def _refine_toggled(self, *_):
         self._fit_controls_enabled()
