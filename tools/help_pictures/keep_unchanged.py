@@ -1,6 +1,7 @@
 """After a run: a picture that differs from the one before the run only in a
-few pixels of one small spot (a system icon drawn with slightly different
-smoothing - Windows does that now and then) is put back as it was, so git
+few pixels of a few small spots (a system icon or a colour emoji such as the
+light bulb of the hints, drawn with slightly different smoothing - Windows
+does that now and then) is put back as it was, so git
 lists only pictures that really changed. make_all_help_pictures.bat copies the
 pictures to tools/logs/pictures_before/ before the run and calls this after
 it; it prints what it put back:
@@ -15,8 +16,9 @@ import numpy as np
 from PIL import Image
 
 PICTURES = os.path.join('resources', 'images', 'help_screenshots')
-MAX_PIXELS = 400          # at most this many pixels differ ...
-MAX_SPOT = 48             # ... all within a square of this size (an icon)
+MAX_PIXELS = 400          # at most this many pixels differ in each spot ...
+MAX_SPOT = 48             # ... each spot within a square of this size (an icon)
+MAX_SPOTS = 6             # ... and at most this many spots
 
 
 def nearly_the_same(old_path, new_path):
@@ -26,11 +28,20 @@ def nearly_the_same(old_path, new_path):
     if old.shape != new.shape:
         return False, -1
     diff = np.abs(old - new).sum(axis=2) > 0
-    ys, xs = np.nonzero(diff)
-    if not len(xs):
+    if not diff.any():
         return False, 0                       # identical: nothing to do
-    spot = max(xs.max() - xs.min(), ys.max() - ys.min()) + 1
-    return diff.sum() <= MAX_PIXELS and spot <= MAX_SPOT, int(diff.sum())
+    from scipy import ndimage
+    # differing pixels closer than a few pixels belong to one spot
+    spots, n = ndimage.label(ndimage.binary_dilation(diff, iterations=3))
+    if n > MAX_SPOTS:
+        return False, int(diff.sum())
+    for k, box in enumerate(ndimage.find_objects(spots), start=1):
+        inside = diff[box] & (spots[box] == k)
+        ys, xs = np.nonzero(inside)
+        size = max(xs.max() - xs.min(), ys.max() - ys.min()) + 1
+        if size > MAX_SPOT or inside.sum() > MAX_PIXELS:
+            return False, int(diff.sum())
+    return True, int(diff.sum())
 
 
 def main(before):

@@ -13,8 +13,8 @@ Afterwards **GitHub Desktop → Changes** lists only the pictures that really
 changed: an unchanged window gives exactly the same picture (the same data, the
 same settings and the same window sizes every time; the clock, the random ids and
 the mouse are fixed too), so it is not listed. A picture whose only difference
-is a few pixels in one small spot (Windows draws the message-box icons slightly
-differently each time) is put back as it was by `keep_unchanged.py`
+is a few pixels in a few small spots (Windows draws the message-box icons and
+colour emoji such as the hint bulb slightly differently each time) is put back as it was by `keep_unchanged.py`
 (`tools/logs/pictures_kept.txt`).
 Commit the changed ones together, e.g. "Help pictures".
 
