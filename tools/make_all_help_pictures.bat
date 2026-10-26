@@ -1,7 +1,7 @@
 @echo off
 rem ===========================================================================
 rem  Makes every picture of the help again, in one run (double-click it, or run
-rem  it from any folder). Takes about 15-20 minutes: windows of the program open
+rem  it from any folder). Takes about 5 minutes: windows of the program open
 rem  and close by themselves - do not use the mouse or keyboard meanwhile.
 rem
 rem  Afterwards GitHub Desktop (Changes) shows only the pictures that really
@@ -28,6 +28,9 @@ if exist tools\logs\pictures_finished.txt del tools\logs\pictures_finished.txt
 rem the pictures as they are now, to put back the ones that differ only in a few pixels
 if exist tools\logs\pictures_before rmdir /s /q tools\logs\pictures_before
 xcopy resources\images\help_screenshots tools\logs\pictures_before\ /e /i /q > nul
+rem the same library versions as the GitHub build? (a different matplotlib draws different pictures)
+"%PY%" tools\check_libraries.py > tools\logs\pictures_libraries.txt 2>&1
+type tools\logs\pictures_libraries.txt
 
 echo Help pictures: main window (User Guide)...
 "%PY%" tools\help_pictures\make_user_guide_screenshots.py > tools\logs\pictures_user_guide_console.txt 2>&1
@@ -46,7 +49,7 @@ echo Help pictures: Unmixing figures...
 
 echo Help pictures: putting back the ones that differ only in a few pixels...
 "%PY%" tools\help_pictures\keep_unchanged.py tools\logs\pictures_before > tools\logs\pictures_kept.txt 2>&1
-findstr /c:"NOT TAKEN" /c:"Traceback" /c:"FAILED " /c:"skipped" tools\logs\pictures_*.txt > tools\logs\pictures_problems.txt
+findstr /c:"NOT TAKEN" /c:"Traceback" /c:"FAILED " /c:"skipped" /c:"LIBRARIES DIFFER" tools\logs\pictures_*.txt > tools\logs\pictures_problems.txt
 echo finished %DATE% %TIME% > tools\logs\pictures_finished.txt
 echo.
 echo Finished. Changed pictures: GitHub Desktop, Changes. Problems: tools\logs\pictures_problems.txt

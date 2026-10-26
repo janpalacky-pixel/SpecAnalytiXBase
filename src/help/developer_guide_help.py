@@ -4309,6 +4309,11 @@ pytest tests/ -v
                 the libraries of the GitHub build (which runs on Windows too); the result is in
                 <code>tools/logs/tests_windows.txt</code>. A test can pass on one system and fail on
                 another (fonts, library versions), so run it before pushing.</li>
+            <li>Both bats first run <code>tools/check_libraries.py</code>: it compares, one by one,
+                the installed library versions with <code>requirements.txt</code> and the Python
+                version with the GitHub build (<code>.github/workflows/nightly-build.yml</code>) and
+                prints &ldquo;Libraries OK&rdquo; or &ldquo;WARNING - LIBRARIES DIFFER&rdquo; with
+                the <code>pip install -r requirements.txt</code> command that fixes it.</li>
             <li><code>tools/make_all_help_pictures.bat</code> makes every picture of the help again
                 from the real program and the bundled test datasets (scripts in
                 <code>tools/help_pictures/</code>, see its <code>README.md</code>). Every window
@@ -4317,6 +4322,30 @@ pytest tests/ -v
                 a window, run it and commit the changed pictures; a part that can no longer find a
                 button or tab says &ldquo;NOT TAKEN&rdquo; in
                 <code>tools/logs/pictures_problems.txt</code>.</li>
+            <li><b>Which Python the bats use.</b> A Python environment is a folder with its own
+                Python and its own copy of every library; whichever <code>python.exe</code> is
+                started, it uses the libraries of its own folder. The bats look, in this order:
+                <ol>
+                    <li><code>SAX_PYTHON</code> &ndash; a Windows setting (environment variable)
+                        holding the path of a <code>python.exe</code>. Not set by default; set it
+                        only when the bats should use another environment;</li>
+                    <li><code>%USERPROFILE%\\fresh_env\\Scripts\\python.exe</code> &ndash; the usual
+                        environment (e.g. <code>C:\\Users\\&lt;name&gt;\\fresh_env</code>), installed
+                        from <code>requirements.txt</code>;</li>
+                    <li><code>python</code> &ndash; whatever Python Windows finds first, possibly
+                        with other library versions (the library check then warns).</li>
+                </ol>
+                <code>SAX_PYTHON</code> is for two cases: (1) on another computer the environment
+                is in another folder or has another name (e.g. <code>D:\\envs\\sax</code>) &ndash;
+                instead of renaming it or editing the bats (they are in git, for everyone), set the
+                path once; (2) trying new library versions in a second environment before changing
+                <code>requirements.txt</code>, without touching <code>fresh_env</code>. In a command
+                window:
+                <pre>set SAX_PYTHON=C:\\Users\\&lt;name&gt;\\new_env\\Scripts\\python.exe
+tools\\run_tests_windows.bat</pre>
+                The setting lasts until that window is closed; the library check at the start lists
+                what differs from <code>requirements.txt</code>. To make it permanent: Windows
+                Settings &rsaquo; &ldquo;Edit environment variables for your account&rdquo;.</li>
         </ul>
 
         <!-- ═══════════════════════════════════════════════════════════

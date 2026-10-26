@@ -25,6 +25,18 @@ Run it whenever you like — after changing a window, or before a release.
   taken ("NOT TAKEN": a button or tab was not found, e.g. after it was renamed —
   the old picture stays), an error, or a part that was skipped.
 - Python: `%SAX_PYTHON%` if set, else `%USERPROFILE%\fresh_env`, else `python`.
+  `SAX_PYTHON` is a Windows setting (environment variable) with the path of
+  another `python.exe` - not set by default. Use it when the environment is in
+  another folder (another computer), or to try new library versions in a second
+  environment without touching fresh_env:
+  `set SAX_PYTHON=C:\Users\<name>\new_env\Scripts\python.exe`, then run the
+  bat in the same command window. See the Developer Guide, "The tests on
+  Windows, and the help pictures".
+- Libraries: first `tools/check_libraries.py` checks that this Python has the
+  library versions of `requirements.txt` (those of the GitHub build) -
+  "Libraries OK" or "WARNING - LIBRARIES DIFFER" on the screen and in
+  `tools/logs/pictures_libraries.txt` (a difference is also listed in
+  `pictures_problems.txt`). A different matplotlib draws slightly different pictures.
 
 ## The scripts
 
