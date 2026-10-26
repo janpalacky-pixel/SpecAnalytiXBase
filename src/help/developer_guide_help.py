@@ -3529,8 +3529,8 @@ def _natural_sort_key(cls, label):
             sum-to-one, brightness, suggestion incl. brighter-pixels-noisier, denoising, fit error,
             errors) and <code>tests/test_map2d_unmixing.py</code> (window, demo map
             <code>unmixing_cell_map_demo.mat</code> with known truth, Suggest window, Denoise first,
-            Show all endmembers, RGB, add to list). Help pictures: <code>dev_notes/make_unmixing_figures.py</code>
-            (demo) and <code>dev_notes/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
+            Show all endmembers, RGB, add to list). Help pictures: <code>tools/help_pictures/make_unmixing_figures.py</code>
+            (demo) and <code>tools/help_pictures/make_unmixing_glenodinium_figures.py</code> (Glenodinium map).</li>
         </ul>
 
         <h2 id="conveniences-design">Cursor, paste from clipboard, opening files, dark theme</h2>
@@ -3648,7 +3648,7 @@ def _natural_sort_key(cls, label):
             to the plot, Summary, pairs, colours, the Spectra tab and the paired difference.
             Lesson learned: the tutorial pictures were first made by opening the window directly
             with the spectra in file order, so they did not match what users saw; the picture
-            script (<code>dev_notes/make_group_statistics_tutorial_figures.py</code>) now imports
+            script (<code>tools/help_pictures/make_group_statistics_tutorial_figures.py</code>) now imports
             through the main window, and <code>tests/test_group_order_and_dots.py</code> checks
             the demos through that path.</li>
             <li><b>Dots</b> (<code>src/modules/visualization_analysis/dot_spread.py</code>,
@@ -3743,7 +3743,7 @@ def _natural_sort_key(cls, label):
             <code>tests/test_group_statistics_tutorial.py</code> &mdash; if a change to the values
             or tests moves a number, that test fails and the text must be updated. Its
             screenshots (<code>resources/images/help_screenshots/group_statistics_tutorial/</code>)
-            are made by <code>dev_notes/make_group_statistics_tutorial_figures.py</code>, which
+            are made by <code>tools/help_pictures/make_group_statistics_tutorial_figures.py</code>, which
             runs the same steps offscreen and prints the results. Hedges' g interval: bootstrap
             from 10 values per group, the Hedges&ndash;Olkin approximation below that.</li>
             <li>"From names&hellip;" offers the common root name first
@@ -4301,6 +4301,22 @@ pytest tests/ -v
             calculation received NaN. Found the same way: <code>np.polyfit</code> of a line through
             points that all lie at x&nbsp;=&nbsp;0 in Melting Curve Analysis (now refused before the
             fit, <code>_polyfit_checked</code>).</li>
+        </ul>
+
+        <h3 id="windows-tests-and-pictures">The tests on Windows, and the help pictures</h3>
+        <ul>
+            <li><code>tools/run_tests_windows.bat</code> runs all tests on a Windows computer with
+                the libraries of the GitHub build (which runs on Windows too); the result is in
+                <code>tools/logs/tests_windows.txt</code>. A test can pass on one system and fail on
+                another (fonts, library versions), so run it before pushing.</li>
+            <li><code>tools/make_all_help_pictures.bat</code> makes every picture of the help again
+                from the real program and the bundled test datasets (scripts in
+                <code>tools/help_pictures/</code>, see its <code>README.md</code>). Every window
+                has a fixed size and the same data and settings, so an unchanged window gives the
+                same picture and git lists only the pictures that really changed. After a change to
+                a window, run it and commit the changed pictures; a part that can no longer find a
+                button or tab says &ldquo;NOT TAKEN&rdquo; in
+                <code>tools/logs/pictures_problems.txt</code>.</li>
         </ul>
 
         <!-- ═══════════════════════════════════════════════════════════

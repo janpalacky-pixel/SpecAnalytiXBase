@@ -1,9 +1,9 @@
 # src/help/help_figures.py
 """Explanatory figures shared by several help pages (how a calculation
 works), kept in resources/images/help_screenshots/calculations/ and drawn by
-dev_notes/make_calculation_figures.py (a file name with a folder, e.g.
+tools/help_pictures/make_calculation_figures.py (a file name with a folder, e.g.
 "peak_detection/...", lies in that folder of help_screenshots instead - the
-Peak Detection figures, drawn by dev_notes/make_peak_detection_figures.py,
+Peak Detection figures, drawn by tools/help_pictures/make_peak_detection_figures.py,
 and the Peak Detection windows, by make_tool_screenshots.py). figure_html(key) gives a complete
 <div><img><caption></div> block (empty if the file is missing), resolved
 with resource_path() so it works from source and in the installed build."""

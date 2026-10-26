@@ -3,7 +3,7 @@
 (Help -> Test datasets -> Synthetic -> Group Statistics).
 
 Every number quoted here is checked by tests/test_group_statistics_tutorial.py;
-the screenshots are made by dev_notes/make_group_statistics_tutorial_figures.py.
+the screenshots are made by tools/help_pictures/make_group_statistics_tutorial_figures.py.
 """
 
 import os

@@ -45,3 +45,8 @@ resources/test_data/real/Penium.mat
 resources/test_data/real/Raman_2D_map_85x55.txt
 resources/test_data/real/Schizochytrium.mat
 resources/test_data/real/Tetraselmis.mat
+
+# Logs of tools/run_tests_windows.bat and tools/make_all_help_pictures.bat, and the
+# Glenodinium data read once for the Unmixing pictures (tools/help_pictures/glenodinium_data.py)
+tools/logs/
+tools/help_pictures/cache/
