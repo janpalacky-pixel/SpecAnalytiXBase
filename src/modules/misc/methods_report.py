@@ -562,6 +562,25 @@ def _describe_data_table(p, ctx):
 _DESCRIBERS['Data table (add as new)'] = _describe_data_table
 
 
+def _describe_values_as_spectrum(p, ctx):
+    """Data table > Values per spectrum > As new spectrum."""
+    v = p.get('values_as_spectrum') or {}
+    if not v:
+        return _describe_generic('Data table (values) (add as new)', p, ctx)
+    n = len(v.get('source_spectra') or [])
+    y, x = v.get('y_meaning', v.get('y', '')), v.get('x_meaning', v.get('x', ''))
+    text = (f"A new spectrum “{v.get('name', '')}” was made from one value per spectrum: "
+            f"{y} against {x}, for {n} spectra, sorted by the latter.")
+    rows = [('y', y), ('x', x), ('spectra', str(n))]
+    for key in ('y_formula', 'x_formula'):
+        if v.get(key):
+            rows.append((key.replace('_', ' '), v[key]))
+    return _Description(text, rows)
+
+
+_DESCRIBERS['Data table (values) (add as new)'] = _describe_values_as_spectrum
+
+
 def _describe_spectrum_properties(p, ctx):
     """Values typed in (or corrected) in Spectrum properties."""
     props = p.get('properties') or {}

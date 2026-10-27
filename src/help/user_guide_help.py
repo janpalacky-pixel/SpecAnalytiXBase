@@ -2151,7 +2151,11 @@ def get_user_guide_help_content():
         <h4 id="values-per-spectrum">Values per spectrum (second tab)</h4>
         <p>One row per selected spectrum (sp1, sp2, &hellip;) with its name, the numbers stored with
         it (e.g. <code>temperature_C</code> of a JASCO .jwb scan) and the numbers in its name
-        (<code>n1</code>, <code>n2</code>, &hellip;: in <code>TBA_45C : 0003</code> n1 is 45 and n2 is 3).</p>
+        (<code>n1</code>, <code>n2</code>, &hellip;: in <code>TBA_45C : 0003</code> n1 is 45 and n2 is 3;
+        every number of the names, except one that is the same in all of them, such as the 2 of
+        <code>raman_2comp</code>). A line at the top of each tab says what it is for: the tab
+        Points has one row per x value (formulas point by point, new spectra), this tab one row
+        per spectrum.</p>
         <ul>
             <li><strong>Add value&hellip;</strong> adds a column (blue, <b>v1, v2, &hellip;</b>) with one
                 value per spectrum &mdash; exactly the values of
@@ -2170,7 +2174,24 @@ def get_user_guide_help_content():
                 without one (<code>max_val</code>, <code>mean_val</code>, &hellip; skip them).</li>
             <li><strong>Plot &hellip; against &hellip;</strong>: one column against another in its own
                 window, e.g. the maximum at 280&ndash;300 nm against <code>temperature_C</code> gives a
-                melting curve; rows without both values are left out.</li>
+                melting curve; rows without both values are left out. The points are joined by a line
+                only when every x occurs once; with repeated x (e.g. replicates, or <code>n1</code>
+                = 1&ndash;12 in every group) only the points are drawn. The last choice for x,
+                <i>row (1, 2, 3, &hellip; = order of the spectra)</i>, numbers the spectra in the order
+                of the table (sp1 = 1, sp2 = 2, &hellip;) &mdash; for values that have no x of their own,
+                e.g. a time series measured one after another.</li>
+            <li><strong>As new spectrum</strong>: the same two columns added to the spectra list as a
+                new spectrum (one step in the Operations History; Undo removes it) &mdash; e.g. a
+                band's area against <code>temperature_C</code> becomes a melting curve that you can
+                smooth, normalise or open in Melting Curve Analysis like any spectrum. Its points are
+                sorted by x: if the list holds the spectra at 60, 20, 40 and 80&nbsp;&deg;C, the new
+                spectrum still runs 20, 40, 60, 80. Spectra without both values are left out. Each x
+                value must occur once &mdash; a spectrum cannot have two heights at the same x; e.g.
+                <code>n1</code> of <code>control_01 &hellip; control_12</code>,
+                <code>low_dose_01 &hellip;</code> is 1&ndash;12 in every group, so x = n1 is refused
+                (choose another x, or select one group). With <i>row</i> as x the order of the
+                spectra list decides, so sort the list first. The Data table stays open for the next
+                one.</li>
             <li>Copy (Ctrl+C) and Export&hellip; as in the first tab.</li>
         </ul>
 

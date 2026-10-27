@@ -214,9 +214,12 @@ class ValuePlotDialog(QDialog):
         layout.addWidget(self.canvas, 1)
         ax = self.figure.add_subplot(111)
         order = np.argsort(x)
-        ax.plot(x[order], y[order], '-', color='#9DB7DD', lw=1, zorder=1)
+        # a line through the points only when each x occurs once: with repeated
+        # x (e.g. n1 = 1-12 in every group) it would jump up and down between them
+        if len(np.unique(x)) == len(x):
+            ax.plot(x[order], y[order], '-', color='#9DB7DD', lw=1, zorder=1)
         ax.plot(x, y, 'o', color='#1F77B4', ms=5, zorder=2)
-        ax.set_xlabel(head.get(x_name, x_name))
+        ax.set_xlabel(head.get(x_name, table.describe(x_name)))
         ax.set_ylabel(head.get(y_name, y_name))
         ax.grid(alpha=0.3)
         n_all = table.n_rows
@@ -227,12 +230,30 @@ class ValuePlotDialog(QDialog):
         self.points = (x, y)
 
 
+# x = the place of each spectrum in the table (ValueTable.ROW)
+ROW_TEXT = "row (1, 2, 3, … = order of the spectra)"
+
+
 class ValueTablePanel(QWidget):
 
-    def __init__(self, parent, spectra):
+    def __init__(self, parent, spectra, add_spectrum=None):
         super().__init__(parent)
         self.table = ValueTable.from_spectra(spectra)
+        # add_spectrum(spectrum, sources) -> (ok, message): a column against
+        # another added to the spectra list (None = no such button)
+        self.add_spectrum = add_spectrum
         layout = QVBoxLayout(self)
+        # which tab is for what - the tab names alone are easy to overlook
+        self.guide = QLabel(
+            "Each row is one spectrum, described by numbers: values stored with it (e.g. its "
+            "temperature), numbers from its name (n1, n2, …) and values you add – e.g. the area "
+            "of a band (Add value…) or the bands of the Peak list. Calculate with them (New "
+            "column =), plot one against another, or add one against another as a new spectrum "
+            "(e.g. an area against the temperature: a melting curve). To calculate with the "
+            "spectra point by point, use the tab <b>Points (one row per x)</b>.")
+        self.guide.setWordWrap(True)
+        self.guide.setStyleSheet("color: #555;")
+        layout.addWidget(self.guide)
         self.model = ValueTableModel(self.table, self)
         self.view = QTableView()
         self.view.setModel(self.model)
@@ -296,9 +317,18 @@ class ValueTablePanel(QWidget):
                                     "temperature")
         self.plot_button.clicked.connect(self.plot)
         buttons.addWidget(self.plot_button)
+        self.as_spectrum_button = QPushButton("As new spectrum")
+        self.as_spectrum_button.setToolTip(
+            "Add the column on the left, against the one on the right, to the spectra list as a "
+            "new spectrum - e.g. the area of a band against temperature_C is a melting curve you "
+            "can process like any spectrum. Sorted by x; spectra without both values are left "
+            "out. x = row: the order of the spectra in this table.")
+        self.as_spectrum_button.clicked.connect(lambda: self.add_as_spectrum())
+        self.as_spectrum_button.setVisible(add_spectrum is not None)
+        buttons.addWidget(self.as_spectrum_button)
         layout.addLayout(buttons)
         for b in (self.copy_button, self.export_button, self.remove_button, self.plot_button,
-                  self.add_value_button, self.add_formula_button):
+                  self.add_value_button, self.add_formula_button, self.as_spectrum_button):
             b.setAutoDefault(False)
         self._update()
 
@@ -314,12 +344,15 @@ class ValueTablePanel(QWidget):
             box.blockSignals(True)
             box.clear()
             box.addItems(names)
-            if keep in names:
+            if box is self.x_combo:                    # x = the order of the spectra
+                box.addItem(ROW_TEXT, ValueTable.ROW)
+            if keep in names or (box is self.x_combo and keep == ROW_TEXT):
                 box.setCurrentText(keep)
             elif names:
                 box.setCurrentIndex(prefer % len(names))
             box.blockSignals(False)
         self.plot_button.setEnabled(len(names) >= 1)
+        self.as_spectrum_button.setEnabled(len(names) >= 1)
         self.remove_button.setEnabled(any(c.kind in ('value', 'band', 'fit', 'formula')
                                           for c in self.table.columns))
 
@@ -431,8 +464,28 @@ class ValueTablePanel(QWidget):
         self._say(f"Saved: {path}")
         return path
 
+    def x_name(self):
+        """The column chosen as x ('row' for the order of the spectra)."""
+        return self.x_combo.currentData() or self.x_combo.currentText()
+
+    def add_as_spectrum(self):
+        """As new spectrum: the column chosen on the left against the one on
+        the right, added to the spectra list. Returns the spectrum (None if
+        refused)."""
+        if self.add_spectrum is None:
+            return None
+        x_name, y_name = self.x_name(), self.y_combo.currentText()
+        try:
+            spectrum, sources = self.table.as_spectrum(y_name, x_name)
+        except ValueError as exc:
+            self._say(str(exc), error=True)
+            return None
+        ok, text = self.add_spectrum(spectrum, sources)
+        self._say(text, error=not ok)
+        return spectrum if ok else None
+
     def plot(self):
-        x_name, y_name = self.x_combo.currentText(), self.y_combo.currentText()
+        x_name, y_name = self.x_name(), self.y_combo.currentText()
         try:
             dlg = ValuePlotDialog(self, self.table, x_name, y_name)
         except ValueError as exc:

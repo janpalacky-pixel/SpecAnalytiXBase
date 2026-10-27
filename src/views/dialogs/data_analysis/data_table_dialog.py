@@ -82,10 +82,16 @@ class DataTableModel(QAbstractTableModel):
 
 class DataTableDialog(QDialog):
 
-    def __init__(self, parent, spectra, commit_callback=None):
+    def __init__(self, parent, spectra, commit_callback=None, value_callback=None):
         super().__init__(parent)
         self.table = DataTable.from_spectra(spectra)
         self.commit_callback = commit_callback
+        # Values per spectrum > As new spectrum: value_callback(spectrum, sources);
+        # by default the one of the controller that adds the formula columns
+        if value_callback is None:
+            value_callback = getattr(getattr(commit_callback, '__self__', None),
+                                     'add_value_spectrum', None)
+        self.value_callback = value_callback
         n = len(self.table.spectrum_columns())
         self.setWindowTitle(f"Data table – {n} spectr{'um' if n == 1 else 'a'}")
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
@@ -94,12 +100,10 @@ class DataTableDialog(QDialog):
         layout = QVBoxLayout(self)
 
         top = QHBoxLayout()
-        intro = QLabel(
-            "<b>Points</b>: x and one column per spectrum (sp1, sp2, …, as in the Spectral "
-            "Calculator); formula columns (green) can be added to the spectra list as new spectra. "
-            "<b>Values per spectrum</b>: one row per spectrum with its stored values and values you "
-            "choose (area, maximum, peak position, …), formulas and plots. Select cells and press "
-            "Ctrl+C to paste them into Excel. The measured values are not changed here.")
+        # what each tab is for is said at the top of the tab itself
+        intro = QLabel("Two tabs - each says at its top what it is for. Select cells and press "
+                       "Ctrl+C to paste them into Excel. The measured spectra are not changed "
+                       "here.")
         intro.setWordWrap(True)
         top.addWidget(intro, 1)
         from src.views.icons import help_button
@@ -114,6 +118,16 @@ class DataTableDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         self.tabs.addTab(page, "Points (one row per x)")
+        # which tab is for what - the tab names alone are easy to overlook
+        self.points_guide = QLabel(
+            "This tab shows the spectra themselves: the first column is x, then one column per "
+            "spectrum (sp1, sp2, …). Here you calculate new spectra from them, e.g. sp1 − sp2 or "
+            "mean(sp1, sp2) (see Functions), and add them to the spectra list. For one number "
+            "per spectrum – e.g. the area of a band, a peak height or a temperature – use the "
+            "tab <b>Values per spectrum</b>.")
+        self.points_guide.setWordWrap(True)
+        self.points_guide.setStyleSheet("color: #555;")
+        layout.addWidget(self.points_guide)
 
         if not self.table.shared_x:
             note = QLabel(
@@ -200,7 +214,7 @@ class DataTableDialog(QDialog):
         layout.addLayout(buttons)
 
         from src.views.dialogs.data_analysis.value_table_panel import ValueTablePanel
-        self.values = ValueTablePanel(self, spectra)
+        self.values = ValueTablePanel(self, spectra, add_spectrum=self.value_callback)
         self.tabs.addTab(self.values, "Values per spectrum")
         bottom = QHBoxLayout()
         bottom.addStretch(1)

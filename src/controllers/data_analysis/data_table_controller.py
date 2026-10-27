@@ -36,6 +36,37 @@ class DataTableController:
                                       commit_callback=self.add_spectra)
         self.dialog.exec_()
 
+    def add_value_spectrum(self, spectrum, sources):
+        """Values per spectrum > As new spectrum: one column against another
+        (e.g. a band's area against temperature_C) added to the spectra list -
+        one step "Data table (values) (add as new)" in the Operations History,
+        so Undo removes it. The Data table stays open. Returns (ok, message)."""
+        oc = self.main.operations_controller
+        try:
+            pre_state = oc.operations_manager.get_current_spectra()
+            taken = {s['label'] for s in pre_state} | {s['label'] for s in self.main.original_spectra}
+            spectrum['label'] = unique_label(spectrum['label'], taken)
+            meta = spectrum.setdefault('metadata', {})
+            meta.update({'label': spectrum['label'], 'spectrum_name': spectrum['label'],
+                         'unique_id': str(uuid.uuid4())})
+            oc.register_copy_operation(list(sources), [spectrum],
+                                       operation_name='Data table (values)', pre_state=pre_state)
+            record = oc.operations_manager.operations_chain[-1]
+            made = dict((meta.get('correction_history') or [{}])[-1])
+            for key in ('operation', 'timestamp'):
+                made.pop(key, None)
+            record['parameters']['values_as_spectrum'] = dict(
+                made, name=spectrum['label'], source_spectra=list(meta.get('source_spectra') or []))
+            self.main.add_new_spectra([spectrum])
+            selector = getattr(self.main, 'spectrum_selector', None)
+            if selector is not None:
+                selector.on_item_selection_changed()
+        except Exception as exc:
+            logger.exception("Adding a value column as a spectrum failed")
+            return False, f"The new spectrum could not be added: {exc}"
+        return True, (f"Added “{spectrum['label']}” to the spectra list "
+                      f"({len(spectrum['x_scale'])} points).")
+
     def add_spectra(self, table, new_spectra):
         """Add the formula columns (already turned into spectrum dicts by the
         table) to the spectra list. Returns (ok, message)."""

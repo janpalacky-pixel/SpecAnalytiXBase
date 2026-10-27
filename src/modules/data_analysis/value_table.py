@@ -59,11 +59,16 @@ class ValueTable:
                 name = '_' + name
             vals = cbv.values(t.spectra, {'mode': 'metadata', 'metadata_key': key})
             t.columns.append(ValueColumn(name, 'stored with the spectrum', _floats(vals), 'metadata'))
+        # every number written in the names (n1 = the first, ...); a number that
+        # is the same in all names (e.g. the "2" of raman_2comp) says nothing
+        # and is left out, as in the Peak list
         most = max((len(cbv.numbers_in(s.get('label', ''))) for s in t.spectra), default=0)
-        for i in range(min(most, 3)):
-            vals = cbv.values(t.spectra, {'mode': 'name', 'number': i})
-            t.columns.append(ValueColumn(f'n{i + 1}', f'number {i + 1} in the name',
-                                         _floats(vals), 'number'))
+        for i in range(most):
+            vals = _floats(cbv.values(t.spectra, {'mode': 'name', 'number': i}))
+            if len(vals) > 1 and np.all(np.isfinite(vals)) and np.all(vals == vals[0]):
+                continue
+            t.columns.append(ValueColumn(f'n{i + 1}', f'number {i + 1} in the name', vals,
+                                         'number'))
         return t
 
     # -- shape
@@ -225,15 +230,118 @@ class ValueTable:
         else:
             frame.to_csv(path, index=False, sep='\t' if path.lower().endswith('.txt') else ',')
 
-    def xy(self, x_name, y_name):
-        """(x, y, labels) of the rows where both columns have a number."""
-        cx, cy = self.column(x_name), self.column(y_name)
-        if cx is None or cy is None or 'name' in (cx.kind, cy.kind):
+    ROW = 'row'          # x = the place of the spectrum in the table (1, 2, 3, ...)
+
+    def _numbers(self, name):
+        if name == self.ROW:
+            return np.arange(1, self.n_rows + 1, dtype=float)
+        col = self.column(name)
+        if col is None or col.kind == 'name':
             raise ValueError("Choose two columns with numbers.")
-        x, y = cx.values.astype(float), cy.values.astype(float)
+        return col.values.astype(float)
+
+    def describe(self, name):
+        """A column for people: 'temperature_C', 'n1', 'Area over 30–70', 'row'."""
+        if name == self.ROW:
+            return 'spectrum number (row)'
+        col = self.column(name)
+        if col is None or col.kind in ('metadata', 'number', 'name'):
+            return name
+        return col.title or name
+
+    def meaning(self, name):
+        """What a column holds, when its name alone does not say it (None
+        otherwise): v1 -> 'Maximum over 600–1800', n1 -> 'number 1 in the
+        name', a formula column with a name of its own -> that name."""
+        if name == self.ROW:
+            return 'spectrum number (row)'
+        col = self.column(name)
+        if col is None or col.kind in ('metadata', 'name'):
+            return None
+        if col.kind == 'formula' and (not col.title or col.title == col.formula):
+            return None                               # the formula says it
+        return col.title or None
+
+    def xy(self, x_name, y_name):
+        """(x, y, labels) of the rows where both columns have a number;
+        x_name may be 'row' (the order of the spectra in the table)."""
+        x, y = self._numbers(x_name), self._numbers(y_name)
         ok = np.isfinite(x) & np.isfinite(y)
         labels = [s.get('label', '') for s, k in zip(self.spectra, ok) if k]
         return x[ok], y[ok], labels
+
+    def as_spectrum(self, y_name, x_name):
+        """Column y against column x as a new spectrum (e.g. a band's area
+        against temperature_C: a melting curve), sorted by x; rows without both
+        values are left out. x = 'row': the order of the spectra in the table.
+        Returns (spectrum dict, the source spectra). Refused (ValueError) when
+        fewer than 2 points remain or an x value occurs twice (a spectrum needs
+        each x once)."""
+        from datetime import datetime
+        from src.modules.utils.correction_history import append_correction_history
+        if x_name == y_name:
+            raise ValueError(f"Choose two different columns ({y_name} against itself gives only a "
+                             "straight line).")
+        x, y, _ = self.xy(x_name, y_name)
+        xs = self._numbers(x_name)
+        ys = self._numbers(y_name)
+        ok = np.isfinite(xs) & np.isfinite(ys)
+        sources = [s for s, k in zip(self.spectra, ok) if k]
+        if len(x) < 2:
+            raise ValueError(f"Fewer than 2 spectra have both {x_name} and {y_name}.")
+        values, counts = np.unique(x, return_counts=True)
+        if np.any(counts > 1):
+            same = values[counts > 1][0]
+            rows = [f'sp{i + 1}' for i in np.nonzero(xs == same)[0]]
+            raise ValueError(
+                f"{x_name} has the same value {same:g} more than once ({', '.join(rows[:4])}"
+                f"{', …' if len(rows) > 4 else ''}) - a spectrum needs each x once. Choose another "
+                "x, e.g. row (the order of the spectra), or select fewer spectra.")
+        order = np.argsort(x)
+        label = f"{self.describe(y_name)} vs {self.describe(x_name)}"
+        # what it was made of, once: y and x, with their meaning when the name
+        # alone does not say it (v1 = "Maximum over 600-1800", n1 = "number 1
+        # in the name"), the formula of a formula column and only the settings
+        # that matter for that value - the spectra it came from are listed
+        # once, under source_spectra
+        entry = {'y': y_name, 'x': x_name}
+        for key, name in (('y', y_name), ('x', x_name)):
+            meaning = self.meaning(name)
+            if meaning:
+                entry[key + '_meaning'] = meaning
+            col = self.column(name)
+            if col is not None and col.formula:
+                entry[key + '_formula'] = col.formula
+            if col is not None and col.settings:
+                entry[key + '_settings'] = relevant_settings(col.settings)
+        meta = {'creation_method': 'data_table_values',
+                'source_spectra': [str(s.get('label', '')) for s in sources],
+                'creation_timestamp': datetime.now().isoformat()}
+        meta['correction_history'] = append_correction_history(None, 'Data table (values)', entry)
+        spectrum = {'x_scale': x[order].copy(), 'y_scale': y[order].copy(), 'label': label,
+                    'metadata': meta}
+        return spectrum, sources
+
+
+def relevant_settings(settings):
+    """Only the settings that matter for this kind of value (as the Add
+    value window shows them): e.g. a maximum - its range and how the top is
+    taken; not the x of 'Intensity at x' or the bands of 'Two bands'."""
+    s = dict(settings)
+    k = s.get('kind')
+    keep = ['kind']
+    if k == 'intensity_at_x':
+        keep += ['x0', 'x_mode'] + (['x_halfwidth'] if s.get('x_mode') != 'point' else [])
+    elif k in gv.ONE_BAND:
+        keep.append('range_a')
+    elif k in gv.TWO_BANDS:
+        keep += ['range_a', 'metric_a', 'range_b', 'metric_b', 'operation']
+    elif k in ('pca', 'svd'):
+        keep += ['component', 'whole_use_range'] + (['range_a'] if s.get('whole_use_range') else [])
+    if gv.uses_max_mode(s):
+        keep.append('max_mode')
+    return {key: (list(s[key]) if isinstance(s[key], tuple) else s[key])
+            for key in keep if key in s}
 
 
 def _floats(vals):
