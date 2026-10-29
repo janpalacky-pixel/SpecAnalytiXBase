@@ -3493,6 +3493,66 @@ def _natural_sort_key(cls, label):
             sub-data-point positions, cache, cancel, parallel = serial, manager, dialog).</li>
         </ul>
 
+        <h2 id="peak-fitting-design">Peak Fitting: one spectrum and a series</h2>
+        <ul>
+            <li><code>PeakFittingManager.fit_peaks()</code>
+            (<code>src/modules/data_analysis/peak_fitting_manager.py</code>): one
+            <code>curve_fit</code> (trf, bounds) of all peaks together, no baseline term. Bounds
+            from the data: |height| &le; 3&times; max|y| (two huge opposite peaks cancelling each
+            other were the common failure with Unrestricted), centre within &plusmn;2 widths and
+            within the x range, width &le; min(10&times; start, half the x range); start values are
+            clipped into the bounds.</li>
+            <li><code>auto_detect_peaks()</code>: <code>find_peaks</code> with prominence
+            &ge; max(10&nbsp;% of the range, 5&times; noise) (noise from the median absolute
+            difference); a negative peak must also lie that much below the median &mdash; before,
+            every dip between two positive bands was taken as a broad negative peak. The width is
+            &sigma; = FWHM / 2.355 (before, the FWHM itself was used as &sigma;: every start peak
+            2.4&times; too broad). <code>estimate_width()</code> gives a clicked peak the &sigma; of
+            the band under the click (<code>peak_widths</code> at half height).</li>
+            <li>A series (<code>src/modules/data_analysis/peak_fitting_series.py</code>, Qt-free):
+            <code>fit_series()</code> sequential, each fit from the previous result (follows moving
+            bands); <code>fit_series_independent()</code> each from the same start, in a process
+            pool (<code>run_in_process_pool</code>, <code>_fit_chunk_worker</code>, plain floats)
+            when there are &ge; 2 workers and &ge; 4 spectra; <code>pending()</code> marks spectra
+            not fitted yet (a single Fit Peaks is kept for the series);
+            <code>series_table()</code>, <code>plain()</code> (kept with the window's
+            settings).</li>
+            <li>Window (<code>peak_fitting_dialog.py</code>): ONE fit button,
+            <code>fit_selected()</code>: one spectrum selected &rarr; <code>perform_fit()</code>,
+            several &rarr; <code>fit_all_selected(rows=...)</code>, merged into
+            <code>series_results</code> (the others keep theirs). With a series every spectrum
+            has its own peaks: <code>own_peaks[k]</code>, the shown spectrum's list is
+            <code>self.peaks</code> (swapped in <code>_set_current</code>;
+            <code>peaks_of(k)</code>); Auto-Detect, <code>copy_peaks()</code> /
+            <code>paste_peaks_to_selected()</code> and Fit
+            act on the selected spectra only. Where each fit starts
+            (<code>_fit_plan()</code>): its own peaks; none &rarr; left out, or with
+            <code>follow_check</code> ticked the fit of the selected spectrum before it
+            (<code>pfs.fit_each</code>, sequential). List marks: green dot = has peaks, &#9888; =
+            R&sup2; &lt; 0.9. Amplitude Constraint: <code>global_constraint</code>, or with
+            <code>own_constraint_check</code> <code>own_constraints[k]</code> (None = global;
+            <code>constraint_of(k)</code>), passed per spectrum as <code>constraints=</code> to
+            <code>fit_series_independent</code> / <code>fit_each</code>. All
+            with own peaks &rarr; <code>fit_series_independent</code> (several cores; one start
+            when all are equal). A spectrum fitted without own peaks gets its fit as its peaks. Tabs Peaks / Series results; with a
+            series a spectra list (ExtendedSelection) beside the plot drives the plot: one selected
+            &rarr; <code>show_series_spectrum()</code>, several &rarr;
+            <code>_draw_series_view()</code> (Overlay / Waterfall / Grid); the list and the Series
+            results table keep the same selection (<code>_select_in_list</code>,
+            <code>_select_table_rows</code>, signals blocked). Add via Click and the toolbar's
+            Zoom/Pan switch each other off (<code>_connect_toolbar_modes</code>). Orange "?" texts:
+            <code>src/help/peak_fitting_quick_help.py</code>, each with an anchor in the help page
+            (tested).</li>
+            <li>OK: <code>PeakFittingController.handle_peak_fitting()</code> makes the outputs for
+            each (spectrum, fit) job: the shown spectrum, or the fitted series results filtered by
+            <code>output_labels</code> (Add for); one <code>apply_operation</code> step.</li>
+            <li>Tests: <code>test_peak_fitting_series.py</code>,
+            <code>test_peak_fitting_spectra_list.py</code>,
+            <code>test_peak_fitting_plot_options.py</code>,
+            <code>test_peak_fitting_convergence.py</code>,
+            <code>test_peak_fitting_window_help.py</code>.</li>
+        </ul>
+
         <h2 id="unmixing-design">2D Map: endmember unmixing</h2>
         <ul>
             <li><code>src/modules/visualization_analysis/endmember_unmixing.py</code> (Qt-free):

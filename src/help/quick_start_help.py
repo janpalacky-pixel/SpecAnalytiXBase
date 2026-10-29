@@ -363,7 +363,8 @@ def get_quick_start_help_content():
                 position can move with the mixture although no band moves (see the help)</td>
                 <td><a href="help://peak_detection">Open help</a></td></tr>
             <tr><td>Peak Fitting</td><td>Fits peak shapes (Gaussian/Lorentzian/
-                Voigt, ...) to extract position, height, width, area</td>
+                Voigt, ...) to extract position, height, width, area - also the same peaks
+                through a whole series of spectra</td>
                 <td><a href="help://peak_fitting">Open help</a></td></tr>
             <tr><td>Band Ratio / Peak Area Calculator</td><td>Tracks the ratio
                 or difference between two bands across a spectral series</td>

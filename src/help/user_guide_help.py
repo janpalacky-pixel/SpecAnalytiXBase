@@ -1549,11 +1549,20 @@ def get_user_guide_help_content():
 
         <!-- Peak Fitting -->
         <h3 id="peak-fitting">Peak Fitting <a href="help://peak_fitting" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
-        <p>Fits Gaussian, Lorentzian, Voigt, or pseudo-Voigt peak models to selected
-        regions of a spectrum. Provides peak positions, widths, areas, and fit
-        quality metrics.</p>
+        <p>Fits Gaussian, Lorentzian, Voigt or Pseudo-Voigt peaks to a spectrum and gives each
+        band's position, height, width (FWHM) and area. A fit that does not converge: see
+        <a href="help://peak_fitting#converge">Getting a fit to converge</a> (most often: choose
+        Positive Peaks Only, remove extra peaks, correct the baseline first).</p>
         <div class="warning">
-            Peak Fitting operates on <strong>exactly one</strong> spectrum at a time.
+            Peak Fitting fits one spectrum at a time. With several spectra selected, a list beside
+            the plot shows one or several of them (as in the main window), and <strong>Fit Peaks</strong>
+            fits the selected ones &mdash; each starting from the result of the one before, or each
+            from its own peaks (found by Auto-Detect for each, or copied; faster, on several
+            cores). The
+            tab <strong>Series results</strong> has one row per spectrum (position, FWHM, height,
+            area of each peak), to copy, export or open in the
+            <a href="#values-per-spectrum">Data table</a>; several selected spectra are shown together
+            with their fits (Overlay, Waterfall, Grid) (<a href="help://peak_fitting#series">more</a>).
         </div>
 
         <h3 id="cosmic-ray">Cosmic Ray Detection (Cross-spectrum) <a href="help://cosmic_ray" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
@@ -1941,7 +1950,8 @@ def get_user_guide_help_content():
         example (the Glenodinium map). Details:
         <a href="help://map2d">2D Map help</a>.</p>
         <p id="parallel-workers"><b>Parallel processing</b> (Automated Baseline, X-axis alignment,
-        2D Map peak fitting, bootstrap uncertainty of NMF and MCR-ALS). Large jobs run in several
+        2D Map peak fitting, bootstrap uncertainty of NMF and MCR-ALS, Peak Fitting of a series
+        each from its own peaks). Large jobs run in several
         worker processes. The <b>Workers</b> slider goes from 1 to the number of CPU cores and
         defaults to the maximum; an orange note shows when the memory free right now suits fewer
         workers. If the workers cannot start or run out of memory, the job is redone serially

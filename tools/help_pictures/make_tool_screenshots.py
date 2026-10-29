@@ -32,7 +32,7 @@ def log(*parts):
 
 
 from PyQt5.QtCore import QPoint, QRect, Qt
-from PyQt5.QtGui import QIcon, QPainter
+from PyQt5.QtGui import QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import (QAbstractButton, QApplication, QDialog, QGroupBox, QMessageBox,
                              QPushButton, QTabWidget, QWidget)
 
@@ -154,6 +154,36 @@ def shot(window, folder, name, widgets=None, margin=6):
         return
     parent = common_parent(widgets)
     save(parent.grab(union(parent, widgets, margin)), folder, name)
+
+
+def shot_list_without_empty_space(panel, lst, folder, name, below=8):
+    """A panel with a list and buttons under it, without the empty part of the
+    list: the list down to its last item, its bottom edge, then the buttons."""
+    steady.fixed_clock()
+    steady.park_mouse()
+    settle(0.2)
+    whole = panel.grab()
+    dpr = whole.devicePixelRatio() or 1
+    top = rect_in(panel, lst).top()
+    last = lst.visualItemRect(lst.item(lst.count() - 1))
+    cut = top + lst.viewport().mapTo(lst, last.bottomLeft()).y() + below
+    list_bottom = rect_in(panel, lst).bottom() + 1
+    edge = 2                                   # the list's bottom frame line
+    if cut >= list_bottom - edge:
+        save(whole, folder, name)
+        return
+    w = panel.width()
+    rest = panel.height() - list_bottom
+    dev = lambda x, y, ww, hh: QRect(int(x * dpr), int(y * dpr), int(ww * dpr), int(hh * dpr))
+    picture = QPixmap(int(w * dpr), int((cut + edge + rest) * dpr))
+    picture.setDevicePixelRatio(dpr)
+    picture.fill(Qt.white)
+    painter = QPainter(picture)
+    painter.drawPixmap(QPoint(0, 0), whole.copy(dev(0, 0, w, cut)))
+    painter.drawPixmap(QPoint(0, cut), whole.copy(dev(0, list_bottom - edge, w, edge)))
+    painter.drawPixmap(QPoint(0, cut + edge), whole.copy(dev(0, list_bottom, w, rest)))
+    painter.end()
+    save(picture, folder, name)
 
 
 def buttons(window, *texts):
@@ -544,38 +574,101 @@ def part_svd_interpolation():
 
 
 def part_peak_fitting():
+    """Peak Fitting on a series of Raman spectra (raman_2comp_noisy): the
+    peaks of one spectrum, the fit, the list of spectra, several shown
+    together (Overlay, Waterfall, Grid), Series results, the output options,
+    the orange "?" and a missing peak seen in the residual."""
     F = 'peak_fitting'
-    mc = load([RAMAN], select=[4])
+    mc = load([os.path.join(SYN, 'raman_2comp_noisy.xlsx')], select=list(range(10)))
 
     @on('Peak Fitting')
     def _(d):
+        from PyQt5.QtCore import QItemSelectionModel
         d.resize(1900, 1000)
         settle(0.5)
-        import numpy as np
-        x = np.asarray(d.spectrum['x_scale'], dtype=float)
-        y = np.asarray(d.spectrum['y_scale'], dtype=float)
-        keep = (x >= 624) & (x <= 713)
-        xr, yr = x[keep], y[keep]
-        # a straight baseline through the two ends, as after a baseline correction
-        yr = yr - np.interp(xr, [xr[0], xr[-1]], [yr[0], yr[-1]])
-        d.x_roi, d.y_roi = xr, yr
+
+        def select(rows):
+            lst = d.spectra_list
+            lst.clearSelection()
+            for r in rows:
+                lst.selectionModel().select(lst.model().index(r, 0), QItemSelectionModel.Select)
+            settle(0.6)
+
+        # one spectrum: the detected peaks, fitted
         d.peaks = []
-        for k, (c, a, w) in enumerate(((676.27, 2994.0, 18.5), (670.65, 4237.0, 5.9),
-                                       (686.36, 14740.0, 5.5))):
-            d.peaks.append({'model': 'Gaussian', 'center': c, 'amplitude': a, 'width': w,
-                            'color': d.colors[k % len(d.colors)]})
-        d.update_peaks_table()
-        d.update_plot()
-        settle(0.3)
-        d.perform_fit()
-        wait_until(lambda: d.copy_results_btn.isEnabled(), 60)
+        d.amplitude_combo.setCurrentIndex(1)                  # Positive Peaks Only
+        d.auto_detect_peaks()
+        d.fit_selected()                                      # Fit Peaks - 1 spectrum
         d.interactive_add_cb.setChecked(True)
-        settle(0.5)
+        settle(0.6)
         shot(d, F, 'dialog_overview.png')
-        shot(d, F, 'fitting_controls.png', [group(d, 'Fitting')], margin=0)
+        shot(d, F, 'plot_area.png', [d.canvas], margin=0)
+        shot(d, F, 'peaks_table.png', [d.peaks_group], margin=0)
         shot(d, F, 'peak_adding_controls.png',
              buttons(d, 'Auto-Detect Peaks', 'Remove Selected Peak(s)', 'Clear All Peaks')
-             + [d.interactive_add_cb], margin=4)
+             + [d.interactive_add_cb, d.quick_help_buttons['peaks']], margin=4)
+        shot(d, F, 'plot_bar.png', [d.list_button.parentWidget(), d.click_hint], margin=4)
+
+        # the whole series: all selected, Fit Peaks - 10 selected spectra; the
+        # others start from the fit before them (a band shifting along the series)
+        d.follow_check.setChecked(True)
+        d.list_all_button.click()
+        settle(0.5)
+        shot(d, F, 'fitting_controls.png', [group(d, 'Fitting')], margin=0)
+        d.fit_selected()
+        settle(0.6)
+        shot(d, F, 'series_results.png', [d.left_tabs], margin=0)
+        # the Amplitude Constraint drop-down, open, over the Fitting group
+        combo = d.amplitude_combo
+        combo.showPopup()
+        settle(0.6)
+        popup = combo.view().window()
+        box = rect_in(d, group(d, 'Fitting'))
+        # drawn just under the drop-down (where the system puts it varies)
+        top_left = combo.mapTo(d, QPoint(0, combo.height()))
+        region = box.united(QRect(top_left, popup.size())).adjusted(-6, -6, 6, 6)
+        region = region.intersected(d.rect())
+        picture = d.grab(region)
+        painter = QPainter(picture)
+        painter.drawPixmap(top_left - region.topLeft(), popup.grab())
+        painter.end()
+        save(picture, F, 'constraint_dropdown.png')
+        combo.hidePopup()
+        settle(0.3)
+        d.view_combo.setCurrentIndex(1)                       # Waterfall
+        settle(0.6)
+        shot(d, F, 'series_waterfall.png', [d.canvas], margin=0)
+        d.view_combo.setCurrentIndex(2)                       # Grid
+        settle(0.6)
+        shot(d, F, 'series_grid.png', [d.canvas], margin=0)
+        d.view_combo.setCurrentIndex(0)                       # Overlay of three
+        select([0, 4, 9])
+        d.output_for_combo.setCurrentIndex(1)
+        d.add_fit_check.setChecked(True)
+        settle(0.5)
+        shot(d, F, 'series_overview.png')
+        shot_list_without_empty_space(d.spectra_panel, d.spectra_list, F, 'spectra_list.png')
+        shot(d, F, 'output_options.png', [group(d, 'Output Options')], margin=0)
+        d.output_for_combo.setCurrentIndex(0)
+        d.add_fit_check.setChecked(False)
+
+        # the orange "?"
+        @on('Quick help')
+        def _(box):
+            shot(box, F, 'quick_help.png')
+        d.quick_help_buttons['fitting'].click()
+        settle(0.3)
+
+        # a band without a peak: the residual shows where
+        select([0])
+        missing = [k for k, p in enumerate(d.peaks) if abs(p['center'] - 1293) < 15]
+        if missing:
+            del d.peaks[missing[0]]
+            d.update_peaks_table()
+            d.fit_selected()
+            settle(0.6)
+            shot(d, F, 'missing_peak.png', [d.canvas], margin=0)
+
         from PyQt5.QtWidgets import QInputDialog
         q = QInputDialog(d)
         q.setWindowTitle('Initial Peak Parameters')
@@ -584,11 +677,66 @@ def part_peak_fitting():
         q.setDoubleDecimals(4)
         q.setDoubleMinimum(1e-6)
         q.setDoubleMaximum(1e9)
-        q.setDoubleValue(4.45)
+        q.setDoubleValue(8.0)
         q.show()
         settle(0.4)
         shot(q, F, 'initial_width_dialog.png')
         q.close()
+    mc.run_visualization_analysis('Peak Fitting')
+
+
+def part_peak_fitting_own():
+    """Peak Fitting with Raman and CD spectra together (CD: a band up and a
+    band down): each spectrum its own peaks and its own Amplitude Constraint
+    (Raman Positive Peaks Only, CD Unrestricted), shown in Grid; a CD fit,
+    and the same CD spectrum wrongly fitted with Positive Peaks Only."""
+    F = 'peak_fitting'
+    mc = load([os.path.join(SYN, 'raman_2comp_noisy.xlsx'),
+               os.path.join(SYN, 'cd_3comp_noisy.xlsx')],
+              select=list(range(5)) + list(range(30, 35)))
+
+    @on('Peak Fitting')
+    def _(d):
+        d.resize(1900, 1000)
+        settle(0.5)
+        d.peaks = []
+        d.update_peaks_table()
+        # the Amplitude Constraint of each kind: Raman positive, CD unrestricted
+        d.own_constraint_check.setChecked(True)
+        from PyQt5.QtCore import QItemSelectionModel
+
+        def select(rows):
+            lst = d.spectra_list
+            lst.clearSelection()
+            for r in rows:
+                lst.selectionModel().select(lst.model().index(r, 0), QItemSelectionModel.Select)
+            settle(0.3)
+        raman = [k for k, sp in enumerate(d.series) if 'raman' in sp['label']]
+        cd = [k for k, sp in enumerate(d.series) if 'cd_' in sp['label']]
+        select(raman)
+        d.amplitude_combo.setCurrentIndex(1)                  # Positive Peaks Only
+        select(cd)
+        d.amplitude_combo.setCurrentIndex(0)                  # Unrestricted
+        d.list_all_button.click()
+        settle(0.4)
+        d.auto_detect_peaks()                                 # each spectrum its own
+        d.fit_selected()
+        settle(0.5)
+        shot(d, F, 'constraint_each.png', [group(d, 'Fitting'), d.spectra_panel], margin=4)
+        d.view_combo.setCurrentIndex(2)                       # Grid
+        d.left_tabs.setCurrentIndex(0)
+        settle(0.8)
+        shot(d, F, 'peaks_each_own.png')
+        # one CD spectrum: a band up and a band down (Unrestricted) ...
+        select([cd[2]])
+        settle(0.6)
+        shot(d, F, 'cd_fit_unrestricted.png', [d.canvas], margin=0)
+        # ... and the same spectrum with Positive Peaks Only: the band down is lost
+        d.amplitude_combo.setCurrentIndex(1)
+        d.fit_selected()
+        settle(0.6)
+        shot(d, F, 'cd_fit_positive.png', [d.canvas], margin=0)
+        d.amplitude_combo.setCurrentIndex(0)
     mc.run_visualization_analysis('Peak Fitting')
 
 
@@ -1161,7 +1309,8 @@ PARTS = {'peak_detection': part_peak_detection, 'user_guide': part_user_guide, '
          'band_ratio': part_band_ratio, 'nmf': part_nmf, 'mcr_als': part_mcr_als, 'data_range': part_data_range,
          'manual_baseline': part_manual_baseline, 'normalization': part_normalization,
          'x_axis_alignment': part_x_axis_alignment, 'svd_interpolation': part_svd_interpolation,
-         'peak_fitting': part_peak_fitting, 'interactive_subtraction': part_interactive_subtraction}
+         'peak_fitting': part_peak_fitting, 'peak_fitting_own': part_peak_fitting_own,
+         'interactive_subtraction': part_interactive_subtraction}
 
 
 def main(names):

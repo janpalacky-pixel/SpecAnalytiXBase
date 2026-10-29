@@ -77,6 +77,7 @@ class PeakFittingController:
         if should_reset and current_settings:
             current_settings = dict(current_settings)
             current_settings.pop('fit_results', None)
+            current_settings.pop('series_results', None)     # the same for the series
         return current_settings
 
     def _note_own_commit(self):
@@ -125,8 +126,24 @@ class PeakFittingController:
         settings = self.oc.current_parameters["Peak Fitting"]
         fit_results = settings.get('fit_results')
         output_options = settings.get('output_options', {})  # Get the dict of booleans
+        # A series fitted in the window: the outputs are made for every fitted
+        # spectrum of the series (PeakFittingDialog.get_results 'series_results')
+        series = [r for r in (settings.get('series_results') or [])
+                  if r.get('ok') and r.get('peaks')]
+        # "Add for: the fitted spectra selected in the list" - only those
+        chosen = settings.get('output_labels')
+        if series and chosen is not None:
+            series = [r for r in series if r['label'] in set(chosen)]
+            if not series:
+                if not any(output_options.values()):
+                    return                              # nothing to add anyway
+                QMessageBox.information(
+                    self.controller.view, "No spectra chosen",
+                    "None of the spectra selected in the list is fitted, so no spectra were "
+                    "added. Select fitted spectra (\u2713), or choose Add for: all fitted spectra.")
+                return
 
-        if not fit_results:
+        if not fit_results and not series:
             QMessageBox.information(self.controller.view, "No Fit Data",
                                     "No peaks were defined or fitted. Operation cancelled.")
             return
@@ -140,7 +157,7 @@ class PeakFittingController:
         fit_run_id = str(uuid.uuid4())
 
         selected_spectra = self.oc._get_current_state_for_selected_spectra()
-        original_spectrum = selected_spectra[0]
+        original_spectrum = selected_spectra[0] if selected_spectra else {'label': None}
 
         current_state = self.oc.operations_manager.get_current_spectra()
 
@@ -158,16 +175,18 @@ class PeakFittingController:
         all_current_labels = {s['label'] for s in current_state}
         # --- End helper function ---
 
-        # Locate the original spectrum in the current state — needed below
-        # to build affected_spectra_for_history in the metadata-only case,
-        # and as the base for every derived spectrum's x_scale/y_scale.
-        spectrum_to_modify = None
-        for s in current_state:
-            if s['label'] == original_spectrum['label']:
-                spectrum_to_modify = s
-                break
-
-        if not spectrum_to_modify:
+        # The spectra to make outputs for, each with its fit: the shown one
+        # (settings 'spectrum_label', else the first selected), or every fitted
+        # spectrum of a series. Found by label in the current state - the base
+        # for every derived spectrum's x_scale/y_scale.
+        by_label = {s['label']: s for s in current_state}
+        if series:
+            jobs = [(by_label.get(r['label']), r['peaks']) for r in series]
+        else:
+            label = settings.get('spectrum_label') or original_spectrum['label']
+            jobs = [(by_label.get(label), fit_results)]
+        jobs = [(sp, fr) for sp, fr in jobs if sp is not None]
+        if not jobs:
              QMessageBox.warning(self.controller.view, "State Error", "Original spectrum not found in current state.")
              return
 
@@ -186,135 +205,136 @@ class PeakFittingController:
         # --- 2. Check for optional new spectra ---
         manager = self.manager
 
-        # Pre-calculate the total fit ONLY if needed
-        total_fit_full = None
+        for original_spectrum, fit_results in jobs:
+            # Pre-calculate the total fit ONLY if needed
+            total_fit_full = None
 
-        if output_options.get('add_fit') or output_options.get('add_residual') or output_options.get('add_peaks'):
-            total_fit_full = self.compute_total_fit_curve(original_spectrum['x_scale'], fit_results)
+            if output_options.get('add_fit') or output_options.get('add_residual') or output_options.get('add_peaks'):
+                total_fit_full = self.compute_total_fit_curve(original_spectrum['x_scale'], fit_results)
 
-        # Option: Add total fit
-        if output_options.get('add_fit') and total_fit_full is not None:
-            # Built fresh, matching how individual peaks are already
-            # built below — not by copying every key from
-            # original_spectrum. That used to carry over the ORIGINAL
-            # spectrum's entire import metadata (file path, import
-            # parameters, column index, etc.) onto a spectrum that was
-            # never actually imported from anywhere; it was computed
-            # from a fit. Confirmed reachable and confusing in practice:
-            # the Metadata viewer showed "File Path: ...xlsx" and
-            # "Import Parameters" for a curve that only exists as a
-            # mathematical sum of fitted peaks.
-            fit_spectrum = {
-                'x_scale': original_spectrum['x_scale'].copy(),
-                'y_scale': total_fit_full,
-                'label': "",  # set below
-                'metadata': {},
-            }
-
-            base_label = f"{original_spectrum['label']}_fit"
-            fit_spectrum['label'] = find_unique_name(base_label, all_current_labels)
-            all_current_labels.add(fit_spectrum['label'])  # Add to set to check against
-
-            # Give the new copy its own identity. Without this it
-            # silently shares the source spectrum's unique_id (dict(spec)
-            # is a shallow copy, and metadata is the SAME dict object as
-            # the source's unless replaced here) — meaning selecting the
-            # ORIGINAL by label later would also sweep in this copy via
-            # the ID-based matching fallback in
-            # _get_current_state_for_selected_spectra(), silently
-            # re-processing spectra that were never actually selected.
-            fit_spectrum['metadata'] = dict(fit_spectrum.get('metadata') or {})
-            fit_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
-            # Describes how this spectrum was created — same convention
-            # every other spectrum-creating operation in this app follows
-            # (Combine Spectra, NMF, MCR-ALS, 2D Map export). n_peaks/
-            # source_spectrum here, not the raw fit_results — that's
-            # already recorded per-peak below on the individual peak
-            # spectra where it's the actual defining parameter; here it
-            # would just be a redundant repeat of the same numbers.
-            fit_spectrum['metadata']['correction_history'] = append_correction_history(
-                None, 'Peak Fitting (total fit)',
-                {'fit_run_id': fit_run_id, 'source_spectrum': original_spectrum['label'], 'n_peaks': len(fit_results)}
-            )
-
-            new_spectra_to_add.append(fit_spectrum)
-
-        # Option: Add residual
-        if output_options.get('add_residual') and total_fit_full is not None:
-            # Built fresh — same reasoning as fit_spectrum above.
-            residual_spectrum = {
-                'x_scale': original_spectrum['x_scale'].copy(),
-                'y_scale': original_spectrum['y_scale'] - total_fit_full,
-                'label': "",  # set below
-                'metadata': {},
-            }
-
-            base_label = f"{original_spectrum['label']}_residual"
-            residual_spectrum['label'] = find_unique_name(base_label, all_current_labels)
-            all_current_labels.add(residual_spectrum['label'])  # Add to set
-
-            # Same fresh-identity fix as fit_spectrum above — same bug,
-            # same reasoning.
-            residual_spectrum['metadata'] = dict(residual_spectrum.get('metadata') or {})
-            residual_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
-            residual_spectrum['metadata']['correction_history'] = append_correction_history(
-                None, 'Peak Fitting (residual)',
-                {'fit_run_id': fit_run_id, 'source_spectrum': original_spectrum['label'], 'n_peaks': len(fit_results)}
-            )
-
-            new_spectra_to_add.append(residual_spectrum)
-
-        # Option: Add individual peaks
-        if output_options.get('add_peaks'):
-            individual_curves = self.compute_individual_peak_curves(
-                original_spectrum['x_scale'], fit_results)
-            for i, new_y in enumerate(individual_curves):
-                peak_fit = fit_results[i]
-                model_name = peak_fit['model']
-                param_dict = peak_fit['parameters']
-                width_key = 'sigma' if model_name == 'Gaussian' else 'gamma'
-                new_peak_spectrum = {
+            # Option: Add total fit
+            if output_options.get('add_fit') and total_fit_full is not None:
+                # Built fresh, matching how individual peaks are already
+                # built below — not by copying every key from
+                # original_spectrum. That used to carry over the ORIGINAL
+                # spectrum's entire import metadata (file path, import
+                # parameters, column index, etc.) onto a spectrum that was
+                # never actually imported from anywhere; it was computed
+                # from a fit. Confirmed reachable and confusing in practice:
+                # the Metadata viewer showed "File Path: ...xlsx" and
+                # "Import Parameters" for a curve that only exists as a
+                # mathematical sum of fitted peaks.
+                fit_spectrum = {
                     'x_scale': original_spectrum['x_scale'].copy(),
-                    'y_scale': new_y,
-                    'label': "",  # Will be set below
-                    # unique_id added below — this dict is built fresh
-                    # (not copied from original_spectrum), so unlike
-                    # fit_spectrum/residual_spectrum above, there was no
-                    # id to inherit by accident, but it also never got one
-                    # of its own — meaning every individual peak spectrum
-                    # was identified purely by label, the fragile fallback
-                    # every other per-spectrum key in this app explicitly
-                    # avoids relying on (labels can collide across import
-                    # sessions or after a rename).
-                    'metadata': {}
+                    'y_scale': total_fit_full,
+                    'label': "",  # set below
+                    'metadata': {},
                 }
-                new_peak_spectrum['metadata']['correction_history'] = append_correction_history(
-                    None, 'Peak Fitting (individual peak)',
-                    {
-                        'fit_run_id': fit_run_id,
-                        'source_spectrum': original_spectrum['label'],
-                        'peak_index': i + 1,
-                        'model': model_name,
-                        'height': param_dict['height'],
-                        'center': param_dict['center'],
-                        width_key: param_dict[width_key],
-                    }
+
+                base_label = f"{original_spectrum['label']}_fit"
+                fit_spectrum['label'] = find_unique_name(base_label, all_current_labels)
+                all_current_labels.add(fit_spectrum['label'])  # Add to set to check against
+
+                # Give the new copy its own identity. Without this it
+                # silently shares the source spectrum's unique_id (dict(spec)
+                # is a shallow copy, and metadata is the SAME dict object as
+                # the source's unless replaced here) — meaning selecting the
+                # ORIGINAL by label later would also sweep in this copy via
+                # the ID-based matching fallback in
+                # _get_current_state_for_selected_spectra(), silently
+                # re-processing spectra that were never actually selected.
+                fit_spectrum['metadata'] = dict(fit_spectrum.get('metadata') or {})
+                fit_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
+                # Describes how this spectrum was created — same convention
+                # every other spectrum-creating operation in this app follows
+                # (Combine Spectra, NMF, MCR-ALS, 2D Map export). n_peaks/
+                # source_spectrum here, not the raw fit_results — that's
+                # already recorded per-peak below on the individual peak
+                # spectra where it's the actual defining parameter; here it
+                # would just be a redundant repeat of the same numbers.
+                fit_spectrum['metadata']['correction_history'] = append_correction_history(
+                    None, 'Peak Fitting (total fit)',
+                    {'fit_run_id': fit_run_id, 'source_spectrum': original_spectrum['label'], 'n_peaks': len(fit_results)}
                 )
 
-                # Zero-padded so these sort correctly in the main window's
-                # spectrum list — "peak_10" used to sort alphabetically
-                # before "peak_2", since plain string comparison doesn't
-                # know these are numbers. Width is at least 2 digits (matching
-                # the requested "_peak_01, _peak_02, ..." convention) but
-                # grows automatically for >99 peaks so sorting stays correct
-                # at any count, not just the common case.
-                peak_num_width = max(2, len(str(len(individual_curves))))
-                base_label = f"{original_spectrum['label']}_peak_{i+1:0{peak_num_width}d}"
-                new_peak_spectrum['label'] = find_unique_name(base_label, all_current_labels)
-                all_current_labels.add(new_peak_spectrum['label'])  # Add to set
-                new_peak_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
+                new_spectra_to_add.append(fit_spectrum)
 
-                new_spectra_to_add.append(new_peak_spectrum)
+            # Option: Add residual
+            if output_options.get('add_residual') and total_fit_full is not None:
+                # Built fresh — same reasoning as fit_spectrum above.
+                residual_spectrum = {
+                    'x_scale': original_spectrum['x_scale'].copy(),
+                    'y_scale': original_spectrum['y_scale'] - total_fit_full,
+                    'label': "",  # set below
+                    'metadata': {},
+                }
+
+                base_label = f"{original_spectrum['label']}_residual"
+                residual_spectrum['label'] = find_unique_name(base_label, all_current_labels)
+                all_current_labels.add(residual_spectrum['label'])  # Add to set
+
+                # Same fresh-identity fix as fit_spectrum above — same bug,
+                # same reasoning.
+                residual_spectrum['metadata'] = dict(residual_spectrum.get('metadata') or {})
+                residual_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
+                residual_spectrum['metadata']['correction_history'] = append_correction_history(
+                    None, 'Peak Fitting (residual)',
+                    {'fit_run_id': fit_run_id, 'source_spectrum': original_spectrum['label'], 'n_peaks': len(fit_results)}
+                )
+
+                new_spectra_to_add.append(residual_spectrum)
+
+            # Option: Add individual peaks
+            if output_options.get('add_peaks'):
+                individual_curves = self.compute_individual_peak_curves(
+                    original_spectrum['x_scale'], fit_results)
+                for i, new_y in enumerate(individual_curves):
+                    peak_fit = fit_results[i]
+                    model_name = peak_fit['model']
+                    param_dict = peak_fit['parameters']
+                    width_key = 'sigma' if model_name == 'Gaussian' else 'gamma'
+                    new_peak_spectrum = {
+                        'x_scale': original_spectrum['x_scale'].copy(),
+                        'y_scale': new_y,
+                        'label': "",  # Will be set below
+                        # unique_id added below — this dict is built fresh
+                        # (not copied from original_spectrum), so unlike
+                        # fit_spectrum/residual_spectrum above, there was no
+                        # id to inherit by accident, but it also never got one
+                        # of its own — meaning every individual peak spectrum
+                        # was identified purely by label, the fragile fallback
+                        # every other per-spectrum key in this app explicitly
+                        # avoids relying on (labels can collide across import
+                        # sessions or after a rename).
+                        'metadata': {}
+                    }
+                    new_peak_spectrum['metadata']['correction_history'] = append_correction_history(
+                        None, 'Peak Fitting (individual peak)',
+                        {
+                            'fit_run_id': fit_run_id,
+                            'source_spectrum': original_spectrum['label'],
+                            'peak_index': i + 1,
+                            'model': model_name,
+                            'height': param_dict['height'],
+                            'center': param_dict['center'],
+                            width_key: param_dict[width_key],
+                        }
+                    )
+
+                    # Zero-padded so these sort correctly in the main window's
+                    # spectrum list — "peak_10" used to sort alphabetically
+                    # before "peak_2", since plain string comparison doesn't
+                    # know these are numbers. Width is at least 2 digits (matching
+                    # the requested "_peak_01, _peak_02, ..." convention) but
+                    # grows automatically for >99 peaks so sorting stays correct
+                    # at any count, not just the common case.
+                    peak_num_width = max(2, len(str(len(individual_curves))))
+                    base_label = f"{original_spectrum['label']}_peak_{i+1:0{peak_num_width}d}"
+                    new_peak_spectrum['label'] = find_unique_name(base_label, all_current_labels)
+                    all_current_labels.add(new_peak_spectrum['label'])  # Add to set
+                    new_peak_spectrum['metadata']['unique_id'] = str(uuid.uuid4())
+
+                    new_spectra_to_add.append(new_peak_spectrum)
 
         # --- Register Operation — only when new spectra were actually
         # created. Operations History tracks changes to the spectra
@@ -332,7 +352,7 @@ class PeakFittingController:
             )
             return
 
-        affected_spectra_for_history = [spectrum_to_modify]
+        affected_spectra_for_history = [sp for sp, _ in jobs]
 
         # The new state is the old state PLUS any new spectra
         output_spectra = current_state + new_spectra_to_add
@@ -369,7 +389,7 @@ class PeakFittingController:
     # Dialog                                                               #
     # ------------------------------------------------------------------ #
 
-    def show_dialog(self, spectrum, current_settings=None):
+    def show_dialog(self, spectrum, current_settings=None, series=None):
         """Construct (but do not exec) the Peak Fitting dialog for a single
         spectrum. Returns the QDialog instance — the caller runs it and
         reads back get_results(), matching how this dialog already works
@@ -381,7 +401,23 @@ class PeakFittingController:
             self.controller.view if self.controller else None,
             spectrum=spectrum,
             current_settings=current_settings,
+            series=series,
+            open_data_table=self.open_series_in_data_table,
         )
+
+    def open_series_in_data_table(self, parent, spectra, columns):
+        """Peak Fitting > Series results > Open in the Data table:
+        the Data table of the series, on its tab Values per spectrum, with
+        the results as columns p1, p2, ... (columns = [(title, values)])."""
+        from src.views.dialogs.data_analysis.data_table_dialog import DataTableDialog
+        tables = getattr(self.controller, 'data_table_controller', None)
+        dlg = DataTableDialog(parent, spectra,
+                              commit_callback=tables.add_spectra if tables is not None else None)
+        dlg.values.add_fixed('p', columns, "the Peak Fitting series")
+        dlg.tabs.setCurrentWidget(dlg.values)
+        self.series_data_table_dialog = dlg
+        dlg.exec_()
+        return dlg
 
     # ------------------------------------------------------------------ #
     # Pure computation                                                     #

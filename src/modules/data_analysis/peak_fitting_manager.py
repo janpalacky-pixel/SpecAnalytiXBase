@@ -19,6 +19,9 @@ _trapz = getattr(np, 'trapezoid', None) or np.trapz
 # every model uniformly, and get_peak_properties() reports 'height' as
 # whatever the fitted amplitude parameter came out to.
 
+_FWHM_PER_SIGMA = 2.0 * np.sqrt(2.0 * np.log(2.0))     # a Gaussian's FWHM / sigma
+
+
 def gaussian(x, amplitude, center, sigma):
     """Gaussian peak shape function."""
     return amplitude * np.exp(-(x - center)**2 / (2 * sigma**2))
@@ -211,6 +214,19 @@ class PeakFittingManager:
         bounds_lower = []
         bounds_upper = []
         model_definitions = []
+        # Limits from the data themselves, so the fit cannot run away: no
+        # peak higher than 3x the data's largest value (two huge peaks of
+        # opposite sign cancelling each other were a common failure), no
+        # centre outside the data, no width beyond half the x range (a very
+        # broad peak - or one centred outside the data - otherwise acts as
+        # a baseline).
+        x_arr = np.asarray(x_data, dtype=float)
+        y_arr = np.asarray(y_data, dtype=float)
+        x_lo, x_hi = float(np.nanmin(x_arr)), float(np.nanmax(x_arr))
+        amp_cap = 3.0 * float(np.nanmax(np.abs(y_arr))) if y_arr.size else np.inf
+        if not np.isfinite(amp_cap) or amp_cap <= 0:
+            amp_cap = np.inf
+        width_cap = (x_hi - x_lo) / 2.0 if x_hi > x_lo else np.inf
 
         for peak in initial_peaks:
             model_name = peak['model']
@@ -223,18 +239,24 @@ class PeakFittingManager:
 
             # --- NEW: Amplitude Constraint Logic ---
             if amplitude_constraint == 'positive':
-                amp_lower, amp_upper = 0, np.inf
+                amp_lower, amp_upper = 0, amp_cap
                 # If initial guess is negative, make it slightly positive
                 if amplitude <= 0: amplitude = 1e-6
             elif amplitude_constraint == 'negative':
-                amp_lower, amp_upper = -np.inf, 0
+                amp_lower, amp_upper = -amp_cap, 0
                 # If initial guess is positive, make it slightly negative
                 if amplitude >= 0: amplitude = -1e-6
             else: # 'unrestricted'
-                amp_lower, amp_upper = -np.inf, np.inf
-            
-            center_lower, center_upper = center - abs_width * 2, center + abs_width * 2
-            width_lower, width_upper = 1e-6, abs_width * 10
+                amp_lower, amp_upper = -amp_cap, amp_cap
+            amplitude = float(np.clip(amplitude, amp_lower, amp_upper))
+
+            abs_width = min(abs_width, width_cap * 0.999) if abs_width > 0 else abs_width
+            center_lower = max(center - abs_width * 2, x_lo)
+            center_upper = min(center + abs_width * 2, x_hi)
+            if center_lower >= center_upper:            # a peak placed outside the data
+                center_lower, center_upper = center - abs_width * 2, center + abs_width * 2
+            center = float(np.clip(center, center_lower, center_upper))
+            width_lower, width_upper = 1e-6, min(abs_width * 10, width_cap)
 
             # Every model shares these first three parameters
             # (amplitude, center, width) — the table's own columns.
@@ -277,11 +299,53 @@ class PeakFittingManager:
             logger.error(f"Peak fitting failed: {e}")
             return None, None
 
+    def estimate_width(self, x_data, y_data, center):
+        """The Gaussian width (sigma) of the band at `center`: its width at
+        half height, measured on the data (the highest point within a few
+        points of `center`). None when there is no band there."""
+        from scipy.signal import peak_widths
+        x = np.asarray(x_data, dtype=float)
+        y = np.asarray(y_data, dtype=float)
+        if x.size < 5 or center is None:
+            return None
+        k = int(np.argmin(np.abs(x - center)))
+        lo, hi = max(k - 5, 1), min(k + 6, x.size - 1)
+        k = lo + int(np.argmax(y[lo:hi]))
+        if not (y[k] >= y[k - 1] and y[k] >= y[k + 1]):
+            return None
+        try:
+            widths = peak_widths(y, [k], rel_height=0.5)[0]
+        except ValueError:
+            return None
+        if not len(widths) or not np.isfinite(widths[0]) or widths[0] <= 0:
+            return None
+        step = float(np.median(np.abs(np.diff(x))))
+        sigma = float(widths[0]) * step / _FWHM_PER_SIGMA
+        if sigma <= 0 or sigma > (x.max() - x.min()) / 4:
+            return None
+        return sigma
+
     def auto_detect_peaks(self, y_data, x_data=None):
         """Automatically detect initial peaks, finding both positive and negative, but always returning positive width."""
-        # Find both positive and negative peaks separately
-        peaks_pos, props_pos = find_peaks(y_data, prominence=(np.max(y_data) - np.min(y_data)) * 0.1, width=3)
-        peaks_neg, props_neg = find_peaks(-y_data, prominence=(np.max(y_data) - np.min(y_data)) * 0.1, width=3)
+        # Find both positive and negative peaks separately. A peak must stand
+        # out by 10 % of the data's range and by 5x the noise; a negative
+        # peak must also lie that much BELOW the baseline (the median) - the
+        # dip between two neighbouring positive bands is not a peak.
+        y_raw = np.asarray(y_data, dtype=float)
+        span = float(np.max(y_raw) - np.min(y_raw))
+        noise = float(np.median(np.abs(np.diff(y_raw)))) / 0.6745 / np.sqrt(2) if y_raw.size > 2 else 0.0
+        threshold = max(span * 0.1, 5.0 * noise)
+        baseline = float(np.median(y_raw))
+        # found on lightly smoothed data (a short Savitzky-Golay filter): single
+        # noisy points no longer pass for narrow peaks, and the heights and
+        # widths are those of the band, not of its noisiest point
+        y_data = y_raw
+        if y_raw.size >= 21:
+            from scipy.signal import savgol_filter
+            y_data = savgol_filter(y_raw, 7, 2)
+        peaks_pos, props_pos = find_peaks(y_data, prominence=threshold, width=3)
+        peaks_neg, props_neg = find_peaks(-y_data, prominence=threshold, width=3,
+                                          height=-(baseline - threshold))
 
         initial_guesses = []
         
@@ -291,6 +355,9 @@ class PeakFittingManager:
             amplitude = y_data[peak_idx]
             width_in_points = props_pos['widths'][i]
             width_in_x_units = width_in_points * (x_data[1] - x_data[0] if x_data is not None and len(x_data) > 1 else 1)
+            # find_peaks measures the full width at half height (FWHM); the
+            # Gaussian's width parameter is sigma = FWHM / 2.355
+            width_in_x_units = width_in_x_units / _FWHM_PER_SIGMA
             
             initial_guesses.append({
                 'model': 'Gaussian',
@@ -305,6 +372,9 @@ class PeakFittingManager:
             amplitude = y_data[peak_idx] # Use the original negative amplitude
             width_in_points = props_neg['widths'][i]
             width_in_x_units = width_in_points * (x_data[1] - x_data[0] if x_data is not None and len(x_data) > 1 else 1)
+            # find_peaks measures the full width at half height (FWHM); the
+            # Gaussian's width parameter is sigma = FWHM / 2.355
+            width_in_x_units = width_in_x_units / _FWHM_PER_SIGMA
             
             initial_guesses.append({
                 'model': 'Gaussian',

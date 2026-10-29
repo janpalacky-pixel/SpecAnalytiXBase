@@ -14,7 +14,8 @@ from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboB
 from src.modules.data_analysis.value_table import VALUE_SECTIONS, ValueTable
 from src.modules.visualization_analysis import group_values as gv
 
-_COLOURS = {'value': QColor('#E3F2FD'), 'band': QColor('#E3F2FD'), 'formula': QColor('#E8F5E9'),
+_COLOURS = {'value': QColor('#E3F2FD'), 'band': QColor('#E3F2FD'), 'fit': QColor('#E3F2FD'),
+            'formula': QColor('#E8F5E9'),
             'metadata': QColor('#F2F4F7'), 'number': QColor('#F2F4F7')}
 
 
@@ -319,7 +320,7 @@ class ValueTablePanel(QWidget):
                 box.setCurrentIndex(prefer % len(names))
             box.blockSignals(False)
         self.plot_button.setEnabled(len(names) >= 1)
-        self.remove_button.setEnabled(any(c.kind in ('value', 'band', 'formula')
+        self.remove_button.setEnabled(any(c.kind in ('value', 'band', 'fit', 'formula')
                                           for c in self.table.columns))
 
     # -- columns
@@ -359,6 +360,19 @@ class ValueTablePanel(QWidget):
                       "Use them in formulas (e.g. b2 / b1) or plot them against a stored value.")
         return added
 
+    def add_fixed(self, prefix, items, what):
+        """Columns of numbers sent from another window (e.g. a Peak Fitting
+        series): prefix1, prefix2, ...; `what` names the source in the message."""
+        added = self.table.add_fixed(prefix, items)
+        self.model.refresh()
+        self._update()
+        if added:
+            names = added[0].name if len(added) == 1 else f"{added[0].name}–{added[-1].name}"
+            self._say(f"{names}: {what} ({len(added)} column{'s' if len(added) != 1 else ''}; "
+                      "empty: no value). Use them in formulas or plot them against a stored "
+                      "value.")
+        return added
+
     def add_formula(self):
         try:
             cols = self.table.add_formulas(self.formula_edit.text(), self.name_edit.text())
@@ -376,7 +390,7 @@ class ValueTablePanel(QWidget):
     def remove_selected_columns(self):
         names = [self.table.columns[c].name
                  for c in sorted({i.column() for i in self.view.selectionModel().selectedIndexes()})
-                 if self.table.columns[c].kind in ('value', 'band', 'formula')]
+                 if self.table.columns[c].kind in ('value', 'band', 'fit', 'formula')]
         if not names:
             self._say("Select a cell of a value or band (blue) or formula (green) column to remove "
                       "it.",

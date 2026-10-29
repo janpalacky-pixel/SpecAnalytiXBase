@@ -1373,12 +1373,16 @@ class OperationsController:
 
 
         elif operation == "Peak Fitting":
-            if len(selected_spectra) != 1:
+            if not selected_spectra:
                 QMessageBox.warning(
                     self.controller.view, "Selection Error",
-                    "Please select exactly one spectrum to perform peak fitting."
+                    "Select one spectrum to fit its peaks (or several: the window shows the "
+                    "first and lists them all, and Fit Peaks fits the ones selected there)."
                 )
                 return
+            # several selected: the window shows the first and lists them all;
+            # Fit Peaks fits those selected in its list (PeakFittingDialog.fit_selected)
+            series = list(selected_spectra) if len(selected_spectra) > 1 else None
     
             # Only reuse the last fit's peaks/results if this dialog was
             # last shown for this exact spectrum — without this guard,
@@ -1405,7 +1409,8 @@ class OperationsController:
             # silently redrawn over freshly, but differently, processed data).
             last_settings = pfc.filter_stale_settings(last_settings)
 
-            dialog = pfc.show_dialog(selected_spectra[0], current_settings=last_settings)
+            dialog = pfc.show_dialog(selected_spectra[0], current_settings=last_settings,
+                                     series=series)
 
             result = dialog.exec_()
 

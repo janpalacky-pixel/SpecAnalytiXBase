@@ -6,7 +6,8 @@ chosen by the user (v1, v2, ...: area or mean over a range, maximum, peak
 position, FWHM, fitted peak values, intensity at x, two bands combined, PCA /
 SVD score), computed exactly as in Group Statistics (group_values.py), the
 bands of the Peak list (b1, b2, ...: e.g. the height of each band, sent from
-its Band table), and formula columns (f1, f2, ...: e.g. v1 / v2). Any two columns can be plotted
+its Band table), the results of Peak Fitting for a series (p1, p2, ...), and
+formula columns (f1, f2, ...: e.g. v1 / v2). Any two columns can be plotted
 against each other (e.g. area against temperature)."""
 
 import re
@@ -26,6 +27,9 @@ VALUE_SECTIONS = [(title, [(k, t) for k, t in items if k not in ('corr_ref', 'di
                   for title, items in gv.VALUE_SECTIONS]
 
 _IDENT = re.compile(r'[^A-Za-z0-9_]')
+# columns of fixed numbers sent from another window (Peak list bands, a
+# Peak Fitting series); removed like value columns
+FIXED_KINDS = ('band', 'fit')
 
 
 @dataclass
@@ -33,7 +37,7 @@ class ValueColumn:
     name: str                # 'name', 'temperature_C', 'n1', 'v2', 'f1'
     title: str               # shown under the name
     values: np.ndarray       # float (NaN = no value); text for 'name'
-    kind: str                # 'name', 'metadata', 'number', 'value', 'band', 'formula'
+    kind: str                # 'name', 'metadata', 'number', 'value', 'band', 'fit', 'formula'
     settings: Optional[dict] = None
     formula: str = ''
 
@@ -82,7 +86,7 @@ class ValueTable:
 
     def _next(self, prefix):
         used = [int(c.name[1:]) for c in self.columns
-                if c.name[:1] == prefix and c.name[1:].isdigit() and c.kind in ('value', 'band', 'formula')]
+                if c.name[:1] == prefix and c.name[1:].isdigit() and c.kind in ('value', 'formula') + FIXED_KINDS]
         return f'{prefix}{max(used, default=0) + 1}'
 
     # -- value columns
@@ -107,12 +111,18 @@ class ValueTable:
         order])], value_name e.g. 'Height (y)'. A spectrum without a peak in
         a band gets no value."""
         what = value_name.split(' (')[0]
+        return self.add_fixed('b', [(f"{what} of the band at {position}", values)
+                                    for position, values in bands], 'band')
+
+    def add_fixed(self, prefix, items, kind='fit'):
+        """Columns prefix1, prefix2, ... of fixed numbers sent from another
+        window: items = [(title, [value or None per spectrum, in this table's
+        order])]."""
+        if any(len(values) != self.n_rows for _, values in items):
+            raise ValueError("That window has other spectra than this table.")
         added = []
-        for position, values in bands:
-            if len(values) != self.n_rows:
-                raise ValueError("The Peak list has other spectra than this table.")
-            col = ValueColumn(self._next('b'), f"{what} of the band at {position}",
-                              _floats(values), 'band')
+        for title, values in items:
+            col = ValueColumn(self._next(prefix), title, _floats(values), kind)
             self.columns.append(col)
             added.append(col)
         return added
@@ -173,7 +183,7 @@ class ValueTable:
 
     def remove_column(self, name):
         col = self.column(name)
-        if col is None or col.kind not in ('value', 'band', 'formula'):
+        if col is None or col.kind not in ('value', 'formula') + FIXED_KINDS:
             return False
         users = [c.name for c in self.columns
                  if c.kind == 'formula' and c is not col and re.search(rf'\b{name}\b', c.formula)]
