@@ -158,6 +158,8 @@ class ImportController(QObject):
         # ever touched once we know at least one new file succeeded.
         # "Add spectra" was never affected by this — it only ever adds
         # alongside the existing set, never clears anything.
+        if not clear_first:
+            self._forget_spectra_not_in_the_list()
         work_manager = SpectrumManager() if clear_first else self.spectrum_manager
         initial_labels = set() if clear_first else set(self.spectrum_manager.spectra.keys())
         n_files = len(file_paths)
@@ -277,6 +279,21 @@ class ImportController(QObject):
             if added_spectra:
                 self.spectra_added.emit(added_spectra)
 
+
+    def _forget_spectra_not_in_the_list(self) -> None:
+        """Before Add spectra: forget the imported spectra that are no longer in
+        the spectra list - e.g. after History > Original state. Otherwise
+        adding the same file again found its old spectra still here and named
+        the new ones "... (2)" although no spectrum of that name is in the
+        list. (History keeps its own copies; this store only holds the
+        imported data.)"""
+        mc = self.main_controller
+        listed = getattr(mc, 'original_spectra', None) if mc is not None else None
+        if listed is None:
+            return
+        present = {s.get('label') for s in listed}
+        for label in [lbl for lbl in self.spectrum_manager.spectra if lbl not in present]:
+            self.spectrum_manager.remove_spectrum(label)
 
     @staticmethod
     def _tag_labels_with_sheet(manager, labels_before: set, sheet: str) -> None:
