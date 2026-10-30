@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/svd_interpolation_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.data_analysis.svd_interpolation_manager import SVDInterpolationManager
@@ -69,7 +70,7 @@ class SVDInterpolationController:
             controller=self,
             spectra=selected_spectra,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         return None
 
     def show_parameters_dialog(self):

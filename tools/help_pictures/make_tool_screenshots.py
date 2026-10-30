@@ -1297,6 +1297,62 @@ def part_peak_detection():
         settle(0.8)
         shot(d, F, 'peak_list_band_table.png')
     mc.peak_detection_controller.show_dialog()
+    settle(0.3)
+    beside_the_plot(mc)
+
+
+def beside_the_plot(mc):
+    """User Guide, Windows beside the plot: the main window while the Peaks
+    window is open (the orange line, the rest greyed out, the plot zoomed in
+    on the marked peaks) with the Peaks window floating at its lower right,
+    as on the screen."""
+    from src.views.plot_only_mode import PlotOnlyLock, banner_text
+    mc.view.resize(1360, 860)
+    settle(0.5)
+
+    @on('Peaks')
+    def _(d):
+        d.resize(760, 470)
+        lock = PlotOnlyLock(mc.view, banner_text(d, "Peaks"), d).engage()
+        try:
+            settle(0.4)
+            d.mark_button.click()
+            settle(0.6)
+            ax = mc.static_canvas.figure.axes[0]
+            ax.set_xlim(640, 1300)                            # zoomed in: the toolbar works
+            if ax.get_legend() is not None:
+                ax.get_legend().set_visible(False)            # the marked peaks clearly visible
+            mc.static_canvas.draw()
+            settle(0.6)
+            steady.park_mouse()
+            main, window = mc.view.grab(), d.grab()
+            top_left = lock.banner.mapTo(mc.view, lock.banner.rect().topLeft())
+            line = QRect(top_left.x() - 2, top_left.y() - 2, lock.banner.width() + 4,
+                         lock.banner.height() + 4)
+        finally:
+            lock.release()
+            d.remove_marks_button.click()
+        # the window floats at the lower right, partly beyond the main window
+        from PyQt5.QtGui import QColor
+        out_w = main.width() + window.width() // 3
+        out_h = main.height() + window.height() // 5
+        picture = QPixmap(out_w, out_h)
+        picture.fill(QColor('#FFFFFF'))
+        painter = QPainter(picture)
+        painter.drawPixmap(0, 0, main)
+        x, y = out_w - window.width() - 4, out_h - window.height() - 4
+        for k, alpha in ((10, 18), (6, 30), (3, 45)):           # a soft shadow
+            painter.fillRect(x + k, y + k, window.width(), window.height(), QColor(0, 0, 0, alpha))
+        painter.drawPixmap(x, y, window)
+        painter.setPen(QColor('#7A869A'))
+        painter.drawRect(x, y, window.width() - 1, window.height() - 1)
+        painter.end()
+        save(picture, 'user_guide', 'beside_the_plot.png')
+        # the orange line alone, readable
+        dpr = main.devicePixelRatio() or 1
+        save(main.copy(QRect(int(line.x() * dpr), int(line.y() * dpr), int(line.width() * dpr),
+                             int(line.height() * dpr))), 'user_guide', 'beside_the_plot_line.png')
+    mc.peak_detection_controller.show_dialog()
 
 
 PARTS = {'peak_detection': part_peak_detection, 'user_guide': part_user_guide, 'map2d': part_map2d, 'melting_curve': part_melting_curve, 'svd_analysis': part_svd_analysis,

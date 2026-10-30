@@ -38,6 +38,8 @@ _SCREENSHOT_FILES = {
     "BAND_MARKERS":                "band_marker_manager.png",
     "PLOT_CONTEXT_MENU":           "plot_context_menu.png",
     "LEGEND_DIALOG":               "legend_properties_dialog.png",
+    "BESIDE_PLOT":                 "beside_the_plot.png",
+    "BESIDE_PLOT_LINE":            "beside_the_plot_line.png",
     "PIPELINE_PANEL":              "spectra_processing_panel.png",
     "HISTORY_DIALOG":              "operations_history_dialog.png",
     "SAVE_DIALOG":                 "save_options_dialog.png",
@@ -1036,16 +1038,58 @@ def get_user_guide_help_content():
             <tr><td><strong>Detect Peaks</strong></td><td>Opens the <b>Peaks</b> window on its tab <i>Mark on the plot</i>: mark the peaks of the plotted spectra with red dots (they follow the settings while the window is open). A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peaks</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
             <tr><td><strong>Peak list&hellip;</strong></td><td>The same <b>Peaks</b> window, on its tab <i>List</i>: every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; one set of settings for all tabs. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel or (<i>Open in the Data table</i>) for formulas and plots in the Data table</td></tr>
-            <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list)</td></tr>
-            <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour)</td></tr>
-            <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
-            <tr><td><strong>Axis properties</strong></td><td>Set axis labels, tick marks, and limits</td></tr>
+            <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list); <b>Apply</b> shows the settings at once</td></tr>
+            <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour); <b>Apply</b> shows them at once</td></tr>
+            <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings; <b>Apply</b> shows them at once</td></tr>
+            <tr><td><strong>Axis properties</strong></td><td>Set axis labels, tick marks, and limits; <b>Apply</b> shows them at once</td></tr>
             <tr><td><strong>Line colours</strong></td><td>A submenu: <em>Automatic colours</em>, <em>Own colours</em> or <em>Colours by value</em> (✓ = in use), and <em>Line colours&hellip;</em> for the window &mdash; see <a href="#line-colours">Line colours</a></td></tr>
             <tr><td><strong>Show Legend</strong></td><td>Show or hide the legend of the plot (✓ = shown, the default)</td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
             <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
         </table>
+
+        <h4 id="beside-the-plot">Windows beside the plot: zoom while they are open</h4>
+        <p>Most tool windows stay open <b>beside the plot</b>: the Peaks window; the plot windows
+        Legend, Grid, Layout Properties, Axis properties, Line colours, Plot Properties and Band
+        markers; the processing windows (e.g. baseline correction, smoothing, normalization, data
+        range, x-axis alignment); the analysis windows (e.g. Peak Fitting, Melting Curve, Band
+        Ratio, Group Statistics, SVD, PCA, NMF, MCR-ALS, 2D Map, Isosbestic points); the Data
+        table, the Spectral Calculator, Mixture analysis and Spectrum properties.</p>
+        <p>While one of them is open, <b>only the plot and the Basic plot options</b> of the main
+        window can be used: zoom, pan, Home and save in the toolbar under the plot, the x/y
+        read-out, and the plot type, scales, colours, legend, cursor &mdash; e.g. to look closely
+        at the peaks the Peaks window marks, or to compare a preview with the plot. Everything
+        else is greyed out until you close the window: the spectra list (its selection shows pale
+        red), the menus and the buttons under the menu bar, the keyboard shortcuts, the right-click
+        menu on the plot and dropping files; the main window cannot be closed either. So nothing
+        can change what the window works on. A slim orange line above the plot says so, with two
+        buttons: <b>Hide the window</b> (to see the whole main window; <b>Show the window</b>
+        brings it back) and <b>Close the window</b>. When the plot is drawn again meanwhile (e.g.
+        another plot type), the Peaks window marks its peaks again.</p>
+        <div class="screenshot">
+            <img src="$BESIDE_PLOT" width="$BESIDE_PLOT_W" height="$BESIDE_PLOT_H" alt="The main window while the Peaks window is open beside it: the orange line above the plot, the plot zoomed in on the marked peaks, the spectra list and the menus greyed out" />
+            <p class="caption">The Peaks window open beside the plot (lower right). In the main
+            window the orange line above the plot says so; the plot is zoomed in on the marked
+            peaks (toolbar under the plot), the Basic plot options below it can be used; the
+            spectra list (its selection pale red), its buttons, the menus and the buttons under the
+            menu bar are greyed out until the Peaks window is closed.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$BESIDE_PLOT_LINE" width="$BESIDE_PLOT_LINE_W" height="$BESIDE_PLOT_LINE_H" alt="The orange line above the plot with the buttons Hide the window and Close the window" />
+            <p class="caption">The orange line: which window is open, <b>Hide the window</b> (to see
+            the whole main window; it becomes <b>Show the window</b>) and <b>Close the
+            window</b>.</p>
+        </div>
+        <p>How to use it, e.g. with the Peaks window: mark the peaks, then click the magnifier in
+        the toolbar under the plot and draw a rectangle around a band to look at it closely;
+        <b>Home</b> (the house) shows the whole plot again. Change a setting in the Peaks window and
+        the marks follow while you look. The help page of each of these windows says so under its
+        title and links here.</p>
+        <p>Legend, Grid, Layout Properties and Axis properties have <b>Apply</b>: the settings are
+        shown on the plot and the window stays open; OK keeps them and closes, Cancel closes
+        without applying more. Windows that change the spectra list itself (History, Rename,
+        Select spectra, Save, Settings) stay in front of everything as before.</p>
 
         <h3 id="legend-panel">Legend</h3>
         <p>The <strong>☰ Legend</strong> button (below the spectrum list) opens the

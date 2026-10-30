@@ -1,6 +1,7 @@
 
 # src/controllers/data_analysis/spectral_range_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.spectral_range_manager import SpectralRangeManager
@@ -320,7 +321,7 @@ class SpectralRangeController:
         # SpectralRangeDialog._on_commit_clicked) instead of going through
         # QDialog's accept(). Close maps to reject(). Either way, just run
         # the dialog and report back whatever settings it was last showing.
-        dialog.exec_()
+        run_beside_plot(dialog)
         return dialog.get_settings()
 
     def apply_settings_to_spectra(self, settings, spectra):

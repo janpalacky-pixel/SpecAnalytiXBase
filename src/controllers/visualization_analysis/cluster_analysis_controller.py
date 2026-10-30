@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/cluster_analysis_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.cluster_analysis_dialog import ClusterAnalysisDialog
 from src.modules.visualization_analysis.cluster_analysis_manager import ClusterAnalysisManager
@@ -81,7 +82,7 @@ class ClusterAnalysisController:
             controller=self,
             spectra=self.main_controller.selected_spectra
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
     
     def compute_clustering(self, spectra, method, n_clusters, progress_callback=None, **kwargs):
         """Compute clustering with specified parameters."""

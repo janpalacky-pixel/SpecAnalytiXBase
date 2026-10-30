@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/kinetics_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.kinetics_manager import KineticsManager
 from src.modules.utils.spectra_validation import validate_common_x_axis
@@ -54,7 +55,7 @@ class KineticsController:
             controller=self,
             spectra=self.main_controller.selected_spectra,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
     # ------------------------------------------------------------------ #
     # Pure computation helpers (thin wrappers around the manager, kept    #

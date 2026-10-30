@@ -15,6 +15,7 @@ and band_marker_dialog.py have all been checked directly, not inferred):
   apply_to_axes, to_dict/from_dict) match exactly what this controller uses.
 """
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from src.modules.utils.app_logger import get_logger
 
 logger = get_logger(__name__)
@@ -64,7 +65,7 @@ class BandMarkerController:
             band_marker_manager=self.manager,
             on_change=on_change,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         return dialog
 
     # ------------------------------------------------------------------ #

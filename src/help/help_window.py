@@ -132,6 +132,39 @@ def _rewrite_help_links(html, current_key):
     return _HELP_LINK_RE.sub(lambda m: f"{m.group(1)}.html", html)
 
 
+# The help pages of the windows that open beside the main plot
+# (src/views/plot_only_mode.py): each gets a short note under its title with a
+# link to the User Guide section that explains it. (Peaks explains it itself.)
+BESIDE_PLOT_TOPICS = {
+    'data_range', 'normalization', 'sg_smoothing', 'fft_denoising', 'manual_baseline',
+    'automated_baseline', 'snip_baseline', 'svd_background', 'combine_spectra',
+    'spectral_calculator', 'spike_removal', 'cosmic_ray', 'resolution', 'xaxis_alignment',
+    'svd_interpolation', 'cd_unit_conversion', 'xaxis_unit_conversion', 'mean_centering',
+    'peak_fitting', 'melting_curve', 'band_ratio', 'reference_matching', 'group_statistics',
+    'svd_analysis', 'pca_scores', 'nmf', 'mcr_als', 'cluster_analysis', 'som', 'pls',
+    'qc_outlier', 'isosbestic_point', 'kinetics_fitting', 'map2d', 'two_d_correlation',
+    'band_markers',
+}
+BESIDE_PLOT_NOTE = (
+    '<p style="background:#FFF3E0; border-left:4px solid #F57C00; padding:6px 10px; '
+    'margin:8px 0; color:#5D3A00;">While this window is open you can zoom, pan and save the '
+    'main plot and use its Basic plot options; the rest of the main window waits until you '
+    'close it. See <a href="help://user_guide#beside-the-plot">Windows beside the plot</a>.</p>')
+
+
+def with_beside_plot_note(key, content):
+    """The page with the note about windows beside the plot under its first
+    heading, for the topics in BESIDE_PLOT_TOPICS."""
+    if key not in BESIDE_PLOT_TOPICS or 'beside-the-plot' in content:
+        return content
+    m = re.search(r'</h1>', content, re.I)
+    if m is None:
+        m = re.search(r'<body[^>]*>', content, re.I)
+    if m is None:
+        return BESIDE_PLOT_NOTE + content
+    return content[:m.end()] + BESIDE_PLOT_NOTE + content[m.end():]
+
+
 def _write_help_page(key, title, content):
     """
     Write a single help topic's content to <help_pages_dir>/<key>.html and
@@ -142,7 +175,7 @@ def _write_help_page(key, title, content):
     pages_dir = _help_pages_dir()
     os.makedirs(pages_dir, exist_ok=True)
 
-    html = _rewrite_help_links(content, key)
+    html = _rewrite_help_links(with_beside_plot_note(key, content), key)
     path = os.path.join(pages_dir, f"{key}.html")
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)

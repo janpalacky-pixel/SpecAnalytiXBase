@@ -11,6 +11,7 @@ CDUnitConversionController / XAxisAlignmentController:
   • update_settings()               – forward settings to the manager
 """
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.xaxis_unit_conversion_manager import (
@@ -198,7 +199,7 @@ class XAxisUnitConversionController:
             selected_spectra=selected_spectra,
             commit_callback=commit_callback,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         settings = dialog.get_settings()
         self._last_settings = dict(settings)
         return settings

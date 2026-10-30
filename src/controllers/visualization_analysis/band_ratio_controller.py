@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/band_ratio_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from src.modules.visualization_analysis.band_ratio_manager import BandRatioManager
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.utils.app_logger import get_logger
@@ -64,4 +65,4 @@ class BandRatioController:
             selected_spectra=selected_spectra,
             current_settings=current_settings,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)

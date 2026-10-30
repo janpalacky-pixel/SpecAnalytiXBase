@@ -46,6 +46,12 @@ _PAGE = """
     <p><b>Reset to defaults</b> puts every setting back to its default value. The orange
     <b>?</b> shows what each setting and column means; the same text appears when you hold the
     mouse over a setting.</p>
+    <p>While the window is open you can <b>zoom, pan and save the main plot</b> (the toolbar
+    under it) to look closely at the marks; the rest of the main window &mdash; the spectra list,
+    the menus &mdash; is greyed out until you close it, so nothing changes the peaks shown; the
+    Basic plot options (plot type, scales, colours) stay usable, and the marks come back when the
+    plot is drawn again. <b>Hide the window</b> in the orange line above the plot shows the whole
+    main window (see <a href="help://user_guide#beside-the-plot">Windows beside the plot</a>).</p>
 
     <h2 id="how-to">How to use it, in short</h2>
     <ol>

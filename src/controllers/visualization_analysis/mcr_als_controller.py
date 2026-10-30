@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/mcr_als_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import numpy as np
 from src.modules.visualization_analysis.mcr_als_manager import MCRALSManager
 from src.modules.utils.revision_tracking import revision_changed
@@ -337,7 +338,7 @@ class MCRALSController:
             spectra=selected_spectra,
             current_settings=last,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
         # Remember the settings the user left the dialog with, so the next
         # time it's opened they're restored (read back via current_settings
         # in show_dialog above, applied by the dialog's _apply_saved_settings).

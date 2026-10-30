@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/som_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.visualization_analysis.som_dialog import SOMDialog
 from src.modules.visualization_analysis.som_manager import SOMManager
@@ -85,7 +86,7 @@ class SOMController:
             controller=self,
             spectra=self.main_controller.selected_spectra
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
     # ------------------------------------------------------------------ #
     # Thin wrappers around the manager — keeps the dialog free of         #

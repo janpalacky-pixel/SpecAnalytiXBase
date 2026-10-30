@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/isosbestic_point_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from src.modules.visualization_analysis.isosbestic_point_manager import IsosbesticPointManager
 from src.modules.utils.spectra_validation import validate_common_x_axis
 from PyQt5.QtWidgets import QMessageBox
@@ -68,7 +69,7 @@ class IsosbesticPointController:
             selected_spectra=selected_spectra,
             current_settings=current_settings,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         # Read-only analysis (see class docstring) — OK and Cancel both
         # just close the dialog, no commit step either way. Still return
         # the settings shown so the caller can remember them for next

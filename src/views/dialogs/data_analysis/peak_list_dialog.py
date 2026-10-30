@@ -561,6 +561,15 @@ class PeakListDialog(QDialog):
         self.marked = False
         self.mark_info.setText("")
 
+    def on_main_plot_redrawn(self):
+        """The main plot was drawn again while this window is open (e.g.
+        another plot type in Basic plot options): the marks and the fitted
+        peaks come back (the plot of a double-clicked peak does not)."""
+        if self.marked:
+            self.mark_on_plot()
+        if self.fits_on_plot_check.isChecked():
+            self.draw_fits_on_plot()
+
     def _marks_follow(self, *_):
         if self.marked:
             self.mark_on_plot()

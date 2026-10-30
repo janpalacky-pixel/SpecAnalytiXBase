@@ -1,5 +1,6 @@
 
 # src/controllers/visualization/custom_plot_properties_controller.py
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox, QDialog
 from PyQt5.QtCore import Qt
 from src.views.dialogs.visualization.custom_plot_properties_dialog import CustomPlotPropertiesDialog
@@ -48,7 +49,7 @@ class CustomPlotPropertiesController:
         )
         self.dialog = dialog
 
-        if dialog.exec_() == QDialog.Accepted:
+        if run_beside_plot(dialog) == QDialog.Accepted:
             self.apply_settings(selected_spectra, dialog.get_settings())
             return True
         return False

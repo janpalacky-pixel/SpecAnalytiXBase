@@ -8,6 +8,7 @@ Follows the same pattern as NormalizationController:
   • update_settings()          – forward settings to the manager
 """
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.xaxis_alignment_manager import XAxisAlignmentManager
@@ -327,7 +328,7 @@ class XAxisAlignmentController:
         # the dialog and remember whatever it was last showing — including
         # its preview cache — so reopening for the same selection starts
         # from where the user left off, applied or not.
-        dialog.exec_()
+        run_beside_plot(dialog)
         settings = dialog.get_settings()
         settings['_cached_keys'] = current_keys
         # Remember WHICH spectrum (by identity) is the reference, not just

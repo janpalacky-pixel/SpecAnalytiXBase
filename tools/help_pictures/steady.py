@@ -8,6 +8,9 @@ of the picture scripts although the window did not change.
   libraries on one thread, so a calculation gives the same last digits.)
 - fixed_clock(): the times written into the Operations History (and the
   other records with a time) are a fixed date and time.
+- start() also makes the free memory count as unknown: the worker-count
+  slider (e.g. X-axis alignment) otherwise wrote "free memory now suits
+  about 16" or not, depending on what else ran on the computer.
 - park_mouse(): the mouse pointer is moved to the bottom-right corner of the
   screen, so no button is drawn highlighted because the pointer happens to
   be over it (call it before each picture)."""
@@ -25,6 +28,8 @@ def start():
     random.seed(20260115)
     import numpy as np
     np.random.seed(20260115)
+    from src.modules.utils import parallel_utils
+    parallel_utils._available_memory_mb = lambda: None     # no "free memory" hint
 
 
 class _FixedDateTime(_dt.datetime):

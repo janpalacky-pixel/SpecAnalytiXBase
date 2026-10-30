@@ -537,6 +537,10 @@ class SpectrumSelector:
                 background-color: red;
                 color: white;
             }
+            QListWidget::item:selected:disabled {
+                background-color: #F2A3A3;
+                color: white;
+            }
         """)
 
     def show_rename_dialog(self):

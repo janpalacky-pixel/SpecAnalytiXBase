@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/qc_outlier_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.qc_outlier_manager import QCOutlierManager
 from src.modules.utils.revision_tracking import selection_or_revision_changed
@@ -95,7 +96,7 @@ class QCOutlierController:
             controller=self,
             spectra=self.main_controller.selected_spectra,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
     # ------------------------------------------------------------------ #
     # Pure computation helper (thin wrapper around the manager, kept here #

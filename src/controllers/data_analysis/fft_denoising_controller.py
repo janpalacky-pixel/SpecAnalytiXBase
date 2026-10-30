@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/fft_denoising_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.fft_denoising_manager import FFTDenoisingManager
@@ -210,7 +211,7 @@ class FFTDenoisingController:
             commit_callback=commit_callback,
         )
 
-        dialog.exec_()
+        run_beside_plot(dialog)
         return dialog.get_settings()
 
     def show_parameters_dialog(self):

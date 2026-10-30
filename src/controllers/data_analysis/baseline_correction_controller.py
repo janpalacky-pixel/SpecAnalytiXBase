@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/baseline_correction_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.baseline_manager import BaselineManager
@@ -337,7 +338,7 @@ class BaselineCorrectionController:
         if hasattr(self.dialog, 'initialize_with_controller'):
             self.dialog.initialize_with_controller()
 
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
         # Always store corrections on close — no OK/Cancel distinction
         self.store_corrections()

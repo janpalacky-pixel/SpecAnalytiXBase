@@ -5,6 +5,8 @@ session, so reopening the window keeps the groups -- and the chosen value,
 ranges and options. Spectra imported again are new spectra (new unique_id)
 and start without the old groups."""
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
+
 
 class GroupStatisticsController:
 
@@ -22,4 +24,4 @@ class GroupStatisticsController:
             return
         self.dialog = GroupStatisticsDialog(spectra, self.controller.view, self.saved_groups,
                                             self.saved_settings)
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)

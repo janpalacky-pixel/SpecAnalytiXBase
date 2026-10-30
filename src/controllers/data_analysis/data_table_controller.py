@@ -5,6 +5,7 @@ new spectra - one step "Data table (add as new)" in the Operations History,
 like every other tool that adds spectra (Undo removes them; snapshots and the
 Methods report include the formulas)."""
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 
 from src.modules.utils.app_logger import get_logger
@@ -51,7 +52,7 @@ class DataTableController:
         from src.views.dialogs.data_analysis.data_table_dialog import DataTableDialog
         self.dialog = DataTableDialog(self.main.view, selected_spectra,
                                       commit_callback=self.add_spectra)
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
     def add_value_spectrum(self, spectrum, sources):
         """Values per spectrum > As new spectrum: one column against another

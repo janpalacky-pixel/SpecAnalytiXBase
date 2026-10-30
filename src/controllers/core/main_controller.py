@@ -1,5 +1,6 @@
 
 # src/controllers/core/main_controller.py
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import re
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QCheckBox,
@@ -1618,7 +1619,7 @@ class MainController(QMainWindow):
             # Components are put on each spectrum's x values: different axes are fine.
             from src.views.dialogs.data_analysis.mixture_analysis_dialog import MixtureAnalysisDialog
             self._mixture_dialog = MixtureAnalysisDialog(self.view, selected_spectra)
-            self._mixture_dialog.exec_()
+            run_beside_plot(self._mixture_dialog)
         else:
             # Covers SVD analysis, Cluster analysis, and any other method
             # dispatched generically below — these run their computation
@@ -2388,7 +2389,8 @@ class MainController(QMainWindow):
         """
         for i in reversed(range(self.graphics_layout.count())):
             widget = self.graphics_layout.itemAt(i).widget()
-            if widget is not None:
+            # the orange line of a window open beside the plot stays
+            if widget is not None and widget.objectName() != 'plot_only_banner':
                 widget.setParent(None)
 
     def import_spectra(self):
@@ -2708,6 +2710,10 @@ class MainController(QMainWindow):
         cursor = getattr(self, 'plot_cursor_controller', None)
         if cursor is not None:
             cursor.attach(self.static_canvas, plot_type)
+        # a window open beside the plot draws its marks again (plot_only_mode)
+        lock = getattr(self.view, 'plot_only_lock', None)
+        if lock is not None:
+            lock.plot_redrawn()
 
     def _reverse_x(self):
         box = getattr(self.view, 'reverse_x_checkBox', None)
@@ -2732,6 +2738,10 @@ class MainController(QMainWindow):
     def handle_mouse_click(self, event):
         """Handle mouse clicks on the canvas."""
         if event.button == 3:  # Right click
+            # a tool window open beside the plot (plot_only_mode): its menu
+            # would change what the window shows - only zoom, pan, save
+            if getattr(self.view, 'plot_only_lock', None) is not None:
+                return
             self.show_context_menu(event)
 
     def show_context_menu(self, event):

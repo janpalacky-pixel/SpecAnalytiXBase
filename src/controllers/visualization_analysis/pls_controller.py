@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/pls_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.pls_manager import PLSManager
 from src.modules.utils.spectra_validation import validate_common_x_axis
@@ -44,7 +45,7 @@ class PLSController:
             controller=self,
             spectra=self.main_controller.selected_spectra,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
     def compute_pls(self, spectra, y_by_key, mode, n_components=None,
                      autoscale_x=True, cv_folds=None, progress_callback=None):

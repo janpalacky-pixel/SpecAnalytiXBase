@@ -1,6 +1,7 @@
 
 # src/controllers/misc/spectrum_metadata_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.views.dialogs.misc.spectrum_metadata_dialog import SpectrumMetadataDialog
 from src.views.dialogs.misc.spectrum_metadata_table_dialog import SpectrumMetadataTableDialog
@@ -56,11 +57,11 @@ class SpectrumMetadataController:
                 spectrum_label=spectrum['label'],
                 metadata=spectrum['metadata']
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
         else:
             # For multiple spectra, show table dialog
             dialog = SpectrumMetadataTableDialog(
                 parent=self.controller.view,
                 spectra_data=selected_spectra
             )
-            dialog.exec_()
+            run_beside_plot(dialog)

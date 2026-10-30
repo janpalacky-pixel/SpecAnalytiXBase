@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/spectral_calculator_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QMessageBox, QListWidgetItem, QApplication
 from PyQt5.QtCore import Qt
@@ -82,7 +83,7 @@ class SpectralCalculatorController:
             commit_callback=self.commit_spectral_calculator,
             main_controller=self.controller,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         # Remember the settings shown, purely so reopening the dialog for
         # the same selection starts from where it left off — Apply / Add
         # as New already committed (if at all) before this returns, via

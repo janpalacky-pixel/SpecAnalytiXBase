@@ -288,6 +288,9 @@ class OperationTreeComboBox(QWidget):
             "}"
             "QPushButton:hover { border-color: #7A9CC8; background-color: #E8EFF8; }"
             "QPushButton:pressed { background-color: #D0DDF0; }"
+            # switched off (e.g. a tool window is open beside the plot): grey
+            "QPushButton:disabled { background-color: #F2F3F5; color: #9AA0A8;"
+            "  border-color: #D3D7DE; }"
         )
         self._update_button_text()
         self._button.clicked.connect(self._toggle_popup)

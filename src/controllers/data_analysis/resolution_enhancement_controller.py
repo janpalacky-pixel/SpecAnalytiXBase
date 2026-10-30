@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/resolution_enhancement_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.resolution_enhancement_manager import ResolutionEnhancementManager
@@ -192,7 +193,7 @@ class ResolutionEnhancementController:
             controller=self,
             commit_callback=commit_callback,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         return dialog.get_settings()
 
     def preview(self, x, y, irf_sigma, snr):

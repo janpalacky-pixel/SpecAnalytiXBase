@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/pca_scores_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import numpy as np
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.pca_scores_manager import PcaScoresManager
@@ -270,7 +271,7 @@ class PcaScoresController:
             spectra=selected_spectra,
             current_settings=last_settings,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
 
         # Remember whatever the dialog was last showing — even if the user
         # just closed it without exporting anything — same "remember on

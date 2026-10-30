@@ -13,6 +13,7 @@ Where it is chosen: the line colours list in Basic plot options and its
 right-click menu, and the spectra list's right-click menu. The window is
 src/views/dialogs/visualization/line_colours_dialog.py."""
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QAction
 
 from src.modules.visualization import color_by_value as cbv
@@ -122,5 +123,5 @@ class LineColoursController:
                                 apply_callback=lambda mode, s: self.set_mode(mode, s),
                                 set_own_colours=self.main.custom_plot_properties_controller.show_dialog)
         self.dialog = dlg
-        dlg.exec_()
+        run_beside_plot(dlg)
         return dlg

@@ -1,5 +1,6 @@
 # src/controllers/core/operations_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import re
 import uuid
 from PyQt5.QtWidgets import QDialog, QMessageBox, QProgressDialog, QApplication
@@ -750,7 +751,7 @@ class OperationsController:
                 )
                 
                 logger.info("DEBUG: SVD dialog created, showing modally...")
-                dialog.exec_()
+                run_beside_plot(dialog)
                 logger.info("DEBUG: SVD dialog closed")
                     
             except Exception as e:
@@ -858,7 +859,7 @@ class OperationsController:
                 selected_spectra=selected_spectra,
                 commit_callback=nc.commit_normalization,
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
             # Remember the settings shown, purely so reopening the dialog
             # for the same selection starts from where it left off.
             self.current_parameters[operation] = dialog.get_settings()
@@ -1020,7 +1021,7 @@ class OperationsController:
                 selected_spectra=selected_spectra,
                 commit_callback=self.controller.savitzky_golay_controller.commit_sg_smoothing,
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
             settings = dialog.get_settings()
             if settings:
                 self.current_parameters[operation] = settings
@@ -1068,7 +1069,7 @@ class OperationsController:
                 commit_callback=self.controller.combine_spectra_controller.commit_combine_spectra,
                 main_controller=self.controller,
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
             settings = dialog.get_settings()
             if settings:
                 settings['source_labels'] = [s['label'] for s in selected_spectra]
@@ -1151,7 +1152,7 @@ class OperationsController:
                 commit_callback=self.controller.automated_baseline_controller.commit_automated_baseline,
                 main_controller=self.controller,
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
             settings = dialog.get_settings()
             if settings:
                 self.current_parameters[operation] = settings
@@ -1183,7 +1184,7 @@ class OperationsController:
                 commit_callback=self.controller.snip_baseline_controller.commit_snip_baseline,
                 main_controller=self.controller,
             )
-            dialog.exec_()
+            run_beside_plot(dialog)
             settings = dialog.get_settings()
             if settings:
                 self.current_parameters[operation] = settings
@@ -1204,7 +1205,7 @@ class OperationsController:
             dialog = BandRatioDialog(self.controller.view, selected_spectra,
                                      current_settings=last_settings,
                                      controller=self.controller.band_ratio_controller)
-            result = dialog.exec_()
+            result = run_beside_plot(dialog)
             # Remember whatever was last configured regardless of how the
             # dialog closed (OK, Cancel, or the window's own X) -- every
             # other dialog in this app (CD/X-axis unit conversion, FFT
@@ -1275,7 +1276,7 @@ class OperationsController:
                                              current_settings=last_settings,
                                              all_spectra=all_spectra,
                                              main_controller=self.controller)
-            if dialog.exec_() == QDialog.Accepted:
+            if run_beside_plot(dialog) == QDialog.Accepted:
                 settings = dialog.get_settings()
                 if settings:
                     self.current_parameters["Reference Matching"] = settings.copy()
@@ -1360,7 +1361,7 @@ class OperationsController:
                 # — there's nothing left to do with this dialog's result
                 # after it closes, since committing already happened
                 # inside it, if at all.
-                dialog.exec_()
+                run_beside_plot(dialog)
 
             except Exception as e:
                 logger.error(f"ERROR: Failed to open spike removal dialog: {e}")
@@ -1412,7 +1413,7 @@ class OperationsController:
             dialog = pfc.show_dialog(selected_spectra[0], current_settings=last_settings,
                                      series=series)
 
-            result = dialog.exec_()
+            result = run_beside_plot(dialog)
 
             # Always read back and remember what's in the dialog on
             # close -- same "no OK/Cancel distinction" rule every other
@@ -1503,7 +1504,7 @@ class OperationsController:
             # actual commit (creating new spectra from the checked Output
             # Options, and recording history) stays gated on Accepted --
             # same split applied to Band Ratio earlier in this session.
-            result = dialog.exec_()
+            result = run_beside_plot(dialog)
             results = dialog.get_results()
 
             if results and results.get('curve'):
@@ -1784,7 +1785,7 @@ class OperationsController:
             current_settings=current_settings,
             commit_callback=crc.commit_cosmic_ray_removal,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         settings = dialog.get_settings()
         if settings:
             self.current_parameters["Cosmic ray removal"] = settings

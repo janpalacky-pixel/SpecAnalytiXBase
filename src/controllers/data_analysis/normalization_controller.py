@@ -1,5 +1,6 @@
 # src/controllers/data_analysis/normalization_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import uuid
 from PyQt5.QtWidgets import QApplication
 from src.modules.data_analysis.normalization_manager import NormalizationManager
@@ -238,7 +239,7 @@ class NormalizationController:
             commit_callback=self.commit_normalization,
         )
 
-        if dialog.exec_() == dialog.Accepted:
+        if run_beside_plot(dialog) == dialog.Accepted:
             settings = dialog.get_settings()
             self.manager.update_settings(settings)
             return settings

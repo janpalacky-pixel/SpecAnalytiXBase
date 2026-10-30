@@ -5,6 +5,7 @@ Operations History (Undo takes it back), built like Rename: the current
 state gets the new metadata and becomes the next state.
 src/modules/misc/spectrum_properties.py."""
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from src.modules.misc import spectrum_properties as sp
 from src.modules.utils.spectrum_identity import spectrum_key
 
@@ -25,7 +26,7 @@ class SpectrumPropertiesController:
             QMessageBox.information(main.view, "Spectrum properties", "Import spectra first.")
             return None
         self.dialog = SpectrumPropertiesDialog(main.view, spectra, apply_callback=self.commit)
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
         return self.dialog
 
     def commit(self, spectra, values):

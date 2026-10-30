@@ -20,8 +20,11 @@ class LegendPropertiesController:
             settings=self.legend_manager.get_current_settings()
         )
 
-        # Show the dialog and wait for user response
-        if dialog.exec_():
+        # beside the plot (zoom and pan it while the window is open); Apply
+        # shows the settings at once
+        from src.views.plot_only_mode import add_apply_button, run_beside_plot
+        add_apply_button(dialog, lambda: self._apply_from(dialog))
+        if run_beside_plot(dialog, "Legend"):
             settings = dialog.get_settings()
             self.legend_manager.update_settings(settings)
             self.apply_settings()
@@ -29,6 +32,14 @@ class LegendPropertiesController:
             if callable(sync):
                 sync()
             
+    def _apply_from(self, dialog):
+        """Apply in the window: its settings on the plot, the window stays open."""
+        self.legend_manager.update_settings(dialog.get_settings())
+        self.apply_settings()
+        sync = getattr(self.controller, 'sync_legend_checkbox', None)
+        if callable(sync):
+            sync()
+
     def apply_settings(self):
         """Apply current settings to the plot."""
         if self.controller.static_canvas:

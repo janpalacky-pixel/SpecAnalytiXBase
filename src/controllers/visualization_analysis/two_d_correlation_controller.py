@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/two_d_correlation_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.visualization_analysis.two_d_correlation_manager import TwoDCorrelationManager
 from src.modules.utils.revision_tracking import revision_changed
@@ -188,5 +189,5 @@ class TwoDCorrelationController:
             controller=self,
             spectra=selected_spectra,
         )
-        self.dialog.exec_()
+        run_beside_plot(self.dialog)
         self.dialog = None

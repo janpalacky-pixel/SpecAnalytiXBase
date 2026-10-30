@@ -3,6 +3,7 @@
 off and change the limits it uses (remembered between sessions).
 The rule itself is explained in src/modules/data_io/cd_quality.py."""
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from PyQt5.QtWidgets import (
     QAction, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLabel,
     QMenu, QMessageBox, QVBoxLayout)
@@ -121,7 +122,7 @@ class CDQualityController:
 
     def edit_limits(self):
         dialog = CDQualityLimitsDialog(self.main.view, *self.limits())
-        if dialog.exec_() == QDialog.Accepted:
+        if run_beside_plot(dialog) == QDialog.Accepted:
             self.set_limits(*dialog.values())
 
     def explain(self):

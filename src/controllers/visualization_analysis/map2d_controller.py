@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/map2d_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 from src.modules.visualization_analysis.map2d_manager import Map2DManager
 from PyQt5.QtWidgets import QMessageBox
 from src.modules.utils.app_logger import get_logger
@@ -386,7 +387,7 @@ class Map2DController:
             controller=self,
             spectra=selected_spectra,
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
         self.remember_rois(dialog)
 
     def remember_rois(self, dialog):

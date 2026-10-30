@@ -118,7 +118,9 @@ class PeakDetectionController:
                                 mark_settings=self._mark_settings(), start_tab=tab,
                                 show_peak=self.show_peak_on_plot)
         self.peak_list_dialog = self.dialog = dialog
-        dialog.exec_()
+        # beside the plot: zoom and pan the main plot while the window is open
+        from src.views.plot_only_mode import run_beside_plot
+        run_beside_plot(dialog, "Peaks")
         self._keep_mark_settings(dialog.mark_settings())
         return dialog
 

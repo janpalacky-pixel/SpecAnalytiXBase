@@ -20,12 +20,20 @@ class AxisPropertiesController:
             settings=self.axis_manager.get_current_settings()
         )
 
-        # Show the dialog and wait for user response
-        if dialog.exec_():
+        # beside the plot (zoom and pan it while the window is open); Apply
+        # shows the settings at once
+        from src.views.plot_only_mode import add_apply_button, run_beside_plot
+        add_apply_button(dialog, lambda: self._apply_from(dialog))
+        if run_beside_plot(dialog, "Axis properties"):
             settings = dialog.get_settings()
             self.axis_manager.update_settings(settings)
             self.apply_settings()
             
+    def _apply_from(self, dialog):
+        """Apply in the window: its settings on the plot, the window stays open."""
+        self.axis_manager.update_settings(dialog.get_settings())
+        self.apply_settings()
+
     def apply_settings(self):
         """Apply current settings to the plot."""
         if self.controller.static_canvas:

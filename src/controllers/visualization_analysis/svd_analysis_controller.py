@@ -1,5 +1,6 @@
 # src/controllers/visualization_analysis/svd_analysis_controller.py
 
+from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
 import numpy as np
 from src.modules.visualization_analysis.svd_analysis_manager import SVDAnalysisManager
 from PyQt5.QtWidgets import QMessageBox
@@ -440,4 +441,4 @@ class SVDAnalysisController:
             controller=self,
             spectra=selected_spectra
         )
-        dialog.exec_()
+        run_beside_plot(dialog)
