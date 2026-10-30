@@ -102,7 +102,7 @@ def test_window_shares_the_settings_of_detect_peaks(mc, monkeypatch):
     dlg = pdc.show_peak_list()
     n_all = dlg.table.rowCount()
     assert n_all > 0
-    assert dlg.summary.text().endswith('of 28 spectra.')
+    assert dlg.summary.text().endswith(' in 28 spectra.')        # (all 28 have peaks)
     dlg.mode.setCurrentText('Both')
     dlg.threshold.setValue(0.1)
     assert dlg.table.rowCount() > n_all

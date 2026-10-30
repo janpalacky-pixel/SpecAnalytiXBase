@@ -365,12 +365,17 @@ class NamesToGroupsDialog(QDialog):
 
         layout.addWidget(self.root_radio)
         layout.addWidget(self.contains_radio)
-        self.rules_edit = QPlainTextEdit()
-        self.rules_edit.setPlaceholderText(
-            "One rule per line:  text = group name\n"
-            "e.g.\n  ctrl = Control\n  treat = Treated\n"
-            "(or just the text: it becomes the group name). The first matching rule wins; "
+        # how to write the rules - always shown (a placeholder text in the box
+        # would disappear as soon as the first rule is typed)
+        self.rules_hint = QLabel(
+            "One rule per line:  <b>text = group name</b>, e.g. <code>ctrl = Control</code>. "
+            "Just the text: it becomes the group name. The first matching rule wins; "
             "upper/lower case is ignored.")
+        self.rules_hint.setWordWrap(True)
+        self.rules_hint.setStyleSheet("color:#666; margin-left:18px;")
+        layout.addWidget(self.rules_hint)
+        self.rules_edit = QPlainTextEdit()
+        self.rules_edit.setPlaceholderText("ctrl = Control\ntreat = Treated")
         self.rules_edit.setFixedHeight(110)
         layout.addWidget(self.rules_edit)
 
@@ -479,9 +484,14 @@ class NamesToGroupsDialog(QDialog):
             counts[g] = counts.get(g, 0) + 1
         named = [f"{g} ({n})" for g, n in counts.items() if g != gs.NO_GROUP]
         none = counts.get(gs.NO_GROUP, 0)
-        text = f"{len(named)} groups: " + ", ".join(named[:12]) + (" …" if len(named) > 12 else "")
-        if none:
-            text += f"; {none} spectra without a group"
+        if named:
+            text = (f"{len(named)} group{'s' if len(named) != 1 else ''}: "
+                    + ", ".join(named[:12]) + (" \u2026" if len(named) > 12 else ""))
+            if none:
+                text += f"; {none} spectr{'um' if none == 1 else 'a'} without a group"
+        else:
+            text = (f"No groups yet: {none} spectr{'um' if none == 1 else 'a'} without a group "
+                    "\u2013 write the rules above, or choose another way.")
         self.preview.setText(text)
 
 

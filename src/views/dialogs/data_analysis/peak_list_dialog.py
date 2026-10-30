@@ -867,6 +867,19 @@ class PeakListDialog(QDialog):
                     distance=self.distance.value(), mode=self.mode.currentText(),
                     snr=self.snr.value())
 
+    def summary_text(self):
+        """'196 peaks in 30 spectra.' - and how many spectra have no peak,
+        when some have none ('180 peaks in 30 spectra; 2 of them without a
+        peak.')."""
+        n_peaks, n = len(self.rows), len(self.spectra)
+        with_peaks = len(set(self.row_spectrum))      # (names can repeat: their places)
+        text = (f"{n_peaks} peak{'s' if n_peaks != 1 else ''} in {n} "
+                f"spectr{'um' if n == 1 else 'a'}")
+        empty = n - with_peaks
+        if n_peaks and empty > 0:
+            text += f"; {empty} of them without a peak"
+        return text + "."
+
     def refresh(self, *_):
         """Find the peaks again with the current settings and fill the table
         (and the plot, when shown); the first time also the ± distance."""
@@ -922,8 +935,7 @@ class PeakListDialog(QDialog):
             self.tolerance.blockSignals(True)
             self.tolerance.setValue(pl.default_tolerance(self.rows))
             self.tolerance.blockSignals(False)
-        with_peaks = len({row[0] for row in self.rows})
-        self.summary.setText(f"{len(self.rows)} peaks in {with_peaks} of {len(self.spectra)} spectra.")
+        self.summary.setText(self.summary_text())
         if self.on_settings is not None:
             self.on_settings(s)
         self._draw_if_shown()
