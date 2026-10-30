@@ -96,6 +96,8 @@ def get_peak_fitting_help_content():
     images = _resolve_screenshot_uris()
     from src.help.help_figures import figure_substitutions
     images.update(figure_substitutions())
+    from src.help.peak_list_or_fitting import section_html
+    images['LIST_OR_FITTING'] = section_html('fitting')
 
     # string.Template ($NAME placeholders) instead of str.format()/f-strings
     # on purpose: the CSS block below is full of literal { } braces, which
@@ -128,6 +130,7 @@ def get_peak_fitting_help_content():
 
         <p style="font-size:0.95em;"><b>Contents:</b>
         <a href="#workflow">At a glance</a> &#183;
+        <a href="#list-or-fitting">Peak list or Peak Fitting?</a> &#183;
         <a href="#recommended">Recommended workflow</a> &#183;
         <a href="#window">The window</a> &#183;
         <a href="#adding-peaks">Adding peaks</a> &#183;
@@ -282,6 +285,8 @@ def get_peak_fitting_help_content():
             <text x="664" y="495" font-size="12" fill="#37474F">&#8226; constraint: Each spectrum its own</text>
             <text x="664" y="514" font-size="12" fill="#37474F">&#8226; All &#8594; Fit Peaks</text>
         </svg>
+
+        $LIST_OR_FITTING
 
         <h2 id="recommended">Recommended workflow</h2>
         <p><b>Before you start:</b> correct the baseline (Baseline Correction) and, if needed, cut

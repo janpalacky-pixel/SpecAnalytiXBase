@@ -280,7 +280,7 @@ def get_user_guide_help_content():
         <table>
             <tr><th>Area</th><th>Location</th><th>Purpose</th></tr>
             <tr><td>Menu bar</td><td>Top</td><td>File, View, Spectra processing, Analysis &amp; Visualization, Help access</td></tr>
-            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Data table</strong> (<a href="#data-table">the selected spectra as a table</a>), <strong>Help</strong> (the Help menu) &mdash; the same as in the menus</td></tr>
+            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Help</strong> (the Help menu), <strong>Copy plot</strong> (Ctrl+Shift+C); <em>Processing</em>: <strong>Data range</strong>, <strong>Smoothing</strong> (Savitzky&ndash;Golay), <strong>Baseline</strong> (automated), <strong>Normalization</strong>; <em>Analysis</em>: <strong>Peak list</strong>, <strong>Peak Fitting</strong>, <strong>SVD analysis</strong>, <strong>2D map</strong>, <strong>Group Statistics</strong>, <strong>Data table</strong> (<a href="#data-table">the selected spectra as a table</a>) &mdash; the same as in the menus (hold the mouse over a button to see what it does). <a href="#toolbars">Hide a group or show only the icons</a></td></tr>
             <tr><td>Spectrum list</td><td>Left panel</td><td>Select which spectra to view and process</td></tr>
             <tr><td>Plot canvas</td><td>Centre</td><td>Interactive plot of selected spectra</td></tr>
             <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours, show legend</td></tr>
@@ -1038,6 +1038,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Detect Peaks</strong></td><td>Opens the <b>Peaks</b> window on its tab <i>Mark on the plot</i>: mark the peaks of the plotted spectra with red dots (they follow the settings while the window is open). A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peaks</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
             <tr><td><strong>Peak list&hellip;</strong></td><td>The same <b>Peaks</b> window, on its tab <i>List</i>: every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; one set of settings for all tabs. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel or (<i>Open in the Data table</i>) for formulas and plots in the Data table</td></tr>
+            <tr><td><strong>Data table&hellip;</strong></td><td>The <a href="#data-table">Data table</a> of the selected spectra (the same as the button under the menu bar): e.g. the Band table of the Peak list as columns, formulas, plots of one value against another</td></tr>
             <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list); <b>Apply</b> shows the settings at once</td></tr>
             <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour); <b>Apply</b> shows them at once</td></tr>
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings; <b>Apply</b> shows them at once</td></tr>
@@ -1115,6 +1116,20 @@ def get_user_guide_help_content():
         progress window and <b>Stop</b>; Stop keeps what is drawn and switches Interactive
         Update off). Tool windows such as FFT Denoising or X-axis alignment draw at most 100
         spectra (also set there); their calculations use all of them.</p>
+
+        <h3 id="toolbars">The buttons under the menu bar</h3>
+        <p>The buttons are in groups: the main buttons (Import data, Open snapshot, Save, Help,
+        Copy plot), <em>Processing</em> (Data range, Smoothing, Baseline, Normalization) and
+        <em>Analysis</em> (Peak list, Peak Fitting, SVD analysis, 2D map, Group Statistics, Data
+        table). Each button does the same as its menu entry, which has the same
+        icon. <strong>View &rarr; Toolbars</strong> (or a right-click on the buttons) hides or
+        shows each group. <em>Text on the buttons</em>: <b>Automatic</b> (the default) shows the
+        text where there is room &mdash; in a narrower window the Analysis buttons show only
+        their icons first, then the Processing buttons, then the main ones, so no button is
+        hidden behind the &raquo; at the end of a group; <b>Always</b>; or <b>Never</b> (only the icons). Hold the mouse over a button to
+        see what it does. The choices are remembered (for your Windows user, not in the
+        program); <b>Back to the default</b> in the same menu shows all groups again with the
+        text Automatic.</p>
 
         <h3 id="theme">Light or dark theme</h3>
         <p><strong>View &rarr; Theme &rarr; Light / Dark</strong>; the choice is used from the next

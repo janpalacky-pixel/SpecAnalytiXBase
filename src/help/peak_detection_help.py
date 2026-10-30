@@ -6,9 +6,11 @@ def get_peak_detection_help_title():
 def get_peak_detection_help_content():
     from src.help.help_figures import figure_html
     page = _PAGE
+    from src.help.peak_list_or_fitting import section_html
+    page = _PAGE
     for key in ('PEAK_DIALOG', 'PEAK_LABELS', 'PEAK_NOISE', 'PEAK_MOVING', 'PEAK_BAND_TABLE'):
         page = page.replace(f'@@{key}@@', figure_html(key))
-    return page
+    return page.replace('@@LIST_OR_FITTING@@', section_html('peaks'))
 
 
 _PAGE = """
@@ -31,7 +33,10 @@ _PAGE = """
     <p>The <b>Peaks</b> window finds the local maxima or minima of the selected spectra and shows
     them in four tabs. It does not change your spectra or save anything to their metadata.
     <b>Right-click on the plot &rarr; Detect Peaks</b> opens it on the tab <b>Mark on the
-    plot</b>, <b>Peak list&hellip;</b> on the tab <b>List</b> &mdash; it is one window:</p>
+    plot</b>, <b>Peak list&hellip;</b> on the tab <b>List</b> (also the button <b>Peak list</b>
+    under the menu bar, and Analysis &amp; Visualization &rsaquo; Data Analysis &rsaquo; Peak
+    list&hellip;) &mdash; it is one window. Peak list or Peak Fitting? See
+    <a href="#list-or-fitting">below</a>.</p>
     <ul>
         <li>The <b>settings at the top</b> (Threshold, Prominence, Distance, S/N, Peaks) decide
             which peaks are found, the same for every tab.</li>
@@ -75,13 +80,7 @@ _PAGE = """
     @@PEAK_DIALOG@@
     @@PEAK_LABELS@@
 
-    <div class="note">
-        This is different from <strong>Peak Fitting</strong>, which models
-        peaks mathematically (Gaussian/Lorentzian) and can save fitted
-        parameters to a spectrum's metadata. Use Peak Detection for a quick
-        visual survey of a plot; use Peak Fitting when you need quantitative
-        peak parameters (center, height, FWHM, area).
-    </div>
+    @@LIST_OR_FITTING@@
 
     <hr>
     <h2>Parameters</h2>

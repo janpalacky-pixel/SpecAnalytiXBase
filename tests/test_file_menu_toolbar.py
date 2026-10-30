@@ -54,10 +54,17 @@ def test_file_menu_names_icons_and_shortcuts(mc):
 def test_the_buttons_under_the_menu_bar(mc):
     v = mc.view
     tb = v.mainToolBar
-    assert not tb.isMovable() and not tb.toggleViewAction().isVisible()
-    buttons = [w for w in tb.findChildren(QToolButton) if w.objectName().startswith('toolbar')]
-    assert [b.text() for b in sorted(buttons, key=lambda b: b.x())] == \
-        ['Import data', 'Open snapshot', 'Save', 'Data table', 'Help']
+    assert not tb.isMovable()             # can be hidden: View > Toolbars (test_toolbar_tools)
+    texts = []
+    for bar in (tb, v.processingToolBar, v.analysisToolBar):
+        buttons = [bar.widgetForAction(a) for a in bar.actions() if not a.isSeparator()]
+        texts.append([b.text() for b in buttons
+                      if b is not None and b.objectName().startswith('toolbar') and
+                      isinstance(b, QToolButton)])
+    assert texts == [['Import data', 'Open snapshot', 'Save', 'Help', 'Copy plot'],
+                     ['Data range', 'Smoothing', 'Baseline', 'Normalization'],
+                     ['Peak list', 'Peak Fitting', 'SVD analysis', '2D map', 'Group Statistics',
+                      'Data table']]
     imp = v.toolbarImportButton
     assert imp.menu() is v.menuImport and imp.popupMode() == QToolButton.MenuButtonPopup
     assert 'Ctrl+I' in imp.toolTip()

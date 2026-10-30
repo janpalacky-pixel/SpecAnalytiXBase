@@ -10,18 +10,6 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QGridLayout, QVBoxLayout, QHB
 from PyQt5.QtCore import QRect, QSize, pyqtSignal, Qt, QEvent, QTimer
 from PyQt5.QtGui import QIcon, QFont, QKeySequence
 
-# The row of buttons under the menu bar (File: Import data, Open snapshot,
-# Save; Help), as in MeltAnalytiX.
-TOOLBAR_STYLE = """
-QToolBar#mainToolBar { spacing: 3px; padding: 2px 4px; }
-QToolBar#mainToolBar QToolButton {
-    border: 1px solid #b9c0c8; border-radius: 4px; padding: 3px 8px; margin: 1px;
-    background: #f7f8fa; }
-QToolBar#mainToolBar QToolButton:hover { background: #e7f0fb; border-color: #5b9bd5; }
-QToolBar#mainToolBar QToolButton:pressed { background: #d4e4f7; }
-QToolBar#mainToolBar QToolButton:disabled { color: #9aa0a6; background: #f1f2f4; border-color: #dde1e5; }
-QToolBar#mainToolBar QToolButton[popupMode="1"] { padding-right: 18px; }
-"""
 import os
 import time
 from src.modules.utils.resource_path import resource_path
@@ -638,6 +626,9 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if getattr(self, 'analysisToolBar', None) is not None:
+            from src.views import toolbars
+            toolbars.fit(self)              # text on the buttons where there is room
         # setSizes() in setup_ui() runs before this window has its final
         # on-screen geometry, so the 220/640 split gets computed against
         # whatever placeholder size the splitter happened to report at
@@ -1457,6 +1448,11 @@ class MainWindow(QMainWindow):
             "The selected spectra as a table: copy to Excel, calculate new columns with formulas")
         self.actionMenuDataTable.setToolTip(self.actionMenuDataTable.statusTip())
 
+        # Peak list... (also right-click on the plot): the Peaks window, tab List
+        self.actionMenuPeakList = QAction(self)
+        self.actionMenuPeakList.setObjectName("actionMenuPeakList")
+        self.actionMenuPeakList.setText("Peak list\u2026")
+        self.menuAnalysisVisualizationData.addAction(self.actionMenuPeakList)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuPeakFitting)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuBandRatio)
         self.menuAnalysisVisualizationData.addAction(self.actionMenuReferenceMatching)
@@ -2047,52 +2043,24 @@ class MainWindow(QMainWindow):
         self._build_toolbar()
 
     def _build_toolbar(self):
-        """The row of buttons under the menu bar, as in MeltAnalytiX: Import
-        data (click: New; the arrow: New / Add to current), Open snapshot,
-        Save, and Help (the Help menu). The buttons use the same actions as the
-        File menu, so menu, buttons and shortcuts always do the same."""
-        tb = QToolBar("Main", self)
-        tb.setObjectName("mainToolBar")
-        tb.setMovable(False)
-        tb.setFloatable(False)
-        tb.setIconSize(QSize(16, 16))
-        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        tb.setStyleSheet(TOOLBAR_STYLE)
-        tb.toggleViewAction().setVisible(False)     # no "hide the toolbar" right-click
-        self.addToolBar(Qt.TopToolBarArea, tb)
-        self.mainToolBar = tb
+        """The buttons under the menu bar, in groups that can be hidden (View >
+        Toolbars) - see src/views/toolbars.py."""
+        from src.views import toolbars
+        toolbars.build(self)
 
-        self.toolbarImportButton = QToolButton(self)
-        self.toolbarImportButton.setObjectName("toolbarImportButton")
-        self.toolbarImportButton.setText("Import data")
-        self.toolbarImportButton.setIcon(self.style().standardIcon(QStyle.SP_DirOpenIcon))
-        self.toolbarImportButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toolbarImportButton.setToolTip(
-            "Import data files instead of the current spectra  [Ctrl+I]\n"
-            "The arrow: New\u2026 or Add to current\u2026  [Ctrl+Shift+I]")
-        self.toolbarImportButton.setMenu(self.menuImport)
-        self.toolbarImportButton.setPopupMode(QToolButton.MenuButtonPopup)
-        self.toolbarImportButton.clicked.connect(self.actionImport_new.trigger)
-        tb.addWidget(self.toolbarImportButton)
-        for action, text, key in ((self.actionImport_Snapshot, "Open snapshot", "Ctrl+O"),
-                                  (self.actionSave, "Save", "Ctrl+S")):
-            action.setIconText(text)                   # the button: without the menu's "\u2026"
-            action.setToolTip(f"{action.statusTip()}  [{key}]")
-            tb.addAction(action)
-            tb.widgetForAction(action).setObjectName(f"toolbar{text.replace(' ', '')}Button")
-        tb.addSeparator()
-        tb.addAction(self.actionMenuDataTable)
-        tb.widgetForAction(self.actionMenuDataTable).setObjectName("toolbarDataTableButton")
-        tb.addSeparator()
-        self.toolbarHelpButton = QToolButton(self)
-        self.toolbarHelpButton.setObjectName("toolbarHelpButton")
-        self.toolbarHelpButton.setText("Help")
-        self.toolbarHelpButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toolbarHelpButton.setMenu(self.menuHelp)
-        self.toolbarHelpButton.setPopupMode(QToolButton.InstantPopup)
-        self.toolbarHelpButton.setToolTip("User Guide, Quick Start, the help of every tool, "
-                                          "test datasets, What's New, Run tests, About")
-        tb.addWidget(self.toolbarHelpButton)
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self, 'analysisToolBar', None) is not None:
+            from src.views import toolbars
+            toolbars.fit(self)              # text on the buttons where there is room
+
+    def createPopupMenu(self):
+        """Right-click on the buttons under the menu bar: which groups are
+        shown, and the text on the buttons."""
+        from src.views import toolbars
+        if getattr(self, 'menuToolbars', None) is None:
+            return super().createPopupMenu()
+        return toolbars.popup_menu(self)
 
     def init_ui(self):
         """Initialize UI components with window title and icon."""

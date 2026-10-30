@@ -1573,6 +1573,8 @@ class MainController(QMainWindow):
             lambda: self.run_visualization_analysis("Group Statistics"))
         self.view.actionMenuDataTable.triggered.connect(
             lambda: self.run_visualization_analysis("Data table"))
+        self.view.actionMenuPeakList.triggered.connect(
+            lambda: self.peak_detection_controller.show_peak_list())
         self.view.actionMenuMixtureAnalysis.triggered.connect(
             lambda: self.run_visualization_analysis("Mixture analysis"))
 
@@ -2125,8 +2127,11 @@ class MainController(QMainWindow):
         action = QAction("Copy plot to clipboard", self.view)
         action.setObjectName("actionCopyPlot")
         action.setShortcut(QKeySequence("Ctrl+Shift+C"))
-        action.setIcon(_icons.plot_icon())
+        action.setIcon(_icons.copy_plot_icon())
+        action.setIconText("Copy plot")
         action.setStatusTip("The plot as a picture, to paste into Word, PowerPoint or an e-mail")
+        action.setToolTip("Copy the plot to the clipboard, to paste into Word, PowerPoint or "
+                          "an e-mail  [Ctrl+Shift+C]")
         action.triggered.connect(self.copy_plot_to_clipboard)
         menu = self.view.menuFile
         report = getattr(self.view, 'actionMethodsReport', None)
@@ -2136,6 +2141,12 @@ class MainController(QMainWindow):
         else:
             menu.addAction(action)
         self.view.actionCopyPlot = action
+        # also a button under the menu bar, the last of the main buttons
+        tb = getattr(self.view, 'mainToolBar', None)
+        if tb is not None:
+            tb.addSeparator()
+            tb.addAction(action)
+            tb.widgetForAction(action).setObjectName("toolbarCopyPlotButton")
 
     def copy_plot_to_clipboard(self):
         """The main plot as a picture on the clipboard (Ctrl+Shift+C)."""
@@ -2752,6 +2763,7 @@ class MainController(QMainWindow):
         detect_peaks_action = context_menu.addAction("Detect Peaks")
         clear_peaks_action = context_menu.addAction("Clear Peaks")
         peak_list_action = context_menu.addAction("Peak list\u2026")
+        data_table_action = context_menu.addAction("Data table\u2026")
 
         # Add separator and plot properties action
         context_menu.addSeparator()
@@ -2805,6 +2817,8 @@ class MainController(QMainWindow):
             self.detect_peaks_dialog()
         elif action == peak_list_action:
             self.peak_detection_controller.show_peak_list()
+        elif action == data_table_action:
+            self.view.actionMenuDataTable.trigger()
         elif action == clear_peaks_action:
             self.peak_detection_controller.clear_peaks()
             # self.plot_spectra()
