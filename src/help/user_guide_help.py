@@ -2116,12 +2116,40 @@ def get_user_guide_help_content():
 
         <h3 id="data-table">Data table</h3>
         <p><strong>Analysis &amp; Visualization &rarr; Data Analysis &rarr; Data table&hellip;</strong>
-        (or the <strong>Data table</strong> button under the menu bar) shows the selected spectra as a
-        spreadsheet: <b>x</b>, then one column per spectrum, named <b>sp1, sp2, &hellip;</b> as in the Spectral Calculator (the end of the
-        spectrum's name is shown under it). Select cells and press <span class="kbd">Ctrl+C</span> (or
-        <strong>Copy</strong>) to paste them into Excel with their column names;
-        <strong>Export&hellip;</strong> saves the whole table as Excel or CSV. The measured values cannot
-        be changed here.</p>
+        (or the <strong>Data table</strong> button under the menu bar) shows the selected spectra in
+        two tabs:</p>
+        <ul>
+            <li><a href="#data-table-points"><strong>Points (one row per x)</strong></a> &mdash; the
+                spectra themselves, point by point; new spectra from formulas such as
+                <code>sp1 - sp2</code>.</li>
+            <li><a href="#values-per-spectrum"><strong>Values per spectrum</strong></a> &mdash; one
+                row per spectrum, described by numbers (a temperature, the area of a band, &hellip;);
+                plot one against another, e.g. a melting curve.</li>
+        </ul>
+        <p>A grey line at the top of each tab says what it is for; its orange
+        <strong>?</strong> gives a short help with a link to this section. In both tabs, select
+        cells and press <span class="kbd">Ctrl+C</span> (or <strong>Copy</strong>) to paste them
+        into Excel with their column names; <strong>Export&hellip;</strong> saves the whole table as
+        Excel or CSV. The measured values cannot be changed here.</p>
+        <p><b>Remembered &mdash; also after the program is closed, and in snapshots:</b> the next
+        Data table makes your columns again &mdash; whichever way it is opened (the menu, the Peak list, Peak Fitting, the
+        Spectral Calculator). In <em>Values per spectrum</em> always: the values of
+        <em>Add value&hellip;</em> are computed for the spectra now selected, the formulas follow,
+        and the columns of the Peak list or Peak Fitting come back for the spectra that have them
+        (they are kept with the spectrum names: if the Peak list sent the height of the band at
+        222 for <code>cd_10C</code> and <code>cd_20C</code>, a later table of <code>cd_10C</code>,
+        <code>cd_20C</code> and <code>cd_40C</code> shows those two numbers and &mdash; for
+        <code>cd_40C</code>; with none of these spectra the column, and a formula using it, is
+        left out, and the line says so).
+        The formulas of <em>Points</em> only when the same spectra are selected (sp1, sp2,
+        &hellip; must mean the same spectra). A line says what was made again; remove what you
+        do not need with <strong>Remove column</strong> (the table is remembered as you leave it,
+        so a removed column is forgotten). The columns are kept in the program's data folder,
+        next to its settings, and saved with a snapshot; opening a snapshot brings its columns
+        back.</p>
+        <h4 id="data-table-points">Tab Points (one row per x)</h4>
+        <p><b>x</b>, then one column per spectrum, named <b>sp1, sp2, &hellip;</b> as in the
+        Spectral Calculator (the end of the spectrum's name is shown under it).</p>
         <ul>
             <li><strong>New columns from a formula</strong> (green, named <b>f1, f2, &hellip;</b>): type it
                 after <em>New column =</em> and click <strong>Add column</strong> (or press Enter). Examples:
@@ -2148,26 +2176,37 @@ def get_user_guide_help_content():
             <li>Remove a formula column: select one of its cells and click <strong>Remove
                 column</strong>, or right-click its heading.</li>
         </ul>
-        <h4 id="values-per-spectrum">Values per spectrum (second tab)</h4>
+        <h4 id="values-per-spectrum">Tab Values per spectrum</h4>
         <p>One row per selected spectrum (sp1, sp2, &hellip;) with its name, the numbers stored with
         it (e.g. <code>temperature_C</code> of a JASCO .jwb scan) and the numbers in its name
         (<code>n1</code>, <code>n2</code>, &hellip;: in <code>TBA_45C : 0003</code> n1 is 45 and n2 is 3;
         every number of the names, except one that is the same in all of them, such as the 2 of
-        <code>raman_2comp</code>). A line at the top of each tab says what it is for: the tab
-        Points has one row per x value (formulas point by point, new spectra), this tab one row
-        per spectrum.</p>
+        <code>raman_2comp</code>).</p>
         <ul>
             <li><strong>Add value&hellip;</strong> adds a column (blue, <b>v1, v2, &hellip;</b>) with one
                 value per spectrum &mdash; exactly the values of
                 <a href="help://group_statistics">Group Statistics</a>: area, baseline-corrected area or
                 mean over a range, maximum, peak position (also the top of a parabola), FWHM, fitted
                 peak values, intensity at x, two bands combined (A / B, &hellip;), PCA or SVD score.
-                A spectrum that does not cover the range gets no value (&mdash;).</li>
+                A range that reaches beyond the spectra is narrowed to where they have data, and an
+                orange note says so: CD spectra measured from 220 to 480&nbsp;nm and the range
+                210&ndash;330 give the maximum over 220&ndash;330. A spectrum that does not cover
+                the (narrowed) range gets no value (&mdash;).</li>
             <li><strong>Bands of the Peak list</strong> (blue, <b>b1, b2, &hellip;</b>): in the
                 <a href="help://peak_detection#band-table">Peak list</a>, tab Band table,
                 <i>Open in the Data table</i> opens this tab with one column per band (e.g. the height
                 of the band at 686 in every spectrum); a spectrum without a peak there gets no
-                value.</li>
+                value. These numbers come from the Peak list as it was then; the Data table cannot
+                compute them itself. To get new ones &mdash; e.g. after a lower <i>Prominence</i>
+                in the Peak list found the band in more spectra &mdash; click <i>Open in the Data
+                table</i> again. The columns then show the bands as the Peak list has them now: a
+                band fills its own column again (b3 stays b3, no second copy), also when its
+                position moved a little because more peaks joined it (e.g. from 404 to 403, within
+                <i>same band within &plusmn;</i> of the Band table), and a formula that uses it,
+                e.g. <code>b3 * 2</code>, follows. A new band gets a new column; a column whose
+                band the Peak list no longer finds is removed (an orange line says so). Another
+                value (e.g. FWHM instead of height) gets its own columns. The results of Peak Fitting
+                for a series come the same way (p1, p2, &hellip;).</li>
             <li><strong>Formula columns</strong> (green, f1, f2, &hellip;) use the column names, e.g.
                 <code>v1 / v2</code>, <code>v1 / max_val(v1)</code> (scaled to 1),
                 <code>v1 * temperature_C</code>; commas give several at once. Rows without a value stay
@@ -2192,7 +2231,7 @@ def get_user_guide_help_content():
                 (choose another x, or select one group). With <i>row</i> as x the order of the
                 spectra list decides, so sort the list first. The Data table stays open for the next
                 one.</li>
-            <li>Copy (Ctrl+C) and Export&hellip; as in the first tab.</li>
+            <li>Copy (Ctrl+C) and Export&hellip; as in the tab Points.</li>
         </ul>
 
         <h3 id="mixture-analysis">Mixture analysis (known components)</h3>

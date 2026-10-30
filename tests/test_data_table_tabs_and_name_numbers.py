@@ -51,4 +51,4 @@ def test_each_tab_says_what_it_is_for():
     assert 'Each row is one spectrum' in dlg.values.guide.text()
     assert 'Points (one row per x)' in dlg.values.guide.text()
     top = [w.text() for w in dlg.findChildren(type(dlg.points_guide)) if 'Two tabs' in w.text()]
-    assert top and 'one row per spectrum' not in top[0]          # not said twice
+    assert not top                       # nothing above the tabs: each tab says it itself

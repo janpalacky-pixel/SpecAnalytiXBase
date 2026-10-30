@@ -528,6 +528,9 @@ class SaveManager:
             'original_spectra': main_controller.original_spectra,
             'selected_indices': selected_indices,
             'plot_settings': plot_settings,
+            # the columns of the Data table, made again when it opens
+            'data_table': getattr(getattr(main_controller, 'data_table_controller', None),
+                                  'remembered', None),
             'link_axes': {
                 'link_x':           self._safe_get(ui, 'link_x_axes_checkBox', 'isChecked', default=False),
                 'link_y':           self._safe_get(ui, 'link_y_axes_checkBox', 'isChecked', default=False),
@@ -1288,6 +1291,12 @@ class SaveManager:
                 cbc = getattr(main_controller, 'color_by_value_controller', None)
                 if cbc is not None:
                     cbc.set_settings(s.get('color_by_value') or {}, replot=False)
+
+            # the Data table's columns of that session (an older snapshot has
+            # none: the columns of now stay)
+            dtc = getattr(main_controller, 'data_table_controller', None)
+            if state.get('data_table') and dtc is not None:
+                dtc.remembered = state['data_table']
 
             if 'link_axes' in state:
                 la = state['link_axes']

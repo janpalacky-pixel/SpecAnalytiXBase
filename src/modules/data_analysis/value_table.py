@@ -16,6 +16,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from src.modules.utils.band_integration import edge_tolerance, finite_sorted
 from src.modules.data_analysis.spectral_calculator_manager import (
     ACROSS_SPECTRA, FormulaSecurityError, SpectralCalculatorManager, _SafeFormulaEvaluator)
 from src.modules.visualization import color_by_value as cbv
@@ -32,6 +33,18 @@ _IDENT = re.compile(r'[^A-Za-z0-9_]')
 FIXED_KINDS = ('band', 'fit')
 
 
+def _number(text):
+    try:
+        return float(str(text).strip())
+    except ValueError:
+        return None
+
+
+def _value_of(title):
+    """'Height' of 'Height of the band at 222' (columns made before settings)."""
+    return title.split(' of the band at ')[0]
+
+
 @dataclass
 class ValueColumn:
     name: str                # 'name', 'temperature_C', 'n1', 'v2', 'f1'
@@ -40,6 +53,8 @@ class ValueColumn:
     kind: str                # 'name', 'metadata', 'number', 'value', 'band', 'fit', 'formula'
     settings: Optional[dict] = None
     formula: str = ''
+    asked: Optional[dict] = None   # the settings as chosen (before a range was narrowed)
+    note: str = ''                 # e.g. "Range 215–225 narrowed to 220–225 ..."
 
 
 @dataclass
@@ -101,23 +116,104 @@ class ValueTable:
         s.update(settings or {})
         if s['kind'] in ('corr_ref', 'dist_ref'):
             raise ValueError("Values compared with a reference group are in Group Statistics.")
+        asked = dict(s)
+        s, note = self.narrowed(s)
         groups = ['all'] * self.n_rows                 # whole-spectrum values: one group
         vals, info = gv.compute_values(self.spectra, groups, s, fit_settings, progress=progress)
         col = ValueColumn(self._next('v'), gv.value_label(s), np.asarray(vals, dtype=float),
-                          'value', settings=s)
+                          'value', settings=s, asked=asked, note=note)
         self.columns.append(col)
         if info.get('note'):
             self.notes.append(f"{col.name}: {info['note']}")
         return col
 
-    def add_bands(self, value_name, bands):
+    def narrowed(self, settings):
+        """(settings, note): a range that reaches beyond the data of all the
+        spectra is narrowed to where they have data - the spectra measured
+        from 220 to 480 and the range 210-330 give 220-330 (otherwise no
+        spectrum would get a value). A spectrum that covers only part of the
+        narrowed range still gets no value."""
+        s = dict(settings)
+        kind = s.get('kind')
+        if kind in gv.TWO_BANDS:
+            keys = ['range_a', 'range_b']
+        elif kind in gv.ONE_BAND and kind != 'intensity_at_x':
+            keys = ['range_a']
+        elif kind in gv.WHOLE and s.get('whole_use_range'):
+            keys = ['range_a']
+        else:
+            return s, ''
+        xs = [finite_sorted(sp['x_scale'], sp['y_scale'])[0] for sp in self.spectra]
+        xs = [x for x in xs if len(x) >= 2]
+        if not xs:
+            return s, ''
+        lo, hi = min(float(x[0]) for x in xs), max(float(x[-1]) for x in xs)
+        tol = max(edge_tolerance(x) for x in xs)
+        notes = []
+        for key in keys:
+            a, b = min(s[key]), max(s[key])
+            if a >= lo - tol and b <= hi + tol:
+                continue
+            na, nb = max(a, lo), min(b, hi)
+            if na >= nb:
+                notes.append(f"The range {a:g}–{b:g} lies outside the spectra (they have data "
+                             f"from {lo:g} to {hi:g}).")
+                continue
+            s[key] = (na, nb)
+            notes.append(f"Range {a:g}–{b:g} narrowed to {na:g}–{nb:g}: the spectra have data "
+                         f"only from {lo:g} to {hi:g}.")
+        return s, ' '.join(notes)
+
+    def add_bands(self, value_name, bands, tolerance=None):
         """Columns b1, b2, ... from the Peak list's Band table: bands =
         [(position text, [value or None per spectrum, in this table's
         order])], value_name e.g. 'Height (y)'. A spectrum without a peak in
-        a band gets no value."""
+        a band gets no value.
+
+        Sent again (Open in the Data table once more, e.g. after another
+        Prominence), the Peak list's columns of this value become the bands
+        as they are now: a band within `tolerance` of a column's band (the
+        Band table's "same band within +-"; its position moves a little when
+        more peaks join it) fills that column again - b2 stays b2, and the
+        formulas using it follow; a new band gets a new column; a column
+        whose band is no longer there is removed. Returns the columns of the
+        bands (self.removed_bands: the names removed)."""
+        if any(len(values) != self.n_rows for _, values in bands):
+            raise ValueError("That window has other spectra than this table.")
         what = value_name.split(' (')[0]
-        return self.add_fixed('b', [(f"{what} of the band at {position}", values)
-                                    for position, values in bands], 'band')
+        old = [c for c in self.columns
+               if c.kind == 'band' and (c.settings or {}).get('value', _value_of(c.title)) == what]
+        free = list(old)
+        out = []
+        for position, values in bands:
+            title = f"{what} of the band at {position}"
+            pos = _number(position)
+            near = []                                    # (distance, column)
+            for c in free:
+                cpos = (c.settings or {}).get('position')
+                if cpos is None:
+                    cpos = _number(c.title.rsplit(' at ', 1)[-1])
+                if c.title == title:
+                    near.append((0.0, c))
+                elif pos is not None and cpos is not None and tolerance \
+                        and abs(cpos - pos) <= tolerance:
+                    near.append((abs(cpos - pos), c))
+            match = min(near, key=lambda d: d[0])[1] if near else None
+            if match is not None:
+                free.remove(match)
+                match.values, match.title = _floats(values), title
+                col = match
+            else:
+                col = ValueColumn(self._next('b'), title, _floats(values), 'band')
+                self.columns.append(col)
+            col.settings = {'value': what, 'position': pos}
+            out.append(col)
+        self.removed_bands = [c.name for c in free]
+        for c in free:                                   # no longer in the Peak list
+            self.columns.remove(c)
+        if old:
+            self._recompute_formulas()
+        return out
 
     def add_fixed(self, prefix, items, kind='fit'):
         """Columns prefix1, prefix2, ... of fixed numbers sent from another
@@ -125,11 +221,21 @@ class ValueTable:
         order])]."""
         if any(len(values) != self.n_rows for _, values in items):
             raise ValueError("That window has other spectra than this table.")
-        added = []
+        added, replaced = [], False
         for title, values in items:
-            col = ValueColumn(self._next(prefix), title, _floats(values), kind)
-            self.columns.append(col)
+            # sent again (e.g. Open in the Data table once more): the column
+            # it made before gets the new numbers, so it is not there twice
+            col = next((c for c in self.columns
+                        if c.kind == kind and c.title == title and c.name.startswith(prefix)), None)
+            if col is not None:
+                col.values = _floats(values)
+                replaced = True
+            else:
+                col = ValueColumn(self._next(prefix), title, _floats(values), kind)
+                self.columns.append(col)
             added.append(col)
+        if replaced:
+            self._recompute_formulas()
         return added
 
     # -- formula columns
@@ -137,7 +243,29 @@ class ValueTable:
         formula = (formula or '').strip()
         if not formula:
             raise ValueError("Type a formula, e.g. v1 / v2.")
-        names = {c.name: c.values.astype(float) for c in self.numeric_columns()}
+        result = self._evaluate(formula)
+        col = ValueColumn(self._next('f'), (title or '').strip() or formula, result, 'formula',
+                          formula=formula)
+        self.columns.append(col)
+        return col
+
+    def _recompute_formulas(self):
+        """After a column got new numbers (sent again from the Peak list):
+        the formula columns again, in their order, so f1 = b1 * 2 follows."""
+        for col in self.columns:
+            if col.kind == 'formula':
+                try:
+                    col.values = self._evaluate(col.formula, before=col)
+                except Exception:
+                    col.values = np.full(self.n_rows, np.nan)
+
+    def _evaluate(self, formula, before=None):
+        """The values of a formula of the columns (of those before the column
+        `before`, when it is given)."""
+        cols = self.numeric_columns()
+        if before is not None:
+            cols = cols[:cols.index(before)]
+        names = {c.name: c.values.astype(float) for c in cols}
         names['row'] = np.arange(1, self.n_rows + 1, dtype=float)
         functions = {k: v for k, v in SpectralCalculatorManager.SAFE_FUNCTIONS.items()
                      if k not in ('pi', 'e', 'derivative', 'second_deriv', 'cumsum', 'normalise',
@@ -167,10 +295,7 @@ class ValueTable:
             result = np.full(self.n_rows, float(result))
         if result.shape != (self.n_rows,):
             raise ValueError(f"The formula gives {result.size} values for {self.n_rows} rows.")
-        col = ValueColumn(self._next('f'), (title or '').strip() or formula, result, 'formula',
-                          formula=formula)
-        self.columns.append(col)
-        return col
+        return result
 
     def add_formulas(self, text, title=''):
         from src.modules.data_analysis.data_table import split_formulas
@@ -196,6 +321,67 @@ class ValueTable:
             raise ValueError(f"{name} is used by {', '.join(users)}; remove that column first.")
         self.columns.remove(col)
         return True
+
+    # -- remembered between openings of the Data table
+    def recipes(self):
+        """How the added columns were made, to make them again for the next
+        Data table (DataTableController.remembered): Add value... settings,
+        formulas, and the numbers sent from another window per spectrum name."""
+        out = []
+        for c in self.columns:
+            if c.kind == 'value':
+                out.append({'type': 'value', 'name': c.name, 'settings': dict(c.asked or c.settings)})
+            elif c.kind == 'formula':
+                out.append({'type': 'formula', 'name': c.name, 'formula': c.formula,
+                            'title': '' if c.title == c.formula else c.title})
+            elif c.kind in FIXED_KINDS:
+                by_label = {str(sp.get('label', '')): float(v)
+                            for sp, v in zip(self.spectra, c.values) if np.isfinite(v)}
+                out.append({'type': 'fixed', 'name': c.name, 'kind': c.kind,
+                            'prefix': re.match(r'[A-Za-z]+', c.name).group(), 'title': c.title,
+                            'by_label': by_label, 'settings': dict(c.settings or {})})
+        return out
+
+    def replay(self, recipes):
+        """Make the remembered columns again for these spectra. Returns
+        (made, skipped): the new columns and [(what, why)]. A column that
+        gets another name than before (one before it was not made again) is
+        renamed in the formulas that use it; a formula using a column that
+        was not made again is not made either."""
+        made, skipped, renamed, missing = [], [], {}, set()
+        for r in recipes or []:
+            try:
+                if r['type'] == 'value':
+                    col = self.add_value(r['settings'])
+                elif r['type'] == 'fixed':
+                    values = [r['by_label'].get(str(sp.get('label', ''))) for sp in self.spectra]
+                    if all(v is None for v in values):
+                        missing.add(r['name'])
+                        continue                         # numbers of other spectra
+                    col = self.add_fixed(r['prefix'], [(r['title'], values)], r['kind'])[0]
+                    col.settings = dict(r.get('settings') or {}) or None
+                elif r['type'] == 'formula':
+                    used = set(re.findall(r'[A-Za-z_]\w*', r['formula']))
+                    gone = sorted(used & missing)
+                    if gone:
+                        missing.add(r['name'])
+                        skipped.append((f"{r['name']} = {r['formula']}",
+                                        f"uses {', '.join(gone)}, which is not here"))
+                        continue
+                    formula = re.sub(r'[A-Za-z_]\w*', lambda m: renamed.get(m.group(), m.group()),
+                                     r['formula'])
+                    col = self.add_formula(formula, r['title'])
+                else:
+                    continue
+            except Exception as exc:
+                missing.add(r['name'])
+                skipped.append((r.get('formula') and f"{r['name']} = {r['formula']}" or r['name'],
+                                str(exc)))
+                continue
+            if col.name != r['name']:
+                renamed[r['name']] = col.name
+            made.append(col)
+        return made, skipped
 
     # -- copy, export, plot
     def header(self):

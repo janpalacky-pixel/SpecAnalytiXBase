@@ -139,7 +139,11 @@ class PeakDetectionController:
         tables = getattr(main, 'data_table_controller', None)
         dlg = DataTableDialog(parent, spectra,
                               commit_callback=tables.add_spectra if tables is not None else None)
-        dlg.values.add_bands(value_name, bands)
+        # the Band table's "same band within +-": a band whose position moved a
+        # little (more peaks joined it) fills its old column again
+        tolerance = getattr(parent, 'tolerance', None)
+        dlg.values.add_bands(value_name, bands,
+                             tolerance.value() if hasattr(tolerance, 'value') else None)
         dlg.tabs.setCurrentWidget(dlg.values)
         self.band_data_table_dialog = dlg
         dlg.exec_()

@@ -92,25 +92,20 @@ class DataTableDialog(QDialog):
             value_callback = getattr(getattr(commit_callback, '__self__', None),
                                      'add_value_spectrum', None)
         self.value_callback = value_callback
+        # the columns of the last Data table are made again (and remembered
+        # when this one closes): DataTableController.remembered, shared by
+        # every way of opening the Data table (menu, Peak list, Peak Fitting,
+        # Spectral Calculator)
+        owner = getattr(commit_callback, '__self__', None)
+        self.memory_owner = owner if hasattr(owner, 'remembered') else None
         n = len(self.table.spectrum_columns())
         self.setWindowTitle(f"Data table – {n} spectr{'um' if n == 1 else 'a'}")
         self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.resize(960, 640)
         layout = QVBoxLayout(self)
-
-        top = QHBoxLayout()
-        # what each tab is for is said at the top of the tab itself
-        intro = QLabel("Two tabs - each says at its top what it is for. Select cells and press "
-                       "Ctrl+C to paste them into Excel. The measured spectra are not changed "
-                       "here.")
-        intro.setWordWrap(True)
-        top.addWidget(intro, 1)
-        from src.views.icons import help_button
-        self.help_button = help_button("How the data table and its formulas work")
-        self.help_button.clicked.connect(self.show_help)
-        top.addWidget(self.help_button, 0, Qt.AlignTop)
-        layout.addLayout(top)
+        # what each tab is for is said at the top of the tab itself (with an
+        # orange "?" for more)
         outer = layout
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("QTabBar::tab { min-width: 170px; padding: 6px 14px; }")
@@ -119,15 +114,18 @@ class DataTableDialog(QDialog):
         layout = QVBoxLayout(page)
         self.tabs.addTab(page, "Points (one row per x)")
         # which tab is for what - the tab names alone are easy to overlook
+        top = QHBoxLayout()
         self.points_guide = QLabel(
-            "This tab shows the spectra themselves: the first column is x, then one column per "
-            "spectrum (sp1, sp2, …). Here you calculate new spectra from them, e.g. sp1 − sp2 or "
-            "mean(sp1, sp2) (see Functions), and add them to the spectra list. For one number "
-            "per spectrum – e.g. the area of a band, a peak height or a temperature – use the "
-            "tab <b>Values per spectrum</b>.")
+            "This tab shows the spectra themselves (x, then sp1, sp2, …) – calculate new spectra "
+            "point by point, e.g. sp1 − sp2. One number per spectrum: tab <b>Values per "
+            "spectrum</b>.")
         self.points_guide.setWordWrap(True)
         self.points_guide.setStyleSheet("color: #555;")
-        layout.addWidget(self.points_guide)
+        top.addWidget(self.points_guide, 1)
+        from src.help.data_table_quick_help import quick_help_button
+        self.quick_help_button = quick_help_button('points', self.show_quick_help)
+        top.addWidget(self.quick_help_button, 0, Qt.AlignTop)
+        layout.addLayout(top)
 
         if not self.table.shared_x:
             note = QLabel(
@@ -224,6 +222,57 @@ class DataTableDialog(QDialog):
                   self.add_button):
             b.setAutoDefault(False)
         self._update_buttons()
+        self._make_remembered_columns()
+
+    # ------------------------------------------------- remembered columns
+    def _labels(self):
+        return [str(c.title) for c in self.table.spectrum_columns()]
+
+    def _make_remembered_columns(self):
+        """The columns of the last Data table: the formulas of Points when the
+        same spectra are open (sp1, sp2, ... mean the same spectra), and the
+        columns of Values per spectrum always (they are made per spectrum)."""
+        memory = getattr(self.memory_owner, 'remembered', None)
+        if not isinstance(memory, dict):
+            return
+        points = memory.get('points') or []
+        if points and self.table.shared_x and memory.get('labels') == self._labels():
+            made, failed = [], []
+            for formula, title in points:
+                try:
+                    made += self.table.add_formulas(formula, title)
+                except ValueError:
+                    failed.append(formula)
+            if made or failed:
+                self.model.refresh()
+                self._update_buttons()
+                text = ("From the last time (the same spectra): "
+                        + ', '.join(f"{c.name} = {c.formula}" for c in made) + "." if made else "")
+                if failed:
+                    text += " Not made again: " + ', '.join(failed) + "."
+                self._say(text.strip(), error=bool(failed) and not made)
+        self.values.replay(memory.get('values'))
+
+    def remember(self):
+        """What this Data table has added, for the next one."""
+        if self.memory_owner is None:
+            return
+        # formulas already added as new spectra are done: not made again
+        done = getattr(self, 'formulas_added_as_spectra', False)
+        self.memory_owner.remembered = {
+            'labels': self._labels(),
+            'points': [] if done else [(c.formula, '' if c.title == c.formula else c.title)
+                                       for c in self.table.formula_columns()],
+            'values': self.values.table.recipes(),
+        }
+
+    def done(self, result):
+        self.remember()
+        super().done(result)
+
+    def show_quick_help(self, key='points', run=True):
+        from src.help.data_table_quick_help import show_quick_help
+        return show_quick_help(self, key, run)
 
     # ------------------------------------------------------------- formulas
     def _insert(self, text):
@@ -346,6 +395,7 @@ class DataTableDialog(QDialog):
         if not ok:
             self._say(text, error=True)
             return False
+        self.formulas_added_as_spectra = True
         self.accept()
         return True
 

@@ -84,7 +84,8 @@ class ValueChoiceDialog(QDialog):
         hi = float(max(x.max() for x in xs)) if xs else 1.0
         layout = QVBoxLayout(self)
         intro = QLabel("The same values as in Group Statistics, computed for every selected "
-                       "spectrum. A spectrum that does not cover the range gets no value (—).")
+                       "spectrum. A range that reaches beyond the spectra is narrowed to where "
+                       "they have data; a spectrum that does not cover it gets no value (—).")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         form = QFormLayout()
@@ -243,17 +244,19 @@ class ValueTablePanel(QWidget):
         # another added to the spectra list (None = no such button)
         self.add_spectrum = add_spectrum
         layout = QVBoxLayout(self)
-        # which tab is for what - the tab names alone are easy to overlook
+        # which tab is for what - the tab names alone are easy to overlook; the
+        # orange "?" says more
+        top = QHBoxLayout()
         self.guide = QLabel(
-            "Each row is one spectrum, described by numbers: values stored with it (e.g. its "
-            "temperature), numbers from its name (n1, n2, …) and values you add – e.g. the area "
-            "of a band (Add value…) or the bands of the Peak list. Calculate with them (New "
-            "column =), plot one against another, or add one against another as a new spectrum "
-            "(e.g. an area against the temperature: a melting curve). To calculate with the "
-            "spectra point by point, use the tab <b>Points (one row per x)</b>.")
+            "Each row is one spectrum, described by numbers – plot one against another, e.g. "
+            "an area against the temperature. Point by point: tab <b>Points (one row per x)</b>.")
         self.guide.setWordWrap(True)
         self.guide.setStyleSheet("color: #555;")
-        layout.addWidget(self.guide)
+        top.addWidget(self.guide, 1)
+        from src.help.data_table_quick_help import quick_help_button
+        self.quick_help_button = quick_help_button('values', self.show_quick_help)
+        top.addWidget(self.quick_help_button, 0, Qt.AlignTop)
+        layout.addLayout(top)
         self.model = ValueTableModel(self.table, self)
         self.view = QTableView()
         self.view.setModel(self.model)
@@ -333,9 +336,14 @@ class ValueTablePanel(QWidget):
         self._update()
 
     # -- helpers
-    def _say(self, text, error=False):
+    def show_quick_help(self, key='values', run=True):
+        from src.help.data_table_quick_help import show_quick_help
+        return show_quick_help(self, key, run)
+
+    def _say(self, text, error=False, warn=False):
         self.message.setText(text)
-        self.message.setStyleSheet("color: #C62828;" if error else "color: #2E7D32;")
+        self.message.setStyleSheet("color: #C62828;" if error else
+                                   "color: #B45309;" if warn else "color: #2E7D32;")
 
     def _update(self):
         names = [c.name for c in self.table.numeric_columns()]
@@ -376,21 +384,49 @@ class ValueTablePanel(QWidget):
         note = (f" {missing} spectr{'um has' if missing == 1 else 'a have'} no value (—)."
                 if missing else "")
         notes = ' '.join(self.table.notes[-1:]) if missing == len(col.values) else ''
-        self._say(f"Added {col.name}: {col.title}.{note} {notes}".strip(), error=bool(missing))
+        self._say(f"Added {col.name}: {col.title}. {col.note}{note} {notes}".replace('  ', ' ')
+                  .strip(), error=bool(missing), warn=bool(col.note))
         self._update()
         self.y_combo.setCurrentText(col.name)          # ready to plot the new column
         return col
 
-    def add_bands(self, value_name, bands):
-        """The bands of the Peak list's Band table as columns b1, b2, ..."""
-        added = self.table.add_bands(value_name, bands)
+    def replay(self, recipes):
+        """The columns of the last Data table made again (Add value... and
+        formulas; numbers sent from another window for the spectra that have
+        them). Returns the new columns."""
+        if not recipes:
+            return []
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            made, skipped = self.table.replay(recipes)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.model.refresh()
+        self._update()
+        text = ("From the last time: " + ', '.join(c.name for c in made)
+                + ". Remove column removes one you do not need." if made else "")
+        if skipped:
+            text += " Not made again: " + '; '.join(f"{what} ({why})" for what, why in skipped) + "."
+        if text:
+            self._say(text.strip(), warn=bool(skipped))
+        return made
+
+    def add_bands(self, value_name, bands, tolerance=None):
+        """The bands of the Peak list's Band table as columns b1, b2, ...
+        (sent again: the same columns get the bands as they are now)."""
+        added = self.table.add_bands(value_name, bands, tolerance)
         self.model.refresh()
         self._update()
         if added:
-            names = added[0].name if len(added) == 1 else f"{added[0].name}–{added[-1].name}"
-            self._say(f"{names}: {value_name.split(' (')[0]} of each band from the Peak list "
-                      f"({len(added)} band{'s' if len(added) != 1 else ''}; empty: no peak there). "
-                      "Use them in formulas (e.g. b2 / b1) or plot them against a stored value.")
+            names = ', '.join(c.name for c in added)
+            text = (f"{names}: {value_name.split(' (')[0]} of each band from the Peak list "
+                    f"({len(added)} band{'s' if len(added) != 1 else ''}; empty: no peak there). "
+                    "Use them in formulas (e.g. b2 / b1) or plot them against a stored value.")
+            gone = getattr(self.table, 'removed_bands', [])
+            if gone:
+                text += (f" Removed {', '.join(gone)}: that band is no longer in the Peak list "
+                         "(a formula using it shows —).")
+            self._say(text, warn=bool(gone))
         return added
 
     def add_fixed(self, prefix, items, what):

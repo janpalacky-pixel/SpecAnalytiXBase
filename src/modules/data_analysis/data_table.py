@@ -288,8 +288,9 @@ class DataTable:
 
 def split_formulas(text):
     """'sp1 / sp2, mean(sp1, sp2)' -> ['sp1 / sp2', 'mean(sp1, sp2)']: commas inside
-    brackets belong to a function call."""
-    text = (text or '').strip()
+    brackets belong to a function call. A leading '=' (typed as in Excel:
+    '=b1*2') is left out - the field is already labelled "New column =". """
+    text = _without_equals(text)
     if len(text) > 1 and text[0] + text[-1] in ('[]', '()') and _matching_end(text):
         inner = text[1:-1]
         if len(split_formulas(inner)) > 1:            # [sp1 - sp2, sp1 + sp2] as in the Calculator
@@ -306,8 +307,15 @@ def split_formulas(text):
         else:
             cur += ch
     parts.append(cur.strip())
+    parts = [_without_equals(p) for p in parts]
     parts = [p for p in parts if p]
     return parts or ['']
+
+
+def _without_equals(text):
+    """'=b1*2' -> 'b1*2' (one '=' at the start, as typed in Excel)."""
+    text = (text or '').strip()
+    return text[1:].strip() if text.startswith('=') and not text.startswith('==') else text
 
 
 def _matching_end(text):

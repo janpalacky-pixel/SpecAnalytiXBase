@@ -29,6 +29,23 @@ class DataTableController:
     def __init__(self, main_controller):
         self.main = main_controller
         self.dialog = None
+        # what the last Data table added (formulas, Add value... columns), made
+        # again when it opens next time - see DataTableDialog.remember; kept
+        # between sessions (data_table_memory) and in snapshots
+        from src.modules.data_analysis import data_table_memory
+        self._remembered = data_table_memory.load()
+
+    @property
+    def remembered(self):
+        return self._remembered
+
+    @remembered.setter
+    def remembered(self, memory):
+        """Set by the Data table when it closes, and by opening a snapshot;
+        written to data_table_columns.json for the next session."""
+        from src.modules.data_analysis import data_table_memory
+        self._remembered = data_table_memory.plain(memory)
+        data_table_memory.save(self._remembered)
 
     def show_dialog(self, selected_spectra):
         from src.views.dialogs.data_analysis.data_table_dialog import DataTableDialog
