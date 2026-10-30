@@ -44,20 +44,14 @@ def test_clean_spectra_are_not_affected():
         [p['x'] for p in pl.spectrum_peaks(X, y, mode='Both', snr=0)]
 
 
-def test_the_setting_in_detect_peaks_and_the_peak_list():
-    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS, PeakDetectionDialog
+def test_the_setting_in_the_peaks_window():
+    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
     from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
     assert pl.DEFAULTS['snr'] == 8.0 and DEFAULTS['snr'] == 8.0
-    dlg = PeakDetectionDialog(None)
-    assert dlg.get_settings()['snr'] == 8.0
-    dlg.snr_input.setValue(0)
-    assert dlg.get_settings()['snr'] == 0
-    dlg.reset_button.click()
-    assert dlg.get_settings()['snr'] == 8.0
-    assert 'noise' in dlg.snr_input.toolTip()
     listing = PeakListDialog(None, [{'label': 'weak', 'x_scale': X, 'y_scale': _weak_noisy()}],
                              mode='Both')
     assert listing.settings()['snr'] == 8.0 and listing.table.rowCount() == 2
+    assert 'noise' in listing.snr.toolTip()
     listing.snr.setValue(0)                                  # the table follows at once
     assert listing.table.rowCount() > 4
     listing.reset_button.click()

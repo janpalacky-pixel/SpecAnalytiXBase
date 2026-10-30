@@ -356,10 +356,10 @@ def get_quick_start_help_content():
         <h3>Data Analysis</h3>
         <table>
             <tr><th>Method</th><th>What it does</th><th>Help</th></tr>
-            <tr><td>Detect Peaks &amp; Peak list</td><td>Right-click on the plot: marks the
-                peaks of the plotted spectra (each band's position written once) and lists every
-                peak of the selected spectra in a table, a plot and a band table for Excel &mdash;
-                a quick survey. Peaks are judged locally and against the noise; in CD a peak
+            <tr><td>Peaks (Detect Peaks, Peak list)</td><td>Right-click on the plot: one window
+                that marks the peaks of the plotted spectra (each band's position written once)
+                and lists every peak of the selected spectra in a table, a plot and a band table
+                for Excel &mdash; a quick survey. Peaks are judged locally and against the noise; in CD a peak
                 position can move with the mixture although no band moves (see the help)</td>
                 <td><a href="help://peak_detection">Open help</a></td></tr>
             <tr><td>Peak Fitting</td><td>Fits peak shapes (Gaussian/Lorentzian/

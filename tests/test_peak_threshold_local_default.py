@@ -23,10 +23,9 @@ def _strong_and_small():
 
 
 def test_the_default_threshold_is_zero_everywhere():
-    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS, PeakDetectionDialog
+    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
     from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
     assert pl.DEFAULTS['threshold'] == 0.0 and DEFAULTS['threshold'] == 0.0
-    assert PeakDetectionDialog(None).threshold_input.value() == 0.0
     x, y = _strong_and_small()
     assert PeakListDialog(None, [{'label': 'a', 'x_scale': x, 'y_scale': y}]).threshold.value() == 0.0
 

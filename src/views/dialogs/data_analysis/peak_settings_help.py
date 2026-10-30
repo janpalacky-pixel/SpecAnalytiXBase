@@ -1,7 +1,7 @@
 # src/views/dialogs/data_analysis/peak_settings_help.py
-"""The small window of the orange "?" in Detect Peaks (Peak Detection
-Settings) and in the Peak list: what each setting means and its default.
-"Full help…" opens the Peak Detection help page."""
+"""The small window of the orange "?" in the Peaks window (Detect Peaks /
+Peak list): what each setting means and its default. "Full help…" opens the
+Peaks help page."""
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QPushButton, QTextBrowser, QVBoxLayout
@@ -11,7 +11,7 @@ from src.modules.data_analysis import peak_list as pl
 LABEL_HELP = [
     ("Labels", "Which peaks get their number written. Once per band: one number per band, "
                "above its highest peak - the peaks of all spectra at about the same position are "
-               "one band (as in the Peak list) and the number is the band's position, or its range "
+               "one band (as in the Band table) and the number is the band's position, or its range "
                "(e.g. 247.2\u2013256.2) when the peaks move through the series; so many "
                "similar spectra do not cover the plot with the same numbers. On every peak: each "
                "peak its own number. Only the current spectrum: the peaks of the spectrum "
@@ -29,8 +29,8 @@ LABEL_HELP = [
 
 
 class PeakSettingsHelp(QDialog):
-    """labels=True: also the settings of the numbers on the plot (Detect
-    Peaks); columns=True: also what the columns of the Peak list mean."""
+    """labels=True: also the settings of the numbers on the plot (tab Mark on
+    the plot); columns=True: also what the columns of the list mean."""
 
     def __init__(self, parent=None, labels=False, columns=False):
         super().__init__(parent)
@@ -46,12 +46,15 @@ class PeakSettingsHelp(QDialog):
         if labels:
             html += '<h4>The numbers on the plot</h4>' + pl.settings_help_html(LABEL_HELP)
         if columns:
-            html += '<h4>The columns of the list</h4>' + pl.settings_help_html(pl.COLUMNS_HELP)
+            html += ('<h4>The columns of the list</h4>'
+                     '<p><b>Double-click a peak</b> in the list to see it on the main plot (its '
+                     'spectrum highlighted, the peak circled).</p>'
+                     + pl.settings_help_html(pl.COLUMNS_HELP))
         self.text.setHtml(html)
         layout.addWidget(self.text)
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         self.more_button = QPushButton("Full help…")
-        self.more_button.setToolTip("The Peak Detection help page")
+        self.more_button.setToolTip("The Peaks help page")
         self.more_button.clicked.connect(self.full_help)
         buttons.addButton(self.more_button, QDialogButtonBox.HelpRole)
         buttons.rejected.connect(self.close)

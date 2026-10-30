@@ -1,6 +1,8 @@
 
 # src/controllers/peak_detection_controller.py
-from src.views.dialogs.data_analysis.peak_detection_dialog import PeakDetectionDialog
+"""Right-click on the plot -> Detect Peaks / Peak list... / Clear Peaks: the
+Peaks window (PeakListDialog) - Detect Peaks opens it on its tab "Mark on the
+plot", Peak list... on its tab "List" - and the marks on the main plot."""
 from src.modules.data_analysis.peak_detection_manager import PeakDetector
 
 class PeakDetectionController:
@@ -25,27 +27,9 @@ class PeakDetectionController:
         self.show_labels = True
 
     def show_dialog(self):
-        """The Peak Detection Settings: Apply marks the peaks on the plot (the
-        window stays open), Close closes it."""
-        dialog = PeakDetectionDialog(
-            self.controller.view,
-            threshold=self.peak_threshold,
-            prominence=self.peak_prominence,
-            distance=self.peak_distance,
-            peak_mode=self.peak_detection_mode,
-            font_size=self.peak_font_size,
-            rotation=self.peak_rotation,
-            decimals=self.peak_decimals,
-            format_type=self.peak_format_type,
-            number_format=self.peak_number_format,
-            apply_callback=self.apply_settings,
-            labels=self.peak_labels,
-            snr=self.peak_snr,
-        )
-        dialog.peak_controller = self              # its "Peak list..." button
-        self.dialog = dialog
-        dialog.exec_()
-        return dialog
+        """Right-click on the plot -> Detect Peaks: the Peaks window on its tab
+        "Mark on the plot"."""
+        return self.show_peaks('mark')
 
     def apply_settings(self, settings):
         """Keep the settings and mark the peaks on the plot."""
@@ -100,16 +84,21 @@ class PeakDetectionController:
         return None
 
     def show_peak_list(self, spectra=None):
-        """Right-click on the plot -> Peak list...: every peak of the selected
-        spectra in a table, with the settings of Detect Peaks (changed there,
-        they are kept for Detect Peaks too)."""
+        """Right-click on the plot -> Peak list...: the Peaks window on its tab
+        "List" (every peak of the selected spectra in a table)."""
+        return self.show_peaks('list', spectra)
+
+    def show_peaks(self, tab='list', spectra=None):
+        """The Peaks window of the selected spectra: one set of settings for
+        the list, its plot, the band table and the marks on the main plot
+        (kept here for the next time)."""
         from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
         if spectra is None:
             spectra = list(getattr(self.controller, 'selected_spectra', None) or [])
         if not spectra:
             from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.information(self.controller.view, "Peak list",
-                                    "Select the spectra whose peaks you want to list.")
+            QMessageBox.information(self.controller.view, "Peaks",
+                                    "Select the spectra whose peaks you want to find.")
             return None
 
         def keep(settings):
@@ -124,10 +113,28 @@ class PeakDetectionController:
                                 distance=self.peak_distance, mode=self.peak_detection_mode,
                                 snr=self.peak_snr, on_settings=keep,
                                 open_data_table=self.open_bands_in_data_table,
-                                show_fits=self.show_fits_on_plot)
-        self.peak_list_dialog = dialog
+                                show_fits=self.show_fits_on_plot,
+                                mark=self.apply_settings, clear_marks=self.clear_marks,
+                                mark_settings=self._mark_settings(), start_tab=tab,
+                                show_peak=self.show_peak_on_plot)
+        self.peak_list_dialog = self.dialog = dialog
         dialog.exec_()
+        self._keep_mark_settings(dialog.mark_settings())
         return dialog
+
+    def _mark_settings(self):
+        return {'labels': self.peak_labels, 'font_size': self.peak_font_size,
+                'rotation': self.peak_rotation, 'decimals': self.peak_decimals,
+                'number_format': self.peak_number_format, 'format_type': self.peak_format_type}
+
+    def _keep_mark_settings(self, s):
+        """How the numbers on the plot are written, for the next time."""
+        self.peak_labels = s.get('labels', self.peak_labels)
+        self.peak_font_size = s.get('font_size', self.peak_font_size)
+        self.peak_rotation = s.get('rotation', self.peak_rotation)
+        self.peak_decimals = s.get('decimals', self.peak_decimals)
+        self.peak_number_format = s.get('number_format', self.peak_number_format)
+        self.peak_format_type = s.get('format_type', self.peak_format_type)
 
     def open_bands_in_data_table(self, parent, spectra, value_name, bands):
         """Peak list > Band table > Open in the Data table: the Data table of
@@ -150,6 +157,60 @@ class PeakDetectionController:
         return dlg
 
     FIT_GID = 'peak_list_fit'
+    SHOWN_GID = 'peak_list_shown'
+
+    def show_peak_on_plot(self, spectrum, x, y):
+        """Peaks window, a double-click in the tab List: the spectrum of that
+        peak highlighted on the main plot (a wide pale band under its line)
+        and the peak circled, with the spectrum's name and the position (in a
+        stacked plot at its line's offset). The view does not change. Removed
+        by the next double-click, Clear Peaks or a new plot. Returns True if
+        the spectrum is on the plot now."""
+        import numpy as np
+        from src.modules.data_analysis import peak_list as pl
+        canvas = getattr(self.controller, 'static_canvas', None)
+        self._remove_shown()
+        if canvas is None:
+            return False
+        sx = np.asarray(spectrum.get('x_scale', []), dtype=float)
+        sy = np.asarray(spectrum.get('y_scale', []), dtype=float)
+        own = (self.FIT_GID, self.SHOWN_GID)
+        for ax in canvas.figure.get_axes():
+            for line in ax.get_lines():
+                if line.get_gid() in own:
+                    continue
+                offset = pl.line_offset(line.get_xdata(), line.get_ydata(), sx, sy)
+                if offset is None:
+                    continue
+                limits = ax.get_xlim(), ax.get_ylim()
+                band, = ax.plot(line.get_xdata(), line.get_ydata(), color=line.get_color(),
+                                lw=line.get_linewidth() + 5, alpha=0.3, solid_capstyle='round',
+                                zorder=line.get_zorder() - 0.1, label='_nolegend_',
+                                gid=self.SHOWN_GID)
+                ring, = ax.plot([x], [y + offset], 'o', ms=15, mfc='none', mec='#D84315',
+                                mew=2.2, zorder=7, label='_nolegend_', gid=self.SHOWN_GID)
+                name = str(spectrum.get('label', ''))
+                text = ax.annotate(f"{name}\n{x:g}", (x, y + offset), xytext=(0, 16),
+                                   textcoords='offset points', ha='center', va='bottom',
+                                   fontsize=9, color='#D84315', zorder=8,
+                                   bbox=dict(boxstyle='round,pad=0.25', fc='white',
+                                             ec='#D84315', alpha=0.9))
+                text.set_gid(self.SHOWN_GID)
+                self.shown_artists = [band, ring, text]
+                ax.set_xlim(limits[0])
+                ax.set_ylim(limits[1])
+                canvas.draw_idle()
+                return True
+        canvas.draw_idle()
+        return False
+
+    def _remove_shown(self):
+        for artist in getattr(self, 'shown_artists', []):
+            try:
+                artist.remove()
+            except (ValueError, AttributeError, NotImplementedError):  # gone with a new plot
+                pass
+        self.shown_artists = []
 
     def show_fits_on_plot(self, curves):
         """Peak list > Show on the main plot: draw the fitted peaks, curves =
@@ -200,8 +261,14 @@ class PeakDetectionController:
                 pass
         self.fit_artists = []
 
+    def clear_marks(self):
+        """The Peaks window, Remove the marks: the red dots and their numbers
+        (the fitted peaks drawn by Show on the main plot stay)."""
+        self.peak_detector.clear_peaks(self.controller.static_canvas)
+
     def clear_peaks(self):
         """Clear all detected peaks (and the fitted peaks of the Peak list)."""
         canvas = self.controller.static_canvas
         self._remove_fits()
+        self._remove_shown()
         self.peak_detector.clear_peaks(canvas)

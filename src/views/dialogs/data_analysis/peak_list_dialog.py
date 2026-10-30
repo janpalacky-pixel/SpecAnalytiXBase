@@ -1,13 +1,16 @@
 # src/views/dialogs/data_analysis/peak_list_dialog.py
-"""Right-click on the plot -> Peak list... (also in the Peak Detection
-Settings): every peak of the selected spectra in one table - position,
-height, prominence, width at half height - with the settings of Detect Peaks,
-to copy into Excel or export; the tab "Plot" draws one number of the peaks
-against another (e.g. the position against the spectrum, to follow a band
-through a series). Reset to defaults and the orange "?" (what each setting
-means). "Refine by fitting" adds fitted position, FWHM, height, area and R\u00b2
-columns; the tab "Band table" turns the list round for Excel (one row per
-spectrum, one column per band). src/modules/data_analysis/peak_list.py."""
+"""The Peaks window (right-click on the plot -> Detect Peaks or Peak list...):
+the peaks of the selected spectra, found with one set of settings at the top
+(threshold, prominence, distance, signal-to-noise, maxima / minima) shared by
+every tab. Tab "List": every peak in one table - position, height,
+prominence, width at half height - to copy into Excel or export; "Plot": one
+number of the peaks against another (e.g. the position against the
+temperature, to follow a band through a series); "Band table": the list
+turned round for Excel (one row per spectrum, one column per band); "Mark on
+the plot": red dots and numbers on the main plot (how the numbers are
+written). Reset to defaults and the orange "?" (what each setting means).
+"Refine by fitting" adds fitted position, FWHM, height, area and R\u00b2
+columns. src/modules/data_analysis/peak_list.py."""
 
 import numpy as np
 from PyQt5.QtCore import Qt
@@ -41,10 +44,22 @@ class PeakListDialog(QDialog):
 
     def __init__(self, parent, spectra, threshold=0.0, prominence=0.1, distance=0.05,
                  mode='Positive', on_settings=None, snr=None, open_data_table=None,
-                 show_fits=None):
+                 show_fits=None, mark=None, clear_marks=None, mark_settings=None,
+                 start_tab='list', show_peak=None):
         super().__init__(parent)
         self.spectra = list(spectra)
         self.on_settings = on_settings
+        # mark(settings): mark the peaks on the main plot (the tab "Mark on the
+        # plot", given by the controller; None = no such tab); clear_marks()
+        # removes them; mark_settings: how the numbers were written last time
+        self.mark = mark
+        self.clear_marks = clear_marks
+        # show_peak(spectrum, x, y) -> bool: a double-clicked peak shown on the
+        # main plot (False: that spectrum is not on the plot now)
+        self.show_peak = show_peak
+        self.marked = False                    # marked: the marks follow the settings
+        self.rows, self.row_spectrum = [], []
+        self._list_stale = False
         # open_data_table(parent, spectra, value_name, bands): the Data table with
         # the bands as columns (given by the controller; None = no such button)
         self.open_data_table = open_data_table
@@ -53,17 +68,17 @@ class PeakListDialog(QDialog):
         self.show_fits = show_fits
         self._tolerance_set = False
         n = len(self.spectra)
-        self.setWindowTitle(f"Peak list – {n} spectr{'um' if n == 1 else 'a'}")
+        self.setWindowTitle(f"Peaks – {n} spectr{'um' if n == 1 else 'a'}")
         self.setWindowFlags((self.windowFlags() | Qt.WindowMaximizeButtonHint)
                             & ~Qt.WindowContextHelpButtonHint)
         self.resize(900, 560)
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
         intro = QLabel(
-            "The peaks of all selected spectra, found as Detect Peaks finds them (the settings are "
-            "shared). Position and height are those of the highest (or lowest) point; FWHM is the "
-            "width at half of the peak's prominence. Select rows and press Ctrl+C to paste them "
-            "into Excel; the tab Plot draws them.")
+            "The peaks of the selected spectra, found with the settings below (the same for every "
+            "tab): List - every peak (Ctrl+C for Excel); Plot - one number against another; Band "
+            "table - one row per spectrum, one column per band; Mark on the plot - red dots and "
+            "numbers on the main plot.")
         intro.setWordWrap(True)
         top.addWidget(intro, 1)
         self.help_button = icons.help_button("What each setting and column means")
@@ -91,7 +106,8 @@ class PeakListDialog(QDialog):
         self.reset_button = QPushButton("Reset to defaults")
         self.reset_button.setAutoDefault(False)
         self.reset_button.setToolTip("Threshold 0, prominence 0.1, distance 0.05, "
-                                     "signal-to-noise 8, Positive")
+                                     "signal-to-noise 8, Positive (and the numbers on the plot: "
+                                     "once per band, size 10, 2 decimals)")
         self.reset_button.clicked.connect(self.reset_defaults)
         form.addWidget(self.reset_button)
         form.addStretch(1)
@@ -149,10 +165,18 @@ class PeakListDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)   # list order first
         self.table.setSortingEnabled(True)            # a click on a heading sorts by it
-        self.tabs.addTab(self.table, "Table")
+        if self.show_peak is not None:
+            self.table.setToolTip("Double-click a peak to show it on the main plot (its "
+                                  "spectrum highlighted, the peak circled)")
+            self.table.cellDoubleClicked.connect(lambda row, _col: self.show_row_on_plot(row))
+        self.tabs.addTab(self.table, "List")
         self.tabs.addTab(self._build_plot_tab(), "Plot")
         self.tabs.addTab(self._build_band_tab(), "Band table")
-        self.tabs.currentChanged.connect(lambda _: self._draw_if_shown())
+        self.mark_tab = None
+        if self.mark is not None:
+            self.mark_tab = self._build_mark_tab(mark_settings or {})
+            self.tabs.addTab(self.mark_tab, "Mark on the plot")
+        self.tabs.currentChanged.connect(lambda _: self._tab_changed())
         layout.addWidget(self.tabs, 1)
         QShortcut(QKeySequence.Copy, self.table, activated=self.copy)
         QShortcut(QKeySequence.Copy, self.band_table_widget, activated=self.copy)
@@ -196,6 +220,13 @@ class PeakListDialog(QDialog):
             w.currentIndexChanged.connect(lambda *_: self.refine_check.isChecked() and self.refresh())
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.fits_on_plot_check.toggled.connect(lambda *_: self.draw_fits_on_plot())
+        if start_tab == 'mark' and self.mark_tab is not None:
+            self.tabs.blockSignals(True)
+            self.tabs.setCurrentWidget(self.mark_tab)
+            self.tabs.blockSignals(False)
+            for b in (self.select_all_button, self.unselect_all_button, self.copy_button,
+                      self.export_button):
+                b.setVisible(False)
         self.refresh()
 
     # -- the Plot tab
@@ -250,7 +281,7 @@ class PeakListDialog(QDialog):
         self.join_check.setToolTip(join_tip)
         self.join_by.setToolTip(join_tip)
         self.selected_check = QCheckBox("Only the selected rows")
-        self.selected_check.setToolTip("Draw only the rows selected in the tab Table")
+        self.selected_check.setToolTip("Draw only the rows selected in the tab List")
         self.legend_check = QCheckBox("Legend")
         self.legend_check.setChecked(True)
         self.legend_check.setToolTip("Show or hide the legend of the plot")
@@ -391,6 +422,164 @@ class PeakListDialog(QDialog):
         self.band_value_combo.currentIndexChanged.connect(self._draw_if_shown)
         self.band_stored_check.toggled.connect(self._draw_if_shown)
         return page
+
+    def show_row_on_plot(self, table_row):
+        """Double-click in the tab List: the peak of that row shown on the main
+        plot - its spectrum highlighted and the peak circled with its
+        position. Returns True if it was shown."""
+        if self.show_peak is None:
+            return False
+        item = self.table.item(table_row, 0)
+        if item is None or item.data(Qt.UserRole) is None:
+            return False
+        r = int(item.data(Qt.UserRole))
+        row = self.rows[r]
+        spectrum = self.spectra[self.row_spectrum[r]]
+        x = row[pl.COLUMNS.index('Position (x)')]
+        y = row[pl.COLUMNS.index('Height (y)')]
+        shown = bool(self.show_peak(spectrum, x, y))
+        name = str(spectrum.get('label', ''))
+        self.fits_on_plot_info.setText(
+            f"On the main plot: {name}, the peak at {x:g}." if shown else
+            f"{name} is not on the main plot now (e.g. a large selection draws only some of "
+            "its spectra), so its peak cannot be shown there.")
+        self.fits_on_plot_info.setVisible(True)
+        return shown
+
+    # -- the tab Mark on the plot
+    def _build_mark_tab(self, s):
+        """How the peaks are marked on the main plot: which get their number
+        written and how; Mark the peaks on the plot / Remove the marks. Once
+        marked, the marks follow every change of the settings."""
+        from PyQt5.QtWidgets import QFormLayout, QSpinBox
+        from src.views.dialogs.data_analysis.peak_detection_dialog import (
+            DEFAULTS, FORMATS, LABEL_MODES)
+        s = {**DEFAULTS, **{k: v for k, v in s.items() if v is not None}}
+        page = QWidget()
+        v = QVBoxLayout(page)
+        info = QLabel("A red dot on every peak of the plotted spectra (found with the settings "
+                      "above), and its position written as chosen here. Once marked, the marks "
+                      "follow when you change a setting. Right-click on the plot › Clear "
+                      "Peaks also removes them.")
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #555;")
+        v.addWidget(info)
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+        self.labels_combo = QComboBox()
+        for key, text in LABEL_MODES:
+            self.labels_combo.addItem(text, key)
+        self.labels_combo.setToolTip(tooltip_of("Labels"))
+        self.font_size_input = QSpinBox()
+        self.font_size_input.setRange(6, 20)
+        self.font_size_input.setToolTip(tooltip_of("Font size"))
+        self.rotation_input = QSpinBox()
+        self.rotation_input.setRange(0, 360)
+        self.rotation_input.setToolTip(tooltip_of("Text rotation"))
+        self.decimals_input = QSpinBox()
+        self.decimals_input.setRange(0, 10)
+        self.decimals_input.setToolTip(tooltip_of("Decimal places"))
+        self.number_format_combo = QComboBox()
+        self.number_format_combo.addItems(["Fixed Point", "Scientific", "General", "Mixed (Auto)"])
+        self.number_format_combo.setToolTip(tooltip_of("Number format"))
+        self.format_type_combo = QComboBox()
+        self.format_type_combo.addItems(["X and Y values", "X value only"])
+        self.format_type_combo.setToolTip(tooltip_of("Display format"))
+        for w in (self.font_size_input, self.rotation_input, self.decimals_input):
+            w.setMinimumWidth(70)
+        for label, w in (("Labels:", self.labels_combo), ("Font size:", self.font_size_input),
+                         ("Text rotation (degrees):", self.rotation_input),
+                         ("Decimal places:", self.decimals_input),
+                         ("Number format:", self.number_format_combo),
+                         ("Display format:", self.format_type_combo)):
+            form.addRow(label, w)
+        v.addLayout(form)
+        self._set_mark_settings(s)
+        row = QHBoxLayout()
+        self.mark_button = QPushButton("Mark the peaks on the plot")
+        self.mark_button.setToolTip("A red dot on every peak of the plotted spectra, with the "
+                                    "settings above; the window stays open")
+        self.mark_button.clicked.connect(self.mark_on_plot)
+        self.remove_marks_button = QPushButton("Remove the marks")
+        self.remove_marks_button.clicked.connect(self.remove_marks)
+        for b in (self.mark_button, self.remove_marks_button):
+            b.setAutoDefault(False)
+            row.addWidget(b)
+        row.addStretch(1)
+        v.addLayout(row)
+        self.mark_info = QLabel("")
+        self.mark_info.setStyleSheet("color: #2E7D32;")
+        v.addWidget(self.mark_info)
+        v.addStretch(1)
+        for w in (self.labels_combo, self.number_format_combo, self.format_type_combo):
+            w.currentIndexChanged.connect(self._marks_follow)
+        for w in (self.font_size_input, self.rotation_input, self.decimals_input):
+            w.valueChanged.connect(self._marks_follow)
+        return page
+
+    def _set_mark_settings(self, s):
+        from src.views.dialogs.data_analysis.peak_detection_dialog import FORMATS
+        self.labels_combo.setCurrentIndex(max(self.labels_combo.findData(s['labels']), 0))
+        self.font_size_input.setValue(int(s['font_size']))
+        self.rotation_input.setValue(int(s['rotation']))
+        self.decimals_input.setValue(int(s['decimals']))
+        self.number_format_combo.setCurrentIndex(
+            FORMATS.index(s['number_format']) if s['number_format'] in FORMATS else 0)
+        self.format_type_combo.setCurrentText("X and Y values" if s['format_type'] == "both"
+                                              else "X value only")
+
+    def mark_settings(self):
+        """Everything the marks need: the settings at the top and those of the
+        tab Mark on the plot (the keys of PeakDetectionController.apply_settings)."""
+        from src.views.dialogs.data_analysis.peak_detection_dialog import FORMATS
+        s = self.settings()
+        out = {'threshold': s['threshold'], 'prominence': s['prominence'],
+               'distance': s['distance'], 'peak_mode': s['mode'], 'snr': s['snr']}
+        if self.mark_tab is not None:
+            out.update({
+                'labels': self.labels_combo.currentData(),
+                'font_size': self.font_size_input.value(),
+                'rotation': self.rotation_input.value(),
+                'decimals': self.decimals_input.value(),
+                'number_format': FORMATS[self.number_format_combo.currentIndex()],
+                'format_type': "both" if self.format_type_combo.currentText() == "X and Y values"
+                               else "x_only",
+            })
+        return out
+
+    def mark_on_plot(self):
+        """Mark the peaks on the main plot; from now on the marks follow."""
+        if self.mark is None:
+            return
+        self.mark(self.mark_settings())
+        self.marked = True
+        self.mark_info.setText("Marked on the plot. Changing a setting marks them again.")
+
+    def remove_marks(self):
+        if self.clear_marks is not None:
+            self.clear_marks()
+        self.marked = False
+        self.mark_info.setText("")
+
+    def _marks_follow(self, *_):
+        if self.marked:
+            self.mark_on_plot()
+
+    def _on_mark_tab(self):
+        return self.mark_tab is not None and self.tabs.currentWidget() is self.mark_tab
+
+    def _tab_changed(self):
+        """A tab of the list shown: found again if the settings changed while
+        only the marks were shown (a large selection is not listed for
+        nothing)."""
+        # Select all, Copy, Export... belong to the list, not to the marks
+        for b in (self.select_all_button, self.unselect_all_button, self.copy_button,
+                  self.export_button):
+            b.setVisible(not self._on_mark_tab())
+        if self._list_stale and not self._on_mark_tab():
+            self.refresh()
+        else:
+            self._draw_if_shown()
 
     def band_values(self):
         """(value name, [(band position text, [value or None per spectrum])]) of
@@ -639,11 +828,17 @@ class PeakListDialog(QDialog):
         self.mode.setCurrentText(pl.DEFAULTS['mode'])
         for w in (self.threshold, self.prominence, self.distance, self.snr, self.mode):
             w.blockSignals(False)
+        if self.mark_tab is not None:
+            from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
+            marked, self.marked = self.marked, False        # one marking, after refresh
+            self._set_mark_settings(DEFAULTS)
+            self.marked = marked
         self.refresh()
 
     def show_settings_help(self):
         from src.views.dialogs.data_analysis.peak_settings_help import PeakSettingsHelp
-        self.settings_help = PeakSettingsHelp(self, columns=True)
+        self.settings_help = PeakSettingsHelp(self, labels=self.mark_tab is not None,
+                                              columns=True)
         self.settings_help.show()
         return self.settings_help
 
@@ -667,6 +862,14 @@ class PeakListDialog(QDialog):
         """Find the peaks again with the current settings and fill the table
         (and the plot, when shown); the first time also the ± distance."""
         s = self.settings()
+        if self._on_mark_tab():
+            # only the marks are shown: the list is found when one of its tabs is
+            self._list_stale = True
+            if self.on_settings is not None:
+                self.on_settings(s)
+            self._marks_follow()
+            return
+        self._list_stale = False
         # the selected rows stay selected when the same peaks come back (e.g.
         # ticking Refine by fitting only adds columns)
         keep = ({tuple(self.rows[r][:4]) for r in self.selected_rows()}
@@ -717,6 +920,7 @@ class PeakListDialog(QDialog):
         self._draw_if_shown()
         if self.fits_on_plot_check.isChecked():
             self.draw_fits_on_plot()
+        self._marks_follow()
 
     # -- Refine by fitting
     def _fit_controls_enabled(self):

@@ -1,7 +1,7 @@
 # src/help/peak_detection_help.py
 
 def get_peak_detection_help_title():
-    return "Peak Detection — Help"
+    return "Peaks (Detect Peaks and the Peak list) — Help"
 
 def get_peak_detection_help_content():
     from src.help.help_figures import figure_html
@@ -26,25 +26,34 @@ _PAGE = """
         .fm   { font-family: monospace; background: #ececec; padding: 1px 5px; border-radius: 3px; }
     </style></head><body>
 
-    <h1>Peak Detection</h1>
+    <h1>Peaks (Detect Peaks and the Peak list)</h1>
 
-    <p>Peak Detection marks local maxima or minima directly on the current
-    plot — a quick visual aid, not a data-modifying operation. It doesn't
-    change your spectra or save anything to their metadata; it just draws
-    markers and labels on top of whatever's currently plotted.</p>
-    <p><b>Right-click on the plot &rarr; Detect Peaks</b> opens the Peak Detection Settings.
-    <b>Apply</b> marks the peaks with the settings shown and the window stays open, so you can
-    change a setting and Apply again until the result fits; <b>Close</b> closes the window
-    (settings changed after the last Apply are not used). <b>Reset to defaults</b> puts every
-    setting back to its default value. The orange <b>?</b> shows what each setting means; the
-    same text appears when you hold the mouse over a setting.</p>
+    <p>The <b>Peaks</b> window finds the local maxima or minima of the selected spectra and shows
+    them in four tabs. It does not change your spectra or save anything to their metadata.
+    <b>Right-click on the plot &rarr; Detect Peaks</b> opens it on the tab <b>Mark on the
+    plot</b>, <b>Peak list&hellip;</b> on the tab <b>List</b> &mdash; it is one window:</p>
+    <ul>
+        <li>The <b>settings at the top</b> (Threshold, Prominence, Distance, S/N, Peaks) decide
+            which peaks are found, the same for every tab.</li>
+        <li><a href="#peak-list"><b>List</b></a>: every peak in a table, for Excel.</li>
+        <li><a href="#peak-plot"><b>Plot</b></a>: one number of the peaks against another, e.g.
+            the position against the temperature.</li>
+        <li><a href="#band-table"><b>Band table</b></a>: one row per spectrum, one column per
+            band &mdash; also <i>Open in the Data table</i>.</li>
+        <li><a href="#mark"><b>Mark on the plot</b></a>: a red dot on every peak of the main plot
+            and its position written next to it.</li>
+    </ul>
+    <p><b>Reset to defaults</b> puts every setting back to its default value. The orange
+    <b>?</b> shows what each setting and column means; the same text appears when you hold the
+    mouse over a setting.</p>
 
     <h2 id="how-to">How to use it, in short</h2>
     <ol>
         <li>Select the spectra so that they are plotted.</li>
-        <li><b>Right-click on the plot &rarr; Detect Peaks &rarr; Apply.</b> The defaults suit most
-            data: every peak that stands out clearly from its surroundings and from the noise is
-            marked with a red dot.</li>
+        <li><b>Right-click on the plot &rarr; Detect Peaks &rarr; Mark the peaks on the plot.</b>
+            The defaults suit most data: every peak that stands out clearly from its surroundings
+            and from the noise is marked with a red dot. The window stays open: change a setting
+            and the marks follow at once.</li>
         <li>With many similar spectra, each band's position is written <b>once</b>, above its
             highest peak (<i>Labels: once per band</i>). A range such as
             <code>247.19&ndash;256.18</code> means the peak <b>moves</b> through the series &mdash;
@@ -53,9 +62,9 @@ _PAGE = """
             <b>Signal-to-noise</b> (a very weak band). Noise is marked? Raise
             <b>Signal-to-noise</b>. One broad band gives two dots? Raise <b>Distance</b>. Only the
             tall peaks wanted? Raise <b>Threshold</b>.</li>
-        <li>The numbers of all peaks for Excel: <b>Peak list&hellip;</b> (a table, a plot and a
-            Band table, below). A precise position, width or area: tick <b>Refine by fitting</b> in
-            the Peak list, or use Peak Fitting for overlapping bands.</li>
+        <li>The numbers of all peaks for Excel: the tab <b>List</b> or <b>Band table</b> of the
+            same window (below). A precise position, width or area: tick <b>Refine by fitting</b>,
+            or use Peak Fitting for overlapping bands.</li>
     </ol>
     @@PEAK_DIALOG@@
     @@PEAK_LABELS@@
@@ -72,23 +81,23 @@ _PAGE = """
     <h2>Parameters</h2>
     <table>
         <tr><th>Parameter</th><th>Meaning</th></tr>
-        <tr><td><strong>Peak Detection Threshold</strong></td>
+        <tr><td><strong>Threshold</strong></td>
             <td>Minimum height, as a fraction (0&ndash;1) of each line's own
             intensity range, a point must reach before it's even considered
             as a candidate peak. The default <b>0</b> sets no height limit: a peak
             is then judged only <i>locally</i>, by its prominence, so a small but
             clear band next to a strong one is found too. Raise it (e.g. 0.5 =
             only the upper half of the range) to keep only the tall peaks.</td></tr>
-        <tr><td><strong>Prominence Threshold (Relative)</strong></td>
+        <tr><td><strong>Prominence</strong></td>
             <td>How much a candidate peak must stand out from its
             surrounding baseline, as a fraction of the line's intensity
             range. Raise this to ignore small bumps riding on a larger
             feature.</td></tr>
-        <tr><td><strong>Distance Threshold (Relative)</strong></td>
+        <tr><td><strong>Distance</strong></td>
             <td>Minimum spacing between detected peaks, as a fraction of the
             number of points in the line. Raise this to avoid multiple
             markers crowding around what's really one broad peak.</td></tr>
-        <tr><td><strong>Signal-to-noise (min.)</strong></td>
+        <tr><td><strong>S/N</strong> (signal-to-noise, minimum)</td>
             <td>A peak must also stand out (its prominence) at least this many times
             the <b>noise</b> of its spectrum. The noise is estimated from each spectrum itself,
             from its point-to-point scatter, which the bands hardly affect. Prominence alone is a
@@ -98,11 +107,11 @@ _PAGE = """
             default <b>8</b> they are gone (e.g. a noisy CD series, Peaks: Both: at most 3 peaks
             per spectrum instead of 17). Lower it for very weak bands; <b>0</b> switches it off.
             Clean, smooth spectra are not affected.</td></tr>
-        <tr><td><strong>Peak Detection Mode</strong></td>
+        <tr><td><strong>Peaks</strong></td>
             <td><em>Positive</em> finds local maxima (upward peaks),
             <em>Negative</em> finds local minima (downward dips/troughs),
             <em>Both</em> finds both at once.</td></tr>
-        <tr><td><strong>Labels</strong></td>
+        <tr><td><strong>Labels</strong> (tab Mark on the plot)</td>
             <td>Which peaks get their position written. <em>Once per band</em> (the
             default): one number per band, above its highest peak &mdash; the peaks of all
             plotted spectra at about the same position (within half of their typical FWHM, as
@@ -116,8 +125,8 @@ _PAGE = """
             number. <em>Only the current spectrum</em>: the peaks of the spectrum highlighted in
             the spectra list. <em>None</em>: no numbers. The red dots mark every peak in all
             cases.</td></tr>
-        <tr><td><strong>Peak Value Font Size / Text Rotation / Decimal
-            Places / Number Format / Display Format</strong></td>
+        <tr><td><strong>Font size / Text rotation / Decimal places / Number format / Display
+            format</strong> (tab Mark on the plot)</td>
             <td>Purely cosmetic — control how (and whether) each marker's
             coordinates are labeled on the plot.</td></tr>
     </table>
@@ -181,12 +190,12 @@ _PAGE = """
     </ul>
 
     <hr>
-    <h2 id="peak-list">Peak list</h2>
-    <p><b>Right-click on the plot &rarr; Peak list&hellip;</b> (or the <b>Peak list&hellip;</b> button
-    in the Peak Detection Settings) lists every peak of <b>all selected spectra</b> in one table
-    &mdash; also of spectra a large selection does not draw. The peaks are found by exactly the same
-    rule and settings as the markers on the plot; change the settings in the list and the table
-    follows at once (Detect Peaks then uses them too). Columns:</p>
+    <h2 id="peak-list">Tab List</h2>
+    <p>The tab <b>List</b> (right-click on the plot &rarr; <b>Peak list&hellip;</b> opens the window
+    on it) lists every peak of <b>all selected spectra</b> in one table &mdash; also of spectra a
+    large selection does not draw. The peaks are found by exactly the same rule and settings as
+    the marks on the plot; change a setting at the top and the table follows at once.
+    Columns:</p>
     <ul>
         <li><b>Peak</b>: its number within the spectrum, from low to high x; <b>Kind</b>: maximum
             or minimum.</li>
@@ -198,10 +207,14 @@ _PAGE = """
             (<b>Left / Right half-height x</b>), interpolated between the points (also for uneven
             point spacing). Overlapping bands make it a rough estimate.</li>
     </ul>
+    <p><b>Double-click a peak</b> to see it on the main plot: its spectrum is highlighted (a wide
+    pale band under its line) and the peak is circled, with the spectrum's name and the position
+    &mdash; also in a stacked plot. The view does not change. The next double-click, <i>Clear
+    Peaks</i> (right-click on the plot) or a new plot removes it. A spectrum that a large
+    selection does not draw cannot be shown; the line under the settings then says so.</p>
     <p>Click a heading to sort by it. Select rows and press Ctrl+C (or <b>Copy</b>) to paste them
     into Excel with the column names; <b>Export&hellip;</b> saves the list as Excel or CSV.
-    <b>Reset to defaults</b> and the orange <b>?</b> work as in the Peak Detection Settings (the
-    <b>?</b> also explains the columns).</p>
+    The orange <b>?</b> also explains the columns.</p>
     <h3 id="refine-by-fitting">Refine by fitting</h3>
     <p>Finding a peak and measuring it are two different jobs. The list <i>finds</i> the peaks from
     the measured points, so its position and height are those of one measured point and the
@@ -235,7 +248,7 @@ _PAGE = """
     peaks when no row is selected (at most 300 at once); select a few rows to check them one by one.
     The view of the plot does not change. Untick it, use <i>Clear Peaks</i> (right-click on the
     plot) or draw a new plot to remove them.</p>
-    <h3 id="peak-plot">Plot</h3>
+    <h3 id="peak-plot">Tab Plot</h3>
     <p>The tab <b>Plot</b> draws one number of the peaks against another:</p>
     <ul>
         <li><b>x</b>: a value of the spectrum &mdash; its order in the list, a value stored with it
@@ -284,7 +297,7 @@ _PAGE = """
     must be to count as one band. <b>Only the selected rows</b> draws the rows selected in the
     table; <b>Legend</b> shows or hides the legend. <b>Copy plot</b> puts the plot on the
     clipboard for Word or PowerPoint; the toolbar zooms and saves it.</p>
-    <h3 id="band-table">Band table</h3>
+    <h3 id="band-table">Tab Band table</h3>
     <p>The tab <b>Band table</b> turns the list round for Excel: <b>one row per spectrum</b> (in the
     order of the spectra list) and <b>one column per band</b> &mdash; the peaks of all spectra at the
     same position, within <b>same band within &plusmn;</b> (the same setting as in the tab Plot),
@@ -307,10 +320,19 @@ _PAGE = """
     @@PEAK_BAND_TABLE@@
 
     <hr>
-    <h2>Clearing markers</h2>
-    <p>Detecting again automatically clears the previous markers first, so
-    re-running with different settings never leaves stale markers behind
-    or double-counts them as data on a later detection.</p>
+    <h2 id="mark">Tab Mark on the plot</h2>
+    <p>Right-click on the plot &rarr; <b>Detect Peaks</b> opens the window on this tab.
+    <b>Mark the peaks on the plot</b> puts a red dot on every peak of the plotted spectra, found
+    with the settings at the top, and writes its position as set here (<b>Labels</b>: once per
+    band, on every peak, only the current spectrum or none; font size, rotation, decimals,
+    number format, the position alone or with the height). The window stays open, and from then
+    on the marks <b>follow every change</b> of a setting &mdash; the top ones and these &mdash;
+    so you see at once what, e.g., a lower Prominence finds. <b>Remove the marks</b> removes
+    them (also right-click on the plot &rarr; <b>Clear Peaks</b>, which also removes the fitted
+    peaks drawn by <i>Show on the main plot</i>). Marking again replaces the old marks, so none
+    are left behind. The settings are kept for the next time.</p>
+    <p>Opened on this tab, the window lists the peaks only when you open one of the other tabs,
+    so marking a large selection (e.g. a map) does not first list thousands of spectra.</p>
 
     <div class="tip">
         <strong>Tip:</strong> if a real, obvious dip or peak isn't being

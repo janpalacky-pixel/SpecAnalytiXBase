@@ -1033,9 +1033,9 @@ def get_user_guide_help_content():
 
         <table>
             <tr><th>Item</th><th>Description</th></tr>
-            <tr><td><strong>Detect Peaks</strong></td><td>Mark the peaks of the plotted spectra with red dots. A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peak Detection</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
+            <tr><td><strong>Detect Peaks</strong></td><td>Opens the <b>Peaks</b> window on its tab <i>Mark on the plot</i>: mark the peaks of the plotted spectra with red dots (they follow the settings while the window is open). A peak is judged locally &mdash; it must stand out from the valleys around it and from the noise (signal-to-noise) &mdash; so small clear bands next to strong ones are found and the noise of weak spectra is not. With many spectra each band's position is written once (a range when the peak moves through the series). See <a href="help://peak_detection">Peaks</a>, also for what peak positions do and do not tell you (e.g. overlapping CD bands).</td></tr>
             <tr><td><strong>Clear Peaks</strong></td><td>Remove all peak markers from the plot</td></tr>
-            <tr><td><strong>Peak list&hellip;</strong></td><td>Every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; same settings as Detect Peaks. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel or (<i>Open in the Data table</i>) for formulas and plots in the Data table</td></tr>
+            <tr><td><strong>Peak list&hellip;</strong></td><td>The same <b>Peaks</b> window, on its tab <i>List</i>: every peak of the selected spectra in a table &mdash; position, height, prominence, width at half height (FWHM) &mdash; to copy into Excel or export; one set of settings for all tabs. <i>Refine by fitting</i> adds fitted position, FWHM, height, area and R&sup2;; the tab <i>Band table</i> gives one row per spectrum and one column per band, for Excel or (<i>Open in the Data table</i>) for formulas and plots in the Data table</td></tr>
             <tr><td><strong>Legend</strong></td><td>Open the Legend Properties dialog (same as the ☰ Legend button below the spectrum list)</td></tr>
             <tr><td><strong>Grid</strong></td><td>Configure grid lines (on/off, style, colour)</td></tr>
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings</td></tr>
@@ -2722,7 +2722,7 @@ def get_user_guide_help_content():
         datasets once before trusting either method on real data; the contrast is the whole
         lesson.</div>
 
-        <p>They are also good for trying <a href="help://peak_detection">Peak Detection</a>,
+        <p>They are also good for trying <a href="help://peak_detection">Peaks</a>,
         because the true band positions are on the <code>Ground_truth</code> sheet:
         <em>raman_2comp_clean</em> shows that small clear bands are found next to strong ones;
         <em>cd_2comp_noisy</em> (Peaks: Both) that the noise of the weak spectra is not taken for

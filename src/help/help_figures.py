@@ -4,7 +4,7 @@ works), kept in resources/images/help_screenshots/calculations/ and drawn by
 tools/help_pictures/make_calculation_figures.py (a file name with a folder, e.g.
 "peak_detection/...", lies in that folder of help_screenshots instead - the
 Peak Detection figures, drawn by tools/help_pictures/make_peak_detection_figures.py,
-and the Peak Detection windows, by make_tool_screenshots.py). figure_html(key) gives a complete
+and the Peaks window, by make_tool_screenshots.py). figure_html(key) gives a complete
 <div><img><caption></div> block (empty if the file is missing), resolved
 with resource_path() so it works from source and in the installed build."""
 
@@ -78,15 +78,16 @@ FIGURES = {
         "step by step from 247 to 256 nm as the mixture changes, although no band moves. "
         "Detect Peaks writes it as the range 247.19&ndash;256.18."),
     'PEAK_DIALOG': (
-        "peak_detection/detect_peaks_dialog.png",
-        "The Peak Detection Settings window",
-        "Right-click on the plot &rarr; Detect Peaks: the settings, Apply (the window stays "
-        "open), Reset to defaults, Peak list&hellip; and the orange ? (what each setting "
-        "means)."),
+        "peak_detection/peaks_mark_tab.png",
+        "The Peaks window, tab Mark on the plot",
+        "Right-click on the plot &rarr; Detect Peaks: the Peaks window on its tab Mark on the "
+        "plot. The settings at the top are the same for every tab; Mark the peaks on the plot "
+        "(the window stays open and the marks follow the settings), Reset to defaults and the "
+        "orange ? (what each setting means)."),
     'PEAK_BAND_TABLE': (
         "peak_detection/peak_list_band_table.png",
-        "The Peak list, tab Band table",
-        "Peak list, tab Band table: one row per spectrum, one column per band, here with the "
+        "The Peaks window, tab Band table",
+        "The Peaks window, tab Band table: one row per spectrum, one column per band, here with the "
         "fitted FWHM (Refine by fitting) &mdash; ready to paste into Excel."),
 }
 

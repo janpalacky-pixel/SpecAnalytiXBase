@@ -48,36 +48,45 @@ def _list(mc, monkeypatch, **kw):
 
 # --- Detect Peaks ------------------------------------------------------------------------
 
-def test_apply_marks_the_peaks_and_the_window_stays_open(mc, monkeypatch):
-    from src.views.dialogs.data_analysis import peak_detection_dialog as pdd
+def test_mark_on_the_plot_and_the_marks_follow_the_settings(mc, monkeypatch):
+    from src.views.dialogs.data_analysis import peak_list_dialog as pld
     seen = {}
+    marks = lambda: sum(len(v) for v in mc.peak_detection_controller.peak_detector
+                        .peak_indices.values())
 
     def run(dialog):
         dialog.show()
-        dialog.threshold_input.setValue(0.2)
-        dialog.peak_mode_combo.setCurrentText('Both')
-        dialog.apply_button.click()
-        seen['open_after_apply'] = dialog.isVisible()
-        seen['marked'] = sum(len(v) for v in mc.peak_detection_controller.peak_detector
-                             .peak_indices.values())
-        dialog.threshold_input.setValue(0.9)            # changed, but not applied
-        dialog.button_box.button(QDialogButtonBox.Close).click()
+        dialog.threshold.setValue(0.2)
+        dialog.mode.setCurrentText('Both')
+        dialog.mark_button.click()
+        seen['open_after_mark'] = dialog.isVisible()
+        seen['marked'] = marks()
+        dialog.threshold.setValue(0.9)                  # the marks follow at once
+        seen['fewer'] = marks()
+        dialog.remove_marks_button.click()
+        seen['removed'] = marks()
+        dialog.reject()
         return 0
-    monkeypatch.setattr(pdd.PeakDetectionDialog, 'exec_', run)
+    monkeypatch.setattr(pld.PeakListDialog, 'exec_', run)
     pdc = mc.peak_detection_controller
     pdc.show_dialog()
-    assert seen['open_after_apply'] and seen['marked'] > 0
-    assert (pdc.peak_threshold, pdc.peak_detection_mode) == (0.2, 'Both')     # not 0.9
+    assert seen['open_after_mark'] and seen['marked'] > 0
+    assert seen['fewer'] < seen['marked'] and seen['removed'] == 0
+    assert (pdc.peak_threshold, pdc.peak_detection_mode) == (0.9, 'Both')     # one set, kept
 
 
-def test_reset_to_defaults_in_detect_peaks():
-    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS, PeakDetectionDialog
-    dlg = PeakDetectionDialog(None, threshold=0.2, prominence=0.3, distance=0.1, peak_mode='Both',
-                              font_size=14, rotation=45, decimals=4, number_format='sci',
-                              format_type='both')
-    assert dlg.get_settings() != DEFAULTS
+def test_reset_to_defaults_in_the_peaks_window():
+    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
+    from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
+    x = np.linspace(0, 10, 200)
+    dlg = PeakListDialog(None, [{'label': 'a', 'x_scale': x, 'y_scale': np.sin(x)}],
+                         threshold=0.2, prominence=0.3, distance=0.1, mode='Both',
+                         mark=lambda s: None, start_tab='mark',
+                         mark_settings={'font_size': 14, 'rotation': 45, 'decimals': 4,
+                                        'number_format': 'sci', 'format_type': 'both'})
+    assert dlg.mark_settings() != DEFAULTS
     dlg.reset_button.click()
-    assert dlg.get_settings() == DEFAULTS
+    assert dlg.mark_settings() == DEFAULTS
 
 
 def test_the_controller_starts_with_the_defaults(mc):
@@ -88,19 +97,16 @@ def test_the_controller_starts_with_the_defaults(mc):
 
 
 def test_question_marks_explain_every_setting(monkeypatch):
-    from src.views.dialogs.data_analysis.peak_detection_dialog import PeakDetectionDialog
     from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
     from src.views.dialogs.data_analysis import peak_settings_help as psh
     x = np.linspace(0, 10, 200)
-    detect = PeakDetectionDialog(None)
-    detect.help_button.click()
-    text = detect.settings_help.text.toPlainText()
-    for name, _, _ in pl.SETTINGS_HELP + psh.LABEL_HELP:
-        assert name in text
-    assert 'stand out' in detect.prominence_input.toolTip()
-    listing = PeakListDialog(None, [{'label': 'a', 'x_scale': x, 'y_scale': np.sin(x)}])
+    listing = PeakListDialog(None, [{'label': 'a', 'x_scale': x, 'y_scale': np.sin(x)}],
+                             mark=lambda s: None)                  # the Peaks window
     listing.help_button.click()
     text = listing.settings_help.text.toPlainText()
+    for name, _, _ in pl.SETTINGS_HELP + psh.LABEL_HELP:
+        assert name in text
+    assert 'stand out' in listing.prominence.toolTip()
     assert 'FWHM' in text and 'Distance' in text
     opened = []
     monkeypatch.setattr('src.help.help_window.open_help_topic',
@@ -114,7 +120,8 @@ def test_the_peak_detection_help_page_opens():
     from src.help.peak_detection_help import get_peak_detection_help_content
     assert 'peak_detection' in help_window._REGISTRY
     text = get_peak_detection_help_content()
-    assert 'Reset to defaults' in text and 'id="peak-plot"' in text and '<b>Apply</b>' in text
+    assert 'Reset to defaults' in text and 'id="peak-plot"' in text
+    assert '<b>Mark the peaks on the plot</b>' in text and 'id="mark"' in text
 
 
 # --- Peak list ---------------------------------------------------------------------------

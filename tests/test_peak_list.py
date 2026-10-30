@@ -113,11 +113,10 @@ def test_window_shares_the_settings_of_detect_peaks(mc, monkeypatch):
     assert lines[0].startswith('Spectrum\tPeak') and len(lines) == 2
 
 
-def test_button_in_the_peak_detection_settings(mc, monkeypatch):
-    from src.views.dialogs.data_analysis import peak_detection_dialog as pdd, peak_list_dialog as pld
+def test_detect_peaks_opens_the_same_window_on_its_tab_mark(mc, monkeypatch):
+    from src.views.dialogs.data_analysis import peak_list_dialog as pld
     monkeypatch.setattr(pld.PeakListDialog, 'exec_', lambda self: 0)
-    seen = []
-    monkeypatch.setattr(pdd.PeakDetectionDialog, 'exec_',
-                        lambda self: seen.append(self._show_peak_list()) or 0)
-    mc.peak_detection_controller.show_dialog()
-    assert seen and seen[0] is not None and seen[0].table.rowCount() > 0
+    dlg = mc.peak_detection_controller.show_dialog()
+    assert dlg.tabs.currentWidget() is dlg.mark_tab
+    dlg.tabs.setCurrentIndex(0)                          # the tab List: the same spectra
+    assert dlg.table.rowCount() > 0

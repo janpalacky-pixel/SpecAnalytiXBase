@@ -73,14 +73,17 @@ def test_x_and_y_values_show_the_height_of_the_labelled_peak():
 
 
 def test_the_setting_in_the_window():
-    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS, PeakDetectionDialog
+    from src.views.dialogs.data_analysis.peak_detection_dialog import DEFAULTS
+    from src.views.dialogs.data_analysis.peak_list_dialog import PeakListDialog
     from src.views.dialogs.data_analysis import peak_settings_help as psh
-    dlg = PeakDetectionDialog(None)
-    assert DEFAULTS['labels'] == 'band' and dlg.get_settings()['labels'] == 'band'
+    x = np.linspace(0, 10, 200)
+    dlg = PeakListDialog(None, [{'label': 'a', 'x_scale': x, 'y_scale': np.sin(x)}],
+                         mark=lambda s: None, start_tab='mark')     # the Peaks window
+    assert DEFAULTS['labels'] == 'band' and dlg.mark_settings()['labels'] == 'band'
     dlg.labels_combo.setCurrentIndex(dlg.labels_combo.findData('all'))
-    assert dlg.get_settings()['labels'] == 'all'
+    assert dlg.mark_settings()['labels'] == 'all'
     dlg.reset_button.click()
-    assert dlg.get_settings()['labels'] == 'band'
+    assert dlg.mark_settings()['labels'] == 'band'
     assert 'Once per band' in dlg.labels_combo.toolTip()
     dlg.help_button.click()
     assert 'Labels' in dlg.settings_help.text.toPlainText()

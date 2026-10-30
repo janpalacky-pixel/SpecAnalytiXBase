@@ -1275,32 +1275,27 @@ def part_map2d():
 
 
 def part_peak_detection():
-    """Detect Peaks window and the Peak list (Band table) - help Peak Detection."""
+    """The Peaks window: tab Mark on the plot (Detect Peaks) and tab Band table -
+    help Peaks."""
     F = 'peak_detection'
     mc = load([os.path.join(SYN, 'raman_2comp_clean.xlsx')],
               select=[0, 4, 5, 6, 7, 8, 14, 15, 16, 17, 18])
     mc.plot_spectra()
     settle(0.5)
 
-    @on('Peak Detection Settings')
+    @on('Peaks')
     def _(d):
+        d.resize(980, 560)
         settle(0.3)
-        d.apply_button.click()
+        d.mark_button.click()
         settle(0.8)
-        shot(d, F, 'detect_peaks_dialog.png')
-
-        @on('Peak list')
-        def _(pl_dlg):
-            pl_dlg.resize(980, 560)
-            settle(0.5)
-            pl_dlg.refine_check.setChecked(True)
-            settle(1.0)
-            tab(pl_dlg, 'Band table')
-            pl_dlg.band_value_combo.setCurrentText('Fitted FWHM')
-            settle(0.8)
-            shot(pl_dlg, F, 'peak_list_band_table.png')
-        d.peak_list_button.click()
-        settle(0.5)
+        shot(d, F, 'peaks_mark_tab.png')
+        tab(d, 'Band table')
+        d.refine_check.setChecked(True)
+        settle(1.0)
+        d.band_value_combo.setCurrentText('Fitted FWHM')
+        settle(0.8)
+        shot(d, F, 'peak_list_band_table.png')
     mc.peak_detection_controller.show_dialog()
 
 
