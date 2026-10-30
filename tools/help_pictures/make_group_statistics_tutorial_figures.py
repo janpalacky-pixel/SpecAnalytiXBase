@@ -31,7 +31,8 @@ from src.views.dialogs.visualization_analysis.group_statistics_dialog import Gro
 steady.park_mouse()
 
 SYNTH = os.path.join('resources', 'test_data', 'synthetic')
-OUT = os.path.join('resources', 'images', 'help_screenshots', 'group_statistics_tutorial')
+SHOTS = os.environ.get('SAX_SHOTS_OUT') or os.path.join('resources', 'images', 'help_screenshots')
+OUT = os.path.join(SHOTS, 'group_statistics_tutorial')
 IMAGES = '--no-images' not in sys.argv
 os.makedirs(OUT, exist_ok=True)
 
@@ -103,10 +104,19 @@ def shot(d, name, tab=None, whole=False, find=None, width=1000):
         d.tabs.setCurrentIndex(tab)
     app.processEvents()
     if find:
-        d.tests_view.moveCursor(d.tests_view.textCursor().End)
-        d.tests_view.find(find)
-        d.tests_view.ensureCursorVisible()
-        d.tests_view.textCursor().clearSelection()
+        # from the end, search BACKWARD: the view scrolls up just until the text
+        # is visible, so it ends up at the top. (Searching forward from the end
+        # found nothing, and the picture was the same as the one before it.)
+        from PyQt5.QtGui import QTextDocument
+        view = d.tests_view
+        view.moveCursor(view.textCursor().End)
+        view.ensureCursorVisible()
+        app.processEvents()
+        if not view.find(find, QTextDocument.FindBackward):
+            raise RuntimeError(f'shot {name}: "{find}" is not in the Test tab')
+        cursor = view.textCursor()
+        cursor.clearSelection()
+        view.setTextCursor(cursor)
         app.processEvents()
     if IMAGES:
         widget = d if whole else d.tabs.parentWidget()
@@ -258,7 +268,7 @@ test(d, 'paired_t'); d.compute(); report('L4 paired t', d)
 shot(d, 'l4_paired_test.png', 2)
 test(d, 'wilcoxon'); d.compute(); report('L4 Wilcoxon', d)
 d.deleteLater()
-MAIN = os.path.join('resources', 'images', 'help_screenshots', 'group_statistics')
+MAIN = os.path.join(SHOTS, 'group_statistics')
 os.makedirs(MAIN, exist_ok=True)
 
 
@@ -270,6 +280,7 @@ def save_img(widget, path, width=1000):
     img = widget.grab().toImage()
     if img.width() > width:
         img = img.scaledToWidth(width, Qt.SmoothTransformation)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     img.save(path)
 
 
@@ -385,10 +396,11 @@ def roi_menu_shot(path, scale=0.8):
     x0, y0 = max(0, mx - 120), max(0, my - 20)
     crop = bg.copy(QRect(x0, y0, mp.width() + 200, pos.y() + btn.height() + 10 - y0))
     if IMAGES:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         crop.toImage().scaledToWidth(int(crop.width() * scale), Qt.SmoothTransformation).save(path)
 
 
-roi_menu_shot(os.path.join('resources', 'images', 'help_screenshots', 'map2d', 'roi_menu.png'))
+roi_menu_shot(os.path.join(SHOTS, 'map2d', 'roi_menu.png'))
 orig_exec = QDialog.exec_
 
 
