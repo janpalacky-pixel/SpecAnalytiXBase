@@ -7,12 +7,15 @@ QUICK_HELP = {
     'peaks': ("Quick help – the peaks to fit", 'adding-peaks', """
 <p><b>Auto-Detect Peaks</b> finds the bands of the shown spectrum and fills the table with a
 starting position, height and width for each. Check the list: remove what you do not want
-(select rows, Delete) and add what is missing.</p>
+(select rows, <b>Remove Selected Peak(s)</b>) and add what is missing.</p>
 <p><b>Add via Click</b>: click on the top of a band in the plot - a Gaussian peak is added there,
 its width taken from the band under the click. To zoom or pan, simply choose Zoom or Pan in the
 plot's toolbar: that switches Add via Click off (tick it again to add more peaks).</p>
-<p>Every value in the table can be edited (double-click). <b>Width</b> is &sigma; for Gaussian
-and Voigt, &gamma; for Lorentzian, the FWHM for Pseudo-Voigt.</p>
+<p>The table: <b>Model</b> (the peak shape), <b>Center</b> (position of the top), <b>Height</b>
+(of the top), <b>Width</b> and <b>Extra</b>. Every value can be edited (double-click).
+<b>Width</b> is &sigma; for Gaussian and Voigt, &gamma; for Lorentzian, the FWHM for
+Pseudo-Voigt; <b>Extra</b> is &gamma; for Voigt, &eta; (0&ndash;1) for Pseudo-Voigt. Hold the
+mouse over a column heading to see this.</p>
 """),
     'peaks-mode': ("Quick help \u2013 the peaks of several spectra", 'peaks-mode', """
 <p>With several spectra <b>every spectrum has its own peaks</b>, and everything acts only on
@@ -23,8 +26,8 @@ on the plot, changing a value and Remove change only these (and its fit counts a
 yet). The shown spectrum changes only when you select one spectrum alone.</li>
 <li><b>Clear All Peaks - N spectra</b>: the peaks (and fits) of the selected spectra.</li>
 <li><b>Auto-Detect Peaks - N spectra</b>: the peaks of each selected spectrum, each its own.</li>
-<li><b>Copy peaks</b> of the shown spectrum, select others, <b>Paste peaks to the selected
-spectra</b> - for a series of similar spectra.</li>
+<li><b>Copy peaks of &hellip;</b> (the shown spectrum), select others, <b>Paste peaks of &hellip;
+to the selected spectra</b> - for a series of similar spectra.</li>
 <li><b>Fit Peaks - N selected spectra</b>: each from its own peaks; spectra without peaks are
 left out (unless <i>Spectra without peaks: start from the fit before them</i> is ticked).</li>
 <li>In the list: green dot = has peaks, grey = no peaks yet; &#10003; fitted, &#9888; poor fit,
@@ -49,8 +52,12 @@ missing there.</li>
 </ul>
 """),
     'series': ("Quick help – a whole series", 'series', """
-<p>Fit one spectrum well first. Then select the spectra in the list beside the plot (<b>All</b>
-for the whole series) and click <b>Fit Peaks - N selected spectra</b>.</p>
+<p>Fit one spectrum well first: select it alone, set its peaks (<b>Auto-Detect Peaks</b>,
+<b>Add via Click</b>, or correct them in the table) and click <b>Fit Peaks - 1 spectrum</b>. Then
+give the other spectra a start (below), select them in the list beside the plot (<b>All</b> for
+the whole series) and click <b>Fit Peaks - N selected spectra</b>.</p>
+<p><b>Every selected spectrum needs a start</b> - if none has one, the button is greyed and the
+orange line under it says what to do.</p>
 <p>Each selected spectrum starts from <b>its own peaks</b>; spectra without peaks are left out -
 or, with <b>Spectra without peaks: start from the fit before them</b> ticked, start from the fit
 of the selected spectrum before it (in the order of the list). So:</p>
@@ -61,14 +68,19 @@ Fit;</li>
 <li>different spectra - select All, Auto-Detect Peaks - N spectra, Fit.</li>
 </ul>
 <p>The results are in the tab <b>Series results</b>.</p>
+<p>The button next to Fit Peaks copies for Excel what the tab shows: on the tab Peaks
+<b>Copy table - &hellip;</b> (the peaks of the shown spectrum: start values, or after Fit Peaks
+the fitted values); on the tab Series results e.g. <b>Copy peak 1 - N spectra</b>.</p>
 """),
     'series-results': ("Quick help – Series results", 'series-results', """
-<p>One row per spectrum: position, FWHM, height and area of each peak, and R&sup2; (1 = perfect
-fit). An empty row: that fit failed or the spectrum is not fitted yet.</p>
-<p>Click a row to see that spectrum with its fit; select several rows to see them together.
-A poor fit: correct its peaks in the tab Peaks and click Fit Peaks - only its row changes.</p>
-<p><b>Copy</b> / <b>Export…</b> for Excel; <b>Open in the Data table</b> to plot e.g. a
-position against temperature.</p>
+<p>The results of the spectra <b>selected in the list</b> (All = the whole series), with
+<b>Show</b>: <b>By peak</b> - one peak at a time (&#9664; &#9654;), a row per spectrum;
+<b>By spectrum</b> - each spectrum with its peaks; <b>All in one table</b> - a row per spectrum
+with all peaks. R&sup2; 1 = perfect fit.</p>
+<p>A poor fit: select that spectrum alone, correct its peaks in the tab Peaks and click Fit
+Peaks - only it changes.</p>
+<p><b>Copy &hellip;</b> next to Fit Peaks copies what is shown; <b>Export…</b> for Excel;
+<b>Open in the Data table</b> to plot e.g. a position against temperature.</p>
 """),
     'view': ("Quick help – the plot", 'viewing', """
 <p>The list beside the plot works as in the main window: <b>one</b> spectrum selected - it alone

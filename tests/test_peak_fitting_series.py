@@ -122,7 +122,8 @@ def test_the_series_is_fitted_in_the_window_and_its_results_stay_there(monkeypat
     dlg.next_button.click()
     assert dlg.current_index == 5 and dlg.selected_spectra() == [5]
     assert not dlg.next_button.isEnabled()
-    # Copy: the selected row(s) - or the whole table; Copy Results: the whole table
+    # Copy: the selected row(s) - or the whole table; Copy results (tab Series
+    # results): the rows of the spectra selected in the list
     assert len(dlg.copy_series().splitlines()) == 2              # row 6 is selected
     dlg.series_table.clearSelection()
     lines = dlg.copy_series().splitlines()
@@ -130,9 +131,10 @@ def test_the_series_is_fitted_in_the_window_and_its_results_stay_there(monkeypat
     said = []
     monkeypatch.setattr(QMessageBox, 'information', staticmethod(lambda *a, **k: said.append(a[2])))
     dlg.series_table.clearSelection()
-    dlg.copy_results_btn.click()
-    assert 'series results of 6 spectra' in said[-1]
-    assert QApplication.clipboard().text().count('\n') == 7
+    dlg.left_tabs.setCurrentIndex(1)
+    dlg.copy_results_btn.click()                                 # the spectrum selected in the list
+    assert said[-1].startswith('Peak 1 of 1 spectrum')
+    assert QApplication.clipboard().text().count('\n') == 2
     dlg.series_data_table_button.click()
     t = tables[0].values.table
     assert [c.name for c in t.columns if c.kind == 'fit'][:2] == ['p1', 'p2']

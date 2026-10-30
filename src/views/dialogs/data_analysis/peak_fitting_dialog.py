@@ -6,7 +6,8 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QHeaderView, QComboBox, QMessageBox, QCheckBox, QRadioButton, QDoubleSpinBox,
                              QColorDialog, QAbstractItemView, QMenu, QApplication,
                              QTabWidget, QToolButton, QFileDialog, QShortcut, QSizePolicy,
-                             QListWidget, QStyledItemDelegate, QStyle)
+                             QListWidget, QStyledItemDelegate, QStyle, QButtonGroup,
+                             QStackedWidget, QTreeWidget, QTreeWidgetItem)
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtCore import Qt, QTimer, QItemSelectionModel
 from PyQt5.QtGui import QColor, QFont # Import QColor and QFont
@@ -139,7 +140,14 @@ class PeakFittingDialog(QDialog):
         peaks_layout = QVBoxLayout()
         self.peaks_table = QTableWidget()
         self.peaks_table.setColumnCount(6)
-        self.peaks_table.setHorizontalHeaderLabels([" ", "Model", "Center", "Amplitude", "Width", "Extra"])
+        self.peaks_table.setHorizontalHeaderLabels([" ", "Model", "Center", "Height", "Width", "Extra"])
+        for col, tip in ((2, "The position of the peak top (x)"),
+                         (3, "The height of the peak top above zero (y)"),
+                         (4, "Gaussian and Voigt: \u03c3; Lorentzian: \u03b3 (half width at half "
+                             "height); Pseudo-Voigt: FWHM"),
+                         (5, "Voigt: \u03b3 (the Lorentzian part); Pseudo-Voigt: \u03b7 (0 = "
+                             "Gaussian, 1 = Lorentzian); empty for Gaussian and Lorentzian")):
+            self.peaks_table.horizontalHeaderItem(col).setToolTip(tip)
         self.peaks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         # Make the first column (color swatch) narrow
         self.peaks_table.setColumnWidth(0, 20)
@@ -271,11 +279,13 @@ class PeakFittingDialog(QDialog):
         self.fit_button.clicked.connect(lambda: self.fit_selected())
 
         self.copy_results_btn = QPushButton("Copy Results")
-        self.copy_results_btn.setToolTip("Copy the peak parameters currently in the table to the clipboard.")
         self.copy_results_btn.setEnabled(False) # Disabled until peaks are added
         self.copy_results_btn.clicked.connect(self.copy_results_to_clipboard)
+        # its text and what it copies follow the tab: Peaks - the table;
+        # Series results - the rows of the spectra selected in the list
+        self.left_tabs.currentChanged.connect(lambda *_: self._update_copy_results_button())
 
-        fit_btn_layout.addWidget(self.fit_button, 2)
+        fit_btn_layout.addWidget(self.fit_button, 2 if n_series < 2 else 1)
         fit_btn_layout.addWidget(self.copy_results_btn, 1)
         if n_series > 1:
             fit_btn_layout.addWidget(self._quick_help_button('series'))
@@ -570,9 +580,7 @@ class PeakFittingDialog(QDialog):
             self.amplitude_combo.setCurrentIndex(0)
             self.update_plot()
         
-        # Enable copy button if the table will have data
-        has_data = bool(self.peaks or self.fit_results)
-        self.copy_results_btn.setEnabled(has_data)
+        self._update_copy_results_button()
             
         # Load output options (checkboxes)
         output_options = self.current_settings.get('output_options', {})
@@ -602,6 +610,7 @@ class PeakFittingDialog(QDialog):
         if len(self.series) < 2 or s.get('series_labels') != labels:
             return
         self.follow_check.setChecked(bool(s.get('follow_fit_before', False)))
+        self.set_series_view(s.get('series_view', 'peak'))
         own_c = s.get('own_constraints')
         if own_c and len(own_c) == len(self.series):
             self.own_constraints = [c if c in self.CONSTRAINTS else None for c in own_c]
@@ -706,7 +715,7 @@ class PeakFittingDialog(QDialog):
         self.fit_results = None
         
         # Enable the copy button
-        self.copy_results_btn.setEnabled(True)
+        self._update_copy_results_button()
         
         # Refresh UI
         self.update_peaks_table()
@@ -795,7 +804,7 @@ class PeakFittingDialog(QDialog):
             QMessageBox.information(self, "Auto-Detect", "No new peaks were detected.")
             return
         self.fit_results = None # Invalidate previous fit
-        self.copy_results_btn.setEnabled(bool(self.peaks)) # Enable copy button
+        self._update_copy_results_button()
         self.update_peaks_table()
         self.update_plot()
 
@@ -936,7 +945,7 @@ class PeakFittingDialog(QDialog):
         # Invalidate the fit
         self.fit_results = None
         # Disable copy button only if the list is now empty
-        self.copy_results_btn.setEnabled(bool(self.peaks)) 
+        self._update_copy_results_button()
         
         # Refresh UI
         self.update_peaks_table() 
@@ -953,7 +962,7 @@ class PeakFittingDialog(QDialog):
         self._peaks_changed(sorted(set(rows) | {self.current_index})
                             if len(self.series) > 1 else None)
         self.fit_results = None
-        self.copy_results_btn.setEnabled(False)
+        self._update_copy_results_button()
         self.peak_color_index = 0 # Reset color index
         self.update_peaks_table()
         self.update_plot()
@@ -1146,11 +1155,11 @@ class PeakFittingDialog(QDialog):
         
         if fitted_results is None:
             QMessageBox.warning(self, "Fit Failed", "The fitting algorithm could not converge.")
-            self.copy_results_btn.setEnabled(bool(self.peaks)) # Keep button enabled
+            self._update_copy_results_button()
             return
             
         self.fit_results = fitted_results
-        self.copy_results_btn.setEnabled(True) 
+        self._update_copy_results_button()
         self.update_peaks_table(from_fit_results=True) # Update table with fit results
         if self.series_results is None and len(self.series) > 1:
             # the first fit in the series: kept for this spectrum (the others not yet)
@@ -1183,16 +1192,79 @@ class PeakFittingDialog(QDialog):
                                   "one row per spectrum; click a row to see its fit.")
         self.series_info.setWordWrap(True)
         v.addWidget(self.series_info)
+        # how the results are shown: by peak (one peak, a row per spectrum),
+        # by spectrum (each spectrum with its peaks, collapsible) or all in one
+        # wide table (a row per spectrum) - always the spectra selected in the list
+        show = QHBoxLayout()
+        show.addWidget(QLabel("Show:"))
+        self.series_view_group = QButtonGroup(page)
+        self.series_view_buttons = {}
+        for key, text, tip in (
+                ('peak', "By peak", "One peak at a time (\u25c0 \u25b6): a row per spectrum - "
+                 "follow a band through the series"),
+                ('spectrum', "By spectrum", "Each spectrum with its peaks (\u25b8 opens, \u25be "
+                 "closes), the same columns as the table of peaks"),
+                ('wide', "All in one table", "A row per spectrum with all its peaks side by side "
+                 "(as Export and the Data table get them)")):
+            b = QRadioButton(text)
+            b.setToolTip(tip)
+            self.series_view_group.addButton(b)
+            self.series_view_buttons[key] = b
+            show.addWidget(b)
+        show.addStretch(1)
+        v.addLayout(show)
+        self.series_view_buttons['peak'].setChecked(True)
+        self.series_view_group.buttonToggled.connect(
+            lambda b, on: on and self._series_view_changed())
+        self.series_peak = 0                       # the peak shown By peak (0-based)
+        self.series_stack = QStackedWidget()
+        by_peak = QWidget()
+        bp = QVBoxLayout(by_peak)
+        bp.setContentsMargins(0, 0, 0, 0)
+        nav = QHBoxLayout()
+        nav.addWidget(QLabel("Peak"))
+        self.series_peak_prev = QToolButton()
+        self.series_peak_prev.setText("\u25c0")
+        self.series_peak_prev.setToolTip("The previous peak")
+        self.series_peak_prev.clicked.connect(lambda: self._show_series_peak(self.series_peak - 1))
+        self.series_peak_next = QToolButton()
+        self.series_peak_next.setText("\u25b6")
+        self.series_peak_next.setToolTip("The next peak")
+        self.series_peak_next.clicked.connect(lambda: self._show_series_peak(self.series_peak + 1))
+        self.series_peak_label = QLabel()
+        nav.addWidget(self.series_peak_prev)
+        nav.addWidget(self.series_peak_label)
+        nav.addWidget(self.series_peak_next)
+        nav.addStretch(1)
+        bp.addLayout(nav)
+        self.by_peak_table = QTableWidget(0, 0)
+        self.by_peak_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.by_peak_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.by_peak_table.verticalHeader().setVisible(False)
+        bp.addWidget(self.by_peak_table, 1)
+        self.series_stack.addWidget(by_peak)
+        self.by_spectrum_tree = QTreeWidget()
+        self.by_spectrum_tree.setAlternatingRowColors(True)
+        self.by_spectrum_tree.setUniformRowHeights(True)
+        self._closed_in_tree = set()               # spectra whose peaks are folded up
+        self.by_spectrum_tree.itemCollapsed.connect(
+            lambda it: self._closed_in_tree.add(it.data(0, Qt.UserRole)))
+        self.by_spectrum_tree.itemExpanded.connect(
+            lambda it: self._closed_in_tree.discard(it.data(0, Qt.UserRole)))
+        self.series_stack.addWidget(self.by_spectrum_tree)
         self.series_table = QTableWidget(0, 0)
         self.series_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.series_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.series_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.series_table.itemSelectionChanged.connect(self._series_selection_changed)
-        v.addWidget(self.series_table, 1)
+        self.series_stack.addWidget(self.series_table)
+        v.addWidget(self.series_stack, 1)
         QShortcut(QKeySequence.Copy, self.series_table, activated=self.copy_series)
         row = QHBoxLayout()
         self.series_copy_button = QPushButton("Copy")
-        self.series_copy_button.setToolTip("Copy the selected rows (or the whole table) for Excel")
+        self.series_copy_button.setToolTip(
+            "Copy the selected rows of this table (one row per spectrum) - or, with none "
+            "selected, those of all fitted spectra - ready to paste into Excel.")
         self.series_copy_button.clicked.connect(lambda: self.copy_series())
         self.series_export_button = QPushButton("Export…")
         self.series_export_button.clicked.connect(lambda: self.export_series())
@@ -1208,6 +1280,8 @@ class PeakFittingDialog(QDialog):
             b.setAutoDefault(False)
             b.setEnabled(False)
             row.addWidget(b)
+        # copying what is shown: the button next to Fit Peaks ("Copy results")
+        self.series_copy_button.setVisible(False)
         row.addStretch(1)
         row.addWidget(self._quick_help_button('series-results'))
         v.addLayout(row)
@@ -1340,6 +1414,7 @@ class PeakFittingDialog(QDialog):
     def _select_table_rows(self, rows):
         if not hasattr(self, 'series_table') or self.series_results is None:
             return
+        self._refresh_series_views()
         t = self.series_table
         t.blockSignals(True)
         t.clearSelection()
@@ -1363,6 +1438,143 @@ class PeakFittingDialog(QDialog):
         if hasattr(self, 'view_combo'):
             self.view_combo.setEnabled(len(self.selected_spectra()) > 1)
         self._update_fit_button()
+
+    # ---- Series results shown By peak / By spectrum / All in one table ----
+    def series_view(self):
+        if not hasattr(self, 'series_view_buttons'):
+            return 'wide'
+        return next(k for k, b in self.series_view_buttons.items() if b.isChecked())
+
+    def set_series_view(self, key):
+        if hasattr(self, 'series_view_buttons') and key in self.series_view_buttons:
+            self.series_view_buttons[key].setChecked(True)
+
+    def _series_view_changed(self):
+        self.series_stack.setCurrentIndex(['peak', 'spectrum', 'wide'].index(self.series_view()))
+        self._refresh_series_views()
+        self._update_copy_results_button()
+
+    def _series_n_peaks(self):
+        return max([0] + [len(r.get('peaks') or []) for r in (self.series_results or [])
+                          if r.get('ok')])
+
+    def _series_view_rows(self):
+        """The spectra in the views: those selected in the list."""
+        return self.selected_spectra() or [self.current_index]
+
+    def _show_series_peak(self, j):
+        n = self._series_n_peaks()
+        self.series_peak = max(0, min(j, n - 1)) if n else 0
+        self._refresh_series_views()
+        self._update_copy_results_button()
+
+    @staticmethod
+    def _cell(v):
+        item = QTableWidgetItem()
+        if isinstance(v, float) and np.isfinite(v):
+            item.setData(Qt.DisplayRole, float(f'{v:.6g}'))
+            item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+        elif v is not None and not isinstance(v, float):
+            item.setText(str(v))
+        return item
+
+    def _short_label(self, label):
+        return str(label).rsplit(' : ', 1)[-1]
+
+    def _refresh_series_views(self):
+        """By peak and By spectrum show the spectra selected in the list."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        if not hasattr(self, 'by_peak_table') or self.series_results is None:
+            return
+        rows = self._series_view_rows()
+        n = self._series_n_peaks()
+        self.series_peak = max(0, min(self.series_peak, n - 1)) if n else 0
+        j = self.series_peak
+        # By peak
+        columns, data = pfs.peaks_long(self.series_results, rows, peak=j)
+        extra = columns.index('Extra')
+        shown = [c for c in range(len(columns)) if columns[c] != 'Peak'
+                 and (c != extra or any(row[extra] is not None for row in data))]
+        t = self.by_peak_table
+        t.clear()
+        t.setColumnCount(len(shown))
+        t.setHorizontalHeaderLabels([columns[c] for c in shown])
+        t.setRowCount(len(data))
+        grey = QColor('#888888')
+        for r, row in enumerate(data):
+            for c_out, c in enumerate(shown):
+                v = self._short_label(row[c]) if c == 0 else row[c]
+                item = self._cell(v)
+                if c == 0:
+                    item.setToolTip(str(row[0]))
+                if row[2] in ('not fitted yet', 'fit failed', 'no such peak'):
+                    item.setForeground(grey)
+                t.setItem(r, c_out, item)
+        t.resizeColumnsToContents()
+        t.resizeRowsToContents()
+        t.setColumnWidth(0, min(t.columnWidth(0), 160))
+        centres = [row[3] for row in data if isinstance(row[3], float)]
+        where = f" (\u2248 {float(np.mean(centres)):.4g})" if centres else ""
+        self.series_peak_label.setText(f"{j + 1} of {n}{where}" if n else "\u2013")
+        self.series_peak_prev.setEnabled(j > 0)
+        self.series_peak_next.setEnabled(j < n - 1)
+        # By spectrum
+        columns, data = pfs.peaks_long(self.series_results, rows)
+        tree = self.by_spectrum_tree
+        tree.clear()
+        tree.setColumnCount(len(columns) - 1)
+        tree.setHeaderLabels(['Spectrum / peak'] + columns[2:])
+        last = None
+        for row in data:
+            if last is None or last.data(0, Qt.UserRole) != row[0]:
+                last = QTreeWidgetItem([self._short_label(row[0])])
+                last.setData(0, Qt.UserRole, row[0])
+                last.setToolTip(0, str(row[0]))
+                font = last.font(0)
+                font.setBold(True)
+                last.setFont(0, font)
+                r2 = row[-1]
+                if row[2] in ('not fitted yet', 'fit failed'):
+                    last.setText(1, row[2])
+                    last.setForeground(1, grey)
+                else:
+                    last.setText(1, "\u2713 fitted")
+                if isinstance(r2, float):
+                    last.setText(len(columns) - 2, f'{r2:.4f}')
+                tree.addTopLevelItem(last)
+                if row[2] in ('not fitted yet', 'fit failed'):
+                    continue
+            child = QTreeWidgetItem([f"Peak {row[1]}", row[2]]
+                                    + [(f'{v:.6g}' if isinstance(v, float) and np.isfinite(v)
+                                        else '') for v in row[3:-1]])
+            for c in range(2, len(columns) - 2):
+                child.setTextAlignment(c, int(Qt.AlignRight | Qt.AlignVCenter))
+            last.addChild(child)
+        for i in range(tree.topLevelItemCount()):
+            it = tree.topLevelItem(i)
+            it.setExpanded(it.data(0, Qt.UserRole) not in self._closed_in_tree)
+        no_extra = all(row[columns.index('Extra')] is None for row in data)
+        tree.setColumnHidden(columns.index('Extra') - 1, no_extra)
+        for c in range(tree.columnCount()):
+            tree.resizeColumnToContents(c)
+        tree.setColumnWidth(0, min(tree.columnWidth(0), 170))
+
+    def series_view_text(self):
+        """What Copy results copies on the tab Series results: the view shown,
+        for the spectra selected in the list."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        from src.modules.data_analysis import peak_list as pl
+        rows = self._series_view_rows()
+        view = self.series_view()
+        if view == 'wide':
+            return self.copy_series(rows)
+        columns, data = pfs.peaks_long(self.series_results, rows,
+                                       peak=self.series_peak if view == 'peak' else None)
+        text = pl.rows_as_text(data, columns)
+        QApplication.clipboard().setText(text)
+        self.copied_rows = len(rows)
+        self.copied_empty = sum(1 for r in rows if not self.series_results[r].get('ok'))
+        return text
 
     def _list_selection_changed(self):
         """One spectrum selected: it alone (with its fit); several: together."""
@@ -1498,7 +1710,9 @@ class PeakFittingDialog(QDialog):
                     item.setData(Qt.DisplayRole, float(f'{v:.6g}'))
                     item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
                 elif isinstance(v, str):
-                    item.setText(v)
+                    item.setText(self._short_label(v) if c == 0 else v)
+                    if c == 0:
+                        item.setToolTip(v)
                 t.setItem(r, c, item)
         t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         t.resizeColumnsToContents()
@@ -1507,14 +1721,16 @@ class PeakFittingDialog(QDialog):
             if r < len(rows):
                 t.selectRow(r)
         t.blockSignals(False)
-        self.series_info.setText(pfs.summary(self.series_results) + " Click a row (or a spectrum "
-                                 "in the list beside the plot) to see its fit; select several to "
-                                 "see them together (Overlay, Waterfall or Grid). A bad fit: "
-                                 "correct the peaks in the tab Peaks and Fit Peaks - only that "
-                                 "spectrum is fitted again.")
+        self.series_info.setText(pfs.summary(self.series_results) + " Shown: the spectra "
+                                 "selected in the list beside the plot (All = the whole series).")
+        self.series_info.setToolTip(
+            "Select spectra in the list to see their results here and their fits in the plot "
+            "(several: Overlay, Waterfall or Grid). A bad fit: select that spectrum alone, "
+            "correct its peaks in the tab Peaks and Fit Peaks - only it is fitted again.")
         for b in (self.series_copy_button, self.series_export_button,
                   self.series_data_table_button):
             b.setEnabled(True)
+        self._refresh_series_views()
         self._update_output_for()
         if hasattr(self, 'spectra_list'):
             self._refresh_list_texts()
@@ -1684,6 +1900,7 @@ class PeakFittingDialog(QDialog):
         without peaks it is greyed and a line says what to do first."""
         if not hasattr(self, 'fit_button'):
             return
+        self._update_copy_results_button()
         from src.modules.data_analysis import peak_fitting_series as pfs
         has_peaks = bool(self.peaks)
         note = ''
@@ -1704,6 +1921,8 @@ class PeakFittingDialog(QDialog):
                 else:
                     parts.append(f"Left out (no peaks): {self._short_names(left)}.")
             note = ' '.join(parts)
+            if not has_peaks and len(chosen) > 1:
+                note = self._no_start_text(chosen)
         self.fit_button.setEnabled(has_peaks)
         self._update_peaks_title()
         if len(self.series) > 1:
@@ -1717,6 +1936,70 @@ class PeakFittingDialog(QDialog):
         n = max(len(self.selected_spectra()), 1)
         self.fit_button.setText("Fit Peaks \u2013 1 spectrum" if n == 1
                                 else f"Fit Peaks \u2013 {n} selected spectra")
+
+    def _on_series_tab(self):
+        return (hasattr(self, 'left_tabs') and self.left_tabs.currentIndex() == 1
+                and len(self.series) > 1)
+
+    def _update_copy_results_button(self):
+        """Copy Results follows the tab shown: Peaks - "Copy table - <shown
+        spectrum>" (the peaks table); Series results - "Copy results - N
+        spectra" (the rows of the spectra selected in the list, i.e. those in
+        the plot)."""
+        btn = getattr(self, 'copy_results_btn', None)
+        if btn is None:
+            return
+        if self._on_series_tab():
+            n = len(self._series_view_rows())
+            peak = (f"peak {self.series_peak + 1}" if self.series_view() == 'peak'
+                    else "results")
+            btn.setText(f"Copy {peak} \u2013 {n} spectr{'um' if n == 1 else 'a'}")
+            btn.setToolTip(
+                "Copy the Series results as shown (By peak, By spectrum or All in one table) for "
+                "the spectra selected in the list - those in the plot - ready to paste into "
+                "Excel. A spectrum not fitted yet gives an empty row.")
+            btn.setEnabled(self.series_results is not None)
+            return
+        if len(self.series) > 1:
+            name = str(self.series[self.current_index].get('label', '')).rsplit(' : ', 1)[-1]
+            btn.setText(f"Copy table \u2013 {self._shorten(name, 16)}")
+        else:
+            btn.setText("Copy Results")
+        btn.setToolTip(
+            "Copy the peaks table above (the shown spectrum) to the clipboard, with FWHM and "
+            "area, ready to paste into Excel: the start values, or after Fit Peaks the fitted "
+            "values."
+            + ("\nThe results of several spectra: tab Series results." if len(self.series) > 1
+               else ""))
+        has_table = hasattr(self, 'peaks_table') and self.peaks_table.rowCount() > 0
+        btn.setEnabled(bool(self.peaks) or has_table)
+
+    def _no_start_text(self, chosen):
+        """Several spectra selected, none with peaks (Fit Peaks greyed): what
+        gives them a start - e.g. raman_13-18 selected, only raman_11 has
+        peaks."""
+        n = len(chosen)
+        others = [k for k in range(len(self.series)) if k not in chosen and self.peaks_of(k)]
+        box = "\u201cSpectra without peaks: start from the fit before them\u201d"
+        if others:
+            before = [k for k in others if k < min(chosen)]
+            if before and self.follow_check.isChecked():
+                name = self._short_names(before[-1:])
+                return (f"None of the {n} selected spectra has peaks. The checkbox {box} is "
+                        f"ticked \u2013 now hold Ctrl and click {name} in the list, so that it is "
+                        f"selected too: the others start from its fit. (Or Auto-Detect Peaks "
+                        f"\u2013 {n} spectra.)")
+            name = self._short_names(before[-1:] if before else others[:1])
+            text = (f"None of the {n} selected spectra has peaks. {name} has. Either click "
+                    f"{name} alone, click Copy peaks of {name}, select these again and click "
+                    f"Paste peaks of {name} to the selected spectra.")
+            if before:
+                text += (f" Or tick the checkbox {box} above, then hold Ctrl and click {name} "
+                         f"in the list.")
+            return text + f" Or Auto-Detect Peaks \u2013 {n} spectra."
+        return (f"None of the {n} selected spectra has peaks yet: Auto-Detect Peaks – {n} "
+                "spectra, or select one alone, set its peaks (Auto-Detect Peaks or Add via "
+                "Click), Copy peaks, select the others and Paste peaks to the selected spectra.")
 
     def fit_selected(self):
         """The fit button: the shown spectrum alone, or - with several
@@ -1788,7 +2071,7 @@ class PeakFittingDialog(QDialog):
                 # the start of a next fit)
                 self.own_peaks[r] = pfs.start_from(res['peaks'], used[k])
         self.series_results = merged
-        self.copy_results_btn.setEnabled(True)
+        self._update_copy_results_button()
         self._refresh_series_table()
         if hasattr(self, 'left_tabs'):
             self.left_tabs.setCurrentIndex(1)
@@ -1800,12 +2083,14 @@ class PeakFittingDialog(QDialog):
             self.show_series_spectrum(self.current_index)
         return results
 
-    def copy_series(self):
+    def copy_series(self, picked=None):
         """Copy the selected rows of Series results (the spectra selected in
-        the list) - or, with none selected, the rows of all fitted spectra."""
+        the list) - or, with none selected, the rows of all fitted spectra.
+        `picked`: these rows (Copy results)."""
         from src.modules.data_analysis import peak_list as pl
         columns, rows = self.series_rows()
-        picked = self.selected_series_rows()
+        if picked is None:
+            picked = self.selected_series_rows()
         if not picked:
             picked = [k for k, r in enumerate(self.series_results or [])
                       if not r.get('pending')]
@@ -1813,6 +2098,8 @@ class PeakFittingDialog(QDialog):
         else:
             self.copied_what = 'the selected ones'
         self.copied_rows = len(picked)
+        self.copied_empty = sum(1 for r in picked
+                                if not ((self.series_results or [])[r] or {}).get('ok'))
         text = pl.rows_as_text([rows[r] for r in picked], columns)
         QApplication.clipboard().setText(text)
         return text
@@ -1908,22 +2195,29 @@ class PeakFittingDialog(QDialog):
         return self.series_results[r] if self.series_results else {}
 
     def copy_results_to_clipboard(self):
-        """Copies the results: with series results the whole series table (one
-        row per spectrum), else the CURRENT peak parameters of the table."""
-        if self.series_results is not None:
-            self.copy_series()
-            n = self.copied_rows
-            QMessageBox.information(self, "Results Copied",
-                                    f"The series results of {n} spectr{'a' if n != 1 else 'um'} "
-                                    f"({self.copied_what}) were copied to the clipboard - one "
-                                    "row per spectrum, ready to paste into Excel.")
+        """Copy Results. Tab Peaks: the peaks table - the shown spectrum, its
+        start values or (after Fit Peaks) its fitted values. Tab Series
+        results: the rows of the spectra selected in the list. (One row per
+        spectrum of a series: Copy in the tab Series results (copy_series)."""
+        if self._on_series_tab() and self.series_results is not None:
+            rows = self._series_view_rows()
+            self.series_view_text()
+            n, e = self.copied_rows, self.copied_empty
+            spectra = f"{n} spectr{'um' if n == 1 else 'a'} ({self._short_names(rows)})"
+            what = {'peak': f"Peak {self.series_peak + 1} of {spectra} was",
+                    'spectrum': f"The peaks of {spectra} were",
+                    'wide': f"The Series results of {spectra} were"}[self.series_view()]
+            QMessageBox.information(
+                self, "Results Copied",
+                f"{what} copied to the clipboard as shown, ready to paste into Excel."
+                + (f" {e} of them not fitted yet: empty row{'s' if e != 1 else ''}." if e else ""))
             return
         if self.peaks_table.rowCount() == 0:
             QMessageBox.warning(self, "No Results", "There are no peaks in the table to copy.")
             return
 
         # Create a tab-separated string for easy pasting into Excel/PowerPoint
-        header = "Peak\tModel\tCenter\tHeight\tWidth (σ/γ/FWHM)\tExtra (γ/η)\tFWHM\tArea\n"
+        header = "Peak\tModel\tCenter\tHeight\tWidth\tExtra\tFWHM\tArea\n"  # as in the table
         lines = [header]
 
         for i in range(self.peaks_table.rowCount()):
@@ -1973,8 +2267,17 @@ class PeakFittingDialog(QDialog):
         clipboard_text = "".join(lines)
         QApplication.clipboard().setText(clipboard_text)
         
-        QMessageBox.information(self, "Results Copied",
-                                f"Current parameters for {len(lines) - 1} peaks copied to clipboard.")    
+        n = len(lines) - 1
+        if len(self.series) > 1:
+            name = str(self.series[self.current_index].get('label', '')).rsplit(' : ', 1)[-1]
+            res = (self.series_results or [None] * len(self.series))[self.current_index] or {}
+            what = "fitted values" if res.get('ok') else "start values, not fitted yet"
+            text = (f"The {n} peak{'s' if n != 1 else ''} of the table ({name}: {what}) were "
+                    "copied to the clipboard, ready to paste into Excel.\n\nOne row per "
+                    "spectrum of the series: tab Series results \u203a Copy.")
+        else:
+            text = f"The {n} peak{'s' if n != 1 else ''} of the table were copied to the clipboard."
+        QMessageBox.information(self, "Results Copied", text)    
 
     def _params_list_from_result_dict(self, model_name, params_dict):
         """Build the flat [amplitude, center, width, extra?] list a model
@@ -2182,6 +2485,7 @@ class PeakFittingDialog(QDialog):
         out = {'series_labels': [str(sp.get('label', '')) for sp in self.series],
                'series_index': self.current_index,
                'follow_fit_before': self.follow_check.isChecked(),
+               'series_view': self.series_view(),
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
                'own_constraints': list(self.own_constraints)}
         if self.own_peaks is not None:

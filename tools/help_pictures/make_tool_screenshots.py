@@ -617,7 +617,17 @@ def part_peak_fitting():
         shot(d, F, 'fitting_controls.png', [group(d, 'Fitting')], margin=0)
         d.fit_selected()
         settle(0.6)
-        shot(d, F, 'series_results.png', [d.left_tabs], margin=0)
+        shot(d, F, 'series_results.png', [d.left_tabs], margin=0)      # Show: By peak
+        # the other two ways to show them, for a few spectra (rows = the list)
+        select([0, 3, 6])
+        d.set_series_view('spectrum')
+        settle(0.5)
+        shot(d, F, 'series_by_spectrum.png', [d.left_tabs], margin=0)
+        d.set_series_view('wide')                       # all 10 rows, the 3 selected marked
+        settle(0.5)
+        shot(d, F, 'series_wide.png', [d.left_tabs], margin=0)
+        d.set_series_view('peak')
+        select(list(range(10)))
         # the Amplitude Constraint drop-down, open, over the Fitting group
         combo = d.amplitude_combo
         combo.showPopup()

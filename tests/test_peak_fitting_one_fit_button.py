@@ -128,6 +128,9 @@ def test_without_peaks_the_button_is_greyed_and_says_what_to_do():
 
 
 def test_copy_results_says_what_it_copied(monkeypatch):
+    """Copy Results follows the tab: Series results - what is shown (By peak
+    first) for the spectra selected in the list (those in the plot); Peaks -
+    the peaks table of the shown spectrum. Its text says which."""
     from PyQt5.QtWidgets import QMessageBox
     said = []
     monkeypatch.setattr(QMessageBox, 'information', staticmethod(lambda *a, **k: said.append(a[2])))
@@ -135,12 +138,20 @@ def test_copy_results_says_what_it_copied(monkeypatch):
     dlg = _window(sp)
     _select(dlg, [0, 1, 2])
     dlg.fit_selected()                                           # 3 of 6 fitted
+    assert dlg.left_tabs.currentIndex() == 1                     # Series results shown
+    assert dlg.copy_results_btn.text() == 'Copy peak 1 – 3 spectra'
     dlg.copy_results_to_clipboard()
-    assert said[-1].startswith('The series results of 3 spectra (the selected ones)')
+    assert said[-1].startswith('Peak 1 of 3 spectra (01, 02, 03)')
     assert len(QApplication.clipboard().text().splitlines()) == 4
-    dlg.series_table.clearSelection()
+    _select(dlg, [0, 4])
+    assert dlg.copy_results_btn.text() == 'Copy peak 1 – 2 spectra'
     dlg.copy_results_to_clipboard()
-    assert said[-1].startswith('The series results of 3 spectra (all fitted ones)')
-    _select(dlg, [1])
+    assert said[-1].endswith('1 of them not fitted yet: empty row.')
+    dlg.left_tabs.setCurrentIndex(0)                             # tab Peaks: the table
+    assert dlg.copy_results_btn.text().startswith('Copy table – ')
     dlg.copy_results_to_clipboard()
-    assert said[-1].startswith('The series results of 1 spectrum (the selected ones)')
+    assert said[-1].startswith('The 2 peaks of the table (')
+    assert len(QApplication.clipboard().text().splitlines()) == 3   # header + 2 peaks
+    dlg.series_table.clearSelection()                            # Copy in Series results:
+    assert len(dlg.copy_series().splitlines()) == 4              # all fitted ones
+    assert dlg.copied_what == 'all fitted ones'

@@ -28,6 +28,8 @@ _SCREENSHOT_FILES = {
     "OUTPUT_OPTIONS":"output_options.png",
     "SERIES_OVERVIEW": "series_overview.png",
     "SERIES_RESULTS": "series_results.png",
+    "SERIES_BY_SPECTRUM": "series_by_spectrum.png",
+    "SERIES_WIDE": "series_wide.png",
     "SERIES_WATERFALL": "series_waterfall.png",
     "SERIES_GRID": "series_grid.png",
     "SPECTRA_LIST": "spectra_list.png",
@@ -307,7 +309,8 @@ def get_peak_fitting_help_content():
             (Auto-Detect for each, Copy/Paste, or start from the fit before them).</li>
             <li><b>Select the spectra to fit</b> in the list (<b>All</b> for the whole series) and
             click <b>Fit Peaks &ndash; N selected spectra</b>.</li>
-            <li>Look through the results: the tab <b>Series results</b> (one row per spectrum),
+            <li>Look through the results: the tab <b>Series results</b> (By peak, By spectrum or
+            All in one table),
             the marks &#10003; / &#9888; / &#10007; in the list, several spectra together in
             Overlay, Waterfall or Grid. Correct a poor fit on its own.</li>
             <li>Copy or export the table, open it in the Data table, or click OK with Output
@@ -338,7 +341,7 @@ def get_peak_fitting_help_content():
 
         <h2 id="adding-peaks">Adding peaks</h2>
         <p>The table <b>Peaks to Fit</b> holds the starting values of the fit: one row per peak with
-        its shape (Model), Center, Amplitude (height) and Width. The fit starts from these values,
+        its shape (Model), Center, Height and Width. The fit starts from these values,
         so they should describe the bands roughly. The starting peaks are drawn as dashed lines.</p>
         <ul>
             <li><b>Auto-Detect Peaks</b> finds the bands of the shown spectrum: every maximum that
@@ -398,15 +401,15 @@ def get_peak_fitting_help_content():
         </ul>
         <p>So for spectra with different bands (e.g. Raman and CD spectra selected together):
         select all, Auto-Detect Peaks &ndash; N spectra, Fit Peaks &ndash; each is fitted from its
-        own peaks. Series results has as many peak columns as the spectrum with the most
-        peaks; Peak 1, Peak 2, &hellip; are each spectrum's own peaks in the order of its
-        table.</p>
+        own peaks. In Series results, Peak 1, Peak 2, &hellip; are each spectrum's own peaks in
+        the order of its table (All in one table has as many peak columns as the spectrum with
+        the most peaks).</p>
         <div class="screenshot">
             <img src="$PEAKS_OWN" width="${PEAKS_OWN_W}" height="${PEAKS_OWN_H}" alt="Raman and CD spectra together, each fitted with its own peaks, shown in Grid" />
             <p class="caption">Five Raman and five CD spectra selected together: Auto-Detect Peaks &ndash; 10 spectra found each one's own peaks (the CD ones a band up and a band down), and each was fitted from them with its own constraint (Grid).</p>
         </div>
         <div class="screenshot">
-            <img src="$TABLE" width="${TABLE_W}" height="${TABLE_H}" alt="Peaks to Fit table with Color, Model, Center, Amplitude, Width, and Extra columns" />
+            <img src="$TABLE" width="${TABLE_W}" height="${TABLE_H}" alt="Peaks to Fit table with Color, Model, Center, Height, Width, and Extra columns" />
             <p class="caption">The Peaks to Fit table.</p>
         </div>
         <div class="screenshot">
@@ -454,15 +457,20 @@ def get_peak_fitting_help_content():
             spectrum, the plot the total fit (red), each peak (dotted) and the residual.</li>
             <li>Without peaks in the table, Fit Peaks is greyed out and a line under it says what
             to do first (Auto-Detect Peaks, or Add via Click).</li>
-            <li><b>Copy Results</b> copies the values of the table (with FWHM and area) for Excel
-            &mdash; with series results, the rows of Series results: those of the spectra selected
-            in the list, or with none selected all fitted ones. A message says how many.</li>
+            <li>The button next to Fit Peaks copies for Excel, and its name says what. On the tab
+            <b>Peaks</b>: <b>Copy table &ndash; raman_12</b> copies the peaks table of the shown
+            spectrum (with FWHM and area): its start values, or after Fit Peaks its fitted values.
+            On the tab <b>Series results</b> it copies what is shown there (By peak, By spectrum or
+            All in one table) for the spectra selected in the list &mdash; those in the plot: e.g.
+            <b>Copy peak 1 &ndash; 2 spectra</b> or <b>Copy results &ndash; 2 spectra</b> (a spectrum
+            not fitted yet gives an empty row). With one spectrum it is called <b>Copy
+            Results</b>.</li>
         </ul>
         <p>The fit is kept within the data: no peak higher than three times the largest value of
         the spectrum, no centre outside the spectrum, no width beyond half of its x range. Each
         centre may move by at most two widths from its starting value.</p>
         <div class="screenshot">
-            <img src="$FIT_CONTROLS" width="${FIT_CONTROLS_W}" height="${FIT_CONTROLS_H}" alt="Amplitude Constraint, Fit Peaks for 10 selected spectra and Copy Results" />
+            <img src="$FIT_CONTROLS" width="${FIT_CONTROLS_W}" height="${FIT_CONTROLS_H}" alt="Amplitude Constraint, Fit Peaks for 10 selected spectra and Copy results" />
             <p class="caption">Fitting with all ten spectra selected: the one Fit Peaks button says how many it fits; the line under it which spectra have no peaks of their own.</p>
         </div>
 
@@ -550,43 +558,167 @@ def get_peak_fitting_help_content():
         </div>
 
         <h2 id="series">Fitting a series</h2>
-        <p>To follow the same bands through a whole series, select all its spectra (in the main
-        window) before opening Peak Fitting. Then:</p>
+        <p>To follow the same bands through a whole series (e.g. a temperature scan), select all
+        its spectra in the main window before opening Peak Fitting. The list beside the plot
+        shows them; a <span style="color:#2E7D32;">green dot</span> marks a spectrum that has
+        peaks, &#10003; one that is fitted.</p>
+        <p><b>The rule: every selected spectrum needs a start.</b> That is either <b>its own
+        peaks</b> (green dot), or &mdash; with <i>Spectra without peaks: start from the fit before
+        them</i> ticked &mdash; the fit of a <b>selected</b> spectrum before it in the list.
+        <b>Fit Peaks &ndash; N selected spectra</b> is greyed while none of the selected spectra
+        has a start, and the orange line under it says what to do. Three ways to give them a
+        start:</p>
+        <svg viewBox="0 0 960 590" xmlns="http://www.w3.org/2000/svg" style="width:100%; max-width:860px; height:auto; display:block; margin:8px auto; font-family:Arial,sans-serif;">
+            <defs>
+                <marker id="srA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" fill="#546E7A"/>
+                </marker>
+                <filter id="srShadow" x="-10%" y="-10%" width="120%" height="130%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.18"/>
+                </filter>
+            </defs>
+            <!-- card A: the same peaks for all -->
+            <g filter="url(#srShadow)">
+                <rect x="10" y="10" width="300" height="330" rx="10" fill="#fff" stroke="#2E7D32"/>
+                <path d="M 10 20 a 10 10 0 0 1 10 -10 h 280 a 10 10 0 0 1 10 10 v 24 h -300 z" fill="#2E7D32"/>
+            </g>
+            <text x="160" y="34" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">A &#183; The same peaks for all</text>
+            <g font-size="12" fill="#fff">
+                <rect x="30" y="62" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="76">spectrum 1</text><circle cx="42" cy="72" r="5" fill="#66BB6A" stroke="#fff"/>
+                <rect x="30" y="86" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="100">spectrum 2</text>
+                <rect x="30" y="110" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="124">spectrum 3</text>
+                <rect x="30" y="134" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="148">spectrum 4</text>
+            </g>
+            <rect x="210" y="62" width="80" height="44" rx="6" fill="#E8F5E9" stroke="#2E7D32"/>
+            <text x="250" y="80" font-size="12" fill="#1B5E20" text-anchor="middle">Copy</text>
+            <text x="250" y="96" font-size="12" fill="#1B5E20" text-anchor="middle">peaks</text>
+            <line x1="162" y1="72" x2="206" y2="76" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <path d="M 250 108 C 250 140, 200 150, 166 100" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <path d="M 250 108 C 250 150, 205 160, 166 124" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <path d="M 250 108 C 250 160, 210 170, 166 148" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <text x="262" y="150" font-size="12" fill="#1B5E20">Paste</text>
+            <text x="30" y="200" font-size="12.5" fill="#37474F">1. select spectrum 1 alone, set its</text>
+            <text x="30" y="217" font-size="12.5" fill="#37474F">    peaks, Fit Peaks, Copy peaks</text>
+            <text x="30" y="240" font-size="12.5" fill="#37474F">2. select the others (or All)</text>
+            <text x="30" y="263" font-size="12.5" fill="#37474F">3. Paste peaks to the selected spectra</text>
+            <text x="30" y="286" font-size="12.5" fill="#37474F">4. Fit Peaks &#8211; N selected spectra</text>
+            <text x="30" y="320" font-size="12" fill="#607D8B" font-style="italic">all from the same start, fast</text>
+            <!-- card B: a band that moves -->
+            <g filter="url(#srShadow)">
+                <rect x="330" y="10" width="300" height="330" rx="10" fill="#fff" stroke="#1976D2"/>
+                <path d="M 330 20 a 10 10 0 0 1 10 -10 h 280 a 10 10 0 0 1 10 10 v 24 h -300 z" fill="#1976D2"/>
+            </g>
+            <text x="480" y="34" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">B &#183; A band that moves</text>
+            <g font-size="12" fill="#fff">
+                <rect x="350" y="62" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="376" y="76">spectrum 1</text><circle cx="362" cy="72" r="5" fill="#66BB6A" stroke="#fff"/>
+                <rect x="350" y="86" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="376" y="100">spectrum 2</text>
+                <rect x="350" y="110" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="376" y="124">spectrum 3</text>
+                <rect x="350" y="134" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="376" y="148">spectrum 4</text>
+            </g>
+            <path d="M 482 72 C 505 74, 505 94, 484 96" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <path d="M 482 96 C 505 98, 505 118, 484 120" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <path d="M 482 120 C 505 122, 505 142, 484 144" fill="none" stroke="#546E7A" stroke-width="2" marker-end="url(#srA)"/>
+            <text x="515" y="104" font-size="12" fill="#0D47A1">fit of the</text>
+            <text x="515" y="119" font-size="12" fill="#0D47A1">one before</text>
+            <rect x="350" y="166" width="12" height="12" rx="2" fill="#4A7FC1"/>
+            <path d="M 352 172 l 3 3 l 5 -6" fill="none" stroke="#fff" stroke-width="2"/>
+            <text x="368" y="177" font-size="11.5" textLength="250" lengthAdjust="spacingAndGlyphs" fill="#37474F">Spectra without peaks: start from the fit before them</text>
+            <text x="350" y="200" font-size="12.5" fill="#37474F">1. sort the list in the order of the series</text>
+            <text x="350" y="223" font-size="12.5" fill="#37474F">2. peaks on the FIRST spectrum only</text>
+            <text x="350" y="246" font-size="12.5" fill="#37474F">3. tick the box above</text>
+            <text x="350" y="269" font-size="12.5" fill="#37474F">4. select All (the first one too!)</text>
+            <text x="350" y="292" font-size="12.5" fill="#37474F">5. Fit Peaks &#8211; N selected spectra</text>
+            <text x="350" y="320" font-size="12" fill="#607D8B" font-style="italic">follows a band far along the series</text>
+            <!-- card C: different spectra -->
+            <g filter="url(#srShadow)">
+                <rect x="650" y="10" width="300" height="330" rx="10" fill="#fff" stroke="#EF6C00"/>
+                <path d="M 650 20 a 10 10 0 0 1 10 -10 h 280 a 10 10 0 0 1 10 10 v 24 h -300 z" fill="#EF6C00"/>
+            </g>
+            <text x="800" y="34" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">C &#183; Each its own peaks</text>
+            <g font-size="12" fill="#fff">
+                <rect x="670" y="62" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="696" y="76">raman 1</text><circle cx="682" cy="72" r="5" fill="#66BB6A" stroke="#fff"/>
+                <rect x="670" y="86" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="696" y="100">raman 2</text><circle cx="682" cy="96" r="5" fill="#66BB6A" stroke="#fff"/>
+                <rect x="670" y="110" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="696" y="124">cd 1</text><circle cx="682" cy="120" r="5" fill="#66BB6A" stroke="#fff"/>
+                <rect x="670" y="134" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="696" y="148">cd 2</text><circle cx="682" cy="144" r="5" fill="#66BB6A" stroke="#fff"/>
+            </g>
+            <rect x="815" y="88" width="120" height="44" rx="6" fill="#FFF3E0" stroke="#EF6C00"/>
+            <text x="875" y="106" font-size="12" fill="#BF360C" text-anchor="middle">Auto-Detect</text>
+            <text x="875" y="122" font-size="12" fill="#BF360C" text-anchor="middle">Peaks &#8211; N</text>
+            <text x="670" y="200" font-size="12.5" fill="#37474F">1. select All</text>
+            <text x="670" y="223" font-size="12.5" fill="#37474F">2. Auto-Detect Peaks &#8211; N spectra</text>
+            <text x="670" y="246" font-size="12.5" fill="#37474F">    (each spectrum its own peaks)</text>
+            <text x="670" y="269" font-size="12.5" fill="#37474F">3. Fit Peaks &#8211; N selected spectra</text>
+            <text x="670" y="320" font-size="12" fill="#607D8B" font-style="italic">e.g. Raman and CD together</text>
+            <!-- below: why the button is greyed -->
+            <rect x="10" y="360" width="940" height="218" rx="10" fill="#FFEBEE" stroke="#C62828"/>
+            <text x="30" y="386" font-size="14" fill="#B71C1C" font-weight="bold">Fit Peaks greyed?</text>
+            <g font-size="12">
+                <rect x="30" y="398" width="130" height="20" rx="3" fill="#fff" stroke="#CFD8DC"/><text x="56" y="412" fill="#2E7D32">&#10003; spectrum 1</text><circle cx="42" cy="408" r="5" fill="#2E7D32"/>
+                <rect x="30" y="422" width="130" height="20" rx="3" fill="#fff" stroke="#CFD8DC"/><text x="56" y="436" fill="#90A4AE">spectrum 2</text>
+                <rect x="30" y="446" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="460" fill="#fff">spectrum 3</text>
+                <rect x="30" y="470" width="130" height="20" rx="3" fill="#4A7FC1"/><text x="56" y="484" fill="#fff">spectrum 4</text>
+            </g>
+            <text x="185" y="414" font-size="13" fill="#37474F">Spectra 3 and 4 are selected, but they have no peaks. Spectrum 1 has peaks,</text>
+            <text x="185" y="432" font-size="13" fill="#37474F">but it is not selected. The fit has nothing to start from, so Fit Peaks is greyed.</text>
+            <text x="185" y="460" font-size="13" fill="#1B5E20" font-weight="bold">Fix &#8211; do one of these:</text>
+            <g font-size="13" fill="#1B5E20">
+                <text x="185" y="482"><tspan font-weight="bold">A</tspan> &#8211; click spectrum 1 alone; under the peaks table click <tspan font-weight="bold">Copy peaks of spectrum 1</tspan>.</text>
+                <text x="205" y="499">Then select 3 and 4 and click <tspan font-weight="bold">Paste peaks of spectrum 1 to the selected spectra (2)</tspan>.</text>
+                <text x="185" y="523"><tspan font-weight="bold">B</tspan> &#8211; in the box <tspan font-weight="bold">Fitting</tspan> above Fit Peaks tick <tspan font-weight="bold">Spectra without peaks: start from the fit before them</tspan>;</text>
+                <text x="205" y="540">then <tspan font-weight="bold">hold Ctrl and click spectrum 1</tspan> in the list, so that 1, 3 and 4 are selected.</text>
+                <text x="185" y="564"><tspan font-weight="bold">C</tspan> &#8211; keep 3 and 4 selected and click <tspan font-weight="bold">Auto-Detect Peaks &#8211; 2 spectra</tspan>.</text>
+            </g>
+        </svg>
+        <h3 id="series-steps">Step by step</h3>
         <ol>
-            <li>Set up the peaks on one spectrum (preferably a clear one) and click <b>Fit
-            Peaks &ndash; 1 spectrum</b>. Correct the peaks until this fit is good.</li>
-            <li><b>Select the spectra to fit first</b>, in the list beside the plot &mdash;
-            <b>All</b> for the whole series &mdash; then click <b>Fit Peaks &ndash; N selected
-            spectra</b> (a line under the button reminds of it).</li>
+            <li><b>Peaks on one spectrum.</b> Click one spectrum in the list, a clear one; it is
+            shown in the plot, and the table of peaks (above Auto-Detect) is its own. Set its peaks
+            in any of these ways (see <a href="#adding-peaks">Adding peaks</a>):
+                <ul>
+                    <li><b>Auto-Detect Peaks</b> fills the table with the bands it finds &mdash;
+                    check them: select rows you do not want and click <b>Remove Selected
+                    Peak(s)</b>;</li>
+                    <li><b>Add via Click</b>: tick it and click on the top of each band in the
+                    plot;</li>
+                    <li>in the <b>table</b>: double-click a value (position, height, width) to
+                    correct it, and choose each peak's <b>Model</b> (Gaussian, Lorentzian,
+                    &hellip;).</li>
+                </ul>
+            Then click <b>Fit Peaks &ndash; 1 spectrum</b>. Correct the peaks until this fit is
+            good (the residual small, R&sup2; close to 1).</li>
+            <li><b>The other spectra</b>: give them a start in one of the three ways above
+            (see the red box in the picture):
+                <ul>
+                    <li><b>A</b> (the same peaks for all): with the spectrum from step 1 shown, click
+                    <b>Copy peaks of &hellip;</b> (under the peaks table); select the other spectra
+                    and click <b>Paste peaks of &hellip; to the selected spectra</b>;</li>
+                    <li><b>B</b> (a band that moves): in the box <b>Fitting</b>, above Fit Peaks,
+                    tick the checkbox <i>Spectra without peaks: start from the fit before them</i>,
+                    and in step 3 select the spectrum from step 1 too (hold Ctrl and click it in
+                    the list) &mdash; ticking the checkbox alone is not enough;</li>
+                    <li><b>C</b> (each its own): select the other spectra and click <b>Auto-Detect
+                    Peaks &ndash; N spectra</b>.</li>
+                </ul></li>
+            <li><b>Select the spectra to fit</b> in the list (<b>All</b> for the whole series;
+            Ctrl/Shift+click for some) and click <b>Fit Peaks &ndash; N selected spectra</b>. The
+            results are in the tab <b>Series results</b>.</li>
         </ol>
+        <p><b>Example</b>: raman_11 has peaks and is fitted (&#10003;); raman_13 &ndash; raman_18
+        are selected without peaks &mdash; Fit Peaks is greyed. Either click raman_11 alone, click
+        <b>Copy peaks of raman_11</b>, select raman_13 &ndash; raman_18 again and click <b>Paste
+        peaks of raman_11 to the selected spectra (6)</b> (A); or tick the checkbox <i>Spectra without
+        peaks: start from the fit before them</i> and hold Ctrl and click raman_11 in the list, so
+        that raman_11 and raman_13 &ndash; raman_18 are selected (B); or
+        click <b>Auto-Detect Peaks &ndash; 6 spectra</b> (C). Then Fit Peaks.</p>
         <p><b>Where each fit starts</b> &mdash; the selected spectra are fitted in the order of the
-        spectra list:</p>
-        <ul>
-            <li>A spectrum with <b>its own peaks</b> (Auto-Detect, Add via Click, Paste peaks, or
-            an earlier fit) starts from them.</li>
-            <li>A spectrum <b>without peaks</b> is left out &mdash; by default. With <b>Spectra
-            without peaks: start from the fit before them</b> ticked, it starts from the fit of
-            the selected spectrum before it (the one before it among the selected, not
-            necessarily its neighbour in the list), and that fit becomes its peaks. Tick it only
-            for spectra of the same kind: a UV-Vis spectrum started from the fit of a Raman
-            spectrum gives a poor fit (marked &#9888;).</li>
-        </ul>
-        <p>A line under the button names the spectra that are left out or that start from the fit
-        before them. So:</p>
-        <ul>
-            <li><b>A band that shifts along a series</b> (a temperature scan): set the peaks on the
-            first spectrum only, tick <i>Spectra without peaks: start from the fit before
-            them</i>, select All, Fit Peaks &mdash; each next spectrum starts where the one before
-            ended, so the band is followed even when over the series it moves much further than
-            its own width. Sort the spectra list in the order of the series first (e.g. by
-            temperature).</li>
-            <li><b>The same peaks for all</b>: Copy peaks of one spectrum, select All, Paste peaks,
-            Fit Peaks &mdash; every spectrum from the same start, fitted independently on several
-            processor cores (faster); a band that moves far is not followed.</li>
-            <li><b>Different spectra</b> (e.g. Raman and CD together): select All, Auto-Detect
-            Peaks &ndash; N spectra, Fit Peaks &mdash; each from its own peaks (also on several
-            cores).</li>
-        </ul>
+        spectra list: a spectrum with its own peaks starts from them; one without peaks is left
+        out, or &mdash; with the box ticked &mdash; starts from the fit of the selected spectrum
+        before it, and that fit becomes its peaks. Tick it only for spectra of the same kind: a
+        UV-Vis spectrum started from the fit of a Raman spectrum gives a poor fit (marked
+        &#9888;). A line under the button names the spectra that are left out or that start from
+        the fit before them. With A and C every spectrum has its own start and they are fitted
+        independently on several processor cores (faster); with B one after another, so a band is
+        followed even when over the series it moves much further than its own width.</p>
         <p>Fitting some of the spectra again (select them, Fit Peaks) replaces only their results;
         the others keep theirs.</p>
         <p>Fitting time grows quickly with the number of peaks; remove the peaks you do not need
@@ -597,27 +729,49 @@ def get_peak_fitting_help_content():
         </div>
 
         <h3 id="series-results">Series results</h3>
-        <p>The tab <b>Series results</b> next to the tab Peaks has <b>one row per spectrum</b>:
-        position, FWHM, height and area of each peak, and R&sup2; of the whole fit (1 = perfect).
-        An empty row means the fit of that spectrum failed (with the previous-result start, the
-        next one then starts from the last good fit) or that it is not fitted yet.</p>
+        <p>The tab <b>Series results</b> next to the tab Peaks shows the results of <b>the spectra
+        selected in the list</b> beside the plot (the same ones the plot shows; <b>All</b> = the
+        whole series). The values have the names of the table of peaks: Center, Height, Width,
+        Extra, FWHM, Area, and R&sup2; of the whole fit (1 = perfect). <b>Show</b> chooses how:</p>
+        <h4>By peak</h4>
+        <p>Shown first. One peak at a time: &#9664; &#9654; go to the previous or next peak (its
+        mean position is next to the number). One row per spectrum &mdash; follow a band through
+        the series, e.g. how its Center moves with the temperature.</p>
+        <div class="screenshot">
+            <img src="$SERIES_RESULTS" width="${SERIES_RESULTS_W}" height="${SERIES_RESULTS_H}" alt="The tab Series results shown By peak: Peak 1 of 2, one row per spectrum with Model, Center, Height, Width, Extra, FWHM, Area and R squared" />
+            <p class="caption">By peak: peak 1 of the 10 selected spectra, a row for each.</p>
+        </div>
+        <h4>By spectrum</h4>
+        <p>Each selected spectrum with its peaks, the same columns as the table of peaks; R&sup2;
+        on the line of the spectrum. &#9662; folds a spectrum up, &#9656; opens it again (it stays
+        so when you select other spectra).</p>
+        <div class="screenshot">
+            <img src="$SERIES_BY_SPECTRUM" width="${SERIES_BY_SPECTRUM_W}" height="${SERIES_BY_SPECTRUM_H}" alt="The tab Series results shown By spectrum: three spectra, each with its peaks below it" />
+            <p class="caption">By spectrum: three spectra selected in the list, each with its
+            peaks.</p>
+        </div>
+        <h4>All in one table</h4>
+        <p>One row per spectrum with position, FWHM, height and area of every peak side by side
+        &mdash; as Export and the Data table get them. Wide for many peaks (scroll to the right).
+        Selecting rows here selects the same spectra in the list.</p>
+        <div class="screenshot">
+            <img src="$SERIES_WIDE" width="${SERIES_WIDE_W}" height="${SERIES_WIDE_H}" alt="The tab Series results shown All in one table: one row per spectrum, the peaks side by side" />
+            <p class="caption">All in one table: a row per spectrum, all peaks side by side.</p>
+        </div>
+        <p>A spectrum <i>not fitted yet</i> or whose fit failed (with the previous-result start,
+        the next one then starts from the last good fit) is shown as such, without values.</p>
         <ul>
-            <li>Selecting rows selects the same spectra in the list (and the other way round): one
-            row shows that spectrum with its fit, several rows show them together.</li>
             <li><b>A poor fit of one spectrum</b>: select it, correct its peaks in the tab Peaks and
             click <b>Fit Peaks &ndash; 1 spectrum</b> &mdash; only its row changes. A spectrum
             fitted on its own is kept here too, also before the others are fitted.</li>
-            <li><b>Copy</b> (Ctrl+C; the selected rows or the whole table) and
-            <b>Export&hellip;</b> are for Excel. <b>Open in the Data table</b> opens the
+            <li><b>Copy &hellip;</b> next to Fit Peaks (on this tab e.g. <b>Copy peak 1 &ndash; 6
+            spectra</b>) copies what is shown, for the selected spectra; <b>Export&hellip;</b>
+            saves all in one table, for Excel. <b>Open in the Data table</b> opens the
             <a href="help://user_guide#values-per-spectrum">Data table</a> of the series with these
             columns (p1, p2, &hellip;) next to the values stored with the spectra &mdash; e.g. to
             plot the position of a band against <code>temperature_C</code> or compute a ratio of
             two areas.</li>
         </ul>
-        <div class="screenshot">
-            <img src="$SERIES_RESULTS" width="${SERIES_RESULTS_W}" height="${SERIES_RESULTS_H}" alt="The tab Series results: one row per spectrum with position, FWHM, height and area of each peak" />
-            <p class="caption">Series results: one row per spectrum.</p>
-        </div>
         <p>The peaks, the fits and the series results are <b>remembered</b>: open Peak Fitting
         again with the same spectra selected and they are back, with the shown spectrum and the
         start choice (unless the spectra were changed meanwhile, e.g. by a baseline
@@ -664,13 +818,13 @@ def get_peak_fitting_help_content():
         from the fitted values for all four shapes.</p>
         <table style="border-collapse:collapse; width:100%;">
             <tr style="background:#f1f1f1;"><th style="text-align:left; padding:4px 8px;">Model</th><th style="text-align:left; padding:4px 8px;">Parameters</th><th style="text-align:left; padding:4px 8px;">Use when</th></tr>
-            <tr><td style="padding:4px 8px;"><b>Gaussian</b></td><td style="padding:4px 8px;">Center, Amplitude, Width (&sigma;)</td>
+            <tr><td style="padding:4px 8px;"><b>Gaussian</b></td><td style="padding:4px 8px;">Center, Height, Width (&sigma;)</td>
                 <td style="padding:4px 8px;">The broadening comes mostly from the instrument or from a distribution of environments &mdash; the usual case for Raman and IR bands of liquids and solids.</td></tr>
-            <tr><td style="padding:4px 8px;"><b>Lorentzian</b></td><td style="padding:4px 8px;">Center, Amplitude, Width (&gamma;, half width at half height)</td>
+            <tr><td style="padding:4px 8px;"><b>Lorentzian</b></td><td style="padding:4px 8px;">Center, Height, Width (&gamma;, half width at half height)</td>
                 <td style="padding:4px 8px;">The broadening comes from the lifetime of the state &mdash; e.g. gas-phase lines; bands with long wings.</td></tr>
-            <tr><td style="padding:4px 8px;"><b>Voigt</b></td><td style="padding:4px 8px;">Center, Amplitude, Width (&sigma;), Extra (&gamma;)</td>
+            <tr><td style="padding:4px 8px;"><b>Voigt</b></td><td style="padding:4px 8px;">Center, Height, Width (&sigma;), Extra (&gamma;)</td>
                 <td style="padding:4px 8px;">Both kinds of broadening together: the exact combination (convolution) of a Gaussian and a Lorentzian. The most realistic shape, and the slowest to fit.</td></tr>
-            <tr><td style="padding:4px 8px;"><b>Pseudo-Voigt</b></td><td style="padding:4px 8px;">Center, Amplitude, Width (FWHM), Extra (&eta;, 0&ndash;1)</td>
+            <tr><td style="padding:4px 8px;"><b>Pseudo-Voigt</b></td><td style="padding:4px 8px;">Center, Height, Width (FWHM), Extra (&eta;, 0&ndash;1)</td>
                 <td style="padding:4px 8px;">A fast approximation of Voigt: a mix of a Gaussian and a Lorentzian of the same FWHM; &eta; = 0 is a pure Gaussian, 1 a pure Lorentzian.</td></tr>
         </table>
         <div class="tip">

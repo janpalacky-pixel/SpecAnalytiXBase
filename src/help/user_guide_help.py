@@ -1600,11 +1600,13 @@ def get_user_guide_help_content():
         <div class="warning">
             Peak Fitting fits one spectrum at a time. With several spectra selected, a list beside
             the plot shows one or several of them (as in the main window), and <strong>Fit Peaks</strong>
-            fits the selected ones &mdash; each starting from the result of the one before, or each
-            from its own peaks (found by Auto-Detect for each, or copied; faster, on several
-            cores). The
-            tab <strong>Series results</strong> has one row per spectrum (position, FWHM, height,
-            area of each peak), to copy, export or open in the
+            fits the selected ones. Each needs a start: its own peaks (found by Auto-Detect for
+            each, or copied from one spectrum; faster, on several cores) or, with the box
+            <em>Spectra without peaks: start from the fit before them</em>, the result of the one
+            before it. The
+            tab <strong>Series results</strong> shows the results of the selected spectra by peak,
+            by spectrum or all in one table (position, FWHM, height, area of each peak), to copy,
+            export or open in the
             <a href="#values-per-spectrum">Data table</a>; several selected spectra are shown together
             with their fits (Overlay, Waterfall, Grid) (<a href="help://peak_fitting#series">more</a>).
         </div>

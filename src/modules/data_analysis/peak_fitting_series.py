@@ -207,6 +207,54 @@ def series_table(results, n_peaks):
     return columns, rows
 
 
+# The values of one fitted peak, named as in the Peaks table of the window
+# (Width and Extra mean what the model uses: Gaussian/Voigt sigma, Lorentzian
+# gamma, Pseudo-Voigt FWHM; Voigt gamma, Pseudo-Voigt eta).
+PEAK_COLUMNS = ['Model', 'Center', 'Height', 'Width', 'Extra', 'FWHM', 'Area']
+
+
+def peak_values(fitted_peak):
+    """[model, center, height, width, extra, FWHM, area] of one fitted peak;
+    extra is None for a model without one."""
+    model = fitted_peak['model']
+    par = fitted_peak['parameters']
+
+    def num(key):
+        v = par.get(key) if key else None
+        return float(v) if v is not None else None
+    return [model, num('center'), num('height'), num(WIDTH_KEY.get(model, 'sigma')),
+            num(EXTRA_KEY.get(model)), num('fwhm'), num('area')]
+
+
+def status(result):
+    """'' for a fitted spectrum, else why it has no values."""
+    if result.get('ok'):
+        return ''
+    return 'not fitted yet' if result.get('pending') else 'fit failed'
+
+
+def peaks_long(results, rows, peak=None):
+    """(columns, rows) one row per spectrum and peak - Spectrum, Peak, then
+    PEAK_COLUMNS and R² - for the spectra `rows` (in this order); only peak
+    number `peak` (0-based) if given. A spectrum without values gives one
+    row with its status in the column Model."""
+    columns = ['Spectrum', 'Peak'] + PEAK_COLUMNS + ['R\u00b2']
+    out = []
+    for k in rows:
+        r = results[k]
+        r2 = r.get('r2')
+        r2 = float(r2) if r.get('ok') and r2 is not None and np.isfinite(r2) else None
+        peaks = (r.get('peaks') or []) if r.get('ok') else []
+        numbers = range(len(peaks)) if peak is None else [peak]
+        rows_k = [[r['label'], j + 1] + peak_values(peaks[j]) + [r2]
+                  for j in numbers if j < len(peaks)]
+        if not rows_k:
+            rows_k = [[r['label'], None if peak is None else peak + 1, status(r) or 'no such peak']
+                      + [None] * (len(PEAK_COLUMNS) - 1) + [r2]]
+        out += rows_k
+    return columns, out
+
+
 def model_curves(x, fitted, manager=None):
     """(total, [one curve per peak]) of fitted peaks at x."""
     manager = manager or PeakFittingManager()
