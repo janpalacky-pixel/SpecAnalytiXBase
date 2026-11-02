@@ -139,24 +139,33 @@ def test_groups_can_be_hidden_and_the_text_left_out(mc, tmp_path):
 
 def test_automatic_text_leaves_it_out_group_by_group_when_narrow(mc):
     """No button behind the "»": in a narrow window Analysis shows only icons
-    first, then Processing, ... - also when the measured widths were wrong."""
+    first, then Processing, ... - also when the measured widths were wrong.
+    (Checked against the width the window really gets: on a small screen,
+    e.g. the GitHub build machine, a window cannot always be made 2600 wide.)"""
     from PyQt5.QtCore import Qt
+    from PyQt5.QtTest import QTest
+    from src.views import toolbars
     v = mc.view
     v.show()
-    styles = {}
-    for width in (2600, 1150, 700):
+    bars = (v.analysisToolBar, v.processingToolBar, v.mainToolBar)
+    QTest.qWait(200)
+    need = sum(toolbars._width(v, tb, True) for tb in bars)      # all with text
+
+    def state(width):
         v.resize(width, 800)
-        app.processEvents()
-        styles[width] = [tb.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
-                         for tb in (v.mainToolBar, v.processingToolBar, v.analysisToolBar)]
-    assert styles[2600] == [True, True, True]                     # room for all the text
-    assert styles[1150][2] is False                              # Analysis first
-    assert styles[700] == [False, False, False] or styles[700][:2] != [True, True]
-    v.resize(2600, 800)
-    from PyQt5.QtTest import QTest
-    QTest.qWait(400)
-    assert all(tb.toolButtonStyle() == Qt.ToolButtonTextBesideIcon
-               for tb in (v.mainToolBar, v.processingToolBar, v.analysisToolBar))
+        QTest.qWait(400)                                         # (also the check after)
+        text = [tb.toolButtonStyle() == Qt.ToolButtonTextBesideIcon for tb in bars]
+        assert all(tb.width() + 2 >= tb.sizeHint().width() for tb in bars), width  # no »
+        # the text goes group by group: Analysis first, then Processing, then Main
+        assert text in ([True, True, True], [False, True, True], [False, False, True],
+                        [False, False, False]), (width, text)
+        return text
+    for width in (need + 60, 1150, 700, need + 60):
+        text = state(width)
+        if v.width() >= need + 40:                               # room for all the text
+            assert text == [True, True, True], (width, v.width(), need)
+        if v.width() < need - 20:                                # not for all of it
+            assert text[0] is False, (width, v.width(), need)
 
 
 def test_a_group_that_still_overflows_loses_its_text(mc):
@@ -173,7 +182,10 @@ def test_a_group_that_still_overflows_loses_its_text(mc):
     QTest.qWait(600)
     bars = (v.mainToolBar, v.processingToolBar, v.analysisToolBar)
     assert all(tb.width() + 2 >= tb.sizeHint().width() for tb in bars)   # nothing behind »
-    assert v.analysisToolBar.toolButtonStyle() == Qt.ToolButtonIconOnly
+    from src.views import toolbars
+    need = sum(toolbars._width(v, tb, True) for tb in bars)      # (measured right again)
+    if v.width() < need - 20:                                    # not room for all the text
+        assert v.analysisToolBar.toolButtonStyle() == Qt.ToolButtonIconOnly
 
 
 def test_help_comes_right_after_save(mc):

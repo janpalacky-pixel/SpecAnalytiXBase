@@ -24,7 +24,7 @@ from PyQt5.QtGui import QBrush, QColor
 from PyQt5.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSpinBox, QSplitter,
+    QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton, QSizePolicy, QSpinBox, QSplitter,
     QTableWidget, QTableWidgetItem, QTabWidget, QTextBrowser, QVBoxLayout, QWidget)
 
 from src.modules.utils.app_logger import get_logger
@@ -372,6 +372,7 @@ class NamesToGroupsDialog(QDialog):
             "Just the text: it becomes the group name. The first matching rule wins; "
             "upper/lower case is ignored.")
         self.rules_hint.setWordWrap(True)
+        self.rules_hint.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self.rules_hint.setStyleSheet("color:#666; margin-left:18px;")
         layout.addWidget(self.rules_hint)
         self.rules_edit = QPlainTextEdit()
@@ -411,6 +412,7 @@ class NamesToGroupsDialog(QDialog):
         buttons.addButton(help_button, QDialogButtonBox.HelpRole)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        layout.addStretch(1)                       # more height: room below, not gaps
         layout.addWidget(buttons)
         self.resize(480, 420)
         self._update_preview()

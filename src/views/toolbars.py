@@ -480,7 +480,15 @@ def _no_overflow(view, rounds=3):
         bars = [view.analysisToolBar, view.processingToolBar, view.mainToolBar]
     except RuntimeError:                     # the window is gone
         return
-    if not any(_overflowing(tb) for tb in bars if not tb.isHidden()):
+    shown = [tb for tb in bars if not tb.isHidden()]
+    if not any(_overflowing(tb) for tb in shown):
+        return
+    # a real lack of room: the tool bars already fill the whole width. If they
+    # do not, they are not laid out for the new size yet - look again later
+    # (dropping the text now would take it away in a wide window)
+    if sum(tb.width() for tb in shown) < view.width() - 40:
+        if rounds > 1:
+            _check_later(view, rounds - 1)
         return
     view.__dict__.pop('_toolbar_widths', None)
     for tb in bars:
