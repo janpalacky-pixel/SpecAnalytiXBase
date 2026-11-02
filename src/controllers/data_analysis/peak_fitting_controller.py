@@ -2,7 +2,8 @@
 
 import uuid
 from PyQt5.QtWidgets import QMessageBox
-from src.modules.data_analysis.peak_fitting_manager import PeakFittingManager
+from src.modules.data_analysis.peak_fitting_manager import PeakFittingManager, background_values
+from src.modules.data_analysis.peak_fitting_series import WIDTH_KEY, EXTRA_KEY
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.spectrum_identity import spectrum_key
 from src.modules.utils.correction_history import append_correction_history
@@ -181,11 +182,11 @@ class PeakFittingController:
         # for every derived spectrum's x_scale/y_scale.
         by_label = {s['label']: s for s in current_state}
         if series:
-            jobs = [(by_label.get(r['label']), r['peaks']) for r in series]
+            jobs = [(by_label.get(r['label']), r['peaks'], r.get('background')) for r in series]
         else:
             label = settings.get('spectrum_label') or original_spectrum['label']
-            jobs = [(by_label.get(label), fit_results)]
-        jobs = [(sp, fr) for sp, fr in jobs if sp is not None]
+            jobs = [(by_label.get(label), fit_results, settings.get('fit_background'))]
+        jobs = [job for job in jobs if job[0] is not None]
         if not jobs:
              QMessageBox.warning(self.controller.view, "State Error", "Original spectrum not found in current state.")
              return
@@ -205,12 +206,16 @@ class PeakFittingController:
         # --- 2. Check for optional new spectra ---
         manager = self.manager
 
-        for original_spectrum, fit_results in jobs:
+        for original_spectrum, fit_results, background in jobs:
             # Pre-calculate the total fit ONLY if needed
             total_fit_full = None
 
             if output_options.get('add_fit') or output_options.get('add_residual') or output_options.get('add_peaks'):
-                total_fit_full = self.compute_total_fit_curve(original_spectrum['x_scale'], fit_results)
+                # the total fit includes the background fitted with the peaks
+                # (so the residual is data minus all of it); the single peaks
+                # below are without it
+                total_fit_full = self.compute_total_fit_curve(original_spectrum['x_scale'],
+                                                              fit_results, background)
 
             # Option: Add total fit
             if output_options.get('add_fit') and total_fit_full is not None:
@@ -292,7 +297,7 @@ class PeakFittingController:
                     peak_fit = fit_results[i]
                     model_name = peak_fit['model']
                     param_dict = peak_fit['parameters']
-                    width_key = 'sigma' if model_name == 'Gaussian' else 'gamma'
+                    width_key = WIDTH_KEY.get(model_name, 'sigma')
                     new_peak_spectrum = {
                         'x_scale': original_spectrum['x_scale'].copy(),
                         'y_scale': new_y,
@@ -352,7 +357,7 @@ class PeakFittingController:
             )
             return
 
-        affected_spectra_for_history = [sp for sp, _ in jobs]
+        affected_spectra_for_history = [job[0] for job in jobs]
 
         # The new state is the old state PLUS any new spectra
         output_spectra = current_state + new_spectra_to_add
@@ -437,21 +442,27 @@ class PeakFittingController:
             param_names = self.manager.peak_models[model_name][1]
             model_definitions.append((model_name, len(param_names)))
             param_dict = peak_fit['parameters']
-            width_key = 'sigma' if model_name == 'Gaussian' else 'gamma'
-            all_params.extend([param_dict['height'], param_dict['center'], param_dict[width_key]])
+            # the model's own width key and its extra parameter (Voigt's
+            # gamma, Pseudo-Voigt's eta) - the same as the window draws
+            all_params.extend([param_dict['height'], param_dict['center'],
+                               param_dict[WIDTH_KEY.get(model_name, 'sigma')]])
+            if model_name in EXTRA_KEY:
+                all_params.append(param_dict[EXTRA_KEY[model_name]])
         return model_definitions, all_params
 
-    def compute_total_fit_curve(self, x_scale, fit_results):
-        """Return the summed model curve (sum of every fitted peak) over
-        x_scale, or None if fit_results is empty. Pure computation, no
-        side effects — used for the optional 'Add spectrum from total
-        fit' / 'Add spectrum from residual' output options."""
+    def compute_total_fit_curve(self, x_scale, fit_results, background=None):
+        """Return the summed model curve (sum of every fitted peak, plus
+        the background fitted with them when given) over x_scale, or None
+        if fit_results is empty. Pure computation, no side effects — used
+        for the optional 'Add spectrum from total fit' / 'Add spectrum from
+        residual' output options."""
         if not fit_results:
             return None
         model_definitions, all_params = self.flatten_fit_params(fit_results)
         if not all_params:
             return None
-        return self.manager.multi_peak_model(x_scale, *all_params, model_definitions=model_definitions)
+        total = self.manager.multi_peak_model(x_scale, *all_params, model_definitions=model_definitions)
+        return total + background_values(background, x_scale)
 
     def compute_individual_peak_curves(self, x_scale, fit_results):
         """Return a list of y-curves, one per fitted peak in fit_results

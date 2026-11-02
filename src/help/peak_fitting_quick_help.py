@@ -46,7 +46,10 @@ Constraint: Positive Peaks Only</b> - otherwise the fit may use large positive a
 peaks cancelling each other.</li>
 <li>Spectra of different kinds selected together: tick <b>Each spectrum its own</b> next to the
 constraint and set it for each group (select it in the list, choose the constraint).</li>
-<li>Correct the baseline first (Baseline Correction): the peaks have no baseline of their own.</li>
+<li><b>Background</b>: <i>Automatic</i> (default) chooses for each spectrum and shows it in
+brackets - <i>None</i> when the data come back to zero (CD, baseline-corrected spectra),
+<i>Linear</i> when they sit on an offset (raw Raman counts). It is fitted with the peaks, their
+heights are above it. A curved baseline: correct it first (Baseline Correction).</li>
 <li>Check the residual: it should be small noise around zero. A wave left in it means a peak is
 missing there.</li>
 </ul>
@@ -88,7 +91,10 @@ with its fit, single peaks and residual; <b>several</b> (Ctrl/Shift+click, All, 
 together as chosen in <b>Several selected</b>: Overlay, Waterfall or Grid. Each spectrum has its
 colour: data thin, fit thick. &#9664; &#9654; go to the previous or next spectrum.</p>
 <p><b>Residual</b> and <b>Legend</b> hide the residual plot and the legend (for one spectrum;
-the legend also in Overlay and Waterfall).</p>
+the legend also in Overlay and Waterfall). <b>Data</b>: the measured data as Points (default)
+or as a Line.</p>
+<p>The y axis shows the range of the data; the peaks are drawn on the background (black
+dash-dot line).</p>
 """),
     'output': ("Quick help – what OK keeps", 'ok-behavior', """
 <p>The fit itself changes nothing in your spectra. <b>OK</b> adds new spectra only for the

@@ -3497,8 +3497,20 @@ def _natural_sort_key(cls, label):
         <ul>
             <li><code>PeakFittingManager.fit_peaks()</code>
             (<code>src/modules/data_analysis/peak_fitting_manager.py</code>): one
-            <code>curve_fit</code> (trf, bounds) of all peaks together, no baseline term. Bounds
-            from the data: |height| &le; 3&times; max|y| (two huge opposite peaks cancelling each
+            <code>curve_fit</code> (trf, bounds) of all peaks together plus an optional background
+            (<code>background=</code> 'auto' / 'none' / 'constant' / 'linear'; the default is
+            'auto', <code>DEFAULT_BACKGROUND</code>, resolved per spectrum by
+            <code>resolve_background()</code>: 'none' for bipolar data (CD) or an end at zero,
+            else 'linear' - a slope trades off with a broad CD band; the choice is
+            <code>last_background_kind</code>): its parameters y0 (and y1) are appended
+            after the peaks', it starts from <code>initial_background()</code> (median of the
+            first / last 5&nbsp;% of points), the result is <code>last_background</code> (a dict
+            for <code>background_values()</code>); the returned total includes it, heights are
+            above it. Without it, data on an offset (e.g. Raman at ~669 counts) could not be
+            fitted: the peaks had to make the offset. A start height &gt; half the cap (a
+            height from zero) is re-based above the background. Bounds
+            from the data: |height| &le; 3&times; max|y| (with a background 3&times; the range;
+            two huge opposite peaks cancelling each
             other were the common failure with Unrestricted), centre within &plusmn;2 widths and
             within the x range, width &le; min(10&times; start, half the x range); start values are
             clipped into the bounds.</li>
@@ -3507,8 +3519,12 @@ def _natural_sort_key(cls, label):
             difference); a negative peak must also lie that much below the median &mdash; before,
             every dip between two positive bands was taken as a broad negative peak. The width is
             &sigma; = FWHM / 2.355 (before, the FWHM itself was used as &sigma;: every start peak
-            2.4&times; too broad). <code>estimate_width()</code> gives a clicked peak the &sigma; of
-            the band under the click (<code>peak_widths</code> at half height).</li>
+            2.4&times; too broad). With a background the heights are above its first guess;
+            <code>_merge_split()</code> keeps one of two maxima closer than &sigma; (one noisy
+            band). <code>estimate_width()</code> gives a clicked peak the &sigma; of
+            the band under the click (<code>peak_widths</code> at half height), on noisy data
+            re-measured on Savitzky&ndash;Golay-smoothed data (windows 7&ndash;61) until the
+            width is more than a few points.</li>
             <li>A series (<code>src/modules/data_analysis/peak_fitting_series.py</code>, Qt-free):
             <code>fit_series()</code> sequential, each fit from the previous result (follows moving
             bands); <code>fit_series_independent()</code> each from the same start, in a process
@@ -3516,7 +3532,8 @@ def _natural_sort_key(cls, label):
             when there are &ge; 2 workers and &ge; 4 spectra; <code>pending()</code> marks spectra
             not fitted yet (a single Fit Peaks is kept for the series);
             <code>series_table()</code>, <code>plain()</code> (kept with the window's
-            settings).</li>
+            settings). Every result carries its fitted <code>'background'</code>;
+            <code>model_curves(x, peaks, manager, background)</code> adds it to the total.</li>
             <li>Window (<code>peak_fitting_dialog.py</code>): ONE fit button,
             <code>fit_selected()</code>: one spectrum selected &rarr; <code>perform_fit()</code>,
             several &rarr; <code>fit_all_selected(rows=...)</code>, merged into

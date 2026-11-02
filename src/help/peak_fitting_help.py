@@ -289,9 +289,12 @@ def get_peak_fitting_help_content():
         $LIST_OR_FITTING
 
         <h2 id="recommended">Recommended workflow</h2>
-        <p><b>Before you start:</b> correct the baseline (Baseline Correction) and, if needed, cut
-        the spectra to the region of interest (Define Spectral Range). The fit always uses the
-        whole spectrum shown, and the peaks have no baseline of their own.</p>
+        <p><b>Before you start:</b> if needed, cut the spectra to the region of interest (Define
+        Spectral Range) &mdash; the fit always uses the whole spectrum shown. A spectrum sitting
+        on an offset or on a straight, sloped baseline needs no correction: the
+        <b>Background</b> is fitted together with the peaks; <i>Automatic</i> (the default)
+        decides for each spectrum whether it needs one (<a href="#background">Background</a>).
+        A curved baseline: correct it first (Baseline Correction).</p>
         <h3>One spectrum</h3>
         <ol>
             <li>Click <b>Auto-Detect Peaks</b>, then check the table: remove peaks you do not want,
@@ -428,6 +431,34 @@ def get_peak_fitting_help_content():
 
         <h2 id="fitting">Fitting</h2>
         <ul>
+            <li id="background"><b>Background</b>: a line under the peaks, fitted together with
+            them. The heights and areas of the peaks are then measured <b>above</b> it.
+                <ul>
+                    <li><i>Automatic</i> (default) &mdash; chosen for each spectrum from its data,
+                    shown in brackets, e.g. <i>Automatic (Linear)</i>:
+                    <ul>
+                        <li><b>None</b> when the data come back to zero: a CD or difference
+                        spectrum (bands up and down), a spectrum after Baseline Correction, or
+                        one end of the spectrum at zero;</li>
+                        <li><b>Linear</b> when both ends of the spectrum are away from zero
+                        &mdash; e.g. a noisy Raman spectrum sitting at about 669 counts with a
+                        water band only 15 counts high: the background takes the 669, the peaks
+                        only the bands.</li>
+                    </ul>
+                    Why not always Linear: a background the data do not have only makes the fit
+                    less stable &mdash; with CD a sloped line and a broad band can take each
+                    other's intensity, so the heights and areas are less reliable.</li>
+                    <li><i>None</i> &mdash; no background: the data go down to zero between the
+                    bands.</li>
+                    <li><i>Constant</i> &mdash; a flat line.</li>
+                    <li><i>Linear</i> &mdash; a straight line, it may slope.</li>
+                </ul>
+            With several spectra selected, Automatic decides for each spectrum on its own (Raman
+            and CD spectra fitted together each get the right one).
+            The background is drawn as a black dash-dot line; before the fit its first guess
+            (from the two ends of the spectrum) is shown, and the starting peaks are drawn on it.
+            Auto-Detect Peaks and a click on the plot give the peaks their height above it.
+            A curved baseline is not a straight line: correct it first (Baseline Correction).</li>
             <li><b>Amplitude Constraint</b>: <i>Unrestricted</i> (peaks may be positive or
             negative), <i>Positive Peaks Only</i>, or <i>Negative Peaks Only</i>.
             <div class="screenshot">
@@ -498,8 +529,10 @@ def get_peak_fitting_help_content():
             </div></li>
             <li><b>Starting widths close to the bands.</b> Auto-Detect and Add via Click measure
             them; a typed width is in &sigma; for Gaussian (FWHM &divide; 2.355).</li>
-            <li><b>Correct the baseline first.</b> The peaks have no baseline term: a sloping or
-            raised baseline is otherwise "explained" by very broad peaks.</li>
+            <li><b>The right Background.</b> <i>Automatic</i> (the default) is usually right; check
+            what it chose (in brackets). Data on an offset or a straight, sloped baseline need
+            <i>Linear</i>: with <i>None</i> such a baseline is "explained" by very broad peaks and
+            the fit fails. A curved baseline: correct it first (Baseline Correction).</li>
             <li><b>Fit a part.</b> For a long spectrum with many bands, cut it to the region of
             interest first (Define Spectral Range) &mdash; fewer peaks fit faster and better.</li>
             <li><b>Start from a good fit.</b> After a successful fit the table holds the fitted
@@ -512,9 +545,14 @@ def get_peak_fitting_help_content():
 
         <h2 id="viewing">The plot</h2>
         <ul>
-            <li><b>Grey points</b> &mdash; the data; <b>dashed lines</b> &mdash; the starting
-            peaks; <b>red line</b> &mdash; the total fit (sum of the peaks); <b>dotted lines</b>
-            &mdash; each fitted peak.</li>
+            <li><b>Grey points</b> &mdash; the data (or a grey line: <b>Data</b> above the plot,
+            Points or Line); <b>dashed lines</b> &mdash; the starting peaks; <b>red line</b>
+            &mdash; the total fit (the peaks and the background); <b>dotted lines</b> &mdash; each
+            fitted peak; <b>black dash-dot line</b> &mdash; the background. The peaks are drawn
+            on the background.</li>
+            <li>The <b>y axis</b> shows the range of the data and of the fit with its peaks. A
+            starting peak far too high (e.g. a typed height) goes out of the plot rather than
+            squeezing the data into a thin line.</li>
             <li><b>Residual</b> (the plot below) &mdash; data minus fit. It should be small noise
             around zero.</li>
             <li>The check boxes <b>Residual</b> and <b>Legend</b> above the plot hide the residual
@@ -522,14 +560,16 @@ def get_peak_fitting_help_content():
             shown by default and the window remembers your choice. Residual applies to one
             spectrum; Legend also to Overlay and Waterfall; in Grid each small plot has the
             spectrum's name as its title.</li>
+            <li><b>Data</b>: <i>Points</i> (default) or <i>Line</i> &mdash; how the measured data
+            are drawn (one spectrum and Grid). The window remembers it.</li>
         </ul>
         <div class="screenshot">
             <img src="$PLOT" width="${PLOT_W}" height="${PLOT_H}" alt="The plot: grey data, red total fit, dotted single peaks and the residual below" />
             <p class="caption">Data (grey), total fit (red), single peaks (dotted) and the residual.</p>
         </div>
         <div class="screenshot">
-            <img src="$PLOT_BAR" width="${PLOT_BAR_W}" height="${PLOT_BAR_H}" alt="The row above the plot: Spectra, previous and next arrows, the shown spectrum, Several selected, Residual, Legend and the toolbar with the hint" />
-            <p class="caption">Above the plot: the list on/off (Spectra), &#9664; &#9654;, the shown spectrum, how several are shown, Residual, Legend; below them the toolbar and what a click on the plot does.</p>
+            <img src="$PLOT_BAR" width="${PLOT_BAR_W}" height="${PLOT_BAR_H}" alt="The row above the plot: Spectra, previous and next arrows, the shown spectrum, Several selected, Residual, Legend, Data and the toolbar with the hint" />
+            <p class="caption">Above the plot: the list on/off (Spectra), &#9664; &#9654;, the shown spectrum, how several are shown, Residual, Legend, Data (points or line); below them the toolbar and what a click on the plot does.</p>
         </div>
         <p>With several spectra, a <b>list of the spectra</b> is beside the plot and works as in
         the main window:</p>
@@ -854,19 +894,31 @@ def get_peak_fitting_help_content():
             in addition lie that much <b>below the baseline</b> (the median of the spectrum): the
             dip between two neighbouring positive bands is not taken for a negative peak.</li>
             <li>Each peak starts as a Gaussian with the height found and the width measured at
-            half height: &sigma; = FWHM &divide; 2.355.</li>
+            half height: &sigma; = FWHM &divide; 2.355. With a Background (Linear, Constant) the
+            height is measured above its first guess, not from zero.</li>
+            <li>Two maxima closer than one width (&sigma;) are one band split by noise (two real
+            bands that close never show two maxima): it is kept once.</li>
             <li>A peak added by a click gets &sigma; from the width at half height of the band under
-            the click (the highest point within a few points of the click); where that cannot be
-            measured (a shoulder, flat baseline) it gets the initial width (right-click
-            Auto-Detect Peaks).</li>
+            the click (the highest point within a few points of the click); on noisy data, where
+            the width found is only a few points (noise), it is measured again on more and more
+            smoothed data. Where it cannot be measured (a shoulder, flat baseline) it gets the
+            initial width (right-click Auto-Detect Peaks). Its height is the clicked point minus
+            the background.</li>
         </ul>
         <h3>The fit</h3>
         <ul>
             <li>All peaks of a spectrum are fitted together by non-linear least squares
             (<i>scipy.optimize.curve_fit</i>, trust-region reflective method, with bounds). The
-            model is the sum of the peaks; there is no baseline term.</li>
+            model is the sum of the peaks plus the background (Automatic: None when the
+            spectrum has clear bands both above and below zero (1st and 99th percentile beyond
+            10&nbsp;% of the range and 5&times; the noise) or when one of its ends is at zero
+            (within 5&nbsp;% of the range or 3&times; the noise), otherwise Linear; Linear:
+            y&#8320; + (y&#8321; &minus; y&#8320;)&middot;(x &minus; x&#8320;)/(x&#8321; &minus;
+            x&#8320;) between the first and last x; Constant: y&#8320;; None: 0). The background
+            starts from the median of the first and of the last 5&nbsp;% of the points.</li>
             <li>The bounds keep the fit within the data: |height| &le; 3&times; the largest
-            |value| of the spectrum (and &ge; 0 or &le; 0 with the Amplitude Constraint of that
+            |value| of the spectrum &mdash; with a background 3&times; the spectrum's range
+            (the background's values within the data's range &plusmn; that range) &mdash; (and &ge; 0 or &le; 0 with the Amplitude Constraint of that
             spectrum), centre
             within &plusmn;2 widths of its start and within the x range, width up to 10&times; its
             start and at most half the x range.</li>

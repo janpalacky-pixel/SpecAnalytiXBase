@@ -71,10 +71,110 @@ def pseudo_voigt(x, amplitude, center, width, eta):
     lorentz_shape = gamma_equiv**2 / ((x - center)**2 + gamma_equiv**2)
     return amplitude * (eta * lorentz_shape + (1 - eta) * gauss_shape)
 
+# --- Background under the peaks ---
+#
+# Raw spectra often sit on an offset (detector counts, e.g. 669 counts with
+# bands only 3-14 counts high) or a slope. The peaks alone cannot make such
+# an offset, so the fit can add a background: none, a constant, or a straight
+# line. It is kept as {'kind', 'x0', 'x1', 'y0', 'y1'}: its value at the two
+# ends of the data (a constant: y0 == y1). Heights and areas of the peaks are
+# then measured above it.
+#
+# 'auto' (Automatic, the default) chooses for each spectrum from its data
+# (resolve_background): None where the data come back to zero - a CD or a
+# difference spectrum (bands up and down), a baseline-corrected spectrum -,
+# Linear where they sit on an offset (raw Raman counts). A background the
+# data do not have only makes the fit less stable (with CD a slope and a
+# broad band can take each other's intensity).
+BACKGROUNDS = (('auto', "Automatic"), ('none', "None"), ('constant', "Constant"),
+               ('linear', "Linear"))
+DEFAULT_BACKGROUND = 'auto'
+BACKGROUND_NAMES = dict(BACKGROUNDS)
+
+
+def _edges(x, y):
+    """(x, y) sorted by x without NaN, and the medians of the first and of
+    the last 5 % of the points (at least 5) - the ends of the spectrum."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    good = np.isfinite(x) & np.isfinite(y)
+    x, y = x[good], y[good]
+    order = np.argsort(x)
+    x, y = x[order], y[order]
+    if x.size < 2:
+        return x, y, None, None
+    n = max(5, x.size // 20)
+    return x, y, float(np.median(y[:n])), float(np.median(y[-n:]))
+
+
+def resolve_background(x, y, kind):
+    """The background really used for the data (x, y): kind itself, or for
+    'auto' 'none' or 'linear':
+    - 'none' when the data have clear bands both up and down from zero (CD,
+      difference spectra), or when at least one end of the spectrum is at
+      zero (within 5 % of the data's range or 3x the noise) - the data come
+      back to zero, so zero is their baseline;
+    - 'linear' otherwise: both ends away from zero (an offset or a slope)."""
+    if kind != 'auto':
+        return kind if kind in BACKGROUND_NAMES else 'none'
+    x, y, left, right = _edges(x, y)
+    if left is None or y.size < 5:
+        return 'none'
+    span = float(np.ptp(y))
+    noise = float(np.median(np.abs(np.diff(y)))) / 0.6745 / np.sqrt(2)
+    near = max(0.05 * span, 3.0 * noise)
+    if abs(left) <= near or abs(right) <= near:
+        return 'none'
+    clear = max(0.1 * span, 5.0 * noise)
+    if np.percentile(y, 99) > clear and np.percentile(y, 1) < -clear:
+        return 'none'                      # bands up and down: CD, difference spectra
+    return 'linear'
+
+
+def background_values(background, x):
+    """The background `background` (a dict as above, or None) at x."""
+    x = np.asarray(x, dtype=float)
+    if not background or background.get('kind', 'none') == 'none':
+        return np.zeros_like(x)
+    y0, y1 = float(background['y0']), float(background['y1'])
+    x0, x1 = float(background['x0']), float(background['x1'])
+    if background['kind'] == 'constant' or x1 == x0:
+        return np.full_like(x, y0)
+    return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+
+
+def initial_background(x, y, kind):
+    """A first guess of the background from the two ends of the data (the
+    median of the first and of the last 5 % of the points, at least 5) -
+    the ends are usually free of bands. None for kind 'none' (and for
+    'auto' when the data need no background, see resolve_background)."""
+    kind = resolve_background(x, y, kind)
+    if kind not in ('constant', 'linear'):
+        return None
+    x, y, left, right = _edges(x, y)
+    if left is None:
+        return None
+    if kind == 'constant':
+        level = min(left, right) if np.median(y) >= max(left, right) else (left + right) / 2.0
+        left = right = level
+    return {'kind': kind, 'x0': float(x[0]), 'x1': float(x[-1]), 'y0': left, 'y1': right}
+
+
+def _smoothed(y, window):
+    from scipy.signal import savgol_filter
+    y = np.asarray(y, dtype=float)
+    window = int(window) | 1
+    if y.size < 21 or window < 5 or window >= y.size:
+        return y
+    return savgol_filter(y, window, 2)
+
+
 class PeakFittingManager:
     """Business logic for peak fitting and deconvolution."""
 
     def __init__(self):
+        self.last_background = None          # the background of the last fit (a dict or None)
+        self.last_background_kind = 'none'   # and its kind ('auto' resolved)
         self.peak_models = {
             'Gaussian': (gaussian, ['amplitude', 'center', 'sigma']),
             'Lorentzian': (lorentzian, ['amplitude', 'center', 'gamma']),
@@ -198,7 +298,8 @@ class PeakFittingManager:
             return [(initial, 0.0, 1.0)]
         return []
 
-    def fit_peaks(self, x_data, y_data, initial_peaks, amplitude_constraint='unrestricted'):
+    def fit_peaks(self, x_data, y_data, initial_peaks, amplitude_constraint='unrestricted',
+                  background='none'):
         """
         Fit multiple peaks to the provided spectral data with robust bounds and amplitude constraints.
 
@@ -206,7 +307,16 @@ class PeakFittingManager:
             x_data, y_data: The spectral data for the region of interest.
             initial_peaks: A list of dictionaries, each with 'model', 'center', 'amplitude', 'width'.
             amplitude_constraint: 'unrestricted', 'positive', or 'negative'.
+            background: 'auto', 'none', 'constant' or 'linear' - fitted together
+                with the peaks (see BACKGROUNDS; 'auto' chooses from the data,
+                resolve_background - the choice is kept in
+                self.last_background_kind); the result is kept in
+                self.last_background (None for 'none'), the returned total
+                fit includes it, the peaks' heights are above it.
         """
+        self.last_background = None
+        background = resolve_background(x_data, y_data, background)
+        self.last_background_kind = background
         if not initial_peaks:
             return [], None
 
@@ -223,7 +333,14 @@ class PeakFittingManager:
         x_arr = np.asarray(x_data, dtype=float)
         y_arr = np.asarray(y_data, dtype=float)
         x_lo, x_hi = float(np.nanmin(x_arr)), float(np.nanmax(x_arr))
-        amp_cap = 3.0 * float(np.nanmax(np.abs(y_arr))) if y_arr.size else np.inf
+        bg0 = initial_background(x_arr, y_arr, background)
+        if bg0 is not None:
+            # with a background the peaks only make the part above it: their
+            # height is limited by the data's range, not by the offset
+            span = float(np.nanmax(y_arr) - np.nanmin(y_arr)) if y_arr.size else 0.0
+            amp_cap = 3.0 * span
+        else:
+            amp_cap = 3.0 * float(np.nanmax(np.abs(y_arr))) if y_arr.size else np.inf
         if not np.isfinite(amp_cap) or amp_cap <= 0:
             amp_cap = np.inf
         width_cap = (x_hi - x_lo) / 2.0 if x_hi > x_lo else np.inf
@@ -236,6 +353,11 @@ class PeakFittingManager:
 
             amplitude, center, width = peak['amplitude'], peak['center'], peak['width']
             abs_width = abs(width)
+            if bg0 is not None and np.isfinite(amp_cap) and abs(amplitude) > amp_cap / 2.0:
+                # a height given from zero (a click or an older guess on data
+                # sitting on an offset): the height above the background
+                at = float(np.interp(center, np.sort(x_arr), y_arr[np.argsort(x_arr)]))
+                amplitude = at - float(background_values(bg0, [center])[0])
 
             # --- NEW: Amplitude Constraint Logic ---
             if amplitude_constraint == 'positive':
@@ -277,7 +399,28 @@ class PeakFittingManager:
                     bounds_lower.append(lo)
                     bounds_upper.append(hi)
         
-        model_func_for_fit = lambda x, *params: self.multi_peak_model(x, *params, model_definitions=model_definitions)
+        n_peak_params = len(initial_params)
+        if bg0 is not None:
+            span = float(np.nanmax(y_arr) - np.nanmin(y_arr)) or 1.0
+            lo_b, hi_b = float(np.nanmin(y_arr)) - span, float(np.nanmax(y_arr)) + span
+            for v in ([bg0['y0']] if background == 'constant' else [bg0['y0'], bg0['y1']]):
+                initial_params.append(float(np.clip(v, lo_b, hi_b)))
+                bounds_lower.append(lo_b)
+                bounds_upper.append(hi_b)
+
+        def background_of(params):
+            if bg0 is None:
+                return None
+            extra = list(params[n_peak_params:])
+            y1 = extra[0] if background == 'constant' else extra[1]
+            return dict(bg0, y0=float(extra[0]), y1=float(y1))
+
+        def model_func_for_fit(x, *params):
+            y = self.multi_peak_model(x, *params[:n_peak_params],
+                                      model_definitions=model_definitions)
+            if bg0 is not None:
+                y = y + background_values(background_of(params), x)
+            return y
 
         try:
             popt, pcov = curve_fit(
@@ -285,6 +428,7 @@ class PeakFittingManager:
             )
             y_fit = model_func_for_fit(x_data, *popt)
 
+            self.last_background = background_of(popt)
             fitted_peaks = []
             param_index = 0
             for model_name, num_params in model_definitions:
@@ -308,6 +452,32 @@ class PeakFittingManager:
         y = np.asarray(y_data, dtype=float)
         if x.size < 5 or center is None:
             return None
+        # noisy data: a point of noise near the top passes for a very narrow
+        # band - then measured again on more and more smoothed data
+        step = float(np.median(np.abs(np.diff(x)))) if x.size > 1 else 1.0
+        for window in (0, 7, 15, 31, 61):
+            ys = y if window == 0 else _smoothed(y, window)
+            if window and ys is y:
+                break
+            sigma = self._width_at(x, ys, center)
+            if sigma is not None and sigma * _FWHM_PER_SIGMA >= max(5, window) * step:
+                return sigma
+            if sigma is None and window == 0 and self._flat(y):
+                return None
+        return None
+
+    @staticmethod
+    def _flat(y):
+        """No band at all (only noise): the data's range is within a few
+        times its noise."""
+        y = np.asarray(y, dtype=float)
+        if y.size < 5:
+            return True
+        noise = float(np.median(np.abs(np.diff(y)))) / 0.6745 / np.sqrt(2)
+        return float(np.ptp(y)) <= 6 * noise + 1e-12
+
+    def _width_at(self, x, y, center):
+        from scipy.signal import peak_widths
         k = int(np.argmin(np.abs(x - center)))
         lo, hi = max(k - 5, 1), min(k + 6, x.size - 1)
         k = lo + int(np.argmax(y[lo:hi]))
@@ -325,8 +495,31 @@ class PeakFittingManager:
             return None
         return sigma
 
-    def auto_detect_peaks(self, y_data, x_data=None):
-        """Automatically detect initial peaks, finding both positive and negative, but always returning positive width."""
+    @staticmethod
+    def _merge_split(guesses):
+        """One band found twice: on noisy data a small dip on the band's top
+        splits it into two maxima close together. Two real bands closer than
+        one width (sigma) never show two maxima, so such a pair is one band -
+        kept once (the higher one, or their middle when equally high)."""
+        out = []
+        for g in sorted(guesses, key=lambda p: p['center']):
+            if out:
+                prev = out[-1]
+                same_sign = (prev['amplitude'] >= 0) == (g['amplitude'] >= 0)
+                near = abs(g['center'] - prev['center']) < max(prev['width'], g['width'])
+                if same_sign and near:
+                    if abs(g['amplitude']) > abs(prev['amplitude']):
+                        out[-1] = g
+                    elif abs(g['amplitude']) == abs(prev['amplitude']):
+                        prev['center'] = (prev['center'] + g['center']) / 2.0
+                    continue
+            out.append(g)
+        return out
+
+    def auto_detect_peaks(self, y_data, x_data=None, background='none'):
+        """Automatically detect initial peaks, finding both positive and negative, but always returning positive width.
+        With a background ('constant', 'linear') the heights are measured
+        above its first guess (initial_background), not from zero."""
         # Find both positive and negative peaks separately. A peak must stand
         # out by 10 % of the data's range and by 5x the noise; a negative
         # peak must also lie that much BELOW the baseline (the median) - the
@@ -383,6 +576,11 @@ class PeakFittingManager:
                 'width': abs(width_in_x_units) # Ensure width is positive
             })
 
+        initial_guesses = self._merge_split(initial_guesses)
+        if x_data is not None and resolve_background(x_data, y_raw, background) != 'none':
+            bg = initial_background(x_data, y_raw, background)
+            for p in initial_guesses:
+                p['amplitude'] = float(p['amplitude']) - float(background_values(bg, [p['center']])[0])
         # Sort all found peaks by their center position
         initial_guesses.sort(key=lambda p: p['center'])
         

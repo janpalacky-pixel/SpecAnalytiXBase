@@ -47,43 +47,60 @@ def _xy(spectrum):
     return x[good], y[good]
 
 
-def fit_one(x, y, start, amplitude_constraint='unrestricted', manager=None):
-    """(fitted peaks or None, R²) of one spectrum from the starting peaks."""
+def fit_one(x, y, start, amplitude_constraint='unrestricted', manager=None,
+            background='none'):
+    """(fitted peaks or None, R², fitted background or None) of one spectrum
+    from the starting peaks; the background ('auto', 'none', 'constant',
+    'linear') is fitted together with the peaks (PeakFittingManager.fit_peaks;
+    'auto' chooses for this spectrum from its data)."""
     manager = manager or PeakFittingManager()
     if not start or len(x) <= 4 * len(start):
-        return None, np.nan
-    fitted, y_fit = manager.fit_peaks(x, y, start, amplitude_constraint)
+        return None, np.nan, None
+    fitted, y_fit = manager.fit_peaks(x, y, start, amplitude_constraint, background=background)
     if fitted is None:
-        return None, np.nan
+        return None, np.nan, None
     ss_res = float(np.sum((y - y_fit) ** 2))
     ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-    return fitted, (1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan)
+    return (fitted, (1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan),
+            plain_background(manager.last_background))
+
+
+def plain_background(background):
+    """The fitted background with plain Python numbers (or None)."""
+    if not background:
+        return None
+    return {k: (round(float(v), 10) if isinstance(v, (int, float, np.floating)) else v)
+            for k, v in background.items()}
 
 
 def _fit_chunk_worker(payload):
     """Worker-process entry point (top level so it can be pickled):
-    (start peaks, constraint, [(x, y), ...]) -> [(fitted or None, r2), ...]."""
+    (start peaks, constraint, [(x, y), ...][, background]) ->
+    [(fitted or None, r2, background or None), ...]."""
     from src.modules.utils.parallel_utils import count_item
-    start, constraint, pairs = payload
+    start, constraint, pairs = payload[:3]
+    background = payload[3] if len(payload) > 3 else 'none'
     manager = PeakFittingManager()
     out = []
     for item in pairs:                    # (x, y[, its own starting peaks[, its constraint]])
         x, y = item[0], item[1]
         own = item[2] if len(item) > 2 and item[2] is not None else start
         own_constraint = item[3] if len(item) > 3 and item[3] else constraint
-        fitted, r2 = fit_one(np.asarray(x), np.asarray(y), own, own_constraint, manager)
+        fitted, r2, bg = fit_one(np.asarray(x), np.asarray(y), own, own_constraint, manager,
+                                 background)
         if fitted is not None:            # plain floats: picklable, no numpy scalars
             fitted = [{'model': f['model'],
                        'parameters': {k: (float(v) if isinstance(v, (int, float, np.floating))
                                           else v) for k, v in f['parameters'].items()}}
                       for f in fitted]
-        out.append((fitted, float(r2)))
+        out.append((fitted, float(r2), bg))
         count_item()
     return out
 
 
 def fit_series_independent(spectra, start_peaks, amplitude_constraint='unrestricted',
-                           progress=None, parallel=None, starts=None, constraints=None):
+                           progress=None, parallel=None, starts=None, constraints=None,
+                           background='none'):
     """Every spectrum fitted from the same starting peaks (those of the shown
     spectrum's fit) - or, with `starts` (one list per spectrum), each from its
     own peaks - independently of the others, so on several processor cores
@@ -114,7 +131,8 @@ def fit_series_independent(spectra, start_peaks, amplitude_constraint='unrestric
             progress(min(done[0], n), n)
     if workers >= 2 and n >= 4:
         chunks = [list(c) for c in np.array_split(np.arange(n), pu.chunk_count(n, workers))]
-        payloads = [(start, amplitude_constraint, [pairs[i] for i in c]) for c in chunks]
+        payloads = [(start, amplitude_constraint, [pairs[i] for i in c], background)
+                    for c in chunks]
 
         def items_done(count):
             done[0] = count
@@ -132,15 +150,16 @@ def fit_series_independent(spectra, start_peaks, amplitude_constraint='unrestric
     for i in range(n):
         if rows[i] is None:
             rows[i] = fit_one(pairs[i][0], pairs[i][1], own[i] if own is not None else start,
-                              cons[i] if cons is not None else amplitude_constraint, manager)
+                              cons[i] if cons is not None else amplitude_constraint, manager,
+                              background)
             done[0] = i + 1
             report()
     return [{'label': str(s.get('label', '')), 'ok': fitted is not None, 'peaks': fitted,
-             'r2': r2} for s, (fitted, r2) in zip(spectra, rows)]
+             'r2': r2, 'background': bg} for s, (fitted, r2, bg) in zip(spectra, rows)]
 
 
 def fit_series(spectra, initial_peaks, amplitude_constraint='unrestricted', progress=None,
-               manager=None):
+               manager=None, background='none'):
     """Fit the peaks to each spectrum in turn (in the order given), each
     starting from the previous successful fit (the first from
     initial_peaks). Returns one dict per spectrum: label, ok, peaks (the
@@ -152,9 +171,9 @@ def fit_series(spectra, initial_peaks, amplitude_constraint='unrestricted', prog
     results = []
     for k, s in enumerate(spectra):
         x, y = _xy(s)
-        fitted, r2 = fit_one(x, y, start, amplitude_constraint, manager)
+        fitted, r2, bg = fit_one(x, y, start, amplitude_constraint, manager, background)
         results.append({'label': str(s.get('label', '')), 'ok': fitted is not None,
-                        'peaks': fitted, 'r2': r2})
+                        'peaks': fitted, 'r2': r2, 'background': bg})
         if fitted is not None:
             start = start_from(fitted, start)
         if progress is not None:
@@ -163,7 +182,7 @@ def fit_series(spectra, initial_peaks, amplitude_constraint='unrestricted', prog
 
 
 def fit_each(spectra, starts, amplitude_constraint='unrestricted', progress=None,
-             manager=None, constraints=None):
+             manager=None, constraints=None, background='none'):
     """Fit the spectra in turn (in the order given): each from its own
     starting peaks (starts[i]), or - where starts[i] is None - from the
     result of the last successful fit before it (follows shifting bands).
@@ -175,12 +194,12 @@ def fit_each(spectra, starts, amplitude_constraint='unrestricted', progress=None
         start = [dict(p) for p in own] if own else previous
         x, y = _xy(s)
         if start:
-            fitted, r2 = fit_one(x, y, start, constraints[k] if constraints else
-                                 amplitude_constraint, manager)
+            fitted, r2, bg = fit_one(x, y, start, constraints[k] if constraints else
+                                     amplitude_constraint, manager, background)
         else:
-            fitted, r2 = None, np.nan
+            fitted, r2, bg = None, np.nan, None
         results.append({'label': str(s.get('label', '')), 'ok': fitted is not None,
-                        'peaks': fitted, 'r2': r2})
+                        'peaks': fitted, 'r2': r2, 'background': bg})
         used.append(start)
         if fitted is not None:
             previous = start_from(fitted, start)
@@ -255,8 +274,10 @@ def peaks_long(results, rows, peak=None):
     return columns, out
 
 
-def model_curves(x, fitted, manager=None):
-    """(total, [one curve per peak]) of fitted peaks at x."""
+def model_curves(x, fitted, manager=None, background=None):
+    """(total, [one curve per peak]) of fitted peaks at x; with the fitted
+    background (a dict of PeakFittingManager.fit_peaks) the total includes
+    it - the peaks themselves are without it."""
     manager = manager or PeakFittingManager()
     x = np.asarray(x, dtype=float)
     parts = []
@@ -268,6 +289,9 @@ def model_curves(x, fitted, manager=None):
             params.append(par[EXTRA_KEY[model]])
         parts.append(manager.peak_models[model][0](x, *params))
     total = np.sum(parts, axis=0) if parts else np.zeros_like(x)
+    if background:
+        from src.modules.data_analysis.peak_fitting_manager import background_values
+        total = total + background_values(background, x)
     return total, parts
 
 
@@ -285,6 +309,8 @@ def plain(results):
         r2 = r.get('r2')
         out.append({'label': r.get('label', ''), 'ok': bool(r.get('ok')), 'peaks': peaks,
                     'r2': (float(r2) if r2 is not None and np.isfinite(r2) else None)})
+        if r.get('background'):
+            out[-1]['background'] = plain_background(r['background'])
         if r.get('pending'):
             out[-1]['pending'] = True
     return out
