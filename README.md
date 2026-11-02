@@ -36,26 +36,31 @@ Spectra can also be exported back out to text, Excel, and SPC.
 
 Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it on a new batch of spectra.
 
-## Analysis & Visualization Tools (17)
+## Analysis & Visualization Tools (20)
 
-**Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, Self-Organizing Map (SOM), 2D Map, 2D Correlation, PLS/PLS-DA
+**Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, Self-Organizing Map (SOM), 2D Map (incl. peak-fit maps and endmember unmixing), 2D Correlation, PLS/PLS-DA
 
-**Data Analysis** — Peak Fitting, Band Ratio, Group Statistics, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection
+**Data Analysis** — Peaks (Detect Peaks and the Peak list), Peak Fitting (also of a whole series), Band Ratio, Group Statistics, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection, Mixture Analysis (known components), Data Table (the spectra and values per spectrum as a spreadsheet, with formulas and plots)
 
 ## Other Features
 
 - Test datasets bundled with the app for every major operation and analysis tool
 - Context-sensitive help on every dialog, plus in-app User Guide, Quick Start, and Developer Guide pages
 - Apply / Add-as-New on every operation, so you can either overwrite a spectrum or keep the original and add a processed copy
-- Each spectrum handled independently — its own name, metadata, and plot styling
-- PDF report export from analysis dialogs
-- Project save/load, so a full working session can be reopened later
+- Undo / Redo and a full History of the operations; copy / paste of spectra
+- Each spectrum handled independently — its own name, metadata, properties (temperature, pH, concentration, …) and plot styling
+- Line colours by value (e.g. by temperature, with a colour bar)
+- Most tool windows stay open beside the plot: zoom, pan and save the plot meanwhile
+- Buttons for the most used tools under the menu bar (groups can be hidden; icons only on small screens), keyboard shortcuts
+- Copy the plot to the clipboard (Ctrl+Shift+C), PDF report export from analysis dialogs, a Methods report for publications
+- Snapshots: save and reopen a whole working session; automatic saving and crash recovery
+- Light or dark theme
 
 ## Downloads
 
 The [Releases page](../../releases) has two kinds of build:
 
-- **Stable releases** (e.g. `v1.3.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
+- **Stable releases** (e.g. `v1.6.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
 - **[Nightly build](../../releases/tag/nightly)** — rebuilt automatically once a day from whatever is on `main` (or on demand). Always has the newest fixes, but isn't a tested release. Useful if you need a fix that hasn't made it into a numbered release yet; not recommended as your everyday install.
 
 ## Installation
