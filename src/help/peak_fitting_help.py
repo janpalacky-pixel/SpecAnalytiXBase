@@ -930,8 +930,8 @@ def get_peak_fitting_help_content():
             two areas.</li>
         </ul>
         <p>The peaks, the fits and the series results are <b>remembered</b>: open Peak Fitting
-        again with the same spectra selected and they are back, with the shown spectrum and the
-        start choice (unless the spectra were changed meanwhile, e.g. by a baseline
+        again with the same spectra selected and they are back, with the shown spectrum, the
+        spectra selected in the list (e.g. All) and the start choice (unless the spectra were changed meanwhile, e.g. by a baseline
         correction).</p>
 
         <h2 id="outputs">Output Options (add new spectra)</h2>

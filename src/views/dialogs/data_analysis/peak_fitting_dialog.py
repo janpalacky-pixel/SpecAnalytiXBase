@@ -773,12 +773,21 @@ class PeakFittingDialog(QDialog):
                 self._select_in_list([k])
                 self._update_nav(k)
                 self.update_plot_with_fit_results()
+            self._restore_list_selection(s)
             return
         self.series_results = [dict(r, r2=(np.nan if r.get('r2') is None else r['r2']))
                                for r in results]
         self._refresh_series_table()
         k = s.get('series_index', self.current_index)
         self.show_series_spectrum(k if 0 <= k < len(self.series) else 0)
+        self._restore_list_selection(s)
+
+    def _restore_list_selection(self, s):
+        """The spectra selected in the list last time (e.g. All): selected
+        again - the shown spectrum stays the one shown last time."""
+        rows = [r for r in (s.get('list_selection') or []) if 0 <= r < len(self.series)]
+        if len(rows) > 1:
+            self._select_in_list(sorted(set(rows)), notify=True)
 
     def show_help(self):
         """Show the peak fitting help window."""
@@ -3203,6 +3212,7 @@ class PeakFittingDialog(QDialog):
                'series_view': self.series_view(),
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
                'together': self.together(),
+               'list_selection': self.selected_spectra(),
                'own_constraints': list(self.own_constraints)}
         if self.own_peaks is not None:
             own = list(self.own_peaks)

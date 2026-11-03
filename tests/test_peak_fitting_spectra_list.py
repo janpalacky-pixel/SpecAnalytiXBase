@@ -133,3 +133,24 @@ def test_a_fit_of_one_spectrum_is_kept_for_the_series():
     assert again.series_results[2]['ok'] and again.series_results[0].get('pending')
     columns, rows = pfs.series_table(again.series_results, 2)
     assert rows[0][1] is None and rows[2][1] is not None
+
+
+def test_the_list_selection_is_kept_when_opened_again(monkeypatch):
+    """Opened again for the same spectra: the spectra selected in the list
+    last time (e.g. All) are selected again - not only the first one."""
+    from PyQt5.QtWidgets import QMessageBox
+    monkeypatch.setattr(QMessageBox, 'information', staticmethod(lambda *a, **k: None))
+    from src.views.dialogs.data_analysis.peak_fitting_dialog import PeakFittingDialog
+    sp = _series(4)
+    dlg = PeakFittingDialog(None, spectrum=sp[0], series=sp)
+    dlg.peaks = [dict(p) for p in PEAKS]
+    dlg.update_peaks_table()
+    dlg._select_in_list([0, 2, 3], notify=True)
+    again = PeakFittingDialog(None, spectrum=sp[0], series=sp,
+                              current_settings=dlg.get_results())
+    assert again.selected_spectra() == [0, 2, 3] and again.view_mode != 'one'
+    dlg.list_all_button.click()
+    dlg.fit_selected()
+    again = PeakFittingDialog(None, spectrum=sp[0], series=sp,
+                              current_settings=dlg.get_results())
+    assert again.selected_spectra() == [0, 1, 2, 3] and again.view_mode != 'one'
