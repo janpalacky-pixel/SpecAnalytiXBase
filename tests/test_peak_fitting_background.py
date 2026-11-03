@@ -64,7 +64,8 @@ def test_automatic_chooses_linear_for_an_offset_and_none_for_zero_based_data():
     assert resolve_background(x, y, 'auto') == 'none'              # bands up and down
     assert resolve_background(x, y - 0.0, 'auto') == 'none'
     assert resolve_background(x, np.minimum(y, 0), 'auto') == 'none'   # one end at zero
-    corrected = _offset_spectrum() - 669.0                           # baseline corrected
+    rng = np.random.default_rng(5)                                   # baseline corrected
+    corrected = sum(gaussian(X, *p) for p in TRUE) + rng.normal(0, 1.0, X.size)
     assert resolve_background(X, corrected, 'auto') == 'none'
     # the other kinds are kept as chosen
     for kind in ('none', 'constant', 'linear'):

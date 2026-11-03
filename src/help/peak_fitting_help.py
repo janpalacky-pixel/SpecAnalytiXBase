@@ -141,6 +141,7 @@ def get_peak_fitting_help_content():
         <a href="#converge">Getting a fit to converge</a> &#183;
         <a href="#viewing">The plot</a> &#183;
         <a href="#series">Fitting a series</a> &#183;
+        <a href="#together">Fitting spectra together</a> &#183;
         <a href="#series-results">Series results</a> &#183;
         <a href="#outputs">Output Options</a> &#183;
         <a href="#models">Peak shapes</a> &#183;
@@ -835,6 +836,37 @@ def get_peak_fitting_help_content():
             <p class="caption">A fitted series: Series results (left), three spectra selected in the list and shown together with their fits (Overlay); Add for: only these three get the new spectra on OK.</p>
         </div>
 
+        <h3 id="together">Fitting spectra together (a global fit)</h3>
+        <p>So far every spectrum was fitted on its own. With <b>Several spectra</b> (in the box
+        Fitting) set to <b>Together</b>, all selected spectra are fitted <b>at once with one set of
+        peaks</b>:</p>
+        <ul>
+            <li><b>Together: the same positions and widths</b> &mdash; every peak has the same
+            position and width in all spectra; only its <b>height</b> (and the background) is
+            each spectrum's own. Right for a series where the bands only grow or shrink: a
+            temperature scan, a titration, a concentration series.</li>
+            <li><b>Together: the same widths</b> &mdash; each spectrum its own positions (bands
+            that shift a little), the widths the same for all.</li>
+            <li><b>Each on its own</b> (default) &mdash; as before.</li>
+        </ul>
+        <p><b>Why</b>: in a noisy spectrum a small band's position and width are hard to find;
+        from all spectra together they are found much better, and each spectrum only has to
+        give its heights. Example: 7 noisy Raman spectra, the small band at about 428: fitted
+        one by one its position comes out 413 &plusmn; 6, 421 &plusmn; 6, 436 &plusmn; 6, &hellip;
+        (scattered from 413 to 438); together 428.1 &plusmn; 2.2 for all.</p>
+        <p><b>How</b>: set the peaks on one spectrum and fit it (as in Step by step), keep it
+        shown, choose <b>Together: &hellip;</b>, select the spectra (<b>All</b>) and click
+        <b>Fit Peaks &ndash; N spectra together</b>. The fit starts from the peaks of the shown
+        spectrum (the table); the orange line under the button says so. The other spectra
+        need no peaks of their own; after the fit each gets its fitted peaks. Fixed and linked
+        values (<a href="#fix-link">Fixing and linking values</a>) apply to all spectra, the
+        Amplitude Constraint and the Background to each spectrum (Automatic chooses for each).
+        The results are in Series results (the summary says &ldquo;fitted together&rdquo;);
+        <b>Open in the Data table</b> plots e.g. the height of a band against the
+        temperature.</p>
+        <p>Use it only for spectra of one kind with the same bands. Spectra that differ (new
+        bands appear, a band moves far): Each on its own, or Together: the same widths.</p>
+
         <h3 id="series-results">Series results</h3>
         <p>The tab <b>Series results</b> next to the tab Peaks shows the results of <b>the spectra
         selected in the list</b> beside the plot (the same ones the plot shows; <b>All</b> = the
@@ -997,6 +1029,14 @@ def get_peak_fitting_help_content():
             theirs by error propagation: var(f) = g&nbsp;C&nbsp;g<sup>T</sup>, g the derivatives
             of f by the fitted values (numerical), C their covariance &mdash; so correlations
             between the values (e.g. height and width) are taken into account.</li>
+            <li><b>Fitting together</b>: variable projection &mdash; the heights and the
+            backgrounds enter the model linearly, so for given positions and widths they are
+            found exactly by linear least squares, spectrum by spectrum (with bounds for
+            Positive / Negative Peaks Only); only the positions and widths are fitted
+            non-linearly (<i>scipy.optimize.least_squares</i>, the Jacobian with its sparsity:
+            a spectrum's own positions change only that spectrum). The uncertainties come from
+            s&sup2;(J<sup>T</sup>J)<sup>&minus;1</sup> of all values of the whole fit, s&sup2; the
+            residual variance of all spectra.</li>
             <li><b>Fixed and linked values</b> (right-click a value in the table of peaks, see <a
             href="#fix-link">Fixing and linking values</a>). Normally the fit changes every value
             (centre, height, width) until the peaks match the data &mdash; these are the

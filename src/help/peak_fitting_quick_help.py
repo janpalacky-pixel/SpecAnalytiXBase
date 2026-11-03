@@ -77,6 +77,10 @@ Fit;</li>
 <li>the same peaks for all - Copy peaks, select All, Paste, Fit (several cores, faster);</li>
 <li>different spectra - select All, Auto-Detect Peaks - N spectra, Fit.</li>
 </ul>
+<p><b>Several spectra: Together</b> (in the box Fitting) fits all selected spectra at once
+from the peaks of the shown spectrum - the same positions and widths (or only the same widths)
+for all, each spectrum its own heights and background. Much more stable for a noisy series
+(temperature, titration).</p>
 <p>The results are in the tab <b>Series results</b>.</p>
 <p>The button next to Fit Peaks copies for Excel what the tab shows: on the tab Peaks
 <b>Copy table - &hellip;</b> (the peaks of the shown spectrum: start values, or after Fit Peaks

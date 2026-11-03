@@ -87,6 +87,11 @@ def test_button_and_shortcut_do_the_same_as_the_menu(mc):
     for key, calls in ((Qt.Key_I, new), (Qt.Key_O, snap), (Qt.Key_S, save)):
         QTest.keyClick(v, key, Qt.ControlModifier)
         app.processEvents()
+    # Ctrl released again: otherwise Qt still counts it as held, and a later test
+    # that selects a row (selectRow) would add to the selection instead
+    QTest.keyRelease(v, Qt.Key_Control)
+    app.processEvents()
+    assert QApplication.keyboardModifiers() == Qt.NoModifier
     assert (len(new), len(snap), len(save)) == (2, 2, 2)
     v.hide()                    # (closing would ask about the unsaved work)
 

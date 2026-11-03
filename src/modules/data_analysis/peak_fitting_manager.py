@@ -113,8 +113,8 @@ def resolve_background(x, y, kind):
     'auto' 'none' or 'linear':
     - 'none' when the data have clear bands both up and down from zero (CD,
       difference spectra), or when at least one end of the spectrum is at
-      zero (within 5 % of the data's range or 3x the noise) - the data come
-      back to zero, so zero is their baseline;
+      zero (within 5 % of the data's range, or 3x the noise of that end's
+      median) - the data come back to zero, so zero is their baseline;
     - 'linear' otherwise: both ends away from zero (an offset or a slope)."""
     if kind != 'auto':
         return kind if kind in BACKGROUND_NAMES else 'none'
@@ -123,7 +123,9 @@ def resolve_background(x, y, kind):
         return 'none'
     span = float(np.ptp(y))
     noise = float(np.median(np.abs(np.diff(y)))) / 0.6745 / np.sqrt(2)
-    near = max(0.05 * span, 3.0 * noise)
+    n_end = max(5, y.size // 20)
+    # an end is the median of n_end points: its noise is ~1.25 noise / sqrt(n)
+    near = max(0.05 * span, 3.0 * 1.2533 * noise / np.sqrt(n_end))
     if abs(left) <= near or abs(right) <= near:
         return 'none'
     clear = max(0.1 * span, 5.0 * noise)

@@ -312,6 +312,31 @@ class PeakFittingDialog(QDialog):
         fit_layout.addWidget(self.constraint_note)
 
         n_series = len(self.series)
+        # several spectra: each fitted on its own, or all together (global fit)
+        from src.modules.data_analysis import peak_fitting_global as pg
+        together_layout = QHBoxLayout()
+        self.together_label = QLabel("Several spectra:")
+        together_layout.addWidget(self.together_label)
+        self.together_combo = QComboBox()
+        for key, text in pg.SHARES:
+            self.together_combo.addItem(text, key)
+        self.together_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.together_combo.setToolTip(
+            "How several selected spectra are fitted.\n"
+            "Each on its own (default): every spectrum from its own peaks, one after another.\n"
+            "Together: the same positions and widths - a global fit: one set of peaks for all "
+            "selected spectra, every spectrum with its own heights and background. For a noisy "
+            "series (temperature, titration) much more stable: the positions and widths are "
+            "found from all spectra at once.\n"
+            "Together: the same widths - each spectrum its own positions (bands that shift), "
+            "the widths the same for all.\n"
+            "Together starts from the peaks of the shown spectrum (the table).")
+        self.together_combo.currentIndexChanged.connect(lambda *_: self._together_chosen())
+        together_layout.addWidget(self.together_combo)
+        together_layout.addStretch()
+        self.together_label.setVisible(n_series > 1)
+        self.together_combo.setVisible(n_series > 1)
+        fit_layout.addLayout(together_layout)
         self.follow_check = QCheckBox("Spectra without peaks: start from the fit before them "
                                       "(a band shifting along a series)")
         self.follow_check.setToolTip(
@@ -687,6 +712,9 @@ class PeakFittingDialog(QDialog):
         if len(self.series) < 2 or s.get('series_labels') != labels:
             return
         self.follow_check.setChecked(bool(s.get('follow_fit_before', False)))
+        k = self.together_combo.findData(s.get('together', 'each'))
+        if k >= 0:
+            self.together_combo.setCurrentIndex(k)
         self.set_series_view(s.get('series_view', 'peak'))
         own_c = s.get('own_constraints')
         if own_c and len(own_c) == len(self.series):
@@ -2285,7 +2313,18 @@ class PeakFittingDialog(QDialog):
         from src.modules.data_analysis import peak_fitting_series as pfs
         has_peaks = bool(self.peaks)
         note = ''
-        if len(self.series) > 1:
+        together = self.together() != 'each' and len(self.selected_spectra()) > 1
+        if together:
+            from src.modules.data_analysis import peak_fitting_global as pg
+            chosen = self.selected_spectra()
+            r0, template = self._global_template(chosen)
+            has_peaks = bool(template)
+            note = (f"All {len(chosen)} selected spectra fitted together from the peaks of "
+                    f"{self._short_names([r0])}: {pg.SHARE_TEXT[self.together()]} for all, each "
+                    "spectrum its own heights and background." if has_peaks else
+                    "Fitting together starts from the peaks of the shown spectrum: set them "
+                    "first (Auto-Detect Peaks or Add via Click).")
+        elif len(self.series) > 1:
             chosen = self.selected_spectra() or [self.current_index]
             plan = self._fit_plan(chosen)
             has_peaks = any(how != 'left out' for _, how in plan)
@@ -2316,6 +2355,7 @@ class PeakFittingDialog(QDialog):
             return
         n = max(len(self.selected_spectra()), 1)
         self.fit_button.setText("Fit Peaks \u2013 1 spectrum" if n == 1
+                                else f"Fit Peaks \u2013 {n} spectra together" if together
                                 else f"Fit Peaks \u2013 {n} selected spectra")
 
     def _on_series_tab(self):
@@ -2406,6 +2446,8 @@ class PeakFittingDialog(QDialog):
         for i in range(len(self.peaks)):
             self.update_peak_from_table(i)
         pool = list(range(len(self.series))) if rows is None else rows
+        if self.together() != 'each' and len(pool) > 1:
+            return self._fit_together(pool)
         plan = [(r, how) for r, how in self._fit_plan(pool) if how != 'left out']
         if not plan:
             QMessageBox.information(self, "Fit Peaks",
@@ -2460,6 +2502,95 @@ class PeakFittingDialog(QDialog):
         if hasattr(self, 'left_tabs'):
             self.left_tabs.setCurrentIndex(1)
         if len(self.selected_spectra()) > 1:            # several shown: keep them, now fitted
+            self._set_current(self.current_index)
+            self._select_table_rows(self.selected_spectra())
+            self._view_changed()
+        else:
+            self.show_series_spectrum(self.current_index)
+        return results
+
+    # ------------------------------------------------------------------
+    # several spectra fitted together (a global fit)
+    # ------------------------------------------------------------------
+    def together(self):
+        """'each' (default), 'positions' or 'widths' (Several spectra: ...)."""
+        combo = getattr(self, 'together_combo', None)
+        return (combo.currentData() if combo is not None and len(self.series) > 1
+                else None) or 'each'
+
+    def _together_chosen(self):
+        if hasattr(self, 'follow_check'):
+            self.follow_check.setEnabled(self.together() == 'each')
+        self._update_fit_button()
+
+    def _global_template(self, rows):
+        """(row, peaks) the fit together starts from: the shown spectrum's
+        peaks, else those of the first selected spectrum that has peaks."""
+        if self.peaks:
+            return self.current_index, self.peaks
+        for r in sorted(rows):
+            if self.peaks_of(r):
+                return r, self.peaks_of(r)
+        return None, []
+
+    def _fit_together(self, rows):
+        """Fit the spectra `rows` together (peak_fitting_global.fit_global):
+        the peaks of the shown spectrum for all, the positions and widths (or
+        only the widths) the same, each spectrum its own heights and
+        background. The results go to Series results; every fitted spectrum
+        gets its fitted peaks as its own peaks."""
+        from PyQt5.QtWidgets import QProgressDialog
+        from src.modules.data_analysis import peak_fitting_global as pg
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        from src.modules.utils.progress_utils import OperationCancelled
+        rows = sorted(rows)
+        r0, template = self._global_template(rows)
+        if not template:
+            QMessageBox.information(self, "Fit Peaks",
+                                    "Add the peaks first (Auto-Detect Peaks or Add via Click) on "
+                                    "one spectrum: all selected spectra are fitted from them.")
+            return None
+        template = [dict(p) for p in template]
+        spectra = [self.series[r] for r in rows]
+        share = self.together()
+        window = QProgressDialog(f"Fitting the {len(rows)} spectra together\u2026", "Cancel",
+                                 0, 0, self)
+        window.setWindowTitle("Fit Peaks")
+        window.setMinimumDuration(400)
+
+        def progress(done, total):
+            QApplication.processEvents()
+            if window.wasCanceled():
+                raise OperationCancelled()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            results = pg.fit_global(spectra, template, share=share,
+                                    amplitude_constraints=[self.constraint_of(r) for r in rows],
+                                    background=self.background_kind, progress=progress,
+                                    manager=self.manager)
+        except OperationCancelled:
+            return None
+        finally:
+            QApplication.restoreOverrideCursor()
+            window.close()
+        if not any(r['ok'] for r in results):
+            QMessageBox.warning(self, "Fit Failed",
+                                "The spectra could not be fitted together. Check the peaks of "
+                                "the shown spectrum (fit it alone first), or fit each on its "
+                                "own.")
+            return None
+        merged = list(self.series_results or pfs.pending(self.series))
+        for r, res in zip(rows, results):
+            merged[r] = res
+            if res['ok'] and r != self.current_index and self.own_peaks is not None:
+                # its fit becomes its peaks (shown with it, the start of a next fit)
+                self.own_peaks[r] = pfs.start_from(res['peaks'], template)
+        self.series_results = merged
+        self._update_copy_results_button()
+        self._refresh_series_table()
+        if hasattr(self, 'left_tabs'):
+            self.left_tabs.setCurrentIndex(1)
+        if len(self.selected_spectra()) > 1:
             self._set_current(self.current_index)
             self._select_table_rows(self.selected_spectra())
             self._view_changed()
@@ -2982,6 +3113,7 @@ class PeakFittingDialog(QDialog):
                'follow_fit_before': self.follow_check.isChecked(),
                'series_view': self.series_view(),
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
+               'together': self.together(),
                'own_constraints': list(self.own_constraints)}
         if self.own_peaks is not None:
             own = list(self.own_peaks)

@@ -3537,6 +3537,12 @@ def _natural_sort_key(cls, label):
             <code>PeakFittingManager.peak_errors()</code>; <code>None</code> = not estimated),
             shown by <code>_ErrorDelegate</code> (ERROR_ROLE, the cell text stays the number) and as
             "&#8230; &plusmn;" columns in <code>series_table()</code> / <code>peaks_long()</code>.
+            Fitting together: <code>peak_fitting_global.fit_global()</code> (variable projection:
+            heights and backgrounds by linear least squares per spectrum, positions / widths by
+            <code>least_squares</code> with <code>jac_sparsity</code>; covariance
+            s&sup2;(J<sup>T</sup>J)<sup>&minus;1</sup> assembled block by block), results with
+            <code>'global'</code>; the window's <code>together_combo</code> /
+            <code>_fit_together()</code>.
             Fixed / linked values: <code>peak['constraints']</code> (see the comment at
             <code>PARAM_NAMES</code>), peaks known by <code>peak['id']</code>;
             <code>_constraint_plan()</code> / <code>_expand()</code> fit only the free values

@@ -339,6 +339,8 @@ def plain(results):
                     'r2': (float(r2) if r2 is not None and np.isfinite(r2) else None)})
         if r.get('background'):
             out[-1]['background'] = plain_background(r['background'])
+        if r.get('global'):
+            out[-1]['global'] = r['global']
         if r.get('pending'):
             out[-1]['pending'] = True
     return out
@@ -355,6 +357,13 @@ def summary(results):
     ok = sum(bool(r['ok']) for r in results)
     waiting = sum(bool(r.get('pending')) for r in results)
     text = f"Fitted {ok} of {len(results)} spectra."
+    together = {r.get('global') for r in results if r.get('ok') and r.get('global')}
+    if together:
+        from src.modules.data_analysis.peak_fitting_global import SHARE_TEXT
+        n = sum(1 for r in results if r.get('ok') and r.get('global'))
+        text += (f" {n} of them fitted together (" + ", ".join(SHARE_TEXT.get(t, t)
+                                                              for t in sorted(together))
+                 + " for all).")
     if waiting:
         text += f" {waiting} not fitted yet (select them, or All, and click Fit Peaks)."
     bad = [r['label'] for r in results if not r['ok'] and not r.get('pending')]
