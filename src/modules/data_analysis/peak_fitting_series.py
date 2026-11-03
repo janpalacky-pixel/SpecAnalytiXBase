@@ -205,19 +205,20 @@ def fit_each(spectra, starts, amplitude_constraint='unrestricted', progress=None
     return results, used
 
 
-def series_table(results, n_peaks):
+def series_table(results, n_peaks, sigmas=1):
     """(columns, rows) of the series: one row per spectrum - its name, then
     position, FWHM, height and area of peak 1, 2, ..., each followed by its
-    standard error (±), then R². A failed fit gives None (an empty cell)."""
-    columns = ['Spectrum'] + [f'Peak {j + 1} {name}{pm}' for j in range(n_peaks)
-                              for name, _ in VALUES for pm in ('', ' \u00b1')] + ['R²']
+    uncertainty (±, `sigmas` x the standard error), then R². A failed fit
+    gives None (an empty cell)."""
+    columns = ['Spectrum'] + [f'Peak {j + 1} {name}{p}' for j in range(n_peaks)
+                              for name, _ in VALUES for p in ('', pm(sigmas))] + ['R²']
     rows = []
     for r in results:
         row = [r['label']]
         for j in range(n_peaks):
             peak = r['peaks'][j] if r['ok'] and j < len(r['peaks']) else None
             for _, key in VALUES:
-                row += ([float(peak['parameters'][key]), error_of(peak, key)]
+                row += ([float(peak['parameters'][key]), error_of(peak, key, sigmas)]
                         if peak is not None else [None, None])
         r2 = r.get('r2')
         row.append(float(r2) if r['ok'] and r2 is not None and np.isfinite(r2) else None)
@@ -229,15 +230,29 @@ def series_table(results, n_peaks):
 # (Width and Extra mean what the model uses: Gaussian/Voigt sigma, Lorentzian
 # gamma, Pseudo-Voigt FWHM; Voigt gamma, Pseudo-Voigt eta), each followed by
 # its standard error (±, from the fit).
-PM = ' \u00b1'
-PEAK_COLUMNS = ['Model'] + [name + pm for name in ('Center', 'Height', 'Width', 'Extra',
-                                                   'FWHM', 'Area') for pm in ('', PM)]
+# The uncertainty is the standard error (1 sigma) - or, chosen in the window
+# ("± shown as"), 2 or 3 sigma: then the columns say so ("Center ±2σ").
+SIGMAS = ((1, "1 \u03c3 (68 %)"), (2, "2 \u03c3 (95 %)"), (3, "3 \u03c3 (99.7 %)"))
 
 
-def peak_values(fitted_peak):
+def pm(sigmas=1):
+    """The end of an uncertainty column's name: ' ±' (1 sigma), ' ±2σ', ..."""
+    return ' \u00b1' if sigmas == 1 else f' \u00b1{sigmas:g}\u03c3'
+
+
+def peak_columns(sigmas=1):
+    return ['Model'] + [name + p for name in ('Center', 'Height', 'Width', 'Extra', 'FWHM',
+                                              'Area') for p in ('', pm(sigmas))]
+
+
+PM = pm(1)
+PEAK_COLUMNS = peak_columns(1)
+
+
+def peak_values(fitted_peak, sigmas=1):
     """[model, center, ±, height, ±, width, ±, extra, ±, FWHM, ±, area, ±]
-    of one fitted peak; extra is None for a model without one, an error None
-    where it is not known."""
+    of one fitted peak (± = `sigmas` x the standard error); extra is None for
+    a model without one, an error None where it is not known."""
     model = fitted_peak['model']
     par = fitted_peak['parameters']
 
@@ -247,7 +262,7 @@ def peak_values(fitted_peak):
     out = [model]
     for key in ('center', 'height', WIDTH_KEY.get(model, 'sigma'), EXTRA_KEY.get(model),
                 'fwhm', 'area'):
-        out += [num(key), error_of(fitted_peak, key) if num(key) is not None else None]
+        out += [num(key), error_of(fitted_peak, key, sigmas) if num(key) is not None else None]
     return out
 
 
@@ -258,12 +273,12 @@ def status(result):
     return 'not fitted yet' if result.get('pending') else 'fit failed'
 
 
-def peaks_long(results, rows, peak=None):
+def peaks_long(results, rows, peak=None, sigmas=1):
     """(columns, rows) one row per spectrum and peak - Spectrum, Peak, then
     PEAK_COLUMNS and R² - for the spectra `rows` (in this order); only peak
     number `peak` (0-based) if given. A spectrum without values gives one
     row with its status in the column Model."""
-    columns = ['Spectrum', 'Peak'] + PEAK_COLUMNS + ['R\u00b2']
+    columns = ['Spectrum', 'Peak'] + peak_columns(sigmas) + ['R\u00b2']
     out = []
     for k in rows:
         r = results[k]
@@ -271,7 +286,7 @@ def peaks_long(results, rows, peak=None):
         r2 = float(r2) if r.get('ok') and r2 is not None and np.isfinite(r2) else None
         peaks = (r.get('peaks') or []) if r.get('ok') else []
         numbers = range(len(peaks)) if peak is None else [peak]
-        rows_k = [[r['label'], j + 1] + peak_values(peaks[j]) + [r2]
+        rows_k = [[r['label'], j + 1] + peak_values(peaks[j], sigmas) + [r2]
                   for j in numbers if j < len(peaks)]
         if not rows_k:
             rows_k = [[r['label'], None if peak is None else peak + 1, status(r) or 'no such peak']
@@ -320,10 +335,11 @@ def _plain_peak(f, digits=10):
     return out
 
 
-def error_of(fitted_peak, key):
-    """The standard error of one value of a fitted peak (None if unknown)."""
+def error_of(fitted_peak, key, sigmas=1):
+    """The uncertainty of one value of a fitted peak: `sigmas` x its
+    standard error (None if unknown)."""
     v = (fitted_peak.get('errors') or {}).get(key) if key else None
-    return float(v) if v is not None and np.isfinite(v) else None
+    return float(v) * sigmas if v is not None and np.isfinite(v) else None
 
 
 def plain(results):

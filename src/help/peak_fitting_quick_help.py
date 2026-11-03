@@ -108,6 +108,17 @@ the peaks from zero (only the drawing changes).</p>
 <p>The y axis shows the range of the data; the peaks are drawn on the background (black
 dash-dot line).</p>
 """),
+    'uncertainty': ("Quick help – the uncertainties (\u00b1)", 'uncertainty', """
+<p>After Fit Peaks every value has its uncertainty, e.g. Center <b>3432 &plusmn; 10</b>: measured
+again, the value would scatter by about this much. Large for noisy data, small bands or
+overlapping bands; <i>n/a</i> when the data cannot determine the value.</p>
+<p><b>&plusmn; shown as</b>: <b>1 &sigma;</b> (default, the standard error) - the true value lies
+within &plusmn; in about 2 of 3 cases (68 %); <b>2 &sigma;</b> - in 19 of 20 cases (95 %),
+e.g. for a confidence interval in a paper; <b>3 &sigma;</b> - in 997 of 1000 (99.7 %). Only
+the shown and copied &plusmn; change (their columns are then named e.g. <i>Center
+&plusmn;2&sigma;</i>), not the fit.</p>
+<p>The uncertainties assume independent noise: after smoothing they come out too small.</p>
+"""),
     'output': ("Quick help – what OK keeps", 'ok-behavior', """
 <p>The fit itself changes nothing in your spectra. <b>OK</b> adds new spectra only for the
 ticked options: the total fit, the residual, or each peak on its own.</p>

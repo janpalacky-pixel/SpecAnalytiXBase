@@ -130,3 +130,26 @@ def test_a_value_is_rounded_to_its_error():
     assert format_with_error(11.4094, 0.2213) == '11.41 ± 0.22'
     assert format_with_error(412.6, 123.0) == '413 ± 123'
     assert format_with_error(5.0, None) == '5.0000 ± n/a'
+
+
+def test_plus_minus_shown_as_two_or_three_sigma(fitted_dialog):
+    """'± shown as': 1 σ (default), 2 σ or 3 σ - only what is shown and copied."""
+    dlg = fitted_dialog
+    t = dlg.peaks_table
+    err = dlg.fit_results[0]['errors']['center']
+    assert dlg.sigma_combo.currentData() == 1
+    dlg.sigma_combo.setCurrentIndex(dlg.sigma_combo.findData(2))
+    assert _shown_text(t, 0, 2).endswith(f" ± {format_error(2 * err)}")
+    assert dlg.fit_results[0]['errors']['center'] == err                # the fit stays
+    assert '2 ×' in t.item(0, 2).toolTip()
+    dlg.copy_results_to_clipboard()
+    lines = QApplication.clipboard().text().splitlines()
+    assert lines[0].split('\t')[3] == 'Center ±2σ'
+    assert float(lines[1].split('\t')[3]) == pytest.approx(2 * err, rel=1e-4)
+    assert pfs.series_table([{'label': 'a', 'ok': True, 'r2': 1.0,
+                              'peaks': dlg.fit_results}], 1, 3)[0][2] == 'Peak 1 position ±3σ'
+    from src.views.dialogs.data_analysis.peak_fitting_dialog import PeakFittingDialog
+    assert PeakFittingDialog._header_text('Center ±2σ') == '±2σ'
+    assert PeakFittingDialog._header_tip('Center ±2σ').startswith('± of Center')
+    again = PeakFittingDialog(None, spectrum=dlg.spectrum, current_settings=dlg.get_results())
+    assert again.sigma_combo.currentData() == 2

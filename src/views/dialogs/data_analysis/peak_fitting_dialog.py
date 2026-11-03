@@ -285,6 +285,21 @@ class PeakFittingDialog(QDialog):
         self.background_combo.currentIndexChanged.connect(lambda *_: self._background_chosen())
         background_layout.addWidget(self.background_combo)
         background_layout.addStretch()
+        # the uncertainties: 1 (default), 2 or 3 sigma
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        background_layout.addWidget(QLabel("\u00b1 shown as:"))
+        self.sigma_combo = QComboBox()
+        for k, text in pfs.SIGMAS:
+            self.sigma_combo.addItem(text, k)
+        self.sigma_combo.setToolTip(
+            "How large the \u00b1 after the fitted values are:\n"
+            "1 \u03c3 (default): the standard error - the true value lies within \u00b1 in about\n"
+            "2 of 3 cases (68 %);\n"
+            "2 \u03c3: in 19 of 20 cases (95 %); 3 \u03c3: in 997 of 1000 cases (99.7 %).\n"
+            "Only the shown and copied \u00b1 change, not the fit.")
+        self.sigma_combo.currentIndexChanged.connect(lambda *_: self._sigmas_chosen())
+        background_layout.addWidget(self.sigma_combo)
+        background_layout.addWidget(self._quick_help_button('uncertainty'))
         fit_layout.addLayout(background_layout)
         constraint_layout = QHBoxLayout()
         constraint_layout.addWidget(QLabel("Amplitude Constraint:"))
@@ -628,6 +643,11 @@ class PeakFittingDialog(QDialog):
             check.blockSignals(True)
             check.setChecked(bool(s.get(key, True)))
             check.blockSignals(False)
+        k = self.sigma_combo.findData(s.get('error_sigmas', 1))
+        if k >= 0:
+            self.sigma_combo.blockSignals(True)
+            self.sigma_combo.setCurrentIndex(k)
+            self.sigma_combo.blockSignals(False)
         self.subtract_check.blockSignals(True)
         self.subtract_check.setChecked(bool(s.get('subtract_background', False)))
         self.subtract_check.blockSignals(False)
@@ -1351,11 +1371,16 @@ class PeakFittingDialog(QDialog):
                 value = float(item.text())
             except ValueError:
                 continue
-            item.setData(ERROR_ROLE, format_with_error(value, err))
+            k = self._sigmas()
+            item.setData(ERROR_ROLE, format_with_error(value, err * k if err is not None
+                                                       else None))
             item.setToolTip(
-                "\u00b1 = the uncertainty of the fitted value (its standard error, 1 \u03c3):\n"
-                "measured again, the value would scatter by about this much.\n"
-                "Double-click to see or edit the full number (the \u00b1 then disappear)."
+                ("\u00b1 = the uncertainty of the fitted value (its standard error, 1 \u03c3):\n"
+                 "measured again, the value would scatter by about this much.\n"
+                 if k == 1 else
+                 f"\u00b1 = {k} \u00d7 the standard error of the fitted value ({k} \u03c3,\n"
+                 "see \u00b1 shown as, in the box Fitting).\n")
+                + "Double-click to see or edit the full number (the \u00b1 then disappear)."
                 if err is not None else
                 "n/a: the fit could not tell how uncertain this value is -\n"
                 "e.g. the value is at its limit, or the data do not determine it\n"
@@ -1870,18 +1895,20 @@ class PeakFittingDialog(QDialog):
     @staticmethod
     def _header_text(name):
         """A '... \u00b1' column (the uncertainty of the value before it) is
-        headed just '\u00b1' in the tables of the window - short; copied and
-        exported it keeps its full name ('Center \u00b1')."""
-        from src.modules.data_analysis import peak_fitting_series as pfs
-        return '\u00b1' if str(name).endswith(pfs.PM) else str(name)
+        headed just '\u00b1' (or '\u00b12\u03c3') in the tables of the window -
+        short; copied and exported it keeps its full name ('Center \u00b1')."""
+        name = str(name)
+        return name[name.rindex(' \u00b1') + 1:] if ' \u00b1' in name else name
 
     @staticmethod
     def _header_tip(name):
-        from src.modules.data_analysis import peak_fitting_series as pfs
-        if str(name).endswith(pfs.PM):
-            return (f"\u00b1 of {str(name)[:-len(pfs.PM)]}: its uncertainty from the fit "
-                    "(standard error, 1 \u03c3)")
-        return ''
+        name = str(name)
+        if ' \u00b1' not in name:
+            return ''
+        cut = name.rindex(' \u00b1')
+        k = name[cut + 2:].rstrip('\u03c3') or '1'
+        return (f"\u00b1 of {name[:cut]}: its uncertainty from the fit\n"
+                f"({k} \u00d7 the standard error, {k} \u03c3)")
 
     def _set_headers(self, table, columns):
         table.setHorizontalHeaderLabels([self._header_text(c) for c in columns])
@@ -1913,7 +1940,8 @@ class PeakFittingDialog(QDialog):
         self.series_peak = max(0, min(self.series_peak, n - 1)) if n else 0
         j = self.series_peak
         # By peak
-        columns, data = pfs.peaks_long(self.series_results, rows, peak=j)
+        columns, data = pfs.peaks_long(self.series_results, rows, peak=j,
+                                       sigmas=self._sigmas())
         extra = columns.index('Extra')
         no_extra = not any(row[extra] is not None for row in data)
         shown = [c for c in range(len(columns)) if columns[c] != 'Peak'
@@ -1942,7 +1970,7 @@ class PeakFittingDialog(QDialog):
         self.series_peak_prev.setEnabled(j > 0)
         self.series_peak_next.setEnabled(j < n - 1)
         # By spectrum
-        columns, data = pfs.peaks_long(self.series_results, rows)
+        columns, data = pfs.peaks_long(self.series_results, rows, sigmas=self._sigmas())
         tree = self.by_spectrum_tree
         tree.clear()
         tree.setColumnCount(len(columns) - 1)
@@ -1980,7 +2008,7 @@ class PeakFittingDialog(QDialog):
             it.setExpanded(it.data(0, Qt.UserRole) not in self._closed_in_tree)
         no_extra = all(row[columns.index('Extra')] is None for row in data)
         tree.setColumnHidden(columns.index('Extra') - 1, no_extra)
-        tree.setColumnHidden(columns.index('Extra' + pfs.PM) - 1, no_extra)
+        tree.setColumnHidden(columns.index('Extra' + pfs.pm(self._sigmas())) - 1, no_extra)
         for c in range(tree.columnCount()):
             tree.resizeColumnToContents(c)
         tree.setColumnWidth(0, min(tree.columnWidth(0), 170))
@@ -1995,7 +2023,8 @@ class PeakFittingDialog(QDialog):
         if view == 'wide':
             return self.copy_series(rows)
         columns, data = pfs.peaks_long(self.series_results, rows,
-                                       peak=self.series_peak if view == 'peak' else None)
+                                       peak=self.series_peak if view == 'peak' else None,
+                                       sigmas=self._sigmas())
         text = pl.rows_as_text(data, columns)
         QApplication.clipboard().setText(text)
         self.copied_rows = len(rows)
@@ -2116,7 +2145,7 @@ class PeakFittingDialog(QDialog):
         from src.modules.data_analysis import peak_fitting_series as pfs
         n = max([len(self.peaks)] + [len(r.get('peaks') or []) for r in (self.series_results or [])
                                      if r.get('ok')])
-        return pfs.series_table(self.series_results or [], n)
+        return pfs.series_table(self.series_results or [], n, self._sigmas())
 
     def _refresh_series_table(self):
         from src.modules.data_analysis import peak_fitting_series as pfs
@@ -2763,14 +2792,15 @@ class PeakFittingDialog(QDialog):
         from src.modules.data_analysis import peak_fitting_series as pfs
         fitted = (self.fit_results if self.fit_results
                   and len(self.fit_results) == self.peaks_table.rowCount() else None)
-        header = ("Peak\t" + "\t".join(pfs.PEAK_COLUMNS)       # as in the table
+        sigmas = self._sigmas()
+        header = ("Peak\t" + "\t".join(pfs.peak_columns(sigmas))   # as in the table
                   + "\tFixed / linked\n")
         lines = [header]
 
         def err(i, key):
             if fitted is None or key is None:
                 return ""
-            e = pfs.error_of(fitted[i], key)
+            e = pfs.error_of(fitted[i], key, sigmas)
             return f"{e:.6g}" if e is not None else ""
 
         for i in range(self.peaks_table.rowCount()):
@@ -2825,7 +2855,7 @@ class PeakFittingDialog(QDialog):
             # the background fitted with the peaks: its value at both ends
             def e(key):
                 v = bg.get(key)
-                return f"{v:.6g}" if v is not None else ""
+                return f"{v * sigmas:.6g}" if v is not None else ""
             lines.append(f"\nBackground\t{bg['kind'].capitalize()}\n"
                          f"at x\t{bg['x0']:.6g}\ty\t{bg['y0']:.6g}\t{e('y0_err')}\n"
                          f"at x\t{bg['x1']:.6g}\ty\t{bg['y1']:.6g}\t{e('y1_err')}\n")
@@ -2895,6 +2925,16 @@ class PeakFittingDialog(QDialog):
                 self._peak_fills.append(self.ax_main.fill_between(
                     self.x_roi, y, base, color=line.get_color(), alpha=0.25, linewidth=0))
         self.canvas.draw_idle()
+
+    def _sigmas(self):
+        """1, 2 or 3: the \u00b1 shown are this many standard errors."""
+        combo = getattr(self, 'sigma_combo', None)
+        return (combo.currentData() if combo is not None else None) or 1
+
+    def _sigmas_chosen(self):
+        if self.fit_results:
+            self.update_peaks_table(from_fit_results=True)
+        self._refresh_series_table()
 
     def _subtract_background(self):
         """'Subtract background' ticked (above the plot): the data and the
@@ -3143,6 +3183,7 @@ class PeakFittingDialog(QDialog):
             'show_residual': self.residual_check.isChecked(),
             'show_legend': self.legend_check.isChecked(),
             'data_style': self._data_style(),
+            'error_sigmas': self._sigmas(),
             'subtract_background': self._subtract_background(),
             # the background: its kind and the one fitted with fit_results
             'background': self.background_kind,

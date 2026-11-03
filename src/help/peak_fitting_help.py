@@ -552,6 +552,14 @@ def get_peak_fitting_help_content():
         scatter by about this much (the standard error, 1&nbsp;&sigma;; the true value lies
         within &plusmn; the uncertainty in about 2 of 3 cases, within &plusmn; twice it in 19 of
         20). Hold the mouse over a value to see this explanation.</p>
+        <p><b>&plusmn; shown as</b> (in the box Fitting, next to Background) chooses how large the
+        &plusmn; are: <b>1 &sigma;</b> (default, the standard error, 68 %), <b>2 &sigma;</b>
+        (95 %, e.g. for a confidence interval in a paper) or <b>3 &sigma;</b> (99.7 %). E.g.
+        Center 3432 &plusmn; 10 at 1 &sigma; is 3432 &plusmn; 20 at 2 &sigma;. Only what is
+        shown and copied changes, not the fit; Copy Results, the Series results, Export and the
+        Data table then name the columns e.g. <i>Center &plusmn;2&sigma;</i> (at 1 &sigma; just
+        <i>Center &plusmn;</i>). The window remembers the choice; the orange <b>?</b> next to it
+        explains it in short.</p>
         <p><b>Double-click</b> a value to see its full number (e.g. 3431.5432) and to edit it.
         After an edit the &plusmn; are gone in the whole table: the values are now the
         <b>start values</b> of the next fit, no longer fitted values. Fit Peaks again gives
@@ -1031,12 +1039,50 @@ def get_peak_fitting_help_content():
             in the list.</li>
             <li>FWHM and area are calculated exactly from the fitted values for all four shapes
             (Voigt: from the Faddeeva function).</li>
-            <li><b>Uncertainties</b>: the standard errors from the covariance matrix of the fit
-            (<i>curve_fit</i>, scaled by the residual variance, i.e. the noise is estimated from
-            the residual). FWHM and area, which are calculated from several fitted values, get
-            theirs by error propagation: var(f) = g&nbsp;C&nbsp;g<sup>T</sup>, g the derivatives
-            of f by the fitted values (numerical), C their covariance &mdash; so correlations
-            between the values (e.g. height and width) are taken into account.</li>
+            <li><b>Uncertainties</b> &mdash; how they are computed:
+                <ul>
+                    <li>The fit minimizes S = &sum; (y<sub>i</sub> &minus;
+                    f(x<sub>i</sub>; p))<sup>2</sup> over the N data points; p are the P fitted
+                    values (centres, heights, widths, extra values of the peaks and the
+                    background's one or two values) &mdash; only the free ones: a fixed or linked
+                    value is not fitted (see Fixed and linked values below).</li>
+                    <li>At the minimum, the covariance of the fitted values is C =
+                    s&sup2;&nbsp;(J<sup>T</sup>J)<sup>&minus;1</sup>, J the Jacobian (the
+                    derivatives of the model by each fitted value at every point) and s&sup2; =
+                    S&nbsp;/&nbsp;(N&nbsp;&minus;&nbsp;P) the variance of the noise, estimated
+                    from the residual (<i>scipy.optimize.curve_fit</i>; the noise does not have
+                    to be known in advance).</li>
+                    <li>The standard error of a value is &sigma; = &radic;C<sub>jj</sub>; the
+                    table shows k&nbsp;&sigma; with k from <b>&plusmn; shown as</b> (1, 2 or 3).
+                    For normally distributed noise the true value lies within &plusmn;1&sigma;
+                    with 68&nbsp;%, &plusmn;2&sigma; with 95&nbsp;%, &plusmn;3&sigma; with
+                    99.7&nbsp;% probability. This holds well when there are many more data
+                    points than fitted values (e.g. a spectrum of 1600 points and 3 peaks with 3
+                    values each plus 2 of the background: 11 fitted values) and when the
+                    &plusmn; is small compared with the value. The reason: the calculation
+                    treats the model as if it changed in a straight line (proportionally) when
+                    a value is changed a little around its best value &mdash; true for small
+                    changes. For a very uncertain value (e.g. a height 0.22 &plusmn; 0.36, the
+                    &plusmn; larger than the value) the changes are large, the straight line no
+                    longer fits, and the &plusmn; is only a rough guide.</li>
+                    <li>FWHM and area are calculated from several fitted values; they get theirs
+                    by error propagation: var(f) = g&nbsp;C&nbsp;g<sup>T</sup>, g the derivatives
+                    of f by the fitted values (numerical, central differences) &mdash; so
+                    correlations between the values (e.g. height and width: a higher, narrower
+                    peak has nearly the same area) are taken into account.</li>
+                    <li>The background's two values (at the first and last x) get theirs in the
+                    same way (Copy Results).</li>
+                    <li>Assumptions: the noise of the points is independent and of the same size
+                    everywhere, and the model (peak shapes, background) describes the data.
+                    After smoothing the noise of neighbouring points is no longer independent,
+                    and the uncertainties come out too small; a wrong peak shape or a missing
+                    peak makes them meaningless (look at the residual). A value that ended at
+                    its limit (e.g. a height at 0 with Positive Peaks Only, a centre at the
+                    edge of its range) has no reliable uncertainty.</li>
+                    <li>Checked on 60 noisy copies of one spectrum: the scatter of the fitted
+                    values matched the computed &sigma; within the expected statistical
+                    variation.</li>
+                </ul></li>
             <li><b>Fitting together</b>: variable projection &mdash; the heights and the
             backgrounds enter the model linearly, so for given positions and widths they are
             found exactly by linear least squares, spectrum by spectrum (with bounds for
