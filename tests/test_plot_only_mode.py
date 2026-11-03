@@ -144,6 +144,11 @@ def _program(tmp_path, monkeypatch):
         clear_first=True, file_paths=[os.path.join(root, 'resources', 'test_data', 'real',
                                                    'CD_spectra_TBA.txt')])
     mc.spectrum_selector.select_all_items()
+    # a window left open by an earlier test would be taken for the window
+    # opened here (and the opened one never closed): hide such windows
+    for w in QApplication.topLevelWidgets():
+        if isinstance(w, QDialog) and w.isVisible():
+            w.hide()
     mc.view.show()
     app.processEvents()
     return mc

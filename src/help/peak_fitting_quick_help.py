@@ -9,10 +9,12 @@ QUICK_HELP = {
 starting position, height and width for each. Check the list: remove what you do not want
 (select rows, <b>Remove Selected Peak(s)</b>) and add what is missing.</p>
 <p><b>Add via Click</b>: click on the top of a band in the plot - a Gaussian peak is added there,
-its width taken from the band under the click. To zoom or pan, simply choose Zoom or Pan in the
+its width taken from the band under the click. With several spectra shown it goes to the
+shown one (Overlay), or to the one clicked on (Waterfall: its band; Grid: its small plot). To zoom or pan, simply choose Zoom or Pan in the
 plot's toolbar: that switches Add via Click off (tick it again to add more peaks).</p>
 <p>The table: <b>Model</b> (the peak shape), <b>Center</b> (position of the top), <b>Height</b>
-(of the top), <b>Width</b> and <b>Extra</b>. Every value can be edited (double-click).
+(of the top), <b>Width</b> and <b>Extra</b>. Every value can be edited (double-click). Drag the
+line between two headings to make a column wider.
 <b>Width</b> is &sigma; for Gaussian and Voigt, &gamma; for Lorentzian, the FWHM for
 Pseudo-Voigt; <b>Extra</b> is &gamma; for Voigt, &eta; (0&ndash;1) for Pseudo-Voigt (shown only
 when a peak has it). Hold the mouse over a column heading to see this.</p>
@@ -100,10 +102,13 @@ Peaks - only it changes.</p>
 <p>The list beside the plot works as in the main window: <b>one</b> spectrum selected - it alone
 with its fit, single peaks and residual; <b>several</b> (Ctrl/Shift+click, All, Fitted) - shown
 together as chosen in <b>Several selected</b>: Overlay, Waterfall or Grid. Each spectrum has its
-colour: data thin, fit thick. &#9664; &#9654; go to the previous or next spectrum.</p>
+colour: data thin, fit thick. &#9664; &#9654; (Alt+Left / Alt+Right) go to the previous or
+next spectrum. The <b>shown spectrum</b> (its peaks are in the table) has an <b>orange frame</b>
+in the list; with several selected, &#9664; &#9654; move the frame among them (all stay
+selected). In the plot it is drawn stronger (Overlay), or framed in orange (Waterfall, Grid).</p>
 <p><b>Residual</b> and <b>Legend</b> hide the residual plot and the legend (for one spectrum;
 the legend also in Overlay and Waterfall). <b>Data</b>: the measured data as Points (default)
-or as a Line. <b>&minus; background</b>: the data and the fit drawn without the background,
+or as a Line (also with several spectra). <b>&minus; background</b>: the data and the fit drawn without the background,
 the peaks from zero (only the drawing changes).</p>
 <p>The y axis shows the range of the data; the peaks are drawn on the background (black
 dash-dot line).</p>

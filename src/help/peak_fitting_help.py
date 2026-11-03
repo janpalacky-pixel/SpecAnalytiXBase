@@ -43,6 +43,11 @@ _SCREENSHOT_FILES = {
     "CD_POSITIVE": "cd_fit_positive.png",
     "NEEDED_TABLE": "needed_table.png",
     "NEEDED_PLOT": "needed_plot.png",
+    "SEVERAL_OVERLAY": "several_overlay.png",
+    "SEVERAL_WATERFALL": "several_waterfall.png",
+    "SEVERAL_GRID": "several_grid.png",
+    "CLICK_WATERFALL": "click_waterfall.png",
+    "CLICK_GRID": "click_grid.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -344,6 +349,13 @@ def get_peak_fitting_help_content():
             quickly.</li>
             <li><b>Right</b> &mdash; the plot: the shown spectrum with its fit and the residual, or
             several spectra together.</li>
+            <li>The <b>line between the left part and the rest</b> can be moved with the mouse,
+            also in a window that is not maximized: when the left part becomes narrower than its
+            contents, it scrolls (and so does the row of controls above the plot: &#9664; &#9654;,
+            Several selected, Residual, Legend, Data, &minus; background).</li>
+            <li>The <b>mouse wheel</b> scrolls the left part, the table of peaks or the list
+            &mdash; it never changes a drop-down list (e.g. Background or the Model of a peak)
+            the mouse happens to be over. To change one, click it.</li>
         </ul>
         <p>The small orange <b>?</b> buttons give a short help on each part of the window, with a
         link to its section here.</p>
@@ -369,13 +381,21 @@ def get_peak_fitting_help_content():
             A Gaussian peak is added there, with the width of the band under the click (its width
             at half height). Where no band can be measured (a shoulder, flat baseline) it gets the
             initial width: right-click <b>Auto-Detect Peaks</b> &rsaquo; <b>Set Initial Peak
-            Width&hellip;</b>. A width set there is used for every clicked peak.</li>
+            Width&hellip;</b>. A width set there is used for every clicked peak. With
+            <b>several spectra shown</b> the peak goes to one spectrum: in <b>Overlay</b> to the
+            <b>shown spectrum</b> (orange frame in the list); in <b>Waterfall</b> to the spectrum
+            whose band you click in; in <b>Grid</b> to the spectrum of the small plot you click
+            in. That spectrum becomes the shown one. Its height is taken from that spectrum's
+            data under the click, and its starting peaks are drawn dashed. The line next to the
+            plot's toolbar tells what a click does.</li>
             <li><b>Zoom and Pan</b> (the plot's toolbar): choosing Zoom or Pan switches Add via
             Click off, so dragging does not add peaks; tick Add via Click again to add more. The
             line next to the toolbar tells which of the two a click on the plot does. Home (the
             house) shows the whole spectrum again.</li>
             <li><b>Edit</b> any value: double-click a cell. Double-click the colour swatch to change
-            the colour. <b>Extra</b> is the 4th value of Voigt (&gamma;) and Pseudo-Voigt (&eta;);
+            the colour. <b>Column widths</b>: drag the line between two headings to make a column
+            wider (e.g. to see a long value with its &plusmn;); double-click the line: as wide as
+            its content. Holding the mouse over a value shows it in full too. <b>Extra</b> is the 4th value of Voigt (&gamma;) and Pseudo-Voigt (&eta;);
             Gaussian and Lorentzian have none ("&mdash;").</li>
             <li><b>Which peak is which</b>: select a row (or several) in the table &mdash; that
             peak is drawn thick and filled in the plot.</li>
@@ -395,9 +415,11 @@ def get_peak_fitting_help_content():
             peaks: Series results shows it as not fitted yet until you click Fit Peaks again.</li>
             <li><b>Clear All Peaks</b> clears the shown spectrum; with several selected,
             <b>Clear All Peaks &ndash; N spectra</b> clears all of them (and their fits).</li>
-            <li>The shown spectrum changes only when you select <b>one</b> spectrum alone (a plain
-            click, or &#9664; &#9654;). Adding spectra to the selection (Ctrl+click, Shift+click,
-            All) keeps it.</li>
+            <li>The shown spectrum changes when you select <b>one</b> spectrum alone (a plain
+            click), with &#9664; &#9654; (Alt+Left / Alt+Right: with several selected it moves
+            among them, all stay selected) and with Add via Click in Waterfall and Grid (the
+            spectrum clicked on). Adding spectra to the selection (Ctrl+click, Shift+click, All)
+            keeps it.</li>
             <li><b>Auto-Detect Peaks</b> finds the peaks of the shown spectrum; with several
             selected, <b>Auto-Detect Peaks &ndash; N spectra</b> finds the peaks of each of them,
             each into its own list.</li>
@@ -432,6 +454,19 @@ def get_peak_fitting_help_content():
         <div class="screenshot">
             <img src="$WIDTH_DIALOG" width="${WIDTH_DIALOG_W}" height="${WIDTH_DIALOG_H}" alt="Set Initial Peak Width dialog, opened by right-clicking Auto-Detect Peaks" />
             <p class="caption">Set Initial Peak Width&hellip; (right-click Auto-Detect Peaks).</p>
+        </div>
+        <p><b>Add via Click with several spectra shown.</b> Example: six Raman spectra selected,
+        only raman_01 has peaks. In Waterfall, three clicks on the bands of raman_04 give
+        raman_04 three peaks; raman_04 becomes the shown spectrum (orange frame in the list and
+        around its band) and its peaks are drawn dashed. In Grid, a click in the small plot of
+        raman_05 gives it a peak and makes it the shown one.</p>
+        <div class="screenshot">
+            <img src="$CLICK_WATERFALL" width="${CLICK_WATERFALL_W}" height="${CLICK_WATERFALL_H}" alt="Waterfall of six spectra: raman_04 framed in orange, with three dashed starting peaks added by clicks" />
+            <p class="caption">Waterfall: three clicks on the bands of raman_04 &mdash; it gets three peaks (dashed) and the orange frame.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$CLICK_GRID" width="${CLICK_GRID_W}" height="${CLICK_GRID_H}" alt="Grid of six spectra: the small plot of raman_05 framed in orange, with one dashed peak added by a click" />
+            <p class="caption">Grid: a click in the small plot of raman_05 &mdash; it gets the peak (dashed) and the orange frame.</p>
         </div>
 
         <h2 id="fitting">Fitting</h2>
@@ -732,7 +767,7 @@ def get_peak_fitting_help_content():
             spectrum; Legend also to Overlay and Waterfall; in Grid each small plot has the
             spectrum's name as its title.</li>
             <li><b>Data</b>: <i>Points</i> (default) or <i>Line</i> &mdash; how the measured data
-            are drawn (one spectrum and Grid). The window remembers it.</li>
+            are drawn (one spectrum and several). The window remembers it.</li>
             <li><b>&minus; background</b> (next to Data: subtract the background; off by default)
             &mdash; two ways to look at the same
             fit. Off: the data as measured, the background (black dash-dot line) under the
@@ -754,17 +789,30 @@ def get_peak_fitting_help_content():
         the main window:</p>
         <ul>
             <li><b>One spectrum selected</b> &mdash; it alone, with its fit, single peaks and
-            residual. Peaks are added by clicking only in this view. &#9664; &#9654; above the plot
-            go to the previous or next spectrum; its name is shown next to them. The tab Peaks
-            lists the peaks of this spectrum.</li>
+            residual. &#9664; &#9654; above the plot (or <b>Alt+Left</b> / <b>Alt+Right</b>) go to
+            the previous or next spectrum; its name is shown next to them. The tab Peaks lists
+            the peaks of this spectrum.</li>
             <li><b>Several selected</b> (Ctrl+click, Shift+click, or <b>All</b> / <b>Fitted</b>
             under the list) &mdash; shown together, as chosen in <b>Several selected</b>:
             <b>Overlay</b> (in one plot), <b>Waterfall</b> (each shifted up a little) or
             <b>Grid</b> (one small plot each, at most 16). Each spectrum has its own colour: the
             data thin, its fit thick. Before fitting only the data are drawn.</li>
+            <li><b>Several selected: which one is shown</b> &mdash; one of them is the <b>shown
+            spectrum</b> (its peaks are in the tab Peaks). &#9664; &#9654; (or <b>Alt+Left</b> /
+            <b>Alt+Right</b>, or <b>Alt+Up</b> / <b>Alt+Down</b>; wherever the focus is in the window)
+            make the previous
+            or next of the selected spectra the shown one; all stay selected and shown. Example:
+            six spectra in Waterfall &mdash; press Alt+Right to go from 03 to 04 and click on its
+            bands to add peaks, while you still see the other five. The shown spectrum is also
+            marked in the plot: in Overlay it is drawn stronger, in Waterfall its band has an
+            orange frame, in Grid its small plot has an orange frame and a bold title.</li>
             <li>In the list, spectra with peaks to fit have a <b>green dot</b> (green bold names),
             those without peaks are grey; fitted spectra are marked &#10003;, a poor fit
-            (R&sup2; below 0.9) &#9888; and a failed fit &#10007;. A long name is
+            (R&sup2; below 0.9) &#9888; and a failed fit &#10007;. The <b>shown spectrum</b> (the
+            one whose peaks the tab Peaks lists) has an <b>orange frame</b> and a bold name &mdash;
+            also when several are selected (blue); &#9664; &#9654; move it among them, a click on a
+            spectrum alone shows only that one.
+            A long name is
             shortened next to &#9664; &#9654; (the whole name in its tooltip). The button
             <b>Spectra</b> hides or shows the list.</li>
         </ul>
@@ -779,6 +827,22 @@ def get_peak_fitting_help_content():
         <div class="screenshot">
             <img src="$SERIES_GRID" width="${SERIES_GRID_W}" height="${SERIES_GRID_H}" alt="Grid: one small plot per spectrum with its R squared" />
             <p class="caption">Several selected &rsaquo; Grid: one small plot per spectrum, its R&sup2; in the title.</p>
+        </div>
+        <p><b>The shown spectrum among several selected.</b> Example: six fitted spectra
+        selected, &#9654; pressed twice (or Alt+Right) &mdash; raman_03 is the shown one: orange
+        frame in the list, its name next to &#9664; &#9654;, and marked in the plot. All six stay
+        selected and shown.</p>
+        <div class="screenshot">
+            <img src="$SEVERAL_WATERFALL" width="${SEVERAL_WATERFALL_W}" height="${SEVERAL_WATERFALL_H}" alt="Waterfall of six fitted spectra: raman_03 the shown one, its band framed in orange" />
+            <p class="caption">Waterfall: the band of the shown spectrum (raman_03) has an orange frame.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$SEVERAL_OVERLAY" width="${SEVERAL_OVERLAY_W}" height="${SEVERAL_OVERLAY_H}" alt="Overlay of six fitted spectra: raman_03 drawn stronger, in front" />
+            <p class="caption">Overlay: the shown spectrum (raman_03, green) is drawn stronger, in front of the others.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$SEVERAL_GRID" width="${SEVERAL_GRID_W}" height="${SEVERAL_GRID_H}" alt="Grid of six fitted spectra: the small plot of raman_03 framed in orange, bold title" />
+            <p class="caption">Grid: the small plot of the shown spectrum (raman_03) has an orange frame and a bold title.</p>
         </div>
 
         <h2 id="series">Fitting a series</h2>

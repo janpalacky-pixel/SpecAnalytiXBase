@@ -777,6 +777,79 @@ def part_peak_fitting_own():
     mc.run_visualization_analysis('Peak Fitting')
 
 
+def part_peak_fitting_several():
+    """Several spectra selected (each with its own peaks): the shown spectrum
+    (orange frame) moved with the arrows, marked in Overlay, Waterfall and
+    Grid; Add via Click in Waterfall and in Grid adds the peak to the
+    spectrum clicked on (it becomes the shown one, its peaks drawn dashed)."""
+    F = 'peak_fitting'
+    mc = load([os.path.join(SYN, 'raman_2comp_noisy.xlsx')], select=list(range(6)))
+
+    @on('Peak Fitting')
+    def _(d):
+        from PyQt5.QtCore import QItemSelectionModel
+        d.resize(1900, 1000)
+        settle(0.5)
+
+        def select(rows):
+            lst = d.spectra_list
+            lst.clearSelection()
+            for r in rows:
+                lst.selectionModel().select(lst.model().index(r, 0), QItemSelectionModel.Select)
+            settle(0.5)
+
+        class Click:                                      # a left click on the plot
+            button = 1
+
+            def __init__(self, ax, x, y):
+                self.inaxes, self.xdata, self.ydata = ax, x, y
+
+        right = [d.list_button.parentWidget(), d.click_hint, d.spectra_panel, d.canvas]
+        d.follow_check.setChecked(True)                   # each spectrum its own peaks
+        d.interactive_add_cb.setChecked(True)
+        d.amplitude_combo.setCurrentIndex(1)              # Positive Peaks Only
+        # all six fitted; the third one shown (moved there with the arrows)
+        select([0])
+        d.peaks = []
+        d.auto_detect_peaks()
+        centres = sorted(p['center'] for p in d.peaks)
+        d.list_all_button.click()
+        settle(0.4)
+        d.fit_selected()
+        settle(0.6)
+        d.make_shown(0)
+        d.step_shown(+1)
+        d.step_shown(+1)                                  # \u25b6 twice: 03
+        for k, name in ((0, 'several_overlay.png'), (1, 'several_waterfall.png'),
+                        (2, 'several_grid.png')):
+            d.view_combo.setCurrentIndex(k)
+            settle(0.6)
+            shot(d, F, name, right, margin=4)
+
+        # Add via Click before a fit: only the first spectrum has peaks; in
+        # Waterfall three clicks on the bands of 04 give it three peaks (dashed)
+        d.clear_peaks()                                   # Clear All Peaks - 6 spectra
+        select([0])
+        d.auto_detect_peaks()
+        select(list(range(6)))
+        d.view_combo.setCurrentIndex(1)                   # Waterfall
+        settle(0.5)
+        for x in (centres[0], centres[1], min(centres, key=lambda c: abs(c - 1640))):
+            band = dict((r, (lo, hi)) for r, lo, hi in d._bands)[3]
+            d.on_canvas_click(Click(d._series_ax, x, 0.5 * (band[0] + band[1])))
+            settle(0.3)
+        settle(0.4)
+        shot(d, F, 'click_waterfall.png', right, margin=4)
+        # in Grid a click in the small plot of 05
+        d.view_combo.setCurrentIndex(2)
+        settle(0.5)
+        ax = next(a for a, r in d._grid_axes.items() if r == 4)
+        d.on_canvas_click(Click(ax, centres[0], 0.0))
+        settle(0.6)
+        shot(d, F, 'click_grid.png', right, margin=4)
+    mc.run_visualization_analysis('Peak Fitting')
+
+
 def part_interactive_subtraction():
     F = 'interactive_subtraction'
     mc = load([RAMAN])
@@ -1398,6 +1471,7 @@ PARTS = {'peak_detection': part_peak_detection, 'user_guide': part_user_guide, '
          'manual_baseline': part_manual_baseline, 'normalization': part_normalization,
          'x_axis_alignment': part_x_axis_alignment, 'svd_interpolation': part_svd_interpolation,
          'peak_fitting': part_peak_fitting, 'peak_fitting_own': part_peak_fitting_own,
+         'peak_fitting_several': part_peak_fitting_several,
          'interactive_subtraction': part_interactive_subtraction}
 
 

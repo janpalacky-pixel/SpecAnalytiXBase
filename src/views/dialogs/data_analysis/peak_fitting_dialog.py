@@ -2,9 +2,10 @@
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QPushButton, QDialogButtonBox, QLabel,
-                             QWidget, QSplitter, QTableWidget, QTableWidgetItem,
+                             QWidget, QSplitter, QTableWidget, QTableWidgetItem, QScrollArea,
+                             QFrame,
                              QHeaderView, QComboBox, QMessageBox, QCheckBox, QRadioButton, QDoubleSpinBox,
-                             QColorDialog, QAbstractItemView, QMenu, QApplication,
+                             QAbstractSpinBox, QColorDialog, QAbstractItemView, QMenu, QApplication,
                              QTabWidget, QToolButton, QFileDialog, QShortcut, QSizePolicy,
                              QListWidget, QStyledItemDelegate, QStyle, QButtonGroup,
                              QStackedWidget, QTreeWidget, QTreeWidgetItem)
@@ -20,7 +21,7 @@ import matplotlib.pyplot as plt # Import pyplot
 # bare tuple, so normalize through to_hex() everywhere a peak color is
 # turned into a QColor, both when it's first assigned and when displaying
 # one that may have been saved by an older/different matplotlib version.
-from matplotlib.colors import to_hex as _mpl_to_hex
+from matplotlib.colors import to_hex as _mpl_to_hex, to_rgba
 import numpy as np
 
 from src.modules.data_analysis.peak_fitting_manager import (
@@ -33,10 +34,24 @@ from src.help.help_window import show_help_window
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
 
+def _ignore_wheel(widget):
+    """The mouse wheel over this drop-down list (or number box) does not
+    change it: the wheel goes on to what is around it (the left part, the
+    table of peaks), which scrolls - as in Map 2D and Melting Curve."""
+    widget.wheelEvent = lambda event: event.ignore()
+
+
+SHOWN_COLOUR = '#F57C00'               # the frame of the shown spectrum in the list
+
+
 class _SelectedTextDelegate(QStyledItemDelegate):
     """Selected rows of the spectra list in the selection's own text colour
     (white on blue), not in the green / grey that marks peaks - so the
-    marks never make a selected name hard to read; the green dot stays."""
+    marks never make a selected name hard to read; the green dot stays.
+    The shown spectrum (whose peaks the table lists; shown_row) has an
+    orange frame and bold text - also among several selected ones."""
+
+    shown_row = -1
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
@@ -44,6 +59,19 @@ class _SelectedTextDelegate(QStyledItemDelegate):
             from PyQt5.QtGui import QPalette
             option.palette.setBrush(QPalette.Text,
                                     option.palette.brush(QPalette.HighlightedText))
+        if index.row() == self.shown_row:
+            option.font.setBold(True)
+
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
+        if index.row() == self.shown_row:
+            from PyQt5.QtGui import QPen
+            painter.save()
+            pen = QPen(QColor(SHOWN_COLOUR))
+            pen.setWidth(3)
+            painter.setPen(pen)
+            painter.drawRect(option.rect.adjusted(1, 1, -2, -2))
+            painter.restore()
 
 
 ERROR_ROLE = Qt.UserRole + 1          # a fitted value with its uncertainty, as shown
@@ -66,6 +94,38 @@ class _ErrorDelegate(QStyledItemDelegate):
         tag = index.data(TAG_ROLE)
         if tag:
             option.text = f"[{tag}] {option.text}"     # the tag first: never cut off
+
+
+class _BarScroll(QScrollArea):
+    """A row of controls that scrolls sideways when there is not room for it
+    (a scroll bar only then), instead of making the window wider."""
+
+    def __init__(self, bar):
+        super().__init__()
+        self.bar = bar
+        self.setWidget(bar)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMinimumWidth(120)
+        self._fit_height()
+
+    def _fit_height(self):
+        need = self.bar.minimumSizeHint().width() > self.viewport().width()
+        h = self.bar.sizeHint().height() + (
+            self.horizontalScrollBar().sizeHint().height() if need else 0)
+        if self.height() != h:
+            self.setFixedHeight(h)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def minimumSizeHint(self):
+        from PyQt5.QtCore import QSize
+        return QSize(120, super().minimumSizeHint().height())
 
 
 class PeakFittingDialog(QDialog):
@@ -136,10 +196,21 @@ class PeakFittingDialog(QDialog):
         layout.addWidget(splitter)
         
         control_panel = self.create_control_panel()
-        splitter.addWidget(control_panel)
+        # in a scroll area: the handle of the splitter can make the left part
+        # narrower than its contents (a scroll bar then appears) - so it moves
+        # freely also in a window that is not maximized
+        left = QScrollArea()
+        left.setWidget(control_panel)
+        left.setWidgetResizable(True)
+        left.setFrameShape(QFrame.NoFrame)
+        left.setMinimumWidth(260)
+        left.setMaximumWidth(1400)
+        self.control_scroll = left
+        splitter.addWidget(left)
         
         canvas_panel = self.create_canvas_panel()
         splitter.addWidget(canvas_panel)
+        self.main_splitter = splitter
         
         splitter.setSizes([560, 750])
 
@@ -159,8 +230,7 @@ class PeakFittingDialog(QDialog):
         # columns were cropped — the 6-column table (Color, Model, Center,
         # Amplitude, Width, Extra) needs more room than 450px, especially
         # since adding Voigt/Pseudo-Voigt widened it from 5 columns to 6.
-        widget.setMinimumWidth(380)
-        widget.setMaximumWidth(750)
+        widget.setMinimumWidth(380)          # narrower: the scroll area around it scrolls
         layout = QVBoxLayout(widget)
 
         # --- Peaks Table ---
@@ -183,13 +253,21 @@ class PeakFittingDialog(QDialog):
                              "probably - without it the fit is somewhat worse;\n"
                              "no - without it the fit is just as good: the peak is not needed.")):
             self.peaks_table.horizontalHeaderItem(col).setToolTip(tip)
-        self.peaks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # the value columns: their widths can be moved with the mouse (drag the
+        # line between two headings; double-click it: as wide as the content);
+        # until then they share the width of the table
+        header = self.peaks_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+        self._columns_moved = False
+        self._setting_columns = False
+        header.sectionResized.connect(self._column_moved)
+        self.peaks_table.viewport().installEventFilter(self)
         self.peaks_table.setItemDelegate(_ErrorDelegate(self.peaks_table))
         # Make the first column (color swatch) narrow - the values (with
         # their uncertainty after a fit) get the room
         self.peaks_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.peaks_table.setColumnWidth(0, 28)
-        self.peaks_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.peaks_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
         probe = QComboBox()
         probe.addItems(list(self.manager.peak_models))
@@ -530,7 +608,9 @@ class PeakFittingDialog(QDialog):
         home_action.triggered.disconnect() # Disconnect default
         home_action.triggered.connect(self.reset_roi_to_full_spectrum) # Connect custom
         
-        layout.addWidget(self._build_plot_bar())
+        # the row above the plot scrolls sideways when the plot is narrow (it
+        # must not keep the splitter's handle from moving)
+        layout.addWidget(_BarScroll(self._build_plot_bar()))
         tool_row = QHBoxLayout()
         # the toolbar keeps all its buttons (no ">>" when the plot is narrow);
         # the hint beside it wraps instead
@@ -839,8 +919,23 @@ class PeakFittingDialog(QDialog):
     def _update_click_hint(self):
         if not hasattr(self, 'click_hint'):
             return
+        name = (str(self.series[self.current_index].get('label', '')).rsplit(' : ', 1)[-1]
+                if self.series else '')
         if self.view_mode != 'one':
-            text = ""
+            where = {'grid': "A click in a small plot adds a peak to that spectrum.",
+                     'waterfall': "A click adds a peak to the spectrum clicked on."}
+            text = (where.get(self.view_mode, f"A click adds a peak to {name} (orange frame).")
+                    if self.interactive_add_cb.isChecked() else
+                    "Add via Click is off: tick it to add peaks by clicking.")
+            first = {'grid': "Grid: a click in a small plot adds a peak to its spectrum; it\n"
+                             "becomes the shown one (orange frame).",
+                     'waterfall': "Waterfall: a click adds a peak to the spectrum whose band you\n"
+                                  "click in; it becomes the shown one (orange frame)."}
+            self.click_hint.setToolTip(
+                first.get(self.view_mode, f"Overlay: a click adds a peak to {name}, the shown\n"
+                                          "spectrum (orange frame).")
+                + "\nIts height is taken from that spectrum's data under the click.\n"
+                "\u25c0 \u25b6 (Alt+Left / Alt+Right) choose the shown spectrum.")
         elif self.interactive_add_cb.isChecked():
             text = "A click on the plot adds a peak (Zoom or Pan switches this off)."
         else:
@@ -850,11 +945,27 @@ class PeakFittingDialog(QDialog):
     def on_canvas_click(self, event):
         """Handle clicks on the canvas to add a new peak."""
         # This handler is only connected when the "Add via Click" checkbox is checked
-        if self.view_mode != 'one' or event.inaxes != getattr(self, 'ax_main', None) \
-                or event.button != 1 or str(getattr(self.toolbar, 'mode', '') or ''):
+        if event.button != 1 or str(getattr(self.toolbar, 'mode', '') or ''):
+            return
+        several = self.view_mode in ('overlay', 'waterfall', 'grid')
+        if several:
+            # several spectra shown together: the peak goes to the shown one
+            # (orange frame in the list) - in Grid to the one of the small plot,
+            # in Waterfall to the one whose band was clicked (it becomes the
+            # shown one); its height from that spectrum's data under the click
+            r = self._clicked_spectrum(event)
+            if r is None:
+                return
+            if r != self.current_index:
+                self.make_shown(r)
+        elif self.view_mode != 'one' or event.inaxes != getattr(self, 'ax_main', None):
             return
         
         center, amplitude = event.xdata, event.ydata
+        if several:
+            x = np.asarray(self.x_roi, dtype=float)
+            order = np.argsort(x)
+            amplitude = float(np.interp(center, x[order], np.asarray(self.y_roi, float)[order]))
         # the peak's height is above the background (the clicked point minus it)
         amplitude -= float(background_values(self._shown_background(), [center])[0])
         
@@ -883,6 +994,24 @@ class PeakFittingDialog(QDialog):
         # Refresh UI
         self.update_peaks_table()
         self.update_plot()
+
+    def _clicked_spectrum(self, event):
+        """The spectrum (its row) a click in Overlay / Waterfall / Grid is
+        for, None when outside the plots."""
+        if event.inaxes is None:
+            return None
+        if self.view_mode == 'grid':
+            return getattr(self, '_grid_axes', {}).get(event.inaxes)
+        if event.inaxes is not getattr(self, '_series_ax', None):
+            return None
+        bands = getattr(self, '_bands', None) or []
+        if self.view_mode != 'waterfall' or not bands or event.ydata is None:
+            return self.current_index
+        y = event.ydata
+        # the band (lowest to highest point of the shifted spectrum) clicked
+        # in, else the nearest one
+        return min(bands, key=lambda b: 0.0 if b[1] <= y <= b[2]
+                   else min(abs(y - b[1]), abs(y - b[2])))[0]
 
     def reset_roi_to_full_spectrum(self, load_settings=False):
         """
@@ -1133,6 +1262,37 @@ class PeakFittingDialog(QDialog):
         self.peak_color_index = 0 # Reset color index
         self.update_peaks_table()
         self.update_plot()
+
+    def eventFilter(self, obj, event):
+        from PyQt5.QtCore import QEvent
+        if (event.type() == QEvent.Resize and hasattr(self, 'peaks_table')
+                and obj is self.peaks_table.viewport()):
+            self._share_columns()
+        return super().eventFilter(obj, event)
+
+    def _column_moved(self, *_):
+        if not self._setting_columns:
+            self._columns_moved = True          # set by hand: kept so
+
+    def _share_columns(self):
+        """Center, Height, Width (and Extra) share the width of the table
+        equally, Needed? as wide as its heading - until a column is moved by
+        hand."""
+        t = self.peaks_table
+        if self._columns_moved or t.columnCount() < 7:
+            return
+        cols = [c for c in (2, 3, 4, 5) if not t.isColumnHidden(c)]
+        needed = max(t.horizontalHeader().sectionSizeHint(6),
+                     t.fontMetrics().horizontalAdvance('not fitted') + 14)
+        free = t.viewport().width() - t.columnWidth(0) - t.columnWidth(1) - needed
+        if free <= 0 or not cols:
+            return
+        self._setting_columns = True
+        try:
+            for c in cols:
+                t.setColumnWidth(c, max(50, free // len(cols)))
+        finally:
+            self._setting_columns = False
 
     def _set_needed_cell(self, row, peak_fit):
         """The column Needed?: yes / probably / no from the fitted peak's
@@ -1411,10 +1571,10 @@ class PeakFittingDialog(QDialog):
             except ValueError:
                 continue
             k = self._sigmas()
-            item.setData(ERROR_ROLE, format_with_error(value, err * k if err is not None
-                                                       else None))
+            shown = format_with_error(value, err * k if err is not None else None)
+            item.setData(ERROR_ROLE, shown)
             item.setToolTip(
-                ("\u00b1 = the uncertainty of the fitted value (its standard error, 1 \u03c3):\n"
+                f"{shown}\n" + ("\u00b1 = the uncertainty of the fitted value (its standard error, 1 \u03c3):\n"
                  "measured again, the value would scatter by about this much.\n"
                  if k == 1 else
                  f"\u00b1 = {k} \u00d7 the standard error of the fitted value ({k} \u03c3,\n"
@@ -1461,6 +1621,7 @@ class PeakFittingDialog(QDialog):
                 model_combo.addItems(self.manager.peak_models.keys())
                 model_combo.setCurrentText(model_name)
                 model_combo.currentIndexChanged.connect(lambda _, row=i: self.on_model_combo_changed(row))
+                _ignore_wheel(model_combo)
                 self.peaks_table.setCellWidget(i, 1, model_combo)
                 
                 # Parameters, each with its uncertainty (drawn by _ErrorDelegate)
@@ -1489,6 +1650,7 @@ class PeakFittingDialog(QDialog):
                 model_combo.addItems(self.manager.peak_models.keys())
                 model_combo.setCurrentText(peak['model'])
                 model_combo.currentIndexChanged.connect(lambda _, row=i: self.on_model_combo_changed(row))
+                _ignore_wheel(model_combo)
                 self.peaks_table.setCellWidget(i, 1, model_combo)
                 
                 # Parameters
@@ -1507,6 +1669,7 @@ class PeakFittingDialog(QDialog):
                                        else self.peaks)]
         self.peaks_table.setColumnHidden(5, not any(m in ('Voigt', 'Pseudo-Voigt')
                                                     for m in models))
+        self._share_columns()
         # Re-connect the cellChanged signal
         try: self.peaks_table.cellChanged.disconnect(self.on_table_cell_changed)
         except TypeError: pass
@@ -1775,14 +1938,18 @@ class PeakFittingDialog(QDialog):
         self.prev_button.setText("◀")
         self.prev_button.setFixedSize(32, 26)
         self.prev_button.setStyleSheet("QToolButton { font-size: 13pt; }")
-        self.prev_button.setToolTip("The previous spectrum of the series (only it is shown)")
-        self.prev_button.clicked.connect(lambda: self.show_series_spectrum(self.current_index - 1))
+        self.prev_button.clicked.connect(lambda: self.step_shown(-1))
         self.next_button = QToolButton()
         self.next_button.setText("▶")
         self.next_button.setFixedSize(32, 26)
         self.next_button.setStyleSheet("QToolButton { font-size: 13pt; }")
-        self.next_button.setToolTip("The next spectrum of the series (only it is shown)")
-        self.next_button.clicked.connect(lambda: self.show_series_spectrum(self.current_index + 1))
+        self.next_button.clicked.connect(lambda: self.step_shown(+1))
+        # Alt+Left / Alt+Right (and Alt+Up / Alt+Down, as in the list) in the
+        # whole window, wherever the focus is: as the arrows
+        self._step_shortcuts = []
+        for keys, d in (("Alt+Left", -1), ("Alt+Right", +1), ("Alt+Up", -1), ("Alt+Down", +1)):
+            sc = QShortcut(QKeySequence(keys), self, activated=lambda d=d: self.step_shown(d))
+            self._step_shortcuts.append(sc)
         h.addWidget(self.prev_button)
         h.addWidget(self.next_button)
         self.current_label = QLabel()
@@ -1809,14 +1976,17 @@ class PeakFittingDialog(QDialog):
         v = QVBoxLayout(self.spectra_panel)
         v.setContentsMargins(0, 0, 0, 0)
         self.spectra_list = QListWidget()
-        self.spectra_list.setItemDelegate(_SelectedTextDelegate(self.spectra_list))
+        self.list_delegate = _SelectedTextDelegate(self.spectra_list)
+        self.spectra_list.setItemDelegate(self.list_delegate)
         self.spectra_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.spectra_list.setToolTip(
             "One spectrum selected: its data, fit, single peaks and residual.\n"
             "Several selected (Ctrl/Shift+click): shown together - see 'Several selected'.\n"
             "Green dot (green bold text): the spectrum has peaks to fit; grey: no peaks yet.\n"
             "\u26a0 a poor fit (R\u00b2 below 0.9).\n"
-            "✓ fitted, ✗ the fit failed.")
+            "✓ fitted, ✗ the fit failed.\n"
+            "Orange frame (bold): the shown spectrum - its peaks are in the table of peaks\n"
+            "(click a spectrum alone to show another one).")
         for sp in self.series:
             self.spectra_list.addItem(self._list_text(sp, None))
         self.spectra_list.setCurrentRow(self.current_index)
@@ -1895,9 +2065,23 @@ class PeakFittingDialog(QDialog):
         t.viewport().update()
 
     def _update_nav(self, k):
+        if hasattr(self, 'list_delegate'):
+            self.list_delegate.shown_row = k          # the orange frame
+            self.spectra_list.viewport().update()
         if hasattr(self, 'prev_button'):
-            self.prev_button.setEnabled(k > 0)
-            self.next_button.setEnabled(k < len(self.series) - 1)
+            prev, nxt = self._neighbours(k)
+            self.prev_button.setEnabled(prev is not None)
+            self.next_button.setEnabled(nxt is not None)
+            if len(self.selected_spectra()) > 1:
+                self.prev_button.setToolTip("The previous of the selected spectra becomes the shown "
+                                            "one\n(orange frame); all stay selected.  Alt+Left")
+                self.next_button.setToolTip("The next of the selected spectra becomes the shown "
+                                            "one\n(orange frame); all stay selected.  Alt+Right")
+            else:
+                self.prev_button.setToolTip("The previous spectrum of the series (only it is "
+                                            "shown).  Alt+Left")
+                self.next_button.setToolTip("The next spectrum of the series (only it is "
+                                            "shown).  Alt+Right")
             name = str(self.series[k].get('label', '')).rsplit(' : ', 1)[-1]
             self.current_label.setText("<b>" + self._shorten(name) + "</b>")
             self.current_label.setToolTip(
@@ -1906,6 +2090,41 @@ class PeakFittingDialog(QDialog):
         if hasattr(self, 'view_combo'):
             self.view_combo.setEnabled(len(self.selected_spectra()) > 1)
         self._update_fit_button()
+
+    def _neighbours(self, k):
+        """(previous, next) for the arrows: with several selected, among them;
+        else in the whole series. None at an end."""
+        sel = self.selected_spectra()
+        rows = sel if len(sel) > 1 else range(len(self.series))
+        before = [r for r in rows if r < k]
+        after = [r for r in rows if r > k]
+        return (before[-1] if before else None), (after[0] if after else None)
+
+    def step_shown(self, d):
+        """The arrows (Alt+Left / Alt+Right): one spectrum selected - the
+        previous or next spectrum alone; several - the orange frame moves to
+        the previous or next selected one, all stay selected and shown."""
+        if len(self.series) < 2:
+            return
+        prev, nxt = self._neighbours(self.current_index)
+        k = prev if d < 0 else nxt
+        if k is None:
+            return
+        if len(self.selected_spectra()) > 1:
+            self.make_shown(k)
+        else:
+            self.show_series_spectrum(k)
+
+    def make_shown(self, k):
+        """Spectrum k becomes the shown one (orange frame; its peaks in the
+        table) while the selection stays - several spectra stay shown."""
+        if k == self.current_index:
+            return
+        self._set_current(k)
+        if hasattr(self, 'spectra_list'):
+            self.spectra_list.scrollToItem(self.spectra_list.item(k))
+        self._update_plot_options()
+        self.update_plot()
 
     # ---- Series results shown By peak / By spectrum / All in one table ----
     def series_view(self):
@@ -2740,6 +2959,9 @@ class PeakFittingDialog(QDialog):
         selected rows of Series results, or all) - data and fit."""
         from src.modules.data_analysis import peak_fitting_series as pfs
         self.figure.clear()
+        self._series_ax = None                 # (Overlay / Waterfall: their one plot)
+        self._grid_axes = {}                   # (Grid: small plot -> its spectrum)
+        self._bands = []                       # (Waterfall: (row, lowest, highest))
         rows = self.selected_spectra()
         if len(rows) < 2:
             rows = list(range(len(self.series)))
@@ -2754,6 +2976,7 @@ class PeakFittingDialog(QDialog):
             nrows = int(np.ceil(n / cols))
             for k, r in enumerate(rows):
                 ax = self.figure.add_subplot(nrows, cols, k + 1)
+                self._grid_axes[ax] = r
                 sp, res = self.series[r], self._series_result(r)
                 x, y = np.asarray(sp['x_scale'], float), np.asarray(sp['y_scale'], float)
                 off = (background_values(res.get('background'), x)
@@ -2769,9 +2992,17 @@ class PeakFittingDialog(QDialog):
                 r2 = res.get('r2')
                 ok = res.get('ok') and r2 is not None and np.isfinite(r2)
                 failed = bool(res) and not res.get('ok') and not res.get('pending')
+                shown = r == self.current_index
+                if shown:
+                    # the shown spectrum: an orange frame, as in the list
+                    for spine in ax.spines.values():
+                        spine.set_edgecolor(SHOWN_COLOUR)
+                        spine.set_linewidth(2.2)
+                    self._draw_start_peaks(ax, 0.0, off)
                 ax.set_title((str(sp.get('label', '')).rsplit(' : ', 1)[-1])
                              + (f"  R\u00b2 {r2:.3f}" if ok else "  not fitted" if failed else ""),
-                             fontsize=7, color='red' if failed else 'black')
+                             fontsize=7, color='red' if failed else 'black',
+                             fontweight='bold' if shown else 'normal')
                 ax.tick_params(labelsize=6)
             self.figure.suptitle(f"Grid: {n} spectra, data (grey)"
                                  + (" and fit (red)" if any(self._series_result(r).get('ok')
@@ -2789,12 +3020,35 @@ class PeakFittingDialog(QDialog):
                 fitted = bool(res.get('ok'))
                 off = (background_values(res.get('background'), x)
                        if fitted and self._subtract_background() else 0.0)
-                ax.plot(x, y - off + k * step, '-', color=color, lw=0.7,
-                        alpha=0.45 if fitted else 0.9, label=None if fitted else name)
+                shown = r == self.current_index
+                if shown:
+                    shown_off = off
+                drawn = y - off + k * step
+                # the data as chosen in Data (points or a line); the shown
+                # spectrum a little stronger
+                style = (dict(linestyle='none', marker='.', ms=3 if shown else 2)
+                         if self._data_style() == 'points' else dict(lw=1.3 if shown else 0.7))
+                ax.plot(x, drawn, color=color, alpha=(0.45 if fitted else 0.9) if not shown else 1.0,
+                        label=None if fitted else name, zorder=3 if shown else 2, **style)
                 if fitted:
                     total, _ = pfs.model_curves(x, res['peaks'], self.manager,
                                                 res.get('background'))
-                    ax.plot(x, total - off + k * step, '-', color=color, lw=2.0, label=name)
+                    ax.plot(x, total - off + k * step, '-', color=color,
+                            lw=3.0 if shown else 2.0, label=name, zorder=4 if shown else 2)
+                finite = drawn[np.isfinite(drawn)]
+                if len(finite):
+                    self._bands.append((r, float(finite.min()), float(finite.max())))
+            self._series_ax = ax
+            if step and self.current_index in rows:
+                # Waterfall: the band of the shown spectrum framed in orange
+                _, lo, hi = next(b for b in self._bands if b[0] == self.current_index)
+                pad = 0.04 * step
+                ax.axhspan(lo - pad, hi + pad, facecolor=to_rgba(SHOWN_COLOUR, 0.08),
+                           edgecolor=SHOWN_COLOUR, lw=1.2, zorder=0)
+            # the starting peaks of the shown spectrum (not fitted yet), dashed -
+            # so a peak added by a click is seen
+            if self.current_index in rows:
+                self._draw_start_peaks(ax, rows.index(self.current_index) * step, shown_off)
             any_fit = any(self._series_result(r).get('ok') for r in rows)
             ax.set_title(("Waterfall" if step else "Overlay") + f": {len(rows)} spectra"
                          + (" - data thin, fits thick" if any_fit else ""), fontsize=10)
@@ -2804,6 +3058,22 @@ class PeakFittingDialog(QDialog):
             if len(rows) <= 20 and self.legend_check.isChecked():
                 ax.legend(fontsize=7)
         self.canvas.draw()
+
+    def _draw_start_peaks(self, ax, shift, off=0.0):
+        """The starting peaks of the shown spectrum (before a fit), dashed, on
+        its background guess - minus `off`, what was taken off its data in
+        the drawing (\u2212 background) - and shifted up by `shift`."""
+        if not self.peaks or self.fit_results:
+            return
+        x = np.asarray(self.x_roi, float)
+        base = background_values(self._shown_background(), x) - off
+        for peak in self.peaks:
+            try:
+                model_func, _ = self.manager.peak_models[peak['model']]
+                guess = model_func(x, *self._params_list_from_peak_guess(peak))
+                ax.plot(x, base + guess + shift, '--', color=peak['color'], lw=1.6, zorder=5)
+            except (ValueError, TypeError, KeyError):
+                pass
 
     def _series_result(self, r):
         """The series result of spectrum r ({} when the series is not fitted yet)."""
@@ -3271,6 +3541,13 @@ class PeakFittingDialog(QDialog):
         else:
             super().keyPressEvent(event)
     
+    def showEvent(self, event):
+        # the mouse wheel never changes a drop-down list (or a number box):
+        # it scrolls the left part, the table or the list instead
+        for widget in self.findChildren((QComboBox, QAbstractSpinBox)):
+            _ignore_wheel(widget)
+        super().showEvent(event)
+
     def closeEvent(self, event):
         """Clean up signal connections on close to prevent errors."""
         try:
