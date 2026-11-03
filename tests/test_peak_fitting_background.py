@@ -283,3 +283,42 @@ def test_fitted_peaks_are_shown_whole_starting_peaks_not(dialog):
     lo, hi = dlg.ax_main.get_ylim()
     for line, curve in dlg._peak_lines.values():
         assert lo <= np.min(curve) and np.max(curve) <= hi
+
+
+def test_closed_before_the_fit_opens_again_with_the_starting_peaks(dialog):
+    """OK without Fit Peaks: the starting peaks are kept (and used for the
+    outputs on their background) - opened again they are starting peaks, not
+    a fit drawn without its background."""
+    dlg = dialog()
+    dlg.auto_detect_peaks()
+    settings = dlg.get_results()
+    assert settings['fitted'] is False and settings['fit_results']
+    assert settings['fit_background']['kind'] == 'linear'          # the guess, for OK
+    again = dialog(settings)
+    assert not again.fit_results and again.fit_background is None
+    assert again.background_combo.currentText() == "Automatic (Linear)"
+    labels = [ln.get_label() for ln in again.ax_main.get_lines()]
+    assert 'Total Fit' not in labels and 'Background (guess)' in labels
+    lo, hi = again.ax_main.get_ylim()
+    assert lo > 600                                                   # not stretched to 0
+
+
+def test_subtract_background_draws_the_peaks_from_zero(dialog):
+    dlg = dialog()
+    dlg.auto_detect_peaks()
+    dlg.perform_fit()
+    dlg.subtract_check.setChecked(True)
+    lines = {ln.get_label(): ln for ln in dlg.ax_main.get_lines()}
+    assert 'Background' not in lines and 'Original Data − background' in lines
+    data = lines['Original Data − background'].get_ydata()
+    assert abs(np.median(data)) < 2                                  # 669 taken off
+    lo, hi = dlg.ax_main.get_ylim()
+    assert lo < 0 < hi < 30
+    # only the drawing: the fit and its values stay
+    heights = [f['parameters']['height'] for f in dlg.fit_results]
+    dlg.subtract_check.setChecked(False)
+    assert [f['parameters']['height'] for f in dlg.fit_results] == heights
+    assert 'Background' in [ln.get_label() for ln in dlg.ax_main.get_lines()]
+    dlg.subtract_check.setChecked(True)
+    again = dialog(dlg.get_results())
+    assert again.subtract_check.isChecked()

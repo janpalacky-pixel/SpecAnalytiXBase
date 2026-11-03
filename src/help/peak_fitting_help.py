@@ -625,6 +625,14 @@ def get_peak_fitting_help_content():
             spectrum's name as its title.</li>
             <li><b>Data</b>: <i>Points</i> (default) or <i>Line</i> &mdash; how the measured data
             are drawn (one spectrum and Grid). The window remembers it.</li>
+            <li><b>&minus; background</b> (next to Data: subtract the background; off by default)
+            &mdash; two ways to look at the same
+            fit. Off: the data as measured, the background (black dash-dot line) under the
+            peaks &mdash; e.g. a Raman spectrum at about 669 counts. On: the background taken off
+            the data and the fit, the peaks start from zero &mdash; as if you had made a
+            baseline correction first (the data then lie around 0). Only the drawing changes:
+            the fit, its values and the outputs stay the same. Also in Overlay, Waterfall and
+            Grid. The window remembers it.</li>
         </ul>
         <div class="screenshot">
             <img src="$PLOT" width="${PLOT_W}" height="${PLOT_H}" alt="The plot: grey data, red total fit, dotted single peaks and the residual below" />

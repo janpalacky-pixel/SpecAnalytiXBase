@@ -562,6 +562,17 @@ class PeakFittingDialog(QDialog):
         self.data_style_combo.setToolTip("Show the measured data as points (default) or as a line")
         self.data_style_combo.currentIndexChanged.connect(lambda *_: self._view_changed())
         h.addWidget(self.data_style_combo)
+        h.addSpacing(8)
+        # "Data - background" (short: the row above the plot must stay narrow)
+        self.subtract_check = QCheckBox("\u2212 background")
+        self.subtract_check.setToolTip(
+            "Subtract the background from the data in the plot.\n"
+            "Off (default): the data as measured, the background (black dash-dot line)\n"
+            "under the peaks.\n"
+            "On: the background taken off the data and the fit - the peaks start from zero,\n"
+            "as after a baseline correction. Only the drawing changes, not the fit or the values.")
+        self.subtract_check.toggled.connect(lambda *_: self._view_changed())
+        h.addWidget(self.subtract_check)
         h.addSpacing(6)
         h.addWidget(self._quick_help_button('view'))
         bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -617,6 +628,9 @@ class PeakFittingDialog(QDialog):
             check.blockSignals(True)
             check.setChecked(bool(s.get(key, True)))
             check.blockSignals(False)
+        self.subtract_check.blockSignals(True)
+        self.subtract_check.setChecked(bool(s.get('subtract_background', False)))
+        self.subtract_check.blockSignals(False)
         for combo, value in ((self.data_style_combo, s.get('data_style', 'points')),
                              (self.background_combo, s.get('background', DEFAULT_BACKGROUND))):
             k = combo.findData(value)
@@ -625,7 +639,8 @@ class PeakFittingDialog(QDialog):
                 combo.setCurrentIndex(k)
                 combo.blockSignals(False)
         self.background_kind = self.background_combo.currentData()
-        self.fit_background = s.get('fit_background') or None
+        # (a background only with a real fit - see get_results 'fitted')
+        self.fit_background = (s.get('fit_background') or None) if s.get('fitted', True) else None
 
     def initialize_dialog(self):
         """Initializes the dialog state when it is first opened."""
@@ -642,8 +657,11 @@ class PeakFittingDialog(QDialog):
         # Check if any settings (fit_results or initial_peaks) exist
         if self.current_settings and (self.current_settings.get('fit_results') or self.current_settings.get('initial_peaks')):
             
-            # Load both lists (one might be empty or None)
-            self.fit_results = self.current_settings.get('fit_results')
+            # Load both lists (one might be empty or None); 'fitted' False: the
+            # window was closed before Fit Peaks - fit_results are then only
+            # the starting peaks (for the outputs), shown as such again
+            self.fit_results = (self.current_settings.get('fit_results')
+                                if self.current_settings.get('fitted', True) else None)
             self.peaks = self.current_settings.get('initial_peaks', [])
 
             # Check for data integrity (e.g., from old saves)
@@ -2665,14 +2683,16 @@ class PeakFittingDialog(QDialog):
                 ax = self.figure.add_subplot(nrows, cols, k + 1)
                 sp, res = self.series[r], self._series_result(r)
                 x, y = np.asarray(sp['x_scale'], float), np.asarray(sp['y_scale'], float)
+                off = (background_values(res.get('background'), x)
+                       if res.get('ok') and self._subtract_background() else 0.0)
                 if self._data_style() == 'line':
-                    ax.plot(x, y, '-', color='gray', lw=0.8)
+                    ax.plot(x, y - off, '-', color='gray', lw=0.8)
                 else:
-                    ax.plot(x, y, '.', color='gray', ms=2)
+                    ax.plot(x, y - off, '.', color='gray', ms=2)
                 if res.get('ok'):
                     total, _ = pfs.model_curves(x, res['peaks'], self.manager,
                                                 res.get('background'))
-                    ax.plot(x, total, 'r-', lw=1.4)
+                    ax.plot(x, total - off, 'r-', lw=1.4)
                 r2 = res.get('r2')
                 ok = res.get('ok') and r2 is not None and np.isfinite(r2)
                 failed = bool(res) and not res.get('ok') and not res.get('pending')
@@ -2694,12 +2714,14 @@ class PeakFittingDialog(QDialog):
                 color = colors[k % len(colors)]
                 name = str(sp.get('label', '')).rsplit(' : ', 1)[-1]
                 fitted = bool(res.get('ok'))
-                ax.plot(x, y + k * step, '-', color=color, lw=0.7,
+                off = (background_values(res.get('background'), x)
+                       if fitted and self._subtract_background() else 0.0)
+                ax.plot(x, y - off + k * step, '-', color=color, lw=0.7,
                         alpha=0.45 if fitted else 0.9, label=None if fitted else name)
                 if fitted:
                     total, _ = pfs.model_curves(x, res['peaks'], self.manager,
                                                 res.get('background'))
-                    ax.plot(x, total + k * step, '-', color=color, lw=2.0, label=name)
+                    ax.plot(x, total - off + k * step, '-', color=color, lw=2.0, label=name)
             any_fit = any(self._series_result(r).get('ok') for r in rows)
             ax.set_title(("Waterfall" if step else "Overlay") + f": {len(rows)} spectra"
                          + (" - data thin, fits thick" if any_fit else ""), fontsize=10)
@@ -2874,6 +2896,12 @@ class PeakFittingDialog(QDialog):
                     self.x_roi, y, base, color=line.get_color(), alpha=0.25, linewidth=0))
         self.canvas.draw_idle()
 
+    def _subtract_background(self):
+        """'Subtract background' ticked (above the plot): the data and the
+        fit are drawn without the background, the peaks from zero."""
+        check = getattr(self, 'subtract_check', None)
+        return check is not None and check.isChecked()
+
     def _data_style(self):
         """'points' (default) or 'line': how the measured data are drawn."""
         combo = getattr(self, 'data_style_combo', None)
@@ -2913,10 +2941,10 @@ class PeakFittingDialog(QDialog):
         return initial_background(np.asarray(self.x_roi, dtype=float),
                                   np.asarray(self.y_roi, dtype=float), self.background_kind)
 
-    def _y_limits(self, *curves):
-        """The y range of the plot: the data (and the fitted curves given)
-        with a margin of 5 %."""
-        y = np.asarray(self.y_roi, dtype=float)
+    def _y_limits(self, *curves, data=None):
+        """The y range of the plot: the data as drawn (and the fitted curves
+        given) with a margin of 5 %."""
+        y = np.asarray(self.y_roi if data is None else data, dtype=float)
         parts = [y[np.isfinite(y)]]
         for curve in curves:
             f = np.asarray(curve, dtype=float)
@@ -2945,31 +2973,39 @@ class PeakFittingDialog(QDialog):
         if len(self.x_roi) > 0:
             x = np.asarray(self.x_roi, dtype=float)
             y = np.asarray(self.y_roi, dtype=float)
-            # the data: points (default) or a line (Data: in the bar above the plot)
-            if self._data_style() == 'line':
-                self.ax_main.plot(x, y, '-', color='gray', label='Original Data', lw=1)
-            else:
-                self.ax_main.plot(x, y, 'o', color='gray', label='Original Data', markersize=3)
-            # the peaks are drawn on the background (fitted, or its first guess)
+            # the peaks are drawn on the background (fitted, or its first guess);
+            # with "Subtract background" the background is taken off the data
+            # and the fit instead, and the peaks start from zero
             background = self._shown_background(y_fit_total)
             base = background_values(background, x)
-            self._peak_base = base
+            subtract = bool(background) and self._subtract_background()
+            off = base if subtract else np.zeros_like(x)      # taken off what is drawn
+            draw_base = base - off
+            y_shown = y - off
+            # the data: points (default) or a line (Data: in the bar above the plot)
+            label = 'Original Data' + (' \u2212 background' if subtract else '')
+            if self._data_style() == 'line':
+                self.ax_main.plot(x, y_shown, '-', color='gray', label=label, lw=1)
+            else:
+                self.ax_main.plot(x, y_shown, 'o', color='gray', label=label, markersize=3)
+            self._peak_base = draw_base
+            self._shown_data = y_shown
             y_total_model = base.copy()
             shown = []                      # the fitted curves: in the y range too
-            if background:
+            if background and not subtract:
                 self.ax_main.plot(x, base, '-.', color='black', lw=1,
                                   label='Background' + ('' if self.fit_results and
                                                         y_fit_total is not None else ' (guess)'))
 
             if self.fit_results and y_fit_total is not None:
                 # --- STATE 1: Plotting a successful FIT ---
-                self.ax_main.plot(x, y_fit_total, 'r-', label='Total Fit', lw=2)
+                self.ax_main.plot(x, y_fit_total - off, 'r-', label='Total Fit', lw=2)
                 y_total_model = y_fit_total
                 for i, peak_fit in enumerate(self.fit_results):
                     model_name, params_dict = peak_fit['model'], peak_fit['parameters']
                     model_func, param_names = self.manager.peak_models[model_name]
                     params_for_func = self._params_list_from_result_dict(model_name, params_dict)
-                    y_component = base + model_func(x, *params_for_func)
+                    y_component = draw_base + model_func(x, *params_for_func)
 
                     # Use the stored stable color from self.peaks
                     color = self.peaks[i]['color']
@@ -2984,8 +3020,8 @@ class PeakFittingDialog(QDialog):
                         color = peak['color']
                         model_func, _ = self.manager.peak_models[peak['model']]
                         y_guess = model_func(x, *self._params_list_from_peak_guess(peak))
-                        line, = self.ax_main.plot(x, base + y_guess, '--', color=color)
-                        self._peak_lines[i] = (line, base + y_guess)
+                        line, = self.ax_main.plot(x, draw_base + y_guess, '--', color=color)
+                        self._peak_lines[i] = (line, draw_base + y_guess)
                         y_total_model = y_total_model + y_guess
                     except (ValueError, TypeError): pass
 
@@ -2999,8 +3035,8 @@ class PeakFittingDialog(QDialog):
             # starting peaks: one far too high does not squeeze the data
             # into a thin line
             if self.fit_results and y_fit_total is not None:
-                shown.append(y_fit_total)
-            self._y_range = self._y_limits(*shown)
+                shown.append(y_fit_total - off)
+            self._y_range = self._y_limits(*shown, data=y_shown)
             self.ax_main.set_ylim(*self._y_range)
         else:
              # No data loaded
@@ -3080,8 +3116,19 @@ class PeakFittingDialog(QDialog):
         
         # self.peaks list contains the initial guesses AND the color
         
+        # not fitted: the outputs (OK) are made from the starting peaks, on the
+        # background drawn under them (its first guess)
+        fitted = bool(self.fit_results)
+        if fitted:
+            background = self.fit_background
+        else:
+            from src.modules.data_analysis import peak_fitting_series as pfs
+            background = pfs.plain_background(initial_background(
+                np.asarray(self.x_roi, dtype=float), np.asarray(self.y_roi, dtype=float),
+                self.background_kind)) if len(self.x_roi) else None
         return {
             'fit_results': results_to_return,
+            'fitted': fitted,
             'output_options': {
                 'add_fit': add_fit,
                 'add_residual': add_residual,
@@ -3096,9 +3143,10 @@ class PeakFittingDialog(QDialog):
             'show_residual': self.residual_check.isChecked(),
             'show_legend': self.legend_check.isChecked(),
             'data_style': self._data_style(),
+            'subtract_background': self._subtract_background(),
             # the background: its kind and the one fitted with fit_results
             'background': self.background_kind,
-            'fit_background': self.fit_background if self.fit_results else None,
+            'fit_background': background,
             # the shown spectrum (its fit is fit_results) and the series results
             'spectrum_label': (self.spectrum or {}).get('label'),
             **self._series_settings(),

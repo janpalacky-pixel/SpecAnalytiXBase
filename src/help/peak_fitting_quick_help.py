@@ -103,7 +103,8 @@ together as chosen in <b>Several selected</b>: Overlay, Waterfall or Grid. Each 
 colour: data thin, fit thick. &#9664; &#9654; go to the previous or next spectrum.</p>
 <p><b>Residual</b> and <b>Legend</b> hide the residual plot and the legend (for one spectrum;
 the legend also in Overlay and Waterfall). <b>Data</b>: the measured data as Points (default)
-or as a Line.</p>
+or as a Line. <b>&minus; background</b>: the data and the fit drawn without the background,
+the peaks from zero (only the drawing changes).</p>
 <p>The y axis shows the range of the data; the peaks are drawn on the background (black
 dash-dot line).</p>
 """),
