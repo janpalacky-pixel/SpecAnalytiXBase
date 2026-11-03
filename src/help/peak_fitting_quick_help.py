@@ -117,7 +117,36 @@ within &plusmn; in about 2 of 3 cases (68 %); <b>2 &sigma;</b> - in 19 of 20 cas
 e.g. for a confidence interval in a paper; <b>3 &sigma;</b> - in 997 of 1000 (99.7 %). Only
 the shown and copied &plusmn; change (their columns are then named e.g. <i>Center
 &plusmn;2&sigma;</i>), not the fit.</p>
+<p>The &plusmn; do not tell whether a peak is needed - that is the column <b>Needed?</b>
+(yes / probably / no): the spectrum is fitted once more without the peak and the two fits
+are compared (&Delta;BIC).</p>
 <p>The uncertainties assume independent noise: after smoothing they come out too small.</p>
+"""),
+    'needed': ("Quick help – is a peak needed? (the column Needed?)", 'needed', """
+<p>After <b>Fit Peaks</b> the column <b>Needed?</b> says for each peak whether the data really
+need it: the spectrum is fitted <b>once more without that peak</b>, and the two fits are
+compared.</p>
+<ul>
+<li><b>yes</b> - without the peak the fit is clearly worse: keep it;</li>
+<li><b>probably</b> - somewhat worse: probably keep it;</li>
+<li><b>no</b> (orange) - just as good: remove it and fit again.</li>
+</ul>
+<p><i>not fitted</i> (grey): the values are start values - click Fit Peaks.</p>
+<p><b>When several peaks could each be left out</b> (e.g. two peaks on one band - either one
+is enough), they are taken out one at a time - the least certain one first - and the rest
+checked again each time. So only the peaks marked <b>no</b> are left out, and they can all be
+removed together; the others stay needed.</p>
+<p><b>The number</b> (hold the mouse over the word): &Delta;BIC, how much better the fit is with
+the peak, after a penalty for its three values. It means: the fit with the peak is about
+e<sup>&Delta;BIC/2</sup> times more probable than without it -</p>
+<table cellspacing="0" cellpadding="2">
+<tr><td>&Delta;BIC 2</td><td>&rarr; about 3 times</td></tr>
+<tr><td>&Delta;BIC 6</td><td>&rarr; about 20 times</td></tr>
+<tr><td>&Delta;BIC 10</td><td>&rarr; about 150 times</td></tr>
+<tr><td>&Delta;BIC 0</td><td>&rarr; equally probable</td></tr>
+<tr><td>below 0</td><td>&rarr; without the peak more probable</td></tr>
+</table>
+<p>So: above 10 <b>yes</b>, 2 to 10 <b>probably</b>, below 2 <b>no</b>.</p>
 """),
     'output': ("Quick help – what OK keeps", 'ok-behavior', """
 <p>The fit itself changes nothing in your spectra. <b>OK</b> adds new spectra only for the

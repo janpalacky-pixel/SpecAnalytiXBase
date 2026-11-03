@@ -3537,6 +3537,11 @@ def _natural_sort_key(cls, label):
             <code>PeakFittingManager.peak_errors()</code>; <code>None</code> = not estimated),
             shown by <code>_ErrorDelegate</code> (ERROR_ROLE, the cell text stays the number) and as
             "&#8230; &plusmn;" columns in <code>series_table()</code> / <code>peaks_long()</code>.
+            Is a peak needed: <code>PeakFittingManager.add_peak_bic()</code> (drop one peak,
+            refit, &Delta;BIC from <code>last_fit_stats</code>; <code>needed_text()</code>),
+            for a series in <code>fit_one()</code>, fitting together in
+            <code>peak_fitting_global._add_bic()</code>; the table's column 6, the column
+            &Delta;BIC of <code>peak_columns()</code>.
             Fitting together: <code>peak_fitting_global.fit_global()</code> (variable projection:
             heights and backgrounds by linear least squares per spectrum, positions / widths by
             <code>least_squares</code> with <code>jac_sparsity</code>; covariance

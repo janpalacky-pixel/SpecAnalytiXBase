@@ -41,6 +41,8 @@ _SCREENSHOT_FILES = {
     "CONSTRAINT_DROPDOWN": "constraint_dropdown.png",
     "CD_UNRESTRICTED": "cd_fit_unrestricted.png",
     "CD_POSITIVE": "cd_fit_positive.png",
+    "NEEDED_TABLE": "needed_table.png",
+    "NEEDED_PLOT": "needed_plot.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -565,11 +567,19 @@ def get_peak_fitting_help_content():
         <b>start values</b> of the next fit, no longer fitted values. Fit Peaks again gives
         the new values with their &plusmn;.</p>
         <ul>
-            <li><b>What it tells you.</b> Noisy data, a small band or two bands close together
-            give large uncertainties. Example: noisy Raman spectrum, a water band of 15 counts &mdash;
-            Center 3432 &plusmn; 10; a small band of 3 counts at 413 &mdash; Height 3.2 &plusmn;
-            0.3: still clearly there. A height of 0.5 &plusmn; 0.6 would mean the band is not
-            really proven.</li>
+            <li><b>What it tells you.</b> How precise each value is &mdash; noisy data and small
+            bands give large uncertainties. Example: noisy Raman spectrum, a water band of 15
+            counts &mdash; Center 3432 &plusmn; 10; a small band of 3 counts at 413 &mdash;
+            Height 3.2 &plusmn; 0.2 (7&nbsp;%).</li>
+            <li><b>What it does not tell you: whether a peak is needed.</b> The uncertainties
+            assume that the peaks in the table are the right ones, and say how precise their
+            values are then. A peak that is not needed can still have a well-determined centre.
+            Example: two peaks put on the small band at 413 get the centres 359 &plusmn; 5 and
+            441 &plusmn; 19 &mdash; it looks as if there were two bands, but their areas are
+            uncertain by &plusmn;&nbsp;28&nbsp;% and &plusmn;&nbsp;58&nbsp;% (one peak:
+            &plusmn;&nbsp;9&nbsp;%), and the column <b>Needed?</b> says <i>no</i> for one of them
+            (the less certain one at 359): one peak describes the band as well. See <a
+            href="#needed">Is a peak needed?</a></li>
             <li><b>n/a</b>: the fit could not tell how uncertain the value is &mdash; e.g. two
             peaks at the same place (the data cannot tell them apart) or a value at its limit.
             Remove or move such a peak and fit again.</li>
@@ -580,6 +590,96 @@ def get_peak_fitting_help_content():
             points is independent. After smoothing it is not, and the uncertainties come out
             too small &mdash; fit the original data.</li>
         </ul>
+
+        <h3 id="needed">Is a peak needed? (the column Needed?, &Delta;BIC)</h3>
+        <p>Every extra peak makes the fit a little better &mdash; it also fits some noise. To tell
+        whether a peak is really needed, after Fit Peaks the program fits the spectrum
+        <b>again without that peak</b> (the others start from their fitted values; a value
+        linked to it becomes free) and compares the two fits by the <b>Bayesian information
+        criterion</b> (BIC): it weighs how much better the fit is with the peak against the
+        values the peak adds. The column <b>Needed?</b> of the table of peaks says:</p>
+        <ul>
+            <li><b>yes</b> &mdash; without the peak the fit is clearly worse (&Delta;BIC above
+            10): the peak is needed;</li>
+            <li><b>probably</b> &mdash; without it the fit is somewhat worse (&Delta;BIC 2 to
+            10);</li>
+            <li><b>no</b> (orange) &mdash; without it the fit is just as good (&Delta;BIC below 2):
+            the peak is not needed. Remove it &mdash; or another peak already describes the same
+            band.</li>
+        </ul>
+        <h4 id="bic-odds">What the number &Delta;BIC means</h4>
+        <p>&Delta;BIC says how many times more probable the fit <b>with</b> the peak is than the
+        fit <b>without</b> it: <b>odds &asymp; e<sup>&Delta;BIC/2</sup></b> (e = 2.718).
+        Why:</p>
+        <ol>
+            <li>For each of the two fits, BIC is calculated from how well the fit matches the data
+            (the residual), plus a penalty for each fitted value: BIC = N&nbsp;ln(S/N) +
+            P&nbsp;ln&nbsp;N (N data points, S the residual sum of squares, P fitted values; a
+            peak adds three: centre, height, width).</li>
+            <li>BIC is built so that it is about &minus;2&nbsp;&times;&nbsp;ln(the probability of
+            the model, given the data) &mdash; a convention of the method: multiplied by
+            &minus;2 and taken as a logarithm.</li>
+            <li>So the difference &Delta;BIC = BIC(without the peak) &minus; BIC(with the peak)
+            is about 2&nbsp;&times;&nbsp;ln(odds), the odds being how many times more probable the
+            fit with the peak is.</li>
+            <li>Back to the odds: divide by 2 and take e to that power.</li>
+        </ol>
+        <table border="1" cellspacing="0" cellpadding="4">
+            <tr><th>&Delta;BIC</th><th>&Delta;BIC / 2</th><th>e<sup>&Delta;BIC/2</sup></th>
+                <th>Odds with : without the peak</th><th>Needed?</th></tr>
+            <tr><td>below 0</td><td>&ndash;</td><td>below 1</td><td>without it more
+                probable</td><td>no</td></tr>
+            <tr><td>0</td><td>0</td><td>1</td><td>1 : 1 (no difference)</td><td>no</td></tr>
+            <tr><td>2</td><td>1</td><td>2.7</td><td>about 3 : 1</td><td>probably</td></tr>
+            <tr><td>6</td><td>3</td><td>20</td><td>about 20 : 1</td><td>probably</td></tr>
+            <tr><td>10</td><td>5</td><td>148</td><td>about 150 : 1</td><td>yes (above
+                10)</td></tr>
+            <tr><td>70</td><td>35</td><td>1.6&times;10<sup>15</sup></td><td>practically
+                certain</td><td>yes</td></tr>
+        </table>
+        <p>Examples (the noisy Raman spectrum 0001): the three peaks at 413, 3202 and 3432 have
+        &Delta;BIC 196, 70 and 70 &mdash; all <i>yes</i>; two peaks on the small band
+        (359 and 441): &minus;1.5 and 0.2 &mdash; either one alone is enough; the less certain
+        one (359) is taken out, and without it the peak at 441 has &Delta;BIC 156:
+        <i>yes</i>. The limits 2 and
+        10 are a common scale (Kass &amp; Raftery, 1995). The odds are only approximate: BIC is
+        a simple estimate, and it assumes independent noise. That is why the column shows only
+        three words (yes, probably, no) and not the odds themselves &mdash; a number such as
+        &ldquo;148 times&rdquo; would look more exact than it is.</p>
+        <p><b>Example</b> (the test dataset raman_2comp_noisy, spectrum raman_01): the band at
+        about 731 is described by <b>two</b> peaks, 717 and 739 (peaks 1 and 8). The fit is
+        good &mdash; the red line goes through the data &mdash; but one peak describes this band
+        as well. <b>Needed?</b> says <i>no</i> for peak 1 (the less certain one: height
+        0.22&nbsp;&plusmn;&nbsp;0.36, the uncertainty larger than the value) and <i>yes</i> for
+        the other: remove peak 1 and fit again. All other bands have one peak each: <i>yes</i>.</p>
+        <div class="screenshot">
+            <img src="$NEEDED_TABLE" width="${NEEDED_TABLE_W}" height="${NEEDED_TABLE_H}" alt="The table of peaks after Fit Peaks: the column Needed? says no for peak 1 at 717 and yes for all others" />
+            <p class="caption">The column Needed?: peak 1 (717) is not needed &mdash; peak 8
+            (739) describes the same band.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$NEEDED_PLOT" width="${NEEDED_PLOT_W}" height="${NEEDED_PLOT_H}" alt="The band at about 731 with two dotted peaks under it, 717 and 739, and the red total fit" />
+            <p class="caption">The band at about 731, zoomed in: two dotted peaks under one band.
+            Without peak 1 the other peak takes the whole band and the fit is just as good.</p>
+        </div>
+        <p>Hold the mouse over the word to see the number; the orange <b>?</b> right under the
+        table explains it in short. <b>not fitted</b> (grey): the values are start values (before
+        Fit Peaks, or after a value was changed).</p>
+        <p><b>Several peaks not needed.</b> Each peak alone may be replaceable by another one,
+        but not all of them together. Examples: two peaks on one band (either one describes
+        it); or a small band at 404 and a broad, low peak at 627 &mdash; without either of them,
+        the other moves to the band and the fit is just as good. If both were simply marked
+        <i>no</i>, removing both would lose the band. So the program takes them out <b>one at a
+        time</b>: the least certain one first (the largest relative uncertainty of its area,
+        here the broad one at 627: 0.47 &plusmn; 0.19 high, 141 &plusmn; 134 wide), fits the rest
+        again and checks them again &mdash; until every peak left is needed. Only the peaks
+        taken out are marked <b>no</b>; they can all be removed together. The tooltip of the
+        others then says &ldquo;judged without the peaks marked no&rdquo;.</p>
+        <p> With several spectra
+        the Series results have a column &Delta;BIC; fitted together, the whole fit without the
+        peak is compared (the same value for all spectra). Copy Results copies &Delta;BIC too.
+        Like the uncertainties, it assumes independent noise: after smoothing it comes out too
+        large (a peak looks more needed than it is).</p>
 
         <h3 id="converge">Getting a fit to converge</h3>
         <p>A fit "fails" (the message <i>The fitting algorithm could not converge</i>) or gives
@@ -888,7 +988,8 @@ def get_peak_fitting_help_content():
         selected in the list</b> beside the plot (the same ones the plot shows; <b>All</b> = the
         whole series). The values have the names of the table of peaks: Center, Height, Width,
         Extra, FWHM, Area, each followed by its uncertainty (the column <b>&plusmn;</b>,
-        <a href="#uncertainty">Uncertainties</a>), and R&sup2; of the whole fit (1 = perfect).
+        <a href="#uncertainty">Uncertainties</a>), &Delta;BIC (<a href="#needed">is the peak
+        needed?</a>) and R&sup2; of the whole fit (1 = perfect).
         <b>Show</b> chooses how:</p>
         <h4>By peak</h4>
         <p>Shown first. One peak at a time: &#9664; &#9654; go to the previous or next peak (its
@@ -1083,6 +1184,17 @@ def get_peak_fitting_help_content():
                     values matched the computed &sigma; within the expected statistical
                     variation.</li>
                 </ul></li>
+            <li><b>Is a peak needed (&Delta;BIC)</b>: BIC = N&nbsp;ln(S/N) + P&nbsp;ln&nbsp;N, N
+            the data points, S the residual sum of squares, P the fitted values (Schwarz 1978;
+            for least squares with an unknown noise level). &Delta;BIC = BIC without the peak
+            &minus; BIC with it; the scale (2, 10) after Kass &amp; Raftery (1995). P counts the
+            free values only (a fixed value is not counted). The fit without a peak starts from
+            the fitted values of the others (a value linked to it becomes free); a peak alone is
+            compared with the background alone. Several below 2: backward elimination &mdash; the
+            one with the largest relative uncertainty of its area is taken out, the rest fitted
+            again and all &Delta;BIC computed again, until all are 2 or more; the peaks taken
+            out are marked no, the others show their &Delta;BIC of the last round. Fitting
+            together: N, P and S of all spectra.</li>
             <li><b>Fitting together</b>: variable projection &mdash; the heights and the
             backgrounds enter the model linearly, so for given positions and widths they are
             found exactly by linear least squares, spectrum by spectrum (with bounds for

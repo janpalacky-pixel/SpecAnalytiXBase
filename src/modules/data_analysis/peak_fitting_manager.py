@@ -300,6 +300,40 @@ def format_with_error(value, err):
     return f"{float(value):.{decimals}f} \u00b1 {text}"
 
 
+def needed_text(delta_bic, remove=None, n_removed=0):
+    """('yes' / 'probably' / 'no', explanation for the tooltip) for a peak's
+    \u0394BIC (PeakFittingManager.add_peak_bic); remove: its place in the
+    order of taking out (1, 2, ...), n_removed: how many peaks of the fit are
+    to be taken out. ('', '') if not known."""
+    if delta_bic is None or not np.isfinite(delta_bic):
+        if remove:
+            return 'no', "This peak is not needed. Remove it and fit again."
+        return '', ''
+    d = float(delta_bic)
+    if remove or d < 2:
+        word = 'no'
+        text = ("This peak is not needed.\n"
+                "Without it the fit is just as good: remove it and fit again.")
+        if n_removed > 1:
+            text += (f"\n{n_removed} peaks are not needed; they can all be removed together\n"
+                     "(each was checked again after the ones before it were taken out).")
+    elif d > 10:
+        word = 'yes'
+        text = ("This peak is needed.\n"
+                "Without it the fit is clearly worse.")
+    else:
+        word = 'probably'
+        text = ("This peak is probably needed.\n"
+                "Without it the fit is somewhat worse.")
+    if n_removed and not remove:
+        text += "\n(Judged without the peaks marked no.)"
+    return word, (text + "\n\n"
+                  "How it is found: the spectrum is fitted once more without this peak,\n"
+                  "and the two fits are compared (\u0394BIC = " + f"{d:.1f}" + ").\n"
+                  "\u0394BIC above 10: needed; 2 to 10: probably needed; below 2: not needed.\n"
+                  "The orange ? right under the table explains it.")
+
+
 def _smoothed(y, window):
     from scipy.signal import savgol_filter
     y = np.asarray(y, dtype=float)
@@ -496,6 +530,7 @@ class PeakFittingManager:
                 fit includes it, the peaks' heights are above it.
         """
         self.last_background = None
+        self.last_fit_stats = None
         background = resolve_background(x_data, y_data, background)
         self.last_background_kind = background
         if not initial_peaks:
@@ -628,6 +663,11 @@ class PeakFittingManager:
                 q_opt, q_cov = np.zeros(0), np.zeros((0, 0))
             popt = _expand(plan, start_full, free, q_opt)
             y_fit = full_model(x_data, *popt)
+            resid = np.asarray(y_data, dtype=float) - y_fit
+            # for the information criterion (add_peak_bic): the residual sum of
+            # squares, the number of fitted values and of data points
+            self.last_fit_stats = {'ssr': float(np.sum(resid ** 2)), 'n_par': int(free.size),
+                                   'n_obs': int(resid.size)}
 
             self.last_background = background_of(popt)
             # the covariance of all values: C = J Cq J^T, J = d(all) / d(fitted)
@@ -665,6 +705,108 @@ class PeakFittingManager:
         except (RuntimeError, ValueError) as e:
             logger.error(f"Peak fitting failed: {e}")
             return None, None
+
+    def add_peak_bic(self, x_data, y_data, fitted, start, amplitude_constraint='unrestricted',
+                     background='none', stats=None):
+        """Is each peak needed? Each peak gets 'delta_bic' = BIC of the fit
+        without it - BIC of the fit with it (BIC = N ln(SSR/N) + P ln N, N data
+        points, P fitted values, SSR the residual sum of squares); > 10:
+        clearly needed; 2..10: probably needed; below 2: not needed. None if
+        not known. `stats` are those of the fit with all peaks
+        (last_fit_stats).
+
+        Peaks are removed one at a time (backward elimination): when several
+        are not needed, each of them alone may be replaceable by another one
+        (e.g. two peaks on one band - or a broad peak that can move to the band
+        of another), but not all together. So the least well determined of
+        them (the largest relative uncertainty of its area) is taken out, the
+        rest fitted again, and their need judged again - until every peak
+        left is needed. The peaks taken out get 'remove' = 1, 2, ... (the
+        order) and their delta_bic at that moment; the others the delta_bic of
+        the last round - "yes" means: needed also without the removed ones."""
+        from src.modules.data_analysis.peak_fitting_series import start_from
+        kept = (self.last_background, self.last_background_kind, self.last_fit_stats)
+        stats = stats or self.last_fit_stats
+        for f in fitted or []:
+            f['delta_bic'] = None
+            f.pop('remove', None)
+        if not fitted or not stats or stats['n_obs'] <= 0 or stats['ssr'] <= 0:
+            return fitted
+        n = stats['n_obs']
+
+        def bic(st):
+            return n * np.log(st['ssr'] / n) + st['n_par'] * np.log(n)
+
+        def rel_area_error(f):
+            area = abs(float(f['parameters'].get('area') or 0.0))
+            err = (f.get('errors') or {}).get('area')
+            return float(err) / area if err is not None and area > 0 else np.inf
+
+        active = list(range(len(fitted)))          # the peaks still in the model
+        current = fitted                           # their fit (all peaks at first)
+        cur_start = start_from(fitted, [dict(p) for p in start])
+        cur_stats = stats
+        order = 0
+        try:
+            while active:
+                full = bic(cur_stats)
+                deltas = {}
+                for pos, k in enumerate(active):
+                    others = [p for j, p in enumerate(cur_start) if j != pos]
+                    if not others:             # one peak: against the background alone
+                        deltas[k] = self._bic_without_peaks(x_data, y_data, background, full,
+                                                            n)
+                        continue
+                    fit_k, _ = self.fit_peaks(x_data, y_data, others, amplitude_constraint,
+                                              background=background)
+                    st = self.last_fit_stats
+                    deltas[k] = (float(bic(st) - full) if fit_k is not None and st and
+                                 st['ssr'] > 0 else None)
+                for k in active:
+                    fitted[k]['delta_bic'] = deltas[k]
+                weak = [k for k in active if deltas[k] is not None and deltas[k] < 2]
+                if not weak or len(active) == 1:
+                    break
+                # take out the least well determined of them
+                pos_of = {k: pos for pos, k in enumerate(active)}
+                out = max(weak, key=lambda k: (rel_area_error(current[pos_of[k]]),
+                                               -deltas[k]))
+                order += 1
+                fitted[out]['remove'] = order
+                if len(weak) == 1:
+                    break                      # the others were needed with it already
+                keep_pos = [pos for pos, k in enumerate(active) if k != out]
+                reduced = [cur_start[pos] for pos in keep_pos]
+                refit, _ = self.fit_peaks(x_data, y_data, reduced, amplitude_constraint,
+                                          background=background)
+                if refit is None or not self.last_fit_stats:
+                    break
+                active = [k for k in active if k != out]
+                cur_stats = self.last_fit_stats
+                current = refit
+                cur_start = start_from(refit, reduced)
+        finally:
+            self.last_background, self.last_background_kind, self.last_fit_stats = kept
+        return fitted
+
+    @staticmethod
+    def _bic_without_peaks(x, y, background, full, n):
+        """BIC of the background alone (a line or a constant fitted by least
+        squares, or zero) minus `full`."""
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        kind = resolve_background(x, y, background)
+        if kind == 'linear':
+            A = np.column_stack([np.ones_like(x), x])
+        elif kind == 'constant':
+            A = np.ones((x.size, 1))
+        else:
+            A = np.zeros((x.size, 0))
+        model = A @ np.linalg.lstsq(A, y, rcond=None)[0] if A.shape[1] else np.zeros_like(y)
+        ssr = float(np.sum((y - model) ** 2))
+        if ssr <= 0:
+            return None
+        return float(n * np.log(ssr / n) + A.shape[1] * np.log(n) - full)
 
     def estimate_width(self, x_data, y_data, center):
         """The Gaussian width (sigma) of the band at `center`: its width at

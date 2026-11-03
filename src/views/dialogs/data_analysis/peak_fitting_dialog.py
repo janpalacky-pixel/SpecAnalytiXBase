@@ -168,14 +168,20 @@ class PeakFittingDialog(QDialog):
         self.peaks_group = peaks_group
         peaks_layout = QVBoxLayout()
         self.peaks_table = QTableWidget()
-        self.peaks_table.setColumnCount(6)
-        self.peaks_table.setHorizontalHeaderLabels([" ", "Model", "Center", "Height", "Width", "Extra"])
+        self.peaks_table.setColumnCount(7)
+        self.peaks_table.setHorizontalHeaderLabels([" ", "Model", "Center", "Height", "Width", "Extra",
+                                                    "Needed?"])
         for col, tip in ((2, "The position of the peak top (x)"),
                          (3, "The height of the peak top above the background (y)"),
                          (4, "Gaussian and Voigt: \u03c3; Lorentzian: \u03b3 (half width at half "
                              "height); Pseudo-Voigt: FWHM"),
                          (5, "Voigt: \u03b3 (the Lorentzian part); Pseudo-Voigt: \u03b7 (0 = "
-                             "Gaussian, 1 = Lorentzian); empty for Gaussian and Lorentzian")):
+                             "Gaussian, 1 = Lorentzian); empty for Gaussian and Lorentzian"),
+                         (6, "Is this peak needed? (shown after Fit Peaks)\n"
+                             "Each peak is left out once and the spectrum fitted again:\n"
+                             "yes - without the peak the fit is clearly worse;\n"
+                             "probably - without it the fit is somewhat worse;\n"
+                             "no - without it the fit is just as good: the peak is not needed.")):
             self.peaks_table.horizontalHeaderItem(col).setToolTip(tip)
         self.peaks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.peaks_table.setItemDelegate(_ErrorDelegate(self.peaks_table))
@@ -183,6 +189,7 @@ class PeakFittingDialog(QDialog):
         # their uncertainty after a fit) get the room
         self.peaks_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.peaks_table.setColumnWidth(0, 28)
+        self.peaks_table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.peaks_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
         probe = QComboBox()
         probe.addItems(list(self.manager.peak_models))
@@ -221,6 +228,8 @@ class PeakFittingDialog(QDialog):
         
         btn_layout1.addWidget(self.auto_detect_btn)
         btn_layout1.addWidget(self.interactive_add_cb)
+        # the orange "?" of the column Needed? (just above it in the table)
+        btn_layout1.addWidget(self._quick_help_button('needed'))
         peaks_layout.addLayout(btn_layout1)
 
         if len(self.series) > 1:
@@ -1125,6 +1134,27 @@ class PeakFittingDialog(QDialog):
         self.update_peaks_table()
         self.update_plot()
 
+    def _set_needed_cell(self, row, peak_fit):
+        """The column Needed?: yes / probably / no from the fitted peak's
+        \u0394BIC ('not fitted', grey, before a fit: start values)."""
+        from src.modules.data_analysis.peak_fitting_manager import needed_text
+        if peak_fit is None:
+            text, tip = 'not fitted', ''
+        else:
+            n_removed = sum(1 for f in (self.fit_results or []) if f.get('remove'))
+            text, tip = needed_text(peak_fit.get('delta_bic'), peak_fit.get('remove'),
+                                    n_removed)
+        item = QTableWidgetItem(text)
+        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+        item.setTextAlignment(int(Qt.AlignCenter))
+        if text == 'no':
+            item.setForeground(QColor('#B45F06'))
+        elif text == 'not fitted':
+            item.setForeground(QColor('#999999'))
+        item.setToolTip(tip or "Not fitted: the values are start values.\n"
+                               "After Fit Peaks it says whether this peak is needed.")
+        self.peaks_table.setItem(row, 6, item)
+
     def _set_extra_cell(self, row, extra_key, value):
         """Populate the 'Extra' column for one row — editable with a value
         for models that have a 4th parameter (extra_key is 'gamma' or
@@ -1441,6 +1471,7 @@ class PeakFittingDialog(QDialog):
                 self._set_errors(i, peak_fit, [(2, 'center'), (3, 'height'), (4, width_key),
                                                (5, extra_key)])
                 self._show_constraints(i)
+                self._set_needed_cell(i, peak_fit)
         else:
             # Populate table from self.peaks (initial guesses)
             self.peaks_table.setRowCount(len(self.peaks))
@@ -1467,6 +1498,7 @@ class PeakFittingDialog(QDialog):
                 extra_key = {'Voigt': 'gamma', 'Pseudo-Voigt': 'eta'}.get(peak['model'])
                 self._set_extra_cell(i, extra_key, peak.get('extra'))
                 self._show_constraints(i)
+                self._set_needed_cell(i, None)
         
         self.peaks_table.blockSignals(False)
         # Extra only when a peak has one (Voigt, Pseudo-Voigt): the other
@@ -1592,6 +1624,9 @@ class PeakFittingDialog(QDialog):
         self.fit_results = fitted_results
         from src.modules.data_analysis import peak_fitting_series as pfs
         self.fit_background = pfs.plain_background(self.manager.last_background)
+        # is each peak needed? (the fit without it, compared by BIC)
+        self.manager.add_peak_bic(self.x_roi, self.y_roi, fitted_results, self.peaks,
+                                  constraint, self.background_kind)
         self._update_copy_results_button()
         self.update_peaks_table(from_fit_results=True) # Update table with fit results
         if self.series_results is None and len(self.series) > 1:
@@ -2806,6 +2841,10 @@ class PeakFittingDialog(QDialog):
                   + "\tFixed / linked\n")
         lines = [header]
 
+        def dbic(i):
+            d = fitted[i].get('delta_bic') if fitted is not None else None
+            return f"{d:.1f}" if d is not None else ""
+
         def err(i, key):
             if fitted is None or key is None:
                 return ""
@@ -2849,6 +2888,7 @@ class PeakFittingDialog(QDialog):
                     f"{extra_text}\t{err(i, extra_key)}\t"
                     f"{fwhm:.4f}\t{err(i, 'fwhm')}\t"
                     f"{area:.4f}\t{err(i, 'area')}\t"
+                    f"{dbic(i)}\t"
                     f"{self._constraints_note(i)}\n"
                 )
                 lines.append(line)

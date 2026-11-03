@@ -679,6 +679,33 @@ def part_peak_fitting():
             settle(0.6)
             shot(d, F, 'missing_peak.png', [d.canvas], margin=0)
 
+        # is a peak needed? the band at about 731 described by two peaks (half a
+        # width left and right): the column Needed? says "no" for one of them;
+        # the plot zoomed to that band
+        select([0])
+        d.peaks = []
+        d.auto_detect_peaks()
+        band = [k for k, p in enumerate(d.peaks) if abs(p['center'] - 731) < 15]
+        if band:
+            p = dict(d.peaks[band[0]])
+            d.peaks[band[0]] = dict(p, center=p['center'] - 0.5 * p['width'],
+                                    amplitude=0.6 * p['amplitude'], width=0.8 * p['width'])
+            d.peaks.append(dict(p, center=p['center'] + 0.5 * p['width'],
+                                amplitude=0.6 * p['amplitude'], width=0.8 * p['width'],
+                                color='#8c564b', id=None, constraints={}))
+            d.update_peaks_table()
+            d.fit_selected()
+            settle(0.6)
+            shot(d, F, 'needed_table.png', [d.peaks_group], margin=0)
+            d.legend_check.setChecked(False)              # (8 peaks: a long legend)
+            settle(0.4)
+            d.ax_main.set_xlim(p['center'] - 7 * p['width'], p['center'] + 7 * p['width'])
+            d.ax_main.set_ylim(-0.05, 0.6)
+            d.canvas.draw()
+            settle(0.4)
+            shot(d, F, 'needed_plot.png', [d.canvas], margin=0)
+            d.legend_check.setChecked(True)
+
         from PyQt5.QtWidgets import QInputDialog
         q = QInputDialog(d)
         q.setWindowTitle('Initial Peak Parameters')

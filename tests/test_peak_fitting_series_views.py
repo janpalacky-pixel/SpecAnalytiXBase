@@ -42,10 +42,10 @@ def test_peaks_long_keeps_a_row_for_a_spectrum_without_values():
     columns, rows = pfs.peaks_long(results, [0, 1])
     assert columns == ['Spectrum', 'Peak', 'Model', 'Center', 'Center ±', 'Height', 'Height ±',
                        'Width', 'Width ±', 'Extra', 'Extra ±', 'FWHM', 'FWHM ±', 'Area',
-                       'Area ±', 'R²']
+                       'Area ±', 'ΔBIC', 'R²']
     # a fit without uncertainties (kept from an older version): empty ± cells
     assert rows[0] == ['a : s1', 1, 'Voigt', 5.0, None, 2.0, None, 1.0, None, 0.5, None,
-                       3.0, None, 7.0, None, 0.99]
+                       3.0, None, 7.0, None, None, 0.99]
     assert rows[1][:3] == ['a : s2', None, 'not fitted yet'] and rows[1][-1] is None
 
 
@@ -56,7 +56,8 @@ def test_by_peak_one_peak_at_a_time_for_the_selected_spectra():
     t = dlg.by_peak_table
     heads = [t.horizontalHeaderItem(c).text() for c in range(t.columnCount())]
     assert heads == ['Spectrum', 'Model', 'Center', '±', 'Height', '±', 'Width', '±', 'FWHM',
-                     '±', 'Area', '±', 'R²']
+                     '±', 'Area', '±', 'ΔBIC', 'R²']
+    assert all(float(t.item(r, 12).text()) > 10 for r in range(6))   # both bands needed
     assert t.horizontalHeaderItem(3).toolTip().startswith('± of Center')
     errors = [float(t.item(r, 3).text()) for r in range(6)]
     assert all(0 < e < 0.05 for e in errors)                   # the centre's uncertainty

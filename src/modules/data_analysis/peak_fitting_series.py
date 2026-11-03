@@ -48,7 +48,7 @@ def _xy(spectrum):
 
 
 def fit_one(x, y, start, amplitude_constraint='unrestricted', manager=None,
-            background='none'):
+            background='none', bic=True):
     """(fitted peaks or None, R², fitted background or None) of one spectrum
     from the starting peaks; the background ('auto', 'none', 'constant',
     'linear') is fitted together with the peaks (PeakFittingManager.fit_peaks;
@@ -61,8 +61,10 @@ def fit_one(x, y, start, amplitude_constraint='unrestricted', manager=None,
         return None, np.nan, None
     ss_res = float(np.sum((y - y_fit) ** 2))
     ss_tot = float(np.sum((y - np.mean(y)) ** 2))
-    return (fitted, (1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan),
-            plain_background(manager.last_background))
+    bg = plain_background(manager.last_background)
+    if bic:
+        manager.add_peak_bic(x, y, fitted, start, amplitude_constraint, background)
+    return (fitted, (1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan), bg)
 
 
 def plain_background(background):
@@ -241,8 +243,13 @@ def pm(sigmas=1):
 
 
 def peak_columns(sigmas=1):
+    """The columns of one fitted peak: Model, each value with its ±, and
+    \u0394BIC (is the peak needed? see PeakFittingManager.add_peak_bic)."""
     return ['Model'] + [name + p for name in ('Center', 'Height', 'Width', 'Extra', 'FWHM',
-                                              'Area') for p in ('', pm(sigmas))]
+                                              'Area') for p in ('', pm(sigmas))] + [DBIC]
+
+
+DBIC = '\u0394BIC'
 
 
 PM = pm(1)
@@ -263,6 +270,8 @@ def peak_values(fitted_peak, sigmas=1):
     for key in ('center', 'height', WIDTH_KEY.get(model, 'sigma'), EXTRA_KEY.get(model),
                 'fwhm', 'area'):
         out += [num(key), error_of(fitted_peak, key, sigmas) if num(key) is not None else None]
+    d = fitted_peak.get('delta_bic')
+    out.append(float(d) if d is not None and np.isfinite(d) else None)
     return out
 
 
@@ -332,6 +341,8 @@ def _plain_peak(f, digits=10):
            'parameters': {k: _number(v, digits) for k, v in f['parameters'].items()}}
     if f.get('errors') is not None:
         out['errors'] = {k: _number(v, digits) for k, v in f['errors'].items()}
+    if f.get('delta_bic') is not None:
+        out['delta_bic'] = _number(f['delta_bic'], digits)
     return out
 
 

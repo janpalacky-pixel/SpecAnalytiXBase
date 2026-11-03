@@ -221,7 +221,7 @@ class _Problem:
 
 
 def fit_global(spectra, template, share='positions', amplitude_constraints=None,
-               background='auto', progress=None, manager=None):
+               background='auto', progress=None, manager=None, bic=True):
     """Fit `spectra` together from the starting peaks `template` (see the
     module docstring). amplitude_constraints: one per spectrum ('positive'
     etc.). progress(evaluations, None) is called during the fit and may
@@ -254,7 +254,75 @@ def fit_global(spectra, template, share='positions', amplitude_constraints=None,
     except (ValueError, RuntimeError, np.linalg.LinAlgError) as exc:
         logger.error("Global peak fit failed: %s", exc)
         return failed
-    return _results(pr, theta, spectra)
+    results = _results(pr, theta, spectra)
+    if bic:
+        _add_bic(results, spectra, template, share, constraints, background, progress, manager)
+    return results
+
+
+def _bic(stats):
+    n = stats['n_obs']
+    return n * np.log(stats['ssr'] / n) + stats['n_par'] * np.log(n)
+
+
+def _add_bic(results, spectra, template, share, constraints, background, progress, manager):
+    """Is each peak needed? As PeakFittingManager.add_peak_bic, for the
+    whole fit: each peak left out once, all spectra fitted together again;
+    several not needed: the least well determined one taken out and the
+    rest judged again (backward elimination). Every spectrum's peak gets the
+    same 'delta_bic' (and 'remove' = 1, 2, ... for the peaks to take out)."""
+    from src.modules.data_analysis.peak_fitting_series import start_from
+    ok = [r for r in results if r['ok']]
+    if not ok or ok[0]['fit_stats']['ssr'] <= 0:
+        return
+    for r in ok:
+        for p in r['peaks']:
+            p['delta_bic'] = None
+            p.pop('remove', None)
+
+    def rel_area_error(peak):
+        area = abs(float(peak['parameters'].get('area') or 0.0))
+        err = (peak.get('errors') or {}).get('area')
+        return float(err) / area if err is not None and area > 0 else np.inf
+
+    active = list(range(len(template)))
+    current = ok[0]
+    cur_start = start_from(current['peaks'], [dict(p) for p in template])
+    order = 0
+    while active:
+        full = _bic(current['fit_stats'])
+        deltas = {}
+        for pos, k in enumerate(active):
+            others = [p for j, p in enumerate(cur_start) if j != pos]
+            d = None
+            if others:
+                again = fit_global(spectra, others, share, constraints, background, progress,
+                                   manager, bic=False)
+                if all(r['ok'] for r in again) and again[0]['fit_stats']['ssr'] > 0:
+                    d = float(_bic(again[0]['fit_stats']) - full)
+            deltas[k] = d
+        for r in ok:
+            for k in active:
+                r['peaks'][k]['delta_bic'] = deltas[k]
+        weak = [k for k in active if deltas[k] is not None and deltas[k] < 2]
+        if not weak or len(active) == 1:
+            break
+        pos_of = {k: pos for pos, k in enumerate(active)}
+        out = max(weak, key=lambda k: (rel_area_error(current['peaks'][pos_of[k]]),
+                                       -deltas[k]))
+        order += 1
+        for r in ok:
+            r['peaks'][out]['remove'] = order
+        if len(weak) == 1:
+            break
+        reduced = [cur_start[pos] for pos, k in enumerate(active) if k != out]
+        again = fit_global(spectra, reduced, share, constraints, background, progress,
+                           manager, bic=False)
+        if not all(r['ok'] for r in again):
+            break
+        active = [k for k in active if k != out]
+        current = again[0]
+        cur_start = start_from(current['peaks'], reduced)
 
 
 def _results(pr, theta, spectra):
@@ -322,7 +390,8 @@ def _results(pr, theta, spectra):
             bg = {'kind': kind, 'x0': x0, 'x1': x1, 'y0': y0, 'y1': y1,
                   'y0_err': errs[0], 'y1_err': errs[1] if kind == 'linear' else errs[0]}
         out.append({'label': pr.labels[s], 'ok': True, 'peaks': peaks, 'r2': r2,
-                    'background': bg, 'global': pr.share})
+                    'background': bg, 'global': pr.share,
+                    'fit_stats': {'ssr': ssr, 'n_par': n_par, 'n_obs': n_obs}})
     return out
 
 
