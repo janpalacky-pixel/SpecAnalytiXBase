@@ -161,6 +161,99 @@ def initial_background(x, y, kind):
     return {'kind': kind, 'x0': float(x[0]), 'x1': float(x[-1]), 'y0': left, 'y1': right}
 
 
+# --- Fixed and linked values ---
+#
+# A starting peak can carry peak['constraints'] = {name: spec} for the names
+# of PARAM_NAMES (its 1st..4th fit parameter): spec {'kind': 'fixed'} keeps
+# the start value (not fitted); {'kind': 'link', 'peak': <id of another
+# peak>, 'value': v} ties it to that peak's value: center = the other's
+# center + v (a fixed distance), height = the other's height x v (a fixed
+# ratio), width / extra = the other's (the same; only between peaks of the
+# same model). Peaks are known by peak['id'] (new_peak_id), so a link stays
+# right when peaks are added or removed; a link to a peak that is no longer
+# there, a link round in a circle or a width link between different models
+# counts as free.
+PARAM_NAMES = ('height', 'center', 'width', 'extra')
+LINK_KINDS = {'center': 'distance', 'height': 'ratio', 'width': 'same', 'extra': 'same'}
+
+
+def new_peak_id(peaks):
+    """An id not used by any of `peaks` (p1, p2, ...)."""
+    used = {p.get('id') for p in peaks}
+    k = 1
+    while f'p{k}' in used:
+        k += 1
+    return f'p{k}'
+
+
+def constraint_of(peak, name):
+    """The constraint of one value of a starting peak (None = fitted)."""
+    spec = (peak.get('constraints') or {}).get(name)
+    return spec if isinstance(spec, dict) and spec.get('kind') in ('fixed', 'link') else None
+
+
+def _constraint_plan(peaks, model_definitions):
+    """For every fit parameter of the peaks (in the order of fit_peaks):
+    None (fitted), ('fixed',) or ('link', i_target, name, value)."""
+    ids = {p.get('id'): k for k, p in enumerate(peaks) if p.get('id')}
+    starts, pos = [], 0
+    for _, n in model_definitions:
+        starts.append(pos)
+        pos += n
+    plan = [None] * pos
+    for k, (peak, (model, n)) in enumerate(zip(peaks, model_definitions)):
+        for j, name in enumerate(PARAM_NAMES[:n]):
+            spec = constraint_of(peak, name)
+            if spec is None:
+                continue
+            i = starts[k] + j
+            if spec['kind'] == 'fixed':
+                plan[i] = ('fixed',)
+                continue
+            t = ids.get(spec.get('peak'))
+            if t is None or t == k:
+                continue
+            if name in ('width', 'extra') and model_definitions[t][0] != model:
+                continue                       # a width of another shape means another thing
+            if j >= model_definitions[t][1]:
+                continue
+            plan[i] = ('link', starts[t] + j, name, float(spec.get('value', 0.0 if name == 'center'
+                                                                           else 1.0)))
+    # links that cannot be resolved (a circle) are fitted freely
+    resolved = {i for i, p in enumerate(plan) if p is None or p[0] == 'fixed'}
+    changed = True
+    while changed:
+        changed = False
+        for i, p in enumerate(plan):
+            if i not in resolved and p[1] in resolved:
+                resolved.add(i)
+                changed = True
+    return [p if i in resolved else None for i, p in enumerate(plan)]
+
+
+def _expand(plan, full_start, free_index, q):
+    """The full parameter vector from the fitted (free) ones q: fixed values
+    from full_start, linked ones from their target (in order of need)."""
+    full = np.array(full_start, dtype=float)
+    full[free_index] = q
+    todo = [i for i, p in enumerate(plan) if p is not None and p[0] == 'link']
+    done = set(range(len(full))) - set(todo)
+    while todo:
+        rest = []
+        for i in todo:
+            _, t, name, v = plan[i]
+            if t not in done:
+                rest.append(i)
+                continue
+            full[i] = full[t] + v if name == 'center' else (full[t] * v if name == 'height'
+                                                             else full[t])
+            done.add(i)
+        if len(rest) == len(todo):
+            break
+        todo = rest
+    return full
+
+
 def _finite_cov(pcov, n):
     """The covariance of curve_fit as an n x n array (inf where the fit
     could not estimate it)."""
@@ -407,6 +500,7 @@ class PeakFittingManager:
             return [], None
 
         initial_params = []
+        raw_params = []           # the start values as given (a fixed value stays this)
         bounds_lower = []
         bounds_upper = []
         model_definitions = []
@@ -439,6 +533,7 @@ class PeakFittingManager:
 
             amplitude, center, width = peak['amplitude'], peak['center'], peak['width']
             abs_width = abs(width)
+            raw_params.extend([float(amplitude), float(center), float(abs_width)])
             if bg0 is not None and np.isfinite(amp_cap) and abs(amplitude) > amp_cap / 2.0:
                 # a height given from zero (a click or an older guess on data
                 # sitting on an offset): the height above the background
@@ -482,10 +577,17 @@ class PeakFittingManager:
             if num_params > 3:
                 for value, lo, hi in self.get_extra_param_defaults(model_name, abs_width, peak):
                     initial_params.append(value)
+                    raw_params.append(value)
                     bounds_lower.append(lo)
                     bounds_upper.append(hi)
         
         n_peak_params = len(initial_params)
+        # fixed values keep their start; linked ones follow their peak; only
+        # the others (and the background) are fitted
+        plan = _constraint_plan(initial_peaks, model_definitions)
+        for i, p in enumerate(plan):
+            if p is not None and p[0] == 'fixed':
+                initial_params[i] = raw_params[i]
         if bg0 is not None:
             span = float(np.nanmax(y_arr) - np.nanmin(y_arr)) or 1.0
             lo_b, hi_b = float(np.nanmin(y_arr)) - span, float(np.nanmax(y_arr)) + span
@@ -501,21 +603,45 @@ class PeakFittingManager:
             y1 = extra[0] if background == 'constant' else extra[1]
             return dict(bg0, y0=float(extra[0]), y1=float(y1))
 
-        def model_func_for_fit(x, *params):
+        def full_model(x, *params):
             y = self.multi_peak_model(x, *params[:n_peak_params],
                                       model_definitions=model_definitions)
             if bg0 is not None:
                 y = y + background_values(background_of(params), x)
             return y
 
+        plan += [None] * (len(initial_params) - n_peak_params)      # the background: fitted
+        free = np.array([i for i, p in enumerate(plan) if p is None], dtype=int)
+        start_full = _expand(plan, initial_params, free, np.asarray(initial_params)[free])
+
+        def model_func_for_fit(x, *q):
+            return full_model(x, *_expand(plan, start_full, free, np.asarray(q)))
+
         try:
-            popt, pcov = curve_fit(
-                model_func_for_fit, x_data, y_data, p0=initial_params, bounds=(bounds_lower, bounds_upper)
-            )
-            y_fit = model_func_for_fit(x_data, *popt)
+            if free.size:
+                q_opt, q_cov = curve_fit(
+                    model_func_for_fit, x_data, y_data, p0=start_full[free],
+                    bounds=(np.asarray(bounds_lower)[free], np.asarray(bounds_upper)[free]))
+            else:                                   # everything fixed: nothing to fit
+                q_opt, q_cov = np.zeros(0), np.zeros((0, 0))
+            popt = _expand(plan, start_full, free, q_opt)
+            y_fit = full_model(x_data, *popt)
 
             self.last_background = background_of(popt)
-            cov = _finite_cov(pcov, len(popt))
+            # the covariance of all values: C = J Cq J^T, J = d(all) / d(fitted)
+            # (the links are linear, so J is exact with unit steps); a fixed
+            # value has no uncertainty
+            q_cov = _finite_cov(q_cov, free.size)
+            jac = np.zeros((len(popt), free.size))
+            for j in range(free.size):
+                step = q_opt.copy()
+                step[j] += 1.0
+                jac[:, j] = _expand(plan, start_full, free, step) - popt
+            bad_q = ~np.all(np.isfinite(q_cov), axis=0) if free.size else np.zeros(0, bool)
+            cov = jac @ np.where(np.isfinite(q_cov), q_cov, 0.0) @ jac.T
+            bad = np.any(jac[:, bad_q] != 0, axis=1) if bad_q.any() else np.zeros(len(popt), bool)
+            cov[bad, :] = np.inf                    # depends on a value the fit could not judge
+            cov[:, bad] = np.inf
             if self.last_background is not None:
                 # the background's own uncertainties (y0, and y1 when linear)
                 errs = [_sd(cov, i) for i in range(n_peak_params, len(popt))]

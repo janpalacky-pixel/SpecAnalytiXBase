@@ -46,7 +46,10 @@ class _SelectedTextDelegate(QStyledItemDelegate):
                                     option.palette.brush(QPalette.HighlightedText))
 
 
-ERROR_ROLE = Qt.UserRole + 1          # a fitted value's uncertainty, as text ('4.1', 'n/a')
+ERROR_ROLE = Qt.UserRole + 1          # a fitted value with its uncertainty, as shown
+TAG_ROLE = Qt.UserRole + 2            # a fixed or linked value: 'fixed', '=P1', 'P1+12.5'
+COLUMN_PARAM = {2: 'center', 3: 'height', 4: 'width', 5: 'extra'}   # the table's value columns
+FIXED_COLOUR, LINKED_COLOUR = '#E4E4E4', '#DDEBFA'
 
 
 class _ErrorDelegate(QStyledItemDelegate):
@@ -60,6 +63,9 @@ class _ErrorDelegate(QStyledItemDelegate):
         shown = index.data(ERROR_ROLE)
         if shown:
             option.text = shown
+        tag = index.data(TAG_ROLE)
+        if tag:
+            option.text = f"[{tag}] {option.text}"     # the tag first: never cut off
 
 
 class PeakFittingDialog(QDialog):
@@ -177,13 +183,20 @@ class PeakFittingDialog(QDialog):
         # their uncertainty after a fit) get the room
         self.peaks_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.peaks_table.setColumnWidth(0, 28)
+        self.peaks_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
+        probe = QComboBox()
+        probe.addItems(list(self.manager.peak_models))
+        self.peaks_table.setColumnWidth(1, probe.sizeHint().width() + 4)
         
         self.peaks_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.peaks_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.peaks_table.itemSelectionChanged.connect(self._emphasize_selected_peaks)
         
         self.peaks_table.cellDoubleClicked.connect(self.on_color_cell_double_clicked)
-        self.peaks_table.setToolTip("List of peaks for fitting.\n- Double-click a color swatch (col 1) to change it.\n- Select rows and press the Delete key to remove peaks.\n- 'Width' is σ for Gaussian/Voigt, γ for Lorentzian, or the shared FWHM for Pseudo-Voigt.\n- 'Extra' applies only to Voigt (γ) and Pseudo-Voigt (η, 0-1) — shown as '—' and disabled for other models.")
+        # right-click on a value: fix it, or link it to another peak
+        self.peaks_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.peaks_table.customContextMenuRequested.connect(self._peaks_table_menu)
+        self.peaks_table.setToolTip("List of peaks for fitting.\n- Double-click a color swatch (col 1) to change it.\n- Select rows and press the Delete key to remove peaks.\n- 'Width' is σ for Gaussian/Voigt, γ for Lorentzian, or the shared FWHM for Pseudo-Voigt.\n- 'Extra' applies only to Voigt (γ) and Pseudo-Voigt (η, 0-1) — shown as '—' and disabled for other models.\n- Right-click a value: fix it (not fitted), or link it to another peak (the same width, a fixed distance, a fixed height ratio).")
         
         peaks_layout.addWidget(self.peaks_table)
 
@@ -1050,6 +1063,217 @@ class PeakFittingDialog(QDialog):
             item = QTableWidgetItem(f"{value:.4f}" if value is not None else "0.5000")
         self.peaks_table.setItem(row, 5, item)
 
+    # ------------------------------------------------------------------
+    # fixed and linked values (right-click on a value in the table)
+    # ------------------------------------------------------------------
+    def _tidy_constraints(self):
+        """Every peak has an id (links refer to it); links to a peak that is
+        gone, or a width / extra link to a peak of another shape, are dropped."""
+        from src.modules.data_analysis.peak_fitting_manager import new_peak_id, constraint_of
+        for p in self.peaks:
+            if not p.get('id'):
+                p['id'] = new_peak_id(self.peaks)
+        by_id = {p['id']: p for p in self.peaks}
+        for p in self.peaks:
+            cons = dict(p.get('constraints') or {})
+            for name in list(cons):
+                spec = constraint_of(p, name)
+                if spec is None:
+                    cons.pop(name)
+                elif spec['kind'] == 'link':
+                    t = by_id.get(spec.get('peak'))
+                    if t is None or t is p or (name in ('width', 'extra')
+                                               and t['model'] != p['model']):
+                        cons.pop(name)
+                if name == 'extra' and name in cons and p['model'] not in ('Voigt',
+                                                                           'Pseudo-Voigt'):
+                    cons.pop(name)
+            if cons or p.get('constraints'):
+                p['constraints'] = cons
+
+    def _apply_links(self):
+        """The linked start values follow their peak (as the fit does)."""
+        from src.modules.data_analysis.peak_fitting_manager import constraint_of
+        by_id = {p.get('id'): p for p in self.peaks}
+        key = {'center': 'center', 'height': 'amplitude', 'width': 'width', 'extra': 'extra'}
+        for _ in range(len(self.peaks)):               # chains: peak 3 = peak 2 = peak 1
+            for p in self.peaks:
+                for name in ('center', 'height', 'width', 'extra'):
+                    spec = constraint_of(p, name)
+                    if spec is None or spec['kind'] != 'link':
+                        continue
+                    t = by_id.get(spec['peak'])
+                    if t is None or t.get(key[name]) is None:
+                        continue
+                    v = float(spec.get('value', 0.0 if name == 'center' else 1.0))
+                    tv = float(t[key[name]])
+                    p[key[name]] = tv + v if name == 'center' else (tv * v if name == 'height'
+                                                                    else tv)
+
+    def _constraint_text(self, peak, name):
+        """('fixed' / '=P1' / 'P1+12.5' / 'P1×0.5', tooltip) or (None, None)."""
+        from src.modules.data_analysis.peak_fitting_manager import constraint_of
+        spec = constraint_of(peak, name)
+        if spec is None:
+            return None, None
+        label = {'center': 'Center', 'height': 'Height', 'width': 'Width', 'extra': 'Extra'}[name]
+        if spec['kind'] == 'fixed':
+            return 'fixed', (f"{label} is fixed: kept at this value, not fitted (no \u00b1).\n"
+                             "Double-click to change the value;\n"
+                             "right-click > Fitted (free) to fit it again.")
+        k = next((i for i, p in enumerate(self.peaks) if p.get('id') == spec['peak']), None)
+        if k is None:
+            return None, None
+        v = float(spec.get('value', 0.0 if name == 'center' else 1.0))
+        if name == 'center':
+            sign = '+' if v >= 0 else '\u2212'
+            tag = f"P{k + 1}{sign}{abs(v):.4g}"
+            tip = f"Linked: this peak's centre is always {v:+.4g} from peak {k + 1}'s."
+        elif name == 'height':
+            tag = f"P{k + 1}\u00d7{v:.3g}"
+            tip = f"Linked: this peak's height is always {v:.3g} \u00d7 the height of peak {k + 1}."
+        else:
+            tag = f"=P{k + 1}"
+            tip = f"Linked: the same {label.lower()} as peak {k + 1}."
+        return tag, tip + "\nRight-click > Fitted (free) to free it."
+
+    def _constraints_note(self, row):
+        """'Center fixed; Width = P1' - for Copy Results."""
+        if row >= len(self.peaks):
+            return ''
+        parts = []
+        for name in ('center', 'height', 'width', 'extra'):
+            tag, _ = self._constraint_text(self.peaks[row], name)
+            if tag:
+                parts.append(f"{name.capitalize()} {tag}")
+        return '; '.join(parts)
+
+    def _show_constraints(self, row):
+        """A fixed value grey, a linked one light blue, each with its tag;
+        a linked value cannot be typed (it follows its peak)."""
+        if row >= len(self.peaks):
+            return
+        peak = self.peaks[row]
+        for col, name in COLUMN_PARAM.items():
+            item = self.peaks_table.item(row, col)
+            if item is None or not (item.flags() & Qt.ItemIsEnabled):
+                continue
+            tag, tip = self._constraint_text(peak, name)
+            item.setData(TAG_ROLE, tag)
+            if tag is None:
+                continue
+            item.setBackground(QColor(FIXED_COLOUR if tag == 'fixed' else LINKED_COLOUR))
+            item.setToolTip(tip)
+            if tag != 'fixed':
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+
+    def set_constraint(self, rows, name, spec):
+        """Fix (spec {'kind': 'fixed'}), link ({'kind': 'link', 'peak': id})
+        or free (None) the value `name` of the peaks `rows`. The values shown
+        in the table (after a fit the fitted ones) become the start values;
+        a link keeps the present distance (centre) or ratio (height)."""
+        for i in range(self.peaks_table.rowCount()):
+            self.update_peak_from_table(i)
+        self._tidy_constraints()
+        by_id = {p['id']: p for p in self.peaks}
+        for r in rows:
+            if not 0 <= r < len(self.peaks):
+                continue
+            p = self.peaks[r]
+            cons = dict(p.get('constraints') or {})
+            if spec is None:
+                cons.pop(name, None)
+            elif spec['kind'] == 'fixed':
+                cons[name] = {'kind': 'fixed'}
+            else:
+                t = by_id.get(spec['peak'])
+                if t is None or t is p:
+                    continue
+                if name == 'center':
+                    value = float(p['center']) - float(t['center'])
+                elif name == 'height':
+                    value = (float(p['amplitude']) / float(t['amplitude'])
+                             if float(t['amplitude']) != 0 else 1.0)
+                else:
+                    value = 1.0
+                cons[name] = {'kind': 'link', 'peak': t['id'], 'value': value}
+            p['constraints'] = cons
+        self.fit_results = None
+        self._peaks_changed()
+        self._update_copy_results_button()
+        self.update_peaks_table()
+        self.update_plot()
+
+    def _peaks_table_menu(self, pos):
+        menu = self.peaks_constraint_menu(self.peaks_table.indexAt(pos))
+        if menu is not None:
+            menu.exec_(self.peaks_table.viewport().mapToGlobal(pos))
+
+    def peaks_constraint_menu(self, index):
+        """The right-click menu of a value: Fixed, Fitted, Link to peak ...,
+        for Width also 'The same width for all peaks'. With several rows
+        selected (the clicked one among them) it acts on all of them."""
+        from PyQt5.QtWidgets import QMenu
+        from src.modules.data_analysis.peak_fitting_manager import constraint_of
+        row, col = index.row(), index.column()
+        name = COLUMN_PARAM.get(col)
+        if name is None or not 0 <= row < len(self.peaks):
+            return None
+        peak = self.peaks[row]
+        if name == 'extra' and peak['model'] not in ('Voigt', 'Pseudo-Voigt'):
+            return None
+        selected = sorted({i.row() for i in self.peaks_table.selectionModel().selectedRows()})
+        rows = selected if row in selected and len(selected) > 1 else [row]
+        label = {'center': 'Center', 'height': 'Height', 'width': 'Width', 'extra': 'Extra'}[name]
+        whose = f"peak {row + 1}" if len(rows) == 1 else f"the {len(rows)} selected peaks"
+        menu = QMenu(self)
+        title = menu.addAction(f"{label} of {whose}")
+        title.setEnabled(False)
+        spec = constraint_of(peak, name) if len(rows) == 1 else None
+        fixed = menu.addAction("Fixed (kept at this value, not fitted)")
+        fixed.setCheckable(True)
+        fixed.setChecked(spec is not None and spec['kind'] == 'fixed')
+        fixed.triggered.connect(lambda on: self.set_constraint(
+            rows, name, {'kind': 'fixed'} if on else None))
+        free = menu.addAction("Fitted (free)")
+        free.setCheckable(True)
+        free.setChecked(spec is None and all(constraint_of(self.peaks[r], name) is None
+                                             for r in rows))
+        free.triggered.connect(lambda *_: self.set_constraint(rows, name, None))
+        targets = [k for k, p in enumerate(self.peaks) if k not in rows
+                   and (name in ('center', 'height') or p['model'] == peak['model'])]
+        link = menu.addMenu({'center': "Keep the distance to peak",
+                             'height': "Keep the height ratio to peak",
+                             'width': "The same width as peak",
+                             'extra': "The same extra value as peak"}[name])
+        link.setEnabled(bool(targets))
+        for k in targets:
+            t = self.peaks[k]
+            if name == 'center':
+                text = f"Peak {k + 1} (now {float(peak['center']) - float(t['center']):+.4g})"
+            elif name == 'height':
+                ratio = (float(peak['amplitude']) / float(t['amplitude'])
+                         if float(t['amplitude']) != 0 else 1.0)
+                text = f"Peak {k + 1} (now \u00d7 {ratio:.3g})"
+            else:
+                text = f"Peak {k + 1}"
+            a = link.addAction(text)
+            a.setCheckable(True)
+            a.setChecked(spec is not None and spec['kind'] == 'link'
+                         and spec.get('peak') == t.get('id'))
+            a.triggered.connect(lambda *_, t_id=t.get('id'): self.set_constraint(
+                rows, name, {'kind': 'link', 'peak': t_id}))
+        if name == 'width':
+            same = [k for k, p in enumerate(self.peaks) if k != row
+                    and p['model'] == peak['model']]
+            a = menu.addAction(f"The same width for all {peak['model']} peaks (as peak {row + 1})")
+            a.setEnabled(bool(same))
+            a.triggered.connect(lambda *_: (self.set_constraint([row], name, None),
+                                            self.set_constraint(same, name,
+                                                                {'kind': 'link',
+                                                                 'peak': self.peaks[row]['id']})))
+        return menu
+
     def _clear_errors(self):
         t = self.peaks_table
         t.blockSignals(True)
@@ -1067,10 +1291,15 @@ class PeakFittingDialog(QDialog):
         if errors is None:                   # a fit kept from an older version
             return
         from src.modules.data_analysis.peak_fitting_manager import format_with_error
+        from src.modules.data_analysis.peak_fitting_manager import constraint_of
+        peak = self.peaks[row] if row < len(self.peaks) else {}
         for col, key in cells:
             item = self.peaks_table.item(row, col)
             if item is None or key is None:
                 continue
+            spec = constraint_of(peak, COLUMN_PARAM[col])
+            if spec is not None and spec['kind'] == 'fixed':
+                continue                         # not fitted: no uncertainty
             err = errors.get(key)
             try:
                 value = float(item.text())
@@ -1088,6 +1317,9 @@ class PeakFittingDialog(QDialog):
 
     def update_peaks_table(self, from_fit_results=False):
         """Populates the table either from initial guesses (self.peaks) or fit results (self.fit_results)."""
+        self._tidy_constraints()
+        if not (from_fit_results and self.fit_results):
+            self._apply_links()
         self.peaks_table.blockSignals(True)
         # the old Model drop-downs: hidden at once (Qt deletes a replaced cell
         # widget only later; until then it showed in the top-left corner)
@@ -1128,6 +1360,7 @@ class PeakFittingDialog(QDialog):
                 self._set_extra_cell(i, extra_key, params.get(extra_key) if extra_key else None)
                 self._set_errors(i, peak_fit, [(2, 'center'), (3, 'height'), (4, width_key),
                                                (5, extra_key)])
+                self._show_constraints(i)
         else:
             # Populate table from self.peaks (initial guesses)
             self.peaks_table.setRowCount(len(self.peaks))
@@ -1153,8 +1386,15 @@ class PeakFittingDialog(QDialog):
                 self.peaks_table.setItem(i, 4, QTableWidgetItem(f"{abs(peak['width']):.4f}"))
                 extra_key = {'Voigt': 'gamma', 'Pseudo-Voigt': 'eta'}.get(peak['model'])
                 self._set_extra_cell(i, extra_key, peak.get('extra'))
+                self._show_constraints(i)
         
         self.peaks_table.blockSignals(False)
+        # Extra only when a peak has one (Voigt, Pseudo-Voigt): the other
+        # values (with their \u00b1 and [fixed] / [= P1]) get its room
+        models = [p['model'] for p in (self.fit_results if from_fit_results and self.fit_results
+                                       else self.peaks)]
+        self.peaks_table.setColumnHidden(5, not any(m in ('Voigt', 'Pseudo-Voigt')
+                                                    for m in models))
         # Re-connect the cellChanged signal
         try: self.peaks_table.cellChanged.disconnect(self.on_table_cell_changed)
         except TypeError: pass
@@ -2370,7 +2610,8 @@ class PeakFittingDialog(QDialog):
         from src.modules.data_analysis import peak_fitting_series as pfs
         fitted = (self.fit_results if self.fit_results
                   and len(self.fit_results) == self.peaks_table.rowCount() else None)
-        header = "Peak\t" + "\t".join(pfs.PEAK_COLUMNS) + "\n"     # as in the table
+        header = ("Peak\t" + "\t".join(pfs.PEAK_COLUMNS)       # as in the table
+                  + "\tFixed / linked\n")
         lines = [header]
 
         def err(i, key):
@@ -2415,7 +2656,8 @@ class PeakFittingDialog(QDialog):
                     f"{width:.4f}\t{err(i, width_key)}\t"
                     f"{extra_text}\t{err(i, extra_key)}\t"
                     f"{fwhm:.4f}\t{err(i, 'fwhm')}\t"
-                    f"{area:.4f}\t{err(i, 'area')}\n"
+                    f"{area:.4f}\t{err(i, 'area')}\t"
+                    f"{self._constraints_note(i)}\n"
                 )
                 lines.append(line)
             

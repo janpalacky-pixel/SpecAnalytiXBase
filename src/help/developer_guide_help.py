@@ -3537,6 +3537,12 @@ def _natural_sort_key(cls, label):
             <code>PeakFittingManager.peak_errors()</code>; <code>None</code> = not estimated),
             shown by <code>_ErrorDelegate</code> (ERROR_ROLE, the cell text stays the number) and as
             "&#8230; &plusmn;" columns in <code>series_table()</code> / <code>peaks_long()</code>.
+            Fixed / linked values: <code>peak['constraints']</code> (see the comment at
+            <code>PARAM_NAMES</code>), peaks known by <code>peak['id']</code>;
+            <code>_constraint_plan()</code> / <code>_expand()</code> fit only the free values
+            (curve_fit on the subset), the full covariance J&nbsp;C&nbsp;J<sup>T</sup>; the
+            dialog's right-click menu is <code>peaks_constraint_menu()</code> /
+            <code>set_constraint()</code>, shown via TAG_ROLE.
             Every result carries its fitted <code>'background'</code>;
             <code>model_curves(x, peaks, manager, background)</code> adds it to the total.</li>
             <li>Window (<code>peak_fitting_dialog.py</code>): ONE fit button,

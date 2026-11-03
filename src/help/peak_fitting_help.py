@@ -136,6 +136,7 @@ def get_peak_fitting_help_content():
         <a href="#adding-peaks">Adding peaks</a> &#183;
         <a href="#peaks-mode">Peaks of several spectra</a> &#183;
         <a href="#fitting">Fitting</a> &#183;
+        <a href="#fix-link">Fixing and linking values</a> &#183;
         <a href="#uncertainty">Uncertainties (&plusmn;)</a> &#183;
         <a href="#converge">Getting a fit to converge</a> &#183;
         <a href="#viewing">The plot</a> &#183;
@@ -512,6 +513,36 @@ def get_peak_fitting_help_content():
             <img src="$FIT_CONTROLS" width="${FIT_CONTROLS_W}" height="${FIT_CONTROLS_H}" alt="Amplitude Constraint, Fit Peaks for 10 selected spectra and Copy results" />
             <p class="caption">Fitting with all ten spectra selected: the one Fit Peaks button says how many it fits; the line under it which spectra have no peaks of their own.</p>
         </div>
+
+        <h3 id="fix-link">Fixing and linking values</h3>
+        <p>What you already know about the bands can be given to the fit: <b>right-click a
+        value</b> (Center, Height, Width, Extra) in the table of peaks.</p>
+        <ul>
+            <li><b>Fixed</b> &mdash; the value is kept as it is in the table, not fitted. Shown
+            grey with <b>[fixed]</b>; double-click to change the value. Example: a solvent or
+            reference band whose position is known (e.g. 1003 for phenylalanine): fix its
+            Center.</li>
+            <li><b>Keep the distance to peak&hellip;</b> (Center) &mdash; the centre always lies
+            the same distance from the other peak's, as it is now; the two move together.
+            Shown light blue, e.g. <b>[P1+12]</b>. Example: a doublet with a known
+            splitting.</li>
+            <li><b>Keep the height ratio to peak&hellip;</b> (Height) &mdash; the height is always
+            the same multiple of the other peak's, as it is now, e.g. <b>[P1&times;0.5]</b>.
+            Example: two bands of one group with a known intensity ratio.</li>
+            <li><b>The same width as peak&hellip;</b> (Width, Extra) &mdash; e.g.
+            <b>[=P1]</b>; only between peaks of the same shape (the width of a Gaussian and of
+            a Lorentzian mean different things). <b>The same width for all &hellip; peaks</b>
+            links the widths of all peaks of that shape to the clicked one. Example: two
+            overlapping bands that should be equally broad &mdash; the fit is much more stable
+            when it does not have to find two widths.</li>
+            <li><b>Fitted (free)</b> &mdash; the value is fitted again.</li>
+        </ul>
+        <p>With several rows selected, the choice applies to all of them. A linked value cannot
+        be typed (it follows its peak); the distance or ratio is the one at the moment you link
+        &mdash; set the values first, or fit, then link. A fixed value has no uncertainty; a
+        linked one has that of its peak. Removing a peak removes the links to it. Copy Results
+        says in the last column what was fixed or linked. Fixed and linked values are kept with
+        the peaks (also when copied to other spectra).</p>
 
         <h3 id="uncertainty">Uncertainties (&plusmn;)</h3>
         <p>After a fit every fitted value has its <b>uncertainty</b>: the table of peaks shows
@@ -966,6 +997,21 @@ def get_peak_fitting_help_content():
             theirs by error propagation: var(f) = g&nbsp;C&nbsp;g<sup>T</sup>, g the derivatives
             of f by the fitted values (numerical), C their covariance &mdash; so correlations
             between the values (e.g. height and width) are taken into account.</li>
+            <li><b>Fixed and linked values</b> (right-click a value in the table of peaks, see <a
+            href="#fix-link">Fixing and linking values</a>). Normally the fit changes every value
+            (centre, height, width) until the peaks match the data &mdash; these are the
+            <i>free</i> values. A <b>fixed</b> value is not changed: it stays as it is in the
+            table (e.g. a known position, 1003). A <b>linked</b> value is not fitted on its own
+            but follows another peak: the same width as peak 1, always 12 to the right of
+            peak 1, or always half its height. So the fit changes only the free values (and the
+            background), and after each change the linked ones are worked out from them.
+            Uncertainties: a fixed value has none (0); a linked value gets the one of the value it
+            follows (a distance link: that of the other centre; a ratio link: that of the other
+            height &times; the ratio). (Technically: C = J&nbsp;C<sub>free</sub>&nbsp;J<sup>T</sup>,
+            J the derivatives of all values by the free ones.) A link that cannot work is
+            ignored and that value fitted freely: a link to a peak that was removed, links in a
+            circle (peak 1 = peak 2 and peak 2 = peak 1), or a width linked between different
+            shapes (a Gaussian's &sigma; and a Lorentzian's &gamma; are different things).</li>
         </ul>
         <h3>Several spectra</h3>
         <ul>
