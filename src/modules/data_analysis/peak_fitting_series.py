@@ -89,10 +89,7 @@ def _fit_chunk_worker(payload):
         fitted, r2, bg = fit_one(np.asarray(x), np.asarray(y), own, own_constraint, manager,
                                  background)
         if fitted is not None:            # plain floats: picklable, no numpy scalars
-            fitted = [{'model': f['model'],
-                       'parameters': {k: (float(v) if isinstance(v, (int, float, np.floating))
-                                          else v) for k, v in f['parameters'].items()}}
-                      for f in fitted]
+            fitted = [_plain_peak(f, digits=None) for f in fitted]
         out.append((fitted, float(r2), bg))
         count_item()
     return out
@@ -210,16 +207,18 @@ def fit_each(spectra, starts, amplitude_constraint='unrestricted', progress=None
 
 def series_table(results, n_peaks):
     """(columns, rows) of the series: one row per spectrum - its name, then
-    position, FWHM, height and area of peak 1, 2, ..., then R². A failed
-    fit gives None (an empty cell)."""
-    columns = ['Spectrum'] + [f'Peak {j + 1} {name}' for j in range(n_peaks)
-                              for name, _ in VALUES] + ['R²']
+    position, FWHM, height and area of peak 1, 2, ..., each followed by its
+    standard error (±), then R². A failed fit gives None (an empty cell)."""
+    columns = ['Spectrum'] + [f'Peak {j + 1} {name}{pm}' for j in range(n_peaks)
+                              for name, _ in VALUES for pm in ('', ' \u00b1')] + ['R²']
     rows = []
     for r in results:
         row = [r['label']]
         for j in range(n_peaks):
-            par = r['peaks'][j]['parameters'] if r['ok'] and j < len(r['peaks']) else None
-            row += [float(par[key]) if par is not None else None for _, key in VALUES]
+            peak = r['peaks'][j] if r['ok'] and j < len(r['peaks']) else None
+            for _, key in VALUES:
+                row += ([float(peak['parameters'][key]), error_of(peak, key)]
+                        if peak is not None else [None, None])
         r2 = r.get('r2')
         row.append(float(r2) if r['ok'] and r2 is not None and np.isfinite(r2) else None)
         rows.append(row)
@@ -228,21 +227,28 @@ def series_table(results, n_peaks):
 
 # The values of one fitted peak, named as in the Peaks table of the window
 # (Width and Extra mean what the model uses: Gaussian/Voigt sigma, Lorentzian
-# gamma, Pseudo-Voigt FWHM; Voigt gamma, Pseudo-Voigt eta).
-PEAK_COLUMNS = ['Model', 'Center', 'Height', 'Width', 'Extra', 'FWHM', 'Area']
+# gamma, Pseudo-Voigt FWHM; Voigt gamma, Pseudo-Voigt eta), each followed by
+# its standard error (±, from the fit).
+PM = ' \u00b1'
+PEAK_COLUMNS = ['Model'] + [name + pm for name in ('Center', 'Height', 'Width', 'Extra',
+                                                   'FWHM', 'Area') for pm in ('', PM)]
 
 
 def peak_values(fitted_peak):
-    """[model, center, height, width, extra, FWHM, area] of one fitted peak;
-    extra is None for a model without one."""
+    """[model, center, ±, height, ±, width, ±, extra, ±, FWHM, ±, area, ±]
+    of one fitted peak; extra is None for a model without one, an error None
+    where it is not known."""
     model = fitted_peak['model']
     par = fitted_peak['parameters']
 
     def num(key):
         v = par.get(key) if key else None
         return float(v) if v is not None else None
-    return [model, num('center'), num('height'), num(WIDTH_KEY.get(model, 'sigma')),
-            num(EXTRA_KEY.get(model)), num('fwhm'), num('area')]
+    out = [model]
+    for key in ('center', 'height', WIDTH_KEY.get(model, 'sigma'), EXTRA_KEY.get(model),
+                'fwhm', 'area'):
+        out += [num(key), error_of(fitted_peak, key) if num(key) is not None else None]
+    return out
 
 
 def status(result):
@@ -295,6 +301,31 @@ def model_curves(x, fitted, manager=None, background=None):
     return total, parts
 
 
+def _number(v, digits):
+    if isinstance(v, (int, float, np.floating)) and not isinstance(v, bool):
+        v = float(v)
+        if not np.isfinite(v):
+            return None
+        return round(v, digits) if digits is not None else v
+    return v
+
+
+def _plain_peak(f, digits=10):
+    """One fitted peak with plain Python numbers (its values and their
+    errors; an error that could not be estimated is None)."""
+    out = {'model': f['model'],
+           'parameters': {k: _number(v, digits) for k, v in f['parameters'].items()}}
+    if f.get('errors') is not None:
+        out['errors'] = {k: _number(v, digits) for k, v in f['errors'].items()}
+    return out
+
+
+def error_of(fitted_peak, key):
+    """The standard error of one value of a fitted peak (None if unknown)."""
+    v = (fitted_peak.get('errors') or {}).get(key) if key else None
+    return float(v) if v is not None and np.isfinite(v) else None
+
+
 def plain(results):
     """The results with plain Python numbers (no numpy), to keep them with
     the window's settings."""
@@ -302,10 +333,7 @@ def plain(results):
     for r in results:
         peaks = None
         if r.get('peaks'):
-            peaks = [{'model': f['model'],
-                      'parameters': {k: (round(float(v), 10) if isinstance(v, (int, float, np.floating))
-                                         else v) for k, v in f['parameters'].items()}}
-                     for f in r['peaks']]
+            peaks = [_plain_peak(f) for f in r['peaks']]
         r2 = r.get('r2')
         out.append({'label': r.get('label', ''), 'ok': bool(r.get('ok')), 'peaks': peaks,
                     'r2': (float(r2) if r2 is not None and np.isfinite(r2) else None)})

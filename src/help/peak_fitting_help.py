@@ -136,6 +136,7 @@ def get_peak_fitting_help_content():
         <a href="#adding-peaks">Adding peaks</a> &#183;
         <a href="#peaks-mode">Peaks of several spectra</a> &#183;
         <a href="#fitting">Fitting</a> &#183;
+        <a href="#uncertainty">Uncertainties (&plusmn;)</a> &#183;
         <a href="#converge">Getting a fit to converge</a> &#183;
         <a href="#viewing">The plot</a> &#183;
         <a href="#series">Fitting a series</a> &#183;
@@ -445,9 +446,11 @@ def get_peak_fitting_help_content():
                         water band only 15 counts high: the background takes the 669, the peaks
                         only the bands.</li>
                     </ul>
-                    Why not always Linear: a background the data do not have only makes the fit
-                    less stable &mdash; with CD a sloped line and a broad band can take each
-                    other's intensity, so the heights and areas are less reliable.</li>
+                    Why not always Linear: if the data have no background but the fit adds one
+                    anyway, the fit becomes less stable. In a CD spectrum a sloped line and a
+                    broad band look alike, so the fit cannot tell how much of the signal belongs
+                    to the line and how much to the band &mdash; the heights and areas of the
+                    bands are then less reliable.</li>
                     <li><i>None</i> &mdash; no background: the data go down to zero between the
                     bands.</li>
                     <li><i>Constant</i> &mdash; a flat line.</li>
@@ -509,6 +512,34 @@ def get_peak_fitting_help_content():
             <img src="$FIT_CONTROLS" width="${FIT_CONTROLS_W}" height="${FIT_CONTROLS_H}" alt="Amplitude Constraint, Fit Peaks for 10 selected spectra and Copy results" />
             <p class="caption">Fitting with all ten spectra selected: the one Fit Peaks button says how many it fits; the line under it which spectra have no peaks of their own.</p>
         </div>
+
+        <h3 id="uncertainty">Uncertainties (&plusmn;)</h3>
+        <p>After a fit every fitted value has its <b>uncertainty</b>: the table of peaks shows
+        e.g. Center <b>3432 &plusmn; 10</b>, Height <b>11.41 &plusmn; 0.22</b>. The value is
+        rounded to its uncertainty, as usual in science. Measured again, the value would
+        scatter by about this much (the standard error, 1&nbsp;&sigma;; the true value lies
+        within &plusmn; the uncertainty in about 2 of 3 cases, within &plusmn; twice it in 19 of
+        20). Hold the mouse over a value to see this explanation.</p>
+        <p><b>Double-click</b> a value to see its full number (e.g. 3431.5432) and to edit it.
+        After an edit the &plusmn; are gone in the whole table: the values are now the
+        <b>start values</b> of the next fit, no longer fitted values. Fit Peaks again gives
+        the new values with their &plusmn;.</p>
+        <ul>
+            <li><b>What it tells you.</b> Noisy data, a small band or two bands close together
+            give large uncertainties. Example: noisy Raman spectrum, a water band of 15 counts &mdash;
+            Center 3432 &plusmn; 10; a small band of 3 counts at 413 &mdash; Height 3.2 &plusmn;
+            0.3: still clearly there. A height of 0.5 &plusmn; 0.6 would mean the band is not
+            really proven.</li>
+            <li><b>n/a</b>: the fit could not tell how uncertain the value is &mdash; e.g. two
+            peaks at the same place (the data cannot tell them apart) or a value at its limit.
+            Remove or move such a peak and fit again.</li>
+            <li><b>Copy Results</b> copies each value with its uncertainty in the next column
+            (<i>Center &plusmn;</i>, &hellip;), and the background with its uncertainty;
+            <b>Series results</b> have a column &plusmn; after each value.</li>
+            <li><b>Smoothed data</b>: the uncertainty assumes that the noise of neighbouring
+            points is independent. After smoothing it is not, and the uncertainties come out
+            too small &mdash; fit the original data.</li>
+        </ul>
 
         <h3 id="converge">Getting a fit to converge</h3>
         <p>A fit "fails" (the message <i>The fitting algorithm could not converge</i>) or gives
@@ -777,7 +808,9 @@ def get_peak_fitting_help_content():
         <p>The tab <b>Series results</b> next to the tab Peaks shows the results of <b>the spectra
         selected in the list</b> beside the plot (the same ones the plot shows; <b>All</b> = the
         whole series). The values have the names of the table of peaks: Center, Height, Width,
-        Extra, FWHM, Area, and R&sup2; of the whole fit (1 = perfect). <b>Show</b> chooses how:</p>
+        Extra, FWHM, Area, each followed by its uncertainty (the column <b>&plusmn;</b>,
+        <a href="#uncertainty">Uncertainties</a>), and R&sup2; of the whole fit (1 = perfect).
+        <b>Show</b> chooses how:</p>
         <h4>By peak</h4>
         <p>Shown first. One peak at a time: &#9664; &#9654; go to the previous or next peak (its
         mean position is next to the number). One row per spectrum &mdash; follow a band through
@@ -927,6 +960,12 @@ def get_peak_fitting_help_content():
             in the list.</li>
             <li>FWHM and area are calculated exactly from the fitted values for all four shapes
             (Voigt: from the Faddeeva function).</li>
+            <li><b>Uncertainties</b>: the standard errors from the covariance matrix of the fit
+            (<i>curve_fit</i>, scaled by the residual variance, i.e. the noise is estimated from
+            the residual). FWHM and area, which are calculated from several fitted values, get
+            theirs by error propagation: var(f) = g&nbsp;C&nbsp;g<sup>T</sup>, g the derivatives
+            of f by the fitted values (numerical), C their covariance &mdash; so correlations
+            between the values (e.g. height and width) are taken into account.</li>
         </ul>
         <h3>Several spectra</h3>
         <ul>

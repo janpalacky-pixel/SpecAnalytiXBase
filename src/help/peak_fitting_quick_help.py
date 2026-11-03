@@ -52,6 +52,9 @@ brackets - <i>None</i> when the data come back to zero (CD, baseline-corrected s
 heights are above it. A curved baseline: correct it first (Baseline Correction).</li>
 <li>Check the residual: it should be small noise around zero. A wave left in it means a peak is
 missing there.</li>
+<li>After the fit each value has its uncertainty, e.g. <b>3432 &plusmn; 10</b>: large for noisy
+data or overlapping bands; <i>n/a</i> when the data cannot determine it (e.g. two peaks at the
+same place).</li>
 </ul>
 """),
     'series': ("Quick help – a whole series", 'series', """

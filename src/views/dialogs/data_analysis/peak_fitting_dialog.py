@@ -46,6 +46,22 @@ class _SelectedTextDelegate(QStyledItemDelegate):
                                     option.palette.brush(QPalette.HighlightedText))
 
 
+ERROR_ROLE = Qt.UserRole + 1          # a fitted value's uncertainty, as text ('4.1', 'n/a')
+
+
+class _ErrorDelegate(QStyledItemDelegate):
+    """The Peaks table after a fit: each fitted value shown with its
+    uncertainty, rounded to it as usual in science: '3431.5 \u00b1 3.1'. The
+    cell's text itself stays the full number (it is edited and read as
+    such); the shown text is only drawn (ERROR_ROLE)."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        shown = index.data(ERROR_ROLE)
+        if shown:
+            option.text = shown
+
+
 class PeakFittingDialog(QDialog):
     """Dialog for interactive peak fitting and deconvolution."""
 
@@ -149,16 +165,18 @@ class PeakFittingDialog(QDialog):
         self.peaks_table.setColumnCount(6)
         self.peaks_table.setHorizontalHeaderLabels([" ", "Model", "Center", "Height", "Width", "Extra"])
         for col, tip in ((2, "The position of the peak top (x)"),
-                         (3, "The height of the peak top above zero (y)"),
+                         (3, "The height of the peak top above the background (y)"),
                          (4, "Gaussian and Voigt: \u03c3; Lorentzian: \u03b3 (half width at half "
                              "height); Pseudo-Voigt: FWHM"),
                          (5, "Voigt: \u03b3 (the Lorentzian part); Pseudo-Voigt: \u03b7 (0 = "
                              "Gaussian, 1 = Lorentzian); empty for Gaussian and Lorentzian")):
             self.peaks_table.horizontalHeaderItem(col).setToolTip(tip)
         self.peaks_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        # Make the first column (color swatch) narrow
-        self.peaks_table.setColumnWidth(0, 20)
+        self.peaks_table.setItemDelegate(_ErrorDelegate(self.peaks_table))
+        # Make the first column (color swatch) narrow - the values (with
+        # their uncertainty after a fit) get the room
         self.peaks_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
+        self.peaks_table.setColumnWidth(0, 28)
         
         self.peaks_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.peaks_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1032,6 +1050,42 @@ class PeakFittingDialog(QDialog):
             item = QTableWidgetItem(f"{value:.4f}" if value is not None else "0.5000")
         self.peaks_table.setItem(row, 5, item)
 
+    def _clear_errors(self):
+        t = self.peaks_table
+        t.blockSignals(True)
+        for r in range(t.rowCount()):
+            for c in range(2, t.columnCount()):
+                item = t.item(r, c)
+                if item is not None and item.data(ERROR_ROLE):
+                    item.setData(ERROR_ROLE, None)
+                    item.setToolTip('')
+        t.blockSignals(False)
+
+    def _set_errors(self, row, peak_fit, cells):
+        """The fitted values' uncertainties in the row (shown as '\u00b1 ...')."""
+        errors = peak_fit.get('errors')
+        if errors is None:                   # a fit kept from an older version
+            return
+        from src.modules.data_analysis.peak_fitting_manager import format_with_error
+        for col, key in cells:
+            item = self.peaks_table.item(row, col)
+            if item is None or key is None:
+                continue
+            err = errors.get(key)
+            try:
+                value = float(item.text())
+            except ValueError:
+                continue
+            item.setData(ERROR_ROLE, format_with_error(value, err))
+            item.setToolTip(
+                "\u00b1 = the uncertainty of the fitted value (its standard error, 1 \u03c3):\n"
+                "measured again, the value would scatter by about this much.\n"
+                "Double-click to see or edit the full number (the \u00b1 then disappear)."
+                if err is not None else
+                "n/a: the fit could not tell how uncertain this value is -\n"
+                "e.g. the value is at its limit, or the data do not determine it\n"
+                "(two peaks at the same place).")
+
     def update_peaks_table(self, from_fit_results=False):
         """Populates the table either from initial guesses (self.peaks) or fit results (self.fit_results)."""
         self.peaks_table.blockSignals(True)
@@ -1067,11 +1121,13 @@ class PeakFittingDialog(QDialog):
                 model_combo.currentIndexChanged.connect(lambda _, row=i: self.on_model_combo_changed(row))
                 self.peaks_table.setCellWidget(i, 1, model_combo)
                 
-                # Parameters
+                # Parameters, each with its uncertainty (drawn by _ErrorDelegate)
                 self.peaks_table.setItem(i, 2, QTableWidgetItem(f"{params['center']:.4f}"))
                 self.peaks_table.setItem(i, 3, QTableWidgetItem(f"{params['height']:.4f}"))
                 self.peaks_table.setItem(i, 4, QTableWidgetItem(f"{params.get(width_key, 0):.4f}"))
                 self._set_extra_cell(i, extra_key, params.get(extra_key) if extra_key else None)
+                self._set_errors(i, peak_fit, [(2, 'center'), (3, 'height'), (4, width_key),
+                                               (5, extra_key)])
         else:
             # Populate table from self.peaks (initial guesses)
             self.peaks_table.setRowCount(len(self.peaks))
@@ -1141,6 +1197,7 @@ class PeakFittingDialog(QDialog):
         for i in range(self.peaks_table.rowCount()): 
             self.update_peak_from_table(i)
         self.fit_results = None
+        self._clear_errors()                # start values now: no uncertainties
         self._peaks_changed()
         self.update_plot()
 
@@ -1525,6 +1582,29 @@ class PeakFittingDialog(QDialog):
         self._update_copy_results_button()
 
     @staticmethod
+    def _header_text(name):
+        """A '... \u00b1' column (the uncertainty of the value before it) is
+        headed just '\u00b1' in the tables of the window - short; copied and
+        exported it keeps its full name ('Center \u00b1')."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        return '\u00b1' if str(name).endswith(pfs.PM) else str(name)
+
+    @staticmethod
+    def _header_tip(name):
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        if str(name).endswith(pfs.PM):
+            return (f"\u00b1 of {str(name)[:-len(pfs.PM)]}: its uncertainty from the fit "
+                    "(standard error, 1 \u03c3)")
+        return ''
+
+    def _set_headers(self, table, columns):
+        table.setHorizontalHeaderLabels([self._header_text(c) for c in columns])
+        for c, name in enumerate(columns):
+            tip = self._header_tip(name)
+            if tip:
+                table.horizontalHeaderItem(c).setToolTip(tip)
+
+    @staticmethod
     def _cell(v):
         item = QTableWidgetItem()
         if isinstance(v, float) and np.isfinite(v):
@@ -1549,12 +1629,13 @@ class PeakFittingDialog(QDialog):
         # By peak
         columns, data = pfs.peaks_long(self.series_results, rows, peak=j)
         extra = columns.index('Extra')
+        no_extra = not any(row[extra] is not None for row in data)
         shown = [c for c in range(len(columns)) if columns[c] != 'Peak'
-                 and (c != extra or any(row[extra] is not None for row in data))]
+                 and not (no_extra and c in (extra, extra + 1))]
         t = self.by_peak_table
         t.clear()
         t.setColumnCount(len(shown))
-        t.setHorizontalHeaderLabels([columns[c] for c in shown])
+        self._set_headers(t, [columns[c] for c in shown])
         t.setRowCount(len(data))
         grey = QColor('#888888')
         for r, row in enumerate(data):
@@ -1579,7 +1660,9 @@ class PeakFittingDialog(QDialog):
         tree = self.by_spectrum_tree
         tree.clear()
         tree.setColumnCount(len(columns) - 1)
-        tree.setHeaderLabels(['Spectrum / peak'] + columns[2:])
+        tree.setHeaderLabels(['Spectrum / peak'] + [self._header_text(c) for c in columns[2:]])
+        for c, name in enumerate(columns[2:], start=1):
+            tree.headerItem().setToolTip(c, self._header_tip(name))
         last = None
         for row in data:
             if last is None or last.data(0, Qt.UserRole) != row[0]:
@@ -1611,6 +1694,7 @@ class PeakFittingDialog(QDialog):
             it.setExpanded(it.data(0, Qt.UserRole) not in self._closed_in_tree)
         no_extra = all(row[columns.index('Extra')] is None for row in data)
         tree.setColumnHidden(columns.index('Extra') - 1, no_extra)
+        tree.setColumnHidden(columns.index('Extra' + pfs.PM) - 1, no_extra)
         for c in range(tree.columnCount()):
             tree.resizeColumnToContents(c)
         tree.setColumnWidth(0, min(tree.columnWidth(0), 170))
@@ -1758,7 +1842,7 @@ class PeakFittingDialog(QDialog):
         t.blockSignals(True)
         t.clear()
         t.setColumnCount(len(columns))
-        t.setHorizontalHeaderLabels(columns)
+        self._set_headers(t, columns)
         t.setRowCount(len(rows))
         for r, row in enumerate(rows):
             for c, v in enumerate(row):
@@ -2281,9 +2365,19 @@ class PeakFittingDialog(QDialog):
             QMessageBox.warning(self, "No Results", "There are no peaks in the table to copy.")
             return
 
-        # Create a tab-separated string for easy pasting into Excel/PowerPoint
-        header = "Peak\tModel\tCenter\tHeight\tWidth\tExtra\tFWHM\tArea\n"  # as in the table
+        # Create a tab-separated string for easy pasting into Excel/PowerPoint;
+        # after a fit each value is followed by its uncertainty (\u00b1)
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        fitted = (self.fit_results if self.fit_results
+                  and len(self.fit_results) == self.peaks_table.rowCount() else None)
+        header = "Peak\t" + "\t".join(pfs.PEAK_COLUMNS) + "\n"     # as in the table
         lines = [header]
+
+        def err(i, key):
+            if fitted is None or key is None:
+                return ""
+            e = pfs.error_of(fitted[i], key)
+            return f"{e:.6g}" if e is not None else ""
 
         for i in range(self.peaks_table.rowCount()):
             try:
@@ -2312,15 +2406,16 @@ class PeakFittingDialog(QDialog):
                 fwhm = props.get('fwhm', 0.0)
                 area = props.get('area', 0.0)
 
+                width_key = pfs.WIDTH_KEY.get(model, 'sigma')
                 line = (
                     f"{i + 1}\t"
                     f"{model}\t"
-                    f"{center:.4f}\t"
-                    f"{amplitude:.4f}\t"
-                    f"{width:.4f}\t"
-                    f"{extra_text}\t"
-                    f"{fwhm:.4f}\t"
-                    f"{area:.4f}\n"
+                    f"{center:.4f}\t{err(i, 'center')}\t"
+                    f"{amplitude:.4f}\t{err(i, 'height')}\t"
+                    f"{width:.4f}\t{err(i, width_key)}\t"
+                    f"{extra_text}\t{err(i, extra_key)}\t"
+                    f"{fwhm:.4f}\t{err(i, 'fwhm')}\t"
+                    f"{area:.4f}\t{err(i, 'area')}\n"
                 )
                 lines.append(line)
             
@@ -2329,10 +2424,19 @@ class PeakFittingDialog(QDialog):
                 # Skip row if data is invalid
                 continue
         
+        n = len(lines) - 1
+        bg = self.fit_background if fitted is not None else None
+        if bg:
+            # the background fitted with the peaks: its value at both ends
+            def e(key):
+                v = bg.get(key)
+                return f"{v:.6g}" if v is not None else ""
+            lines.append(f"\nBackground\t{bg['kind'].capitalize()}\n"
+                         f"at x\t{bg['x0']:.6g}\ty\t{bg['y0']:.6g}\t{e('y0_err')}\n"
+                         f"at x\t{bg['x1']:.6g}\ty\t{bg['y1']:.6g}\t{e('y1_err')}\n")
         clipboard_text = "".join(lines)
         QApplication.clipboard().setText(clipboard_text)
-        
-        n = len(lines) - 1
+
         if len(self.series) > 1:
             name = str(self.series[self.current_index].get('label', '')).rsplit(' : ', 1)[-1]
             res = (self.series_results or [None] * len(self.series))[self.current_index] or {}

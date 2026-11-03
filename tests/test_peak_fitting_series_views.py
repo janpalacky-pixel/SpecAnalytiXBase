@@ -28,7 +28,10 @@ def test_values_have_the_names_of_the_peaks_table():
     dlg = _window(_series())
     heads = [dlg.peaks_table.horizontalHeaderItem(c).text() for c in range(2, 6)]
     assert heads == ['Center', 'Height', 'Width', 'Extra']
-    assert pfs.PEAK_COLUMNS[1:5] == heads
+    values = [c for c in pfs.PEAK_COLUMNS[1:] if not c.endswith(pfs.PM)]
+    assert values[:4] == heads
+    # each value is followed by its uncertainty
+    assert pfs.PEAK_COLUMNS[1:3] == ['Center', 'Center \u00b1']
 
 
 def test_peaks_long_keeps_a_row_for_a_spectrum_without_values():
@@ -37,9 +40,12 @@ def test_peaks_long_keeps_a_row_for_a_spectrum_without_values():
         {'model': 'Voigt', 'parameters': {'center': 5.0, 'height': 2.0, 'sigma': 1.0,
                                           'gamma': 0.5, 'fwhm': 3.0, 'area': 7.0}}]}
     columns, rows = pfs.peaks_long(results, [0, 1])
-    assert columns == ['Spectrum', 'Peak', 'Model', 'Center', 'Height', 'Width', 'Extra',
-                       'FWHM', 'Area', 'R²']
-    assert rows[0] == ['a : s1', 1, 'Voigt', 5.0, 2.0, 1.0, 0.5, 3.0, 7.0, 0.99]
+    assert columns == ['Spectrum', 'Peak', 'Model', 'Center', 'Center ±', 'Height', 'Height ±',
+                       'Width', 'Width ±', 'Extra', 'Extra ±', 'FWHM', 'FWHM ±', 'Area',
+                       'Area ±', 'R²']
+    # a fit without uncertainties (kept from an older version): empty ± cells
+    assert rows[0] == ['a : s1', 1, 'Voigt', 5.0, None, 2.0, None, 1.0, None, 0.5, None,
+                       3.0, None, 7.0, None, 0.99]
     assert rows[1][:3] == ['a : s2', None, 'not fitted yet'] and rows[1][-1] is None
 
 
@@ -49,7 +55,11 @@ def test_by_peak_one_peak_at_a_time_for_the_selected_spectra():
     assert dlg.series_view() == 'peak' and dlg.series_stack.currentIndex() == 0
     t = dlg.by_peak_table
     heads = [t.horizontalHeaderItem(c).text() for c in range(t.columnCount())]
-    assert heads == ['Spectrum', 'Model', 'Center', 'Height', 'Width', 'FWHM', 'Area', 'R²']
+    assert heads == ['Spectrum', 'Model', 'Center', '±', 'Height', '±', 'Width', '±', 'FWHM',
+                     '±', 'Area', '±', 'R²']
+    assert t.horizontalHeaderItem(3).toolTip().startswith('± of Center')
+    errors = [float(t.item(r, 3).text()) for r in range(6)]
+    assert all(0 < e < 0.05 for e in errors)                   # the centre's uncertainty
     # (Extra only when a peak has one: Voigt, Pseudo-Voigt)
     assert t.rowCount() == 6
     centres = [float(t.item(r, 2).text()) for r in range(6)]
@@ -65,7 +75,8 @@ def test_by_peak_one_peak_at_a_time_for_the_selected_spectra():
     assert dlg.copy_results_btn.text() == 'Copy peak 2 – 2 spectra'
     dlg.series_view_text()
     lines = QApplication.clipboard().text().splitlines()
-    assert lines[0].startswith('Spectrum\tPeak\tModel\tCenter\tHeight') and len(lines) == 3
+    assert lines[0].startswith('Spectrum\tPeak\tModel\tCenter\tCenter ±\tHeight') \
+        and len(lines) == 3
     assert lines[1].startswith('scan : 02\t2\tGaussian\t')
 
 
@@ -79,7 +90,8 @@ def test_by_spectrum_each_with_its_peaks_and_folding_is_kept():
     first = tree.topLevelItem(0)
     assert first.text(0) == '01' and first.childCount() == 2 and first.isExpanded()
     assert first.child(0).text(0) == 'Peak 1' and first.child(0).text(1) == 'Gaussian'
-    assert tree.isColumnHidden(5)                                # no Extra for Gaussians
+    assert tree.isColumnHidden(8) and tree.isColumnHidden(9)     # no Extra (±) for Gaussians
+    assert tree.headerItem().text(3) == '±'
     first.setExpanded(False)
     dlg._refresh_series_views()
     assert not tree.topLevelItem(0).isExpanded() and tree.topLevelItem(1).isExpanded()

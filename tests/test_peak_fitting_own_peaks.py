@@ -136,8 +136,10 @@ def test_series_table_has_columns_for_the_most_peaks():
     dlg.list_all_button.click()
     dlg.fit_selected()
     columns, rows = dlg.series_rows()
-    assert columns[-1] == 'R²' and len(columns) == 1 + 2 * len(pfs.VALUES) + 1
-    assert rows[0][5] is None and rows[1][5] is not None           # r1 has no Peak 2
+    # each value with its uncertainty (±)
+    assert columns[-1] == 'R²' and len(columns) == 1 + 2 * 2 * len(pfs.VALUES) + 1
+    assert columns[9] == 'Peak 2 position'
+    assert rows[0][9] is None and rows[1][9] is not None           # r1 has no Peak 2
 
 
 def test_independent_fit_with_own_starts():

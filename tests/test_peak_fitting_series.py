@@ -46,10 +46,11 @@ def test_a_moving_band_is_followed_from_spectrum_to_spectrum():
     assert np.allclose(heights, [0.3 + 0.05 * i for i in range(12)], atol=0.01)
     assert all(r['r2'] > 0.99 for r in results)
     columns, rows = pfs.series_table(results, 2)
-    assert columns[:5] == ['Spectrum', 'Peak 1 position', 'Peak 1 FWHM', 'Peak 1 height',
-                           'Peak 1 area'] and columns[-1] == 'R²' and len(columns) == 10
+    assert columns[:5] == ['Spectrum', 'Peak 1 position', 'Peak 1 position ±', 'Peak 1 FWHM',
+                           'Peak 1 FWHM ±'] and columns[-1] == 'R²' and len(columns) == 18
     assert rows[3][0] == 'scan : 04' and rows[3][1] == pytest.approx(66, abs=0.05)
-    assert rows[0][2] == pytest.approx(2 * np.sqrt(2 * np.log(2)) * 4.0, rel=1e-2)   # FWHM
+    assert 0 < rows[3][2] < 0.05                                   # the position's ±
+    assert rows[0][3] == pytest.approx(2 * np.sqrt(2 * np.log(2)) * 4.0, rel=1e-2)   # FWHM
 
 
 def test_without_following_the_previous_fit_the_band_would_be_lost():
@@ -110,7 +111,7 @@ def test_the_series_is_fitted_in_the_window_and_its_results_stay_there(monkeypat
     dlg.list_all_button.click()                                  # all 6 selected
     dlg.fit_button.click()
     assert dlg.left_tabs.currentIndex() == 1
-    assert dlg.series_table.rowCount() == 6 and dlg.series_table.columnCount() == 10
+    assert dlg.series_table.rowCount() == 6 and dlg.series_table.columnCount() == 18
     assert 'Fitted 6 of 6 spectra' in dlg.series_info.text()
     assert dlg.spectra_list.item(5).text().startswith('\u2713 ')
     # show the 5th spectrum: its data and its fit, its fitted values in the tab Peaks

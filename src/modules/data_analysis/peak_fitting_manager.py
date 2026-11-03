@@ -83,9 +83,10 @@ def pseudo_voigt(x, amplitude, center, width, eta):
 # 'auto' (Automatic, the default) chooses for each spectrum from its data
 # (resolve_background): None where the data come back to zero - a CD or a
 # difference spectrum (bands up and down), a baseline-corrected spectrum -,
-# Linear where they sit on an offset (raw Raman counts). A background the
-# data do not have only makes the fit less stable (with CD a slope and a
-# broad band can take each other's intensity).
+# Linear where they sit on an offset (raw Raman counts). If the data have no
+# background but the fit adds one anyway, the fit is less stable (with CD a
+# sloped line and a broad band look alike, so the fit cannot tell which of
+# the two the signal belongs to).
 BACKGROUNDS = (('auto', "Automatic"), ('none', "None"), ('constant', "Constant"),
                ('linear', "Linear"))
 DEFAULT_BACKGROUND = 'auto'
@@ -158,6 +159,50 @@ def initial_background(x, y, kind):
         level = min(left, right) if np.median(y) >= max(left, right) else (left + right) / 2.0
         left = right = level
     return {'kind': kind, 'x0': float(x[0]), 'x1': float(x[-1]), 'y0': left, 'y1': right}
+
+
+def _finite_cov(pcov, n):
+    """The covariance of curve_fit as an n x n array (inf where the fit
+    could not estimate it)."""
+    try:
+        cov = np.asarray(pcov, dtype=float)
+    except (TypeError, ValueError):
+        cov = None
+    if cov is None or cov.shape != (n, n):
+        return np.full((n, n), np.inf)
+    return cov
+
+
+def _sd(cov, i):
+    """The standard error of parameter i (None if not estimated)."""
+    v = float(cov[i, i])
+    return float(np.sqrt(v)) if np.isfinite(v) and v >= 0 else None
+
+
+def format_error(err):
+    """An uncertainty with 2 significant digits, without an exponent:
+    4.123 -> '4.1', 0.03214 -> '0.032', 123.4 -> '123'; None -> 'n/a'."""
+    if err is None or not np.isfinite(err):
+        return "n/a"
+    err = abs(float(err))
+    if err == 0:
+        return "0"
+    if err >= 100:
+        return f"{err:.0f}"
+    decimals = min(8, max(0, 1 - int(np.floor(np.log10(err)))))
+    return f"{err:.{decimals}f}"
+
+
+def format_with_error(value, err):
+    """'value \u00b1 error', the value rounded to the error's last digit (as
+    usual in science): (3431.5432, 3.123) -> '3431.5 \u00b1 3.1',
+    (11.4094, 0.2213) -> '11.41 \u00b1 0.22'; an unknown error: the value with
+    4 decimals and '\u00b1 n/a'."""
+    text = format_error(err)
+    if text == "n/a":
+        return f"{float(value):.4f} \u00b1 n/a"
+    decimals = len(text.split('.')[1]) if '.' in text else 0
+    return f"{float(value):.{decimals}f} \u00b1 {text}"
 
 
 def _smoothed(y, window):
@@ -251,6 +296,47 @@ class PeakFittingManager:
         properties['height'] = amplitude
         properties['center'] = center
         return properties
+
+    def peak_errors(self, model_name, params, cov):
+        """The standard errors (1 sigma) of every value of
+        get_peak_properties (center, height, width, FWHM, area, ...) from the
+        covariance `cov` of the peak's fit parameters: by error propagation,
+        var(f) = g C g^T with g the derivative of the value by the
+        parameters (numerical, central differences). None where it cannot
+        be estimated (the fit could not determine a parameter)."""
+        params = np.asarray(params, dtype=float)
+        cov = np.asarray(cov, dtype=float)
+        base = self.get_peak_properties(model_name, params)
+        keys = [k for k, v in base.items() if isinstance(v, (int, float, np.floating))]
+        grads = {k: np.zeros(params.size) for k in keys}
+        for i in range(params.size):
+            h = 1e-6 * max(abs(params[i]), 1e-6)
+            up, down = params.copy(), params.copy()
+            up[i] += h
+            down[i] -= h
+            if model_name == 'Pseudo-Voigt' and i == 3:     # eta stays within 0..1
+                up[i], down[i] = min(up[i], 1.0), max(down[i], 0.0)
+            step = up[i] - down[i]
+            if step <= 0:
+                continue
+            p_up = self.get_peak_properties(model_name, up)
+            p_down = self.get_peak_properties(model_name, down)
+            for k in keys:
+                grads[k][i] = (float(p_up[k]) - float(p_down[k])) / step
+        out = {}
+        for k in keys:
+            g = grads[k]
+            used = g != 0
+            if not np.any(used):
+                out[k] = 0.0
+                continue
+            sub = cov[np.ix_(used, used)]
+            if not np.all(np.isfinite(sub)):
+                out[k] = None
+                continue
+            var = float(g[used] @ sub @ g[used])
+            out[k] = float(np.sqrt(var)) if var >= 0 and np.isfinite(var) else None
+        return out
 
     def multi_peak_model(self, x, *params, model_definitions):
         """
@@ -429,12 +515,21 @@ class PeakFittingManager:
             y_fit = model_func_for_fit(x_data, *popt)
 
             self.last_background = background_of(popt)
+            cov = _finite_cov(pcov, len(popt))
+            if self.last_background is not None:
+                # the background's own uncertainties (y0, and y1 when linear)
+                errs = [_sd(cov, i) for i in range(n_peak_params, len(popt))]
+                self.last_background['y0_err'] = errs[0]
+                self.last_background['y1_err'] = errs[1] if len(errs) > 1 else errs[0]
             fitted_peaks = []
             param_index = 0
             for model_name, num_params in model_definitions:
                 peak_params = popt[param_index : param_index + num_params]
                 peak_properties = self.get_peak_properties(model_name, peak_params)
-                fitted_peaks.append({'model': model_name, 'parameters': peak_properties})
+                block = cov[param_index:param_index + num_params,
+                            param_index:param_index + num_params]
+                fitted_peaks.append({'model': model_name, 'parameters': peak_properties,
+                                     'errors': self.peak_errors(model_name, peak_params, block)})
                 param_index += num_params
             
             return fitted_peaks, y_fit

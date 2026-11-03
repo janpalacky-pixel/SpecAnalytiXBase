@@ -3532,7 +3532,12 @@ def _natural_sort_key(cls, label):
             when there are &ge; 2 workers and &ge; 4 spectra; <code>pending()</code> marks spectra
             not fitted yet (a single Fit Peaks is kept for the series);
             <code>series_table()</code>, <code>plain()</code> (kept with the window's
-            settings). Every result carries its fitted <code>'background'</code>;
+            settings). Every fitted peak carries <code>'errors'</code> (standard errors from
+            <code>pcov</code>, FWHM / area by error propagation in
+            <code>PeakFittingManager.peak_errors()</code>; <code>None</code> = not estimated),
+            shown by <code>_ErrorDelegate</code> (ERROR_ROLE, the cell text stays the number) and as
+            "&#8230; &plusmn;" columns in <code>series_table()</code> / <code>peaks_long()</code>.
+            Every result carries its fitted <code>'background'</code>;
             <code>model_curves(x, peaks, manager, background)</code> adds it to the total.</li>
             <li>Window (<code>peak_fitting_dialog.py</code>): ONE fit button,
             <code>fit_selected()</code>: one spectrum selected &rarr; <code>perform_fit()</code>,
