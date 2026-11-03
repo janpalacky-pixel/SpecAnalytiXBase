@@ -4459,6 +4459,12 @@ tools\\run_tests_windows.bat</pre>
             the previous release will notice belongs there &mdash; not changes made and undone during
             development. <code>tests/test_whats_new.py</code> fails while the current version has no
             file, and checks that every link leads to an existing help section.
+            The start also asks GitHub whether a newer release exists
+            (<code>src/modules/misc/update_check.py</code>: <code>releases/latest</code> of the
+            repository, its <code>tag_name</code> compared as numbers - so a release must be
+            tagged <code>v1.7.0</code> etc. and not be a draft or pre-release to be announced;
+            the window side is <code>MainController.check_for_update()</code>, preferences
+            <code>update_check</code> / <code>update_skipped</code>).
         </div>
         <p><code>BuildInstaller.bat</code> (repo root) does a full release build in
         one step:</p>

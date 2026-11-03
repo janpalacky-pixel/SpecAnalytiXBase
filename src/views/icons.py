@@ -850,6 +850,17 @@ def download_icon():
     return _tool_icon(draw)
 
 
+def update_icon():
+    """A green arrow up out of a box (a newer version)."""
+    def draw(p, QPen):
+        _box(p, QPen, (1.5, 8, 13, 6.5), '#E8F5E9', DARK, 1.0, 1.2)
+        p.setPen(QPen(QColor(RUN_GREEN), 2.0))
+        p.drawLine(QPointF(8, 11.5), QPointF(8, 1.5))
+        p.drawLine(QPointF(8, 1.5), QPointF(4.5, 5))
+        p.drawLine(QPointF(8, 1.5), QPointF(11.5, 5))
+    return _tool_icon(draw)
+
+
 def folder_icon():
     """A yellow folder."""
     def draw(p, QPen):

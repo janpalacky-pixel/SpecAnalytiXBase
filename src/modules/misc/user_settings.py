@@ -217,6 +217,9 @@ def _build_settings():
         Setting('whats_new', "What's New window at the start (Help \u203a What's New)",
                 "What's New window at the start (Help \u203a What's New)", 'bool', True,
                 *_whats_new()),
+        Setting('update_check', "Check for a new version at the start",
+                "Check for a new version at the start", 'bool', True,
+                *_key('update_check', True, bool)),
     ]
 
 
@@ -280,6 +283,11 @@ HELP = {
     'whats_new': ("At the start of a new version, a small window lists what is new. Off: not "
                   "shown again for this version (Help \u203a What's New opens it any time).",
                   'help://whats_new'),
+    'update_check': ("At the start the program asks GitHub (one short request, nothing about "
+                     "you or your data is sent) whether a newer version has been released, and "
+                     "if so says so, with a link to download it. Off: never at the start "
+                     "(Help \u203a Check for a new version\u2026 still asks when you click it).",
+                     'help://installation#updates'),
 }
 
 
@@ -301,7 +309,8 @@ KNOWN_KEYS = {'autosave_minutes', 'large_plot_settings', 'large_plot_dialog_coun
               'cd_quality_shading', 'cd_ht_limit_V', 'cd_abs_limit', 'import_plot_preview',
               'peak_fit_map_settings', 'methods_report_include_table',
               'methods_report_include_references', 'theme', 'whats_new_hidden_for',
-              'parallel_processing_mode', 'parallel_max_workers'}
+              'parallel_processing_mode', 'parallel_max_workers', 'update_check',
+              'update_skipped'}
 
 
 def groups():

@@ -160,6 +160,9 @@ def main():
     main_controller.autosave_controller.start(__version__)
     # What's new in this version (a small window, until "Don't show this again")
     main_controller.announce_new_version(__version__)
+    # Is a newer version released? (in the background, a few seconds after the
+    # start; Settings: "Check for a new version at the start")
+    main_controller.check_for_update(__version__, automatic=True)
 
     # Files given on the command line -- also what Windows passes on a
     # double-click of a .snapx file or "Open with -> SpecAnalytiXBase"

@@ -1680,6 +1680,9 @@ class MainController(QMainWindow):
         self.view.actionAbout.triggered.connect(self.show_about_dialog)
         if hasattr(self.view, 'actionWhatsNew'):
             self.view.actionWhatsNew.triggered.connect(self.show_whats_new)
+        if hasattr(self.view, 'actionCheckUpdate'):
+            self.view.actionCheckUpdate.triggered.connect(
+                lambda *_: self.check_for_update(automatic=False))
         if hasattr(self.view, 'actionKeyboardShortcuts'):
             self.view.actionKeyboardShortcuts.triggered.connect(self.show_keyboard_shortcuts)
         if hasattr(self.view, 'actionRunTests'):
@@ -2224,6 +2227,85 @@ class MainController(QMainWindow):
             self.show_whats_new_window(version)
         QTimer.singleShot(delay_ms, show)
         return True
+
+    def check_for_update(self, version=None, automatic=True, delay_ms=4000, fetch=None,
+                         wait=False):
+        """Is a newer version released? automatic (at the start): only if the
+        setting "Check for a new version at the start" is on, quietly (no
+        message when there is none or the check fails), and not again for a
+        version "Skipped"; Help > Check for a new version...: always, and it
+        says the result. The question to GitHub runs in the background (the
+        program does not wait for it). Returns the thread's future (wait:
+        its result, for tests) or None when nothing is checked."""
+        from concurrent.futures import ThreadPoolExecutor
+        from PyQt5.QtCore import QTimer
+        from src.modules.misc import update_check as uc
+        from src.version import __version__
+        version = version or __version__
+        prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
+        if automatic and (prefs is None or not prefs.get('update_check', True)):
+            return None
+        fetch = fetch or uc.fetch_latest
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(uc.newer_release, version, fetch)
+        pool.shutdown(wait=False)
+
+        def done():
+            if not future.done():
+                QTimer.singleShot(200, done)
+                return
+            try:
+                release, why = future.result()
+            except Exception:
+                release, why = None, 'unknown'
+            self._show_update_result(version, release, why, automatic, prefs)
+        if wait:
+            future.result()
+            done()
+            return future
+        QTimer.singleShot(delay_ms if automatic else 0, done)
+        return future
+
+    def _show_update_result(self, version, release, why, automatic, prefs):
+        from PyQt5.QtCore import QTimer, QUrl
+        from PyQt5.QtGui import QDesktopServices
+        from src.modules.misc import update_check as uc
+        if release is None:
+            if automatic:
+                return
+            if why == 'newest':
+                QMessageBox.information(self.view, "Check for a new version",
+                                        f"You have the newest version ({version}).")
+            else:
+                QMessageBox.information(
+                    self.view, "Check for a new version",
+                    "Could not find out whether there is a newer version (no internet "
+                    "connection, or GitHub did not answer). The releases are at:\n"
+                    f"{uc.RELEASES_URL}")
+            return
+        if automatic and prefs is not None and prefs.get('update_skipped') == release['version']:
+            return
+        if automatic and QApplication.activeModalWidget() is not None:
+            # another window asks something (e.g. restoring work): after it
+            QTimer.singleShot(2000, lambda: self._show_update_result(version, release, why,
+                                                                     automatic, prefs))
+            return
+        box = QMessageBox(self.view)
+        box.setWindowTitle("A new version is available")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"<b>{release['name']}</b> is available (you have {version}).")
+        box.setInformativeText("Download it from the release page and install it over this "
+                               "one - your settings and saved items are kept.")
+        download = box.addButton("Open the download page", QMessageBox.AcceptRole)
+        skip = box.addButton("Skip this version", QMessageBox.RejectRole) if automatic else None
+        box.addButton("Later", QMessageBox.RejectRole)
+        self._update_box = box
+        box.exec_()
+        clicked = box.clickedButton()
+        if clicked is download:
+            QDesktopServices.openUrl(QUrl(release['url']))
+        elif skip is not None and clicked is skip and prefs is not None:
+            prefs.set('update_skipped', release['version'])
 
     def show_whats_new_window(self, version):
         """The small "What's new in <version>" window; remembers "Don't show

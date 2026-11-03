@@ -89,6 +89,25 @@ def get_installation_help_content():
             entirely.
         </div>
 
+        <h3 id="updates">A new version</h3>
+        <p>A few seconds after the start the program asks GitHub whether a newer version has
+        been released. If so, a small window says e.g. <i>SpecAnalytiXBase 1.8.0 is available
+        (you have 1.7.0)</i>:</p>
+        <ul>
+            <li><b>Open the download page</b> &mdash; the release page opens in your web
+            browser; download the installer there and run it. It installs over the old
+            version; your settings and saved items are kept.</li>
+            <li><b>Skip this version</b> &mdash; not asked again for this version (a still newer
+            one is announced again).</li>
+            <li><b>Later</b> &mdash; asked again at the next start.</li>
+        </ul>
+        <p><b>Help &rsaquo; Check for a new version&hellip;</b> asks at any time and also tells
+        you when you have the newest version. The question is one short request to
+        <code>api.github.com</code>; nothing about you, your computer or your data is sent.
+        Without an internet connection nothing happens at the start (the program does not wait
+        for it). To switch the question at the start off: File &rsaquo; Settings and saved items, <i>Check for a
+        new version at the start</i>.</p>
+
         <h2 id="from-source">2. Run From the Python Source Code <small>(Windows / macOS / Linux)</small></h2>
         <p>Do this if you want to inspect, modify, or debug the
         application, or if you simply prefer not to run a pre-built
