@@ -19,8 +19,8 @@ line between two headings to make a column wider.
 Pseudo-Voigt; <b>Extra</b> is &gamma; for Voigt, &eta; (0&ndash;1) for Pseudo-Voigt (shown only
 when a peak has it). Hold the mouse over a column heading to see this.</p>
 <p><b>Right-click a value</b> to <b>fix</b> it (kept, not fitted - grey, [fixed]) or to
-<b>link</b> it to another peak (light blue): the same width ([=P1]), a fixed distance between
-the centres ([P1+12]), a fixed height ratio ([P1&times;0.5]). E.g. two overlapping bands of
+<b>link</b> it to another peak (light blue): the same width ([=P1]), a constant distance
+between the centres ([P1+12]), a constant height ratio ([P1&times;0.5]). E.g. two overlapping bands of
 the same width: Width of peak 2 &rsaquo; The same width as peak &rsaquo; Peak 1.</p>
 """),
     'peaks-mode': ("Quick help \u2013 the peaks of several spectra", 'peaks-mode', """

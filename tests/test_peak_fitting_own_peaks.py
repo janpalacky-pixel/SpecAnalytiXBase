@@ -279,3 +279,29 @@ def test_off_by_default_and_remembered_and_a_poor_fit_is_marked():
     assert again.follow_check.isChecked()
     fresh = _window(sp)
     assert not fresh.follow_check.isChecked()
+
+
+def test_a_link_copied_to_other_spectra_works_in_each_of_them():
+    """Width of peak 2 = Width of peak 1 on r1; Copy peaks of r1, Paste to
+    r2 and r3, fit all: each spectrum has the link to its own peak 1, its two
+    widths equal (its own value), with the same uncertainty."""
+    from PyQt5.QtCore import Qt
+    dlg = _window(_mixed())
+    dlg.auto_detect_peaks()
+    dlg.set_constraint([1], 'width', {'kind': 'link', 'peak': dlg.peaks[0]['id']})
+    dlg.copy_peaks_button.click()
+    _select(dlg, [0, 1, 2])
+    dlg.paste_peaks_button.click()
+    dlg.fit_selected()
+    for k in (1, 2):
+        peaks = dlg.peaks_of(k)
+        spec = peaks[1]['constraints']['width']
+        assert spec['kind'] == 'link' and spec['peak'] == peaks[0]['id']
+        res = dlg.series_results[k]
+        assert res['ok']
+        p1, p2 = res['peaks'][:2]
+        assert p1['parameters']['sigma'] == pytest.approx(p2['parameters']['sigma'])
+        e1, e2 = pfs.error_of(p1, 'sigma'), pfs.error_of(p2, 'sigma')
+        assert e1 is not None and e1 == pytest.approx(e2)
+    dlg.show_series_spectrum(2)
+    assert dlg.peaks_table.item(1, 4).data(Qt.UserRole + 2) == '=P1'   # [=P1] in r3's table

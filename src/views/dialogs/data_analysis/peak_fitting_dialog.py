@@ -1437,6 +1437,7 @@ class PeakFittingDialog(QDialog):
         or free (None) the value `name` of the peaks `rows`. The values shown
         in the table (after a fit the fitted ones) become the start values;
         a link keeps the present distance (centre) or ratio (height)."""
+        from src.modules.data_analysis.peak_fitting_manager import follows
         for i in range(self.peaks_table.rowCount()):
             self.update_peak_from_table(i)
         self._tidy_constraints()
@@ -1454,6 +1455,8 @@ class PeakFittingDialog(QDialog):
                 t = by_id.get(spec['peak'])
                 if t is None or t is p:
                     continue
+                if follows(self.peaks, r, name, self.peaks.index(t)):
+                    continue                          # t follows p: a circle
                 if name == 'center':
                     value = float(p['center']) - float(t['center'])
                 elif name == 'height':
@@ -1512,8 +1515,15 @@ class PeakFittingDialog(QDialog):
                              'width': "The same width as peak",
                              'extra': "The same extra value as peak"}[name])
         link.setEnabled(bool(targets))
+        from src.modules.data_analysis.peak_fitting_manager import follows
         for k in targets:
             t = self.peaks[k]
+            if any(follows(self.peaks, r, name, k) for r in rows):
+                # peak k already follows this one: a link back would be a circle
+                a = link.addAction(f"Peak {k + 1} (not possible: it follows "
+                                   + ("this one)" if len(rows) == 1 else "one of these)"))
+                a.setEnabled(False)
+                continue
             if name == 'center':
                 text = f"Peak {k + 1} (now {float(peak['center']) - float(t['center']):+.4g})"
             elif name == 'height':

@@ -567,20 +567,37 @@ def get_peak_fitting_help_content():
             <li><b>Keep the height ratio to peak&hellip;</b> (Height) &mdash; the height is always
             the same multiple of the other peak's, as it is now, e.g. <b>[P1&times;0.5]</b>.
             Example: two bands of one group with a known intensity ratio.</li>
-            <li><b>The same width as peak&hellip;</b> (Width, Extra) &mdash; e.g.
-            <b>[=P1]</b>; only between peaks of the same shape (the width of a Gaussian and of
-            a Lorentzian mean different things). <b>The same width for all &hellip; peaks</b>
-            links the widths of all peaks of that shape to the clicked one. Example: two
-            overlapping bands that should be equally broad &mdash; the fit is much more stable
-            when it does not have to find two widths.</li>
+            <li><b>The same width as peak&hellip;</b> (Width) &mdash; e.g. <b>[=P1]</b>; only
+            between peaks of the same shape (the width of a Gaussian and of a Lorentzian mean
+            different things). <b>The same width for all Gaussian peaks (as peak 2)</b> links
+            the widths of all other peaks of that shape to the clicked one (which itself stays
+            fitted). Example: two overlapping bands that should be equally broad &mdash; the fit
+            is much more stable when it does not have to find two widths. For Voigt and
+            Pseudo-Voigt peaks the Extra value can be linked the same way (<b>The same extra
+            value as peak&hellip;</b>).</li>
             <li><b>Fitted (free)</b> &mdash; the value is fitted again.</li>
         </ul>
         <p>With several rows selected, the choice applies to all of them. A linked value cannot
         be typed (it follows its peak); the distance or ratio is the one at the moment you link
         &mdash; set the values first, or fit, then link. A fixed value has no uncertainty; a
-        linked one has that of its peak. Removing a peak removes the links to it. Copy Results
-        says in the last column what was fixed or linked. Fixed and linked values are kept with
-        the peaks (also when copied to other spectra).</p>
+        linked one has that of its peak.</p>
+        <p><b>Every peak can be followed by others and can itself follow another peak</b>
+        &mdash; e.g. peak 1 the same width as peak 2, and peak 3 keeping its distance to peak 1.
+        Chains work too (peak 3 = peak 2 = peak 1). Only a <b>circle</b> is not possible: when
+        the width of peak 1 follows peak 2, peak 2's width cannot follow peak 1 (who would
+        then decide the width?). In the menu of peak 2's width, Peak 1 is then grey: <i>Peak 1
+        (not possible: it follows this one)</i>. To swap the roles, first set peak 1's width
+        to Fitted (free).</p>
+        <p><b>Removing a peak removes the links to it</b> &mdash; nothing can depend on a peak
+        that is gone. Example: the Width of peak 2 is <b>[=P1]</b>; remove peak 1 &mdash; the
+        width of the old peak 2 is white again, with no tag, its number kept, and is fitted
+        freely. A <b>fixed</b> value belongs to its own peak, not to another one: it stays fixed
+        when another peak is removed.</p>
+        <p>Copy Results says in the last column, <i>Fixed / linked</i>, what was fixed or
+        linked (e.g. <i>Width =P1</i>, <i>Height fixed</i>). Fixed and linked values are kept
+        when the window is opened again, and when the peaks are copied to other spectra (Copy
+        peaks of &hellip; &rsaquo; Paste peaks to the selected spectra): each spectrum then has
+        the same fixed and linked values, applied to its own peaks.</p>
 
         <h3 id="uncertainty">Uncertainties (&plusmn;)</h3>
         <p>After a fit every fitted value has its <b>uncertainty</b>: the table of peaks shows
@@ -1279,9 +1296,10 @@ def get_peak_fitting_help_content():
             follows (a distance link: that of the other centre; a ratio link: that of the other
             height &times; the ratio). (Technically: C = J&nbsp;C<sub>free</sub>&nbsp;J<sup>T</sup>,
             J the derivatives of all values by the free ones.) A link that cannot work is
-            ignored and that value fitted freely: a link to a peak that was removed, links in a
-            circle (peak 1 = peak 2 and peak 2 = peak 1), or a width linked between different
-            shapes (a Gaussian's &sigma; and a Lorentzian's &gamma; are different things).</li>
+            dropped (the value is then fitted freely, the cell white again): a link to a peak
+            that was removed, or a width linked between different shapes (a Gaussian's &sigma;
+            and a Lorentzian's &gamma; are different things). A circle (peak 1 = peak 2 and
+            peak 2 = peak 1) cannot be made: the menu does not allow it.</li>
         </ul>
         <h3>Several spectra</h3>
         <ul>

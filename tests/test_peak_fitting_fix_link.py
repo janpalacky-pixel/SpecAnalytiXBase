@@ -173,3 +173,28 @@ def test_links_are_kept_with_the_settings(dlg):
     spec = again.peaks[1]['constraints']['height']
     assert spec['kind'] == 'link' and spec['value'] == pytest.approx(0.5)
     assert _shown(again.peaks_table, 1, 3).startswith('[P1×0.5]')
+
+
+def test_a_link_back_in_a_circle_cannot_be_made(dlg):
+    """Width of peak 1 = peak 2: in the menu of peak 2's width, Peak 1 is
+    greyed ("not possible: it follows this one") - also through a chain
+    (peak 3 = peak 2 = peak 1); a circle given anyway is not made."""
+    dlg._tidy_constraints()
+    p1, p2, p3 = (p['id'] for p in dlg.peaks)
+    dlg.set_constraint([0], 'width', {'kind': 'link', 'peak': p2})          # P1 = P2
+    menu = dlg.peaks_constraint_menu(dlg.peaks_table.model().index(1, 4))   # width of P2
+    link = [a for a in menu.actions() if a.menu() is not None][0].menu()
+    first = link.actions()[0]
+    assert first.text() == 'Peak 1 (not possible: it follows this one)' and not first.isEnabled()
+    assert link.actions()[1].isEnabled()                                     # Peak 3 is fine
+    dlg.set_constraint([1], 'width', {'kind': 'link', 'peak': p1})          # refused
+    assert 'width' not in (dlg.peaks[1].get('constraints') or {})
+    dlg.set_constraint([1], 'width', {'kind': 'link', 'peak': p3})          # P2 = P3: a chain
+    dlg.set_constraint([2], 'width', {'kind': 'link', 'peak': p1})          # P3 = P1: a circle
+    assert 'width' not in (dlg.peaks[2].get('constraints') or {})
+    # the centres the same way (a distance back would be a circle too)
+    dlg.set_constraint([0], 'center', {'kind': 'link', 'peak': p2})
+    menu = dlg.peaks_constraint_menu(dlg.peaks_table.model().index(1, 2))
+    link = [a for a in menu.actions() if a.menu() is not None][0].menu()
+    assert not link.actions()[0].isEnabled()
+

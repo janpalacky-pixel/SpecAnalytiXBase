@@ -194,6 +194,22 @@ def constraint_of(peak, name):
     return spec if isinstance(spec, dict) and spec.get('kind') in ('fixed', 'link') else None
 
 
+def follows(peaks, k, name, target):
+    """True when the value `name` of peak `target` (an index) is peak k's
+    own or follows it by links (also through other peaks: peak 3 = peak 2 =
+    peak 1). Linking peak k's value to `target` would then make a circle -
+    peak 1 follows peak 2 and peak 2 follows peak 1 - which cannot work."""
+    by_id = {p.get('id'): i for i, p in enumerate(peaks) if p.get('id')}
+    seen, i = set(), target
+    while i is not None and i not in seen:
+        if i == k:
+            return True
+        seen.add(i)
+        spec = constraint_of(peaks[i], name)
+        i = by_id.get(spec.get('peak')) if spec is not None and spec['kind'] == 'link' else None
+    return False
+
+
 def _constraint_plan(peaks, model_definitions):
     """For every fit parameter of the peaks (in the order of fit_peaks):
     None (fitted), ('fixed',) or ('link', i_target, name, value)."""
