@@ -191,3 +191,30 @@ def test_tooltips_show_the_names_of_the_options_in_bold():
         QToolTip.hideText()
         dlg.hide()
         dlg.deleteLater()
+
+
+def test_the_tabs_have_tooltips_and_a_question_mark():
+    """Hovering a tab shows its tooltip (also with the bold tooltips of the
+    window); the orange "?" sits in the tab Series results."""
+    from PyQt5.QtCore import QEvent
+    from PyQt5.QtGui import QHelpEvent
+    from PyQt5.QtWidgets import QTabBar, QToolTip
+    from src.views import tooltips
+    tooltips.install(app)
+    dlg = _window(_series())
+    dlg.show()
+    try:
+        app.processEvents()
+        bar = dlg.left_tabs.tabBar()
+        b = dlg.quick_help_buttons['tabs']
+        assert bar.tabButton(1, QTabBar.RightSide) is None and b.isVisible()
+        right = bar.mapTo(dlg.left_tabs, bar.tabRect(1).topRight()).x()
+        assert right < b.x() < right + 20                         # just after the last tab
+        for i, word in ((0, 'Peaks'), (1, 'Series results')):
+            pos = bar.tabRect(i).center()
+            app.sendEvent(bar, QHelpEvent(QEvent.ToolTip, pos, bar.mapToGlobal(pos)))
+            assert f'<b>{word}</b>' in QToolTip.text()
+    finally:
+        QToolTip.hideText()
+        dlg.hide()
+        dlg.deleteLater()

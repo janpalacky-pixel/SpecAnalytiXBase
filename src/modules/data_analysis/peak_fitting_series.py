@@ -325,6 +325,22 @@ def model_curves(x, fitted, manager=None, background=None):
     return total, parts
 
 
+def hand_result(label, fitted, x, y, background=None, manager=None):
+    """The result of a spectrum whose values were set by hand (changed in
+    the table of peaks after a fit, or a peak removed): its values as they
+    are now - no uncertainties, no \u0394BIC (those only come from a fit) - and
+    the R\u00b2 of these values. Marked 'manual' (shown as "set by hand")."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    total, _ = model_curves(x, fitted, manager, background)
+    good = np.isfinite(x) & np.isfinite(y) & np.isfinite(total)
+    ss_res = float(np.sum((y[good] - total[good]) ** 2))
+    ss_tot = float(np.sum((y[good] - np.mean(y[good])) ** 2)) if good.any() else 0.0
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
+    return {'label': label, 'ok': True, 'manual': True, 'peaks': list(fitted),
+            'background': background, 'r2': r2}
+
+
 def _number(v, digits):
     if isinstance(v, (int, float, np.floating)) and not isinstance(v, bool):
         v = float(v)
@@ -370,6 +386,8 @@ def plain(results):
             out[-1]['global'] = r['global']
         if r.get('pending'):
             out[-1]['pending'] = True
+        if r.get('manual'):
+            out[-1]['manual'] = True
     return out
 
 
@@ -391,6 +409,10 @@ def summary(results):
         text += (f" {n} of them fitted together (" + ", ".join(SHARE_TEXT.get(t, t)
                                                               for t in sorted(together))
                  + " for all).")
+    by_hand = sum(1 for r in results if r.get('ok') and r.get('manual'))
+    if by_hand:
+        text += (f" {by_hand} of them set by hand (\u270e: values changed after the fit - no "
+                 "\u00b1; Fit Peaks fits them again).")
     if waiting:
         text += f" {waiting} not fitted yet (select them, or All, and click Fit Peaks)."
     bad = [r['label'] for r in results if not r['ok'] and not r.get('pending')]

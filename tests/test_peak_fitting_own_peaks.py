@@ -187,9 +187,75 @@ def test_changing_the_peaks_makes_the_fit_not_fitted_yet():
     _select(dlg, [1])
     dlg.peaks_table.selectRow(0)
     dlg.remove_peak()                                              # Remove Selected Peak(s)
-    assert dlg.series_results[1].get('pending') and len(dlg.peaks) == 1
+    # a fitted spectrum keeps its other values, "set by hand" (no ±)
+    res = dlg.series_results[1]
+    assert res['ok'] and res.get('manual') and len(res['peaks']) == 1 and len(dlg.peaks) == 1
+    assert dlg.spectra_list.item(1).text() == '\u270e r2'
     columns, rows = dlg.series_rows()
-    assert rows[0][1] is None and rows[2][1] is not None
+    assert rows[0][1] is None and rows[1][1] is not None and rows[1][2] is None   # no ±
+    assert rows[2][1] is not None
+
+
+def test_a_value_changed_by_hand_after_the_fit_stays_in_series_results():
+    """Center of peak 2 changed in the table after the fit: Series results
+    show the values of the table, set by hand (no ±, R² of these values);
+    Needed? says 'set by hand'; Fit Peaks again gives a normal fit."""
+    from src.modules.data_analysis import peak_fitting_series as pfs
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    _select(dlg, [0])
+    fitted_r2 = dlg.series_results[0]['r2']
+    dlg.peaks_table.item(1, 2).setText('141.5')                    # Center of peak 2
+    res = dlg.series_results[0]
+    assert res['ok'] and res.get('manual')
+    assert res['peaks'][1]['parameters']['center'] == pytest.approx(141.5)
+    assert pfs.error_of(res['peaks'][1], 'center') is None
+    assert res['r2'] < fitted_r2                                   # worse than the fit
+    assert dlg.peaks_table.item(0, 6).text() == 'set by hand'
+    assert 'set by hand' in pfs.summary(dlg.series_results)
+    assert pfs.plain(dlg.series_results)[0].get('manual')          # kept with the window
+    dlg.series_view_buttons['spectrum'].setChecked(True)
+    top = dlg.by_spectrum_tree.topLevelItem(0)
+    assert top.text(1) == '\u270e set by hand'
+    dlg.fit_selected()                                             # fitted again
+    assert dlg.series_results[0]['ok'] and not dlg.series_results[0].get('manual')
+    assert dlg.series_results[0]['peaks'][1]['parameters']['center'] == pytest.approx(140, abs=1)
+
+
+def test_removing_peaks_in_series_results_removes_them_from_the_spectra(monkeypatch):
+    """By peak: the shown peak removed from the selected rows' spectra (a
+    question first); By spectrum: the selected peak rows. The others keep
+    their fitted values, set by hand."""
+    from PyQt5.QtWidgets import QMessageBox
+    asked = []
+    monkeypatch.setattr(QMessageBox, 'question',
+                        staticmethod(lambda *a, **k: asked.append(a[2]) or QMessageBox.Yes))
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1, 2])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    fitted_140 = dlg.series_results[2]['peaks'][1]['parameters']['center']
+    dlg.series_view_buttons['peak'].setChecked(True)
+    dlg._show_series_peak(0)                                       # Peak 1
+    t = dlg.by_peak_table
+    t.selectRow(1)
+    t.selectionModel().select(t.model().index(2, 0), QItemSelectionModel.Select |
+                              QItemSelectionModel.Rows)
+    assert dlg._series_peaks_of(t) == [(1, 0), (2, 0)]
+    assert dlg.remove_series_peaks(dlg._series_peaks_of(t)) == [1, 2]
+    assert asked and 'Remove peak 1 from 2 spectra?' in asked[0]
+    assert len(dlg.peaks_of(1)) == 1 and len(dlg.peaks_of(2)) == 1 and len(dlg.peaks_of(0)) == 2
+    res = dlg.series_results[2]
+    assert res.get('manual') and res['peaks'][0]['parameters']['center'] == pytest.approx(fitted_140)
+    dlg.series_view_buttons['spectrum'].setChecked(True)
+    tree = dlg.by_spectrum_tree
+    child = tree.topLevelItem(0).child(1)                          # r1, Peak 2
+    child.setSelected(True)
+    assert dlg._series_peaks_of(tree) == [(0, 1)]
+    dlg.remove_series_peaks([(0, 1)])                              # one spectrum: no question
+    assert len(asked) == 1 and len(dlg.peaks) == 1                 # r1 is the shown one
 
 
 def test_own_peaks_or_the_fit_before_and_the_line_says_which():

@@ -371,6 +371,9 @@ def get_peak_fitting_help_content():
             <li>Amplitude Constraint &mdash; the constraint, the Background and a good fit;</li>
             <li>Several spectra &mdash; each on its own, or together (a global fit);</li>
             <li>Fit Peaks &mdash; fitting a series (also Several spectra: Together);</li>
+            <li>&#9664; &#9654; above the list of spectra &mdash; the list and its marks;</li>
+            <li>right after the tabs Peaks and Series results &mdash; the two tabs and how they
+            belong together;</li>
             <li>Series results, Output Options and the row above the plot &mdash; each its own.</li>
         </ul>
         <div class="screenshot">
@@ -816,7 +819,7 @@ def get_peak_fitting_help_content():
             <img src="$PLOT_BAR" width="${PLOT_BAR_W}" height="${PLOT_BAR_H}" alt="The row above the plot: Spectra, previous and next arrows, the shown spectrum, Several selected, Residual, Legend, Data and the toolbar with the hint" />
             <p class="caption">Above the plot: the list on/off (Spectra), &#9664; &#9654;, the shown spectrum, how several are shown, Residual, Legend, Data (points or line); below them the toolbar and what a click on the plot does.</p>
         </div>
-        <p>With several spectra, a <b>list of the spectra</b> is beside the plot and works as in
+        <p id="spectra-list">With several spectra, a <b>list of the spectra</b> is beside the plot (its orange <b>?</b> is above it, next to &#9664; &#9654;) and works as in
         the main window:</p>
         <ul>
             <li><b>One spectrum selected</b> &mdash; it alone, with its fit, single peaks and
@@ -1113,6 +1116,27 @@ def get_peak_fitting_help_content():
         </div>
         <p>A spectrum <i>not fitted yet</i> or whose fit failed (with the previous-result start,
         the next one then starts from the last good fit) is shown as such, without values.</p>
+        <p><b>The two tabs show the same values.</b> The tab <b>Peaks</b> is the table of
+        <i>one</i> spectrum &mdash; the shown one (orange frame). <b>Series results</b> show
+        <i>all</i> spectra selected in the list, one row (or group of rows) each. Whatever you
+        change in one tab appears in the other:</p>
+        <ul>
+            <li><b>Values set by hand</b> (&#9998;). After a fit you may adjust a value yourself,
+            e.g. move the Center of a peak by double-clicking it in the table. The spectrum then
+            shows these values in Series results, marked <b>&#9998; set by hand</b> (also in the
+            list beside the plot): no &plusmn; and no Needed? (those come only from a fit), but
+            the R&sup2; of your values, so you can compare them with the fit. OK &rsaquo; Add
+            spectrum from total fit uses them. <b>Fit Peaks</b> fits the spectrum again (&#10003;).
+            The same when you remove a peak from a fitted spectrum or change its shape (Model).</li>
+            <li><b>Removing peaks here.</b> Select rows and press <b>Delete</b> (or right-click
+            &rsaquo; Remove): <b>By peak</b> &mdash; the shown peak (e.g. Peak 3) is removed from
+            the spectra of the selected rows; <b>By spectrum</b> &mdash; the selected peak rows
+            are removed from their spectra. With more than one spectrum a question asks first.
+            The tables of peaks change the same way (as with Remove Selected Peak(s)); each
+            spectrum keeps its other fitted values, set by hand until the next Fit Peaks.
+            Example: a peak that is <i>no</i> in Needed? in every spectrum &mdash; By peak, select
+            all rows, Delete, then Fit Peaks again.</li>
+        </ul>
         <ul>
             <li><b>A poor fit of one spectrum</b>: select it, correct its peaks in the tab Peaks and
             click <b>Fit Peaks &ndash; 1 spectrum</b> &mdash; only its row changes. A spectrum

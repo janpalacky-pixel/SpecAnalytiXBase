@@ -105,13 +105,44 @@ little), the widths shared by all.</li>
 choose Together, select the spectra (All) and click Fit Peaks. Fixed and linked values apply
 in every spectrum.</p>
 """),
+    'spectra-list': ("Quick help \u2013 the list of spectra", 'spectra-list', """
+<ul>
+<li><b>One spectrum selected</b> (a click): it alone, with its fit, single peaks and
+residual.</li>
+<li><b>Several selected</b> (Ctrl+click, Shift+click, or <b>All</b> / <b>Fitted</b> under the
+list): shown together, as chosen in <i>Several selected</i> (Overlay, Waterfall, Grid).</li>
+<li><b>Orange frame</b> (bold name): the <b>shown spectrum</b> - its peaks are in the table of
+peaks, Add via Click adds to it. &#9664; &#9654; above the list, or <b>Alt+Left / Alt+Right</b>
+(also Alt+Up / Alt+Down): the previous / next spectrum; with several selected the frame moves
+among them and all stay selected. The plain arrow keys in the list select one spectrum alone,
+as in every list.</li>
+<li><b>Green dot</b> (green bold name): the spectrum has peaks to fit; grey: no peaks yet.</li>
+<li><b>&#10003;</b> fitted; <b>&#9998;</b> values set by hand after the fit (no &plusmn;);
+<b>&#9888;</b> a poor fit (R&sup2; below 0.9); <b>&#10007;</b> the fit failed.</li>
+</ul>
+"""),
+    'tabs': ("Quick help \u2013 the tabs Peaks and Series results", 'series-results', """
+<p>The two tabs show the same values:</p>
+<ul>
+<li><b>Peaks</b> - the table of <b>one</b> spectrum, the shown one (orange frame in the list).
+Before a fit: the start values; after Fit Peaks: the fitted values with their &plusmn;.</li>
+<li><b>Series results</b> - <b>all</b> spectra selected in the list, a row (or a group of rows)
+each: fitted (&#10003;) or set by hand (&#9998;).</li>
+</ul>
+<p>Whatever you change in one tab appears in the other: a value changed in the table of peaks
+(&#9998; set by hand until the next Fit Peaks), a peak removed in the table or in Series results
+(Delete).</p>
+"""),
     'series-results': ("Quick help – Series results", 'series-results', """
 <p>The results of the spectra <b>selected in the list</b> (All = the whole series), with
 <b>Show</b>: <b>By peak</b> - one peak at a time (&#9664; &#9654;), a row per spectrum;
 <b>By spectrum</b> - each spectrum with its peaks; <b>All in one table</b> - a row per spectrum
 with all peaks. R&sup2; 1 = perfect fit.</p>
 <p>A poor fit: select that spectrum alone, correct its peaks in the tab Peaks and click Fit
-Peaks - only it changes.</p>
+Peaks - only it changes. A value changed by hand after a fit stays here, marked <b>&#9998; set
+by hand</b> (no &plusmn;, the R&sup2; of your values) until the next Fit Peaks.</p>
+<p><b>Delete</b> (or right-click): By peak - removes the shown peak from the selected rows'
+spectra; By spectrum - removes the selected peaks. The tables of peaks change too.</p>
 <p><b>Copy &hellip;</b> next to Fit Peaks copies what is shown; <b>Export…</b> for Excel;
 <b>Open in the Data table</b> to plot e.g. a position against temperature.</p>
 """),

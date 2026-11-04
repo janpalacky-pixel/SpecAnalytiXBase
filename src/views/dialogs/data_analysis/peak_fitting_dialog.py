@@ -349,8 +349,22 @@ class PeakFittingDialog(QDialog):
         # spectra, the results of fitting several of them - one window
         self.left_tabs = QTabWidget()
         self.left_tabs.addTab(peaks_group, "Peaks")
+        self.left_tabs.setTabToolTip(
+            0, "Peaks: the table of the shown spectrum (orange frame in the list).\n"
+               "Before a fit: the start values. After Fit Peaks: the fitted values.\n"
+               "Change a value: it is set by hand (\u270e) until the next Fit Peaks.")
         if len(self.series) > 1:
             self.left_tabs.addTab(self._build_series_tab(), "Series results")
+            self.left_tabs.setTabToolTip(
+                1, "Series results: the values of all spectra selected in the list,\n"
+                   "one row each - fitted (\u2713) or set by hand (\u270e).\n"
+                   "The values of the shown spectrum are the same as in the tab Peaks.")
+            # the orange "?" right after the two tabs (outside them): what each
+            # shows - placed by hand next to the tab bar, which moves with it
+            self.tabs_help = self._quick_help_button('tabs')
+            self.tabs_help.setParent(self.left_tabs)
+            self.left_tabs.tabBar().installEventFilter(self)
+            QTimer.singleShot(0, self._place_tabs_help)
         layout.addWidget(self.left_tabs, 1)
 
         # --- Fitting Controls ---
@@ -1129,21 +1143,48 @@ class PeakFittingDialog(QDialog):
             return self.peaks
         return self.own_peaks[k] or []
 
-    def _peaks_changed(self, rows=None):
-        """The peaks of these spectra (default: the shown one) were changed by
-        hand: their fit no longer belongs to them - shown as not fitted yet."""
+    def _peaks_changed(self, rows=None, by_hand=False):
+        """The peaks of these spectra (default: the shown one) were changed:
+        their fit no longer belongs to them. A value changed or a peak removed
+        in a fitted spectrum (by_hand): its results become these values, "set
+        by hand" (no \u00b1, the R\u00b2 of these values); otherwise (peaks
+        added, pasted, cleared) it is shown as not fitted yet."""
         if not self.series_results:
             return
         changed = False
         for r in ([self.current_index] if rows is None else rows):
             res = self.series_results[r]
-            if res and not res.get('pending'):
+            if by_hand and res and res.get('ok') and self.peaks_of(r):
+                self.series_results[r] = self._hand_result(r, res)
+                changed = True
+            elif res and not res.get('pending'):
                 self.series_results[r] = {'label': str(self.series[r].get('label', '')),
                                           'ok': False, 'peaks': None, 'r2': None,
                                           'pending': True}
                 changed = True
         if changed:
             self._refresh_series_table()
+
+    def _hand_result(self, r, before):
+        """Spectrum r's values set by hand (its peaks as they are now) as a
+        result, with the background of its fit (`before`)."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        if r == self.current_index:
+            self._apply_links()
+        fitted = [{'model': p['model'],
+                   'parameters': self.manager.get_peak_properties(
+                       p['model'], self._params_list_from_peak_guess(p)),
+                   'errors': {}} for p in self.peaks_of(r)]
+        sp = self.series[r]
+        return pfs.hand_result(str(sp.get('label', '')), fitted, sp['x_scale'], sp['y_scale'],
+                               before.get('background'), self.manager)
+
+    def is_set_by_hand(self, k=None):
+        """True when spectrum k's (default: the shown one's) results are
+        values set by hand, not a fit."""
+        k = self.current_index if k is None else k
+        res = self.series_results[k] if self.series_results else None
+        return bool(res and res.get('ok') and res.get('manual'))
 
     def copy_peaks(self):
         """Remember the shown spectrum's peaks (Copy peaks) - to paste them to
@@ -1252,7 +1293,8 @@ class PeakFittingDialog(QDialog):
         for row in rows_to_remove:
             if 0 <= row < len(self.peaks):
                 self.peaks.pop(row)
-        self._peaks_changed()
+        self._tidy_constraints()               # links to a removed peak go
+        self._peaks_changed(by_hand=True)
         
         # Invalidate the fit
         self.fit_results = None
@@ -1279,8 +1321,23 @@ class PeakFittingDialog(QDialog):
         self.update_peaks_table()
         self.update_plot()
 
+    def _place_tabs_help(self):
+        """The "?" of the tabs just to the right of the last tab."""
+        b = getattr(self, 'tabs_help', None)
+        if b is None:
+            return
+        bar = self.left_tabs.tabBar()
+        last = bar.tabRect(bar.count() - 1)
+        right = bar.mapTo(self.left_tabs, last.topRight())
+        b.move(right.x() + 6, right.y() + max(0, (last.height() - b.height()) // 2))
+        b.show()
+        b.raise_()
+
     def eventFilter(self, obj, event):
         from PyQt5.QtCore import QEvent
+        if (getattr(self, 'tabs_help', None) is not None and obj is self.left_tabs.tabBar()
+                and event.type() in (QEvent.Resize, QEvent.Move, QEvent.Show)):
+            QTimer.singleShot(0, self._place_tabs_help)
         if (event.type() == QEvent.Resize and hasattr(self, 'peaks_table')
                 and obj is self.peaks_table.viewport()):
             self._share_columns()
@@ -1314,7 +1371,10 @@ class PeakFittingDialog(QDialog):
         """The column Needed?: yes / probably / no from the fitted peak's
         \u0394BIC ('not fitted', grey, before a fit: start values)."""
         from src.modules.data_analysis.peak_fitting_manager import needed_text
-        if peak_fit is None:
+        if peak_fit is None and len(self.series) > 1 and self.is_set_by_hand():
+            text, tip = 'set by hand', ("Values set by hand (changed after the fit): no \u00b1.\n"
+                                        "Fit Peaks to see whether this peak is needed.")
+        elif peak_fit is None:
             text, tip = 'not fitted', ''
         else:
             n_removed = sum(1 for f in (self.fit_results or []) if f.get('remove'))
@@ -1325,11 +1385,19 @@ class PeakFittingDialog(QDialog):
         item.setTextAlignment(int(Qt.AlignCenter))
         if text == 'no':
             item.setForeground(QColor('#B45F06'))
-        elif text == 'not fitted':
+        elif text in ('not fitted', 'set by hand'):
             item.setForeground(QColor('#999999'))
         item.setToolTip(tip or "Not fitted: the values are start values.\n"
                                "After Fit Peaks it says whether this peak is needed.")
         self.peaks_table.setItem(row, 6, item)
+
+    def _set_needed_cells(self):
+        """The column Needed? again (after a value was changed by hand)."""
+        t = self.peaks_table
+        t.blockSignals(True)
+        for row in range(min(t.rowCount(), len(self.peaks))):
+            self._set_needed_cell(row, None)
+        t.blockSignals(False)
 
     def _set_extra_cell(self, row, extra_key, value):
         """Populate the 'Extra' column for one row — editable with a value
@@ -1347,15 +1415,17 @@ class PeakFittingDialog(QDialog):
     # ------------------------------------------------------------------
     # fixed and linked values (right-click on a value in the table)
     # ------------------------------------------------------------------
-    def _tidy_constraints(self):
+    def _tidy_constraints(self, peaks=None):
         """Every peak has an id (links refer to it); links to a peak that is
-        gone, or a width / extra link to a peak of another shape, are dropped."""
+        gone, or a width / extra link to a peak of another shape, are dropped
+        (in `peaks`, default: the shown spectrum's)."""
         from src.modules.data_analysis.peak_fitting_manager import new_peak_id, constraint_of
-        for p in self.peaks:
+        peaks = self.peaks if peaks is None else peaks
+        for p in peaks:
             if not p.get('id'):
-                p['id'] = new_peak_id(self.peaks)
-        by_id = {p['id']: p for p in self.peaks}
-        for p in self.peaks:
+                p['id'] = new_peak_id(peaks)
+        by_id = {p['id']: p for p in peaks}
+        for p in peaks:
             cons = dict(p.get('constraints') or {})
             for name in list(cons):
                 spec = constraint_of(p, name)
@@ -1729,7 +1799,7 @@ class PeakFittingDialog(QDialog):
         elif new_model == 'Pseudo-Voigt' and self.peaks[row].get('extra') is None:
             self.peaks[row]['extra'] = 0.5
         self.fit_results = None
-        self._peaks_changed()
+        self._peaks_changed(by_hand=True)
         self.update_peaks_table()
         self.update_plot()
 
@@ -1739,7 +1809,8 @@ class PeakFittingDialog(QDialog):
             self.update_peak_from_table(i)
         self.fit_results = None
         self._clear_errors()                # start values now: no uncertainties
-        self._peaks_changed()
+        self._peaks_changed(by_hand=True)
+        self._set_needed_cells()
         self.update_plot()
 
     def on_color_cell_double_clicked(self, row, column):
@@ -1899,6 +1970,8 @@ class PeakFittingDialog(QDialog):
         self.by_peak_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.by_peak_table.verticalHeader().setVisible(False)
         bp.addWidget(self.by_peak_table, 1)
+        # removing peaks here: Delete or right-click (they go from the spectra)
+
         self.series_stack.addWidget(by_peak)
         self.by_spectrum_tree = QTreeWidget()
         self.by_spectrum_tree.setAlternatingRowColors(True)
@@ -1909,6 +1982,13 @@ class PeakFittingDialog(QDialog):
         self.by_spectrum_tree.itemExpanded.connect(
             lambda it: self._closed_in_tree.discard(it.data(0, Qt.UserRole)))
         self.series_stack.addWidget(self.by_spectrum_tree)
+        self.by_spectrum_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        for view in (self.by_peak_table, self.by_spectrum_tree):
+            view.setContextMenuPolicy(Qt.CustomContextMenu)
+            view.customContextMenuRequested.connect(
+                lambda pos, v=view: self._series_remove_menu(v, pos))
+            QShortcut(QKeySequence.Delete, view, context=Qt.WidgetShortcut,
+                      activated=lambda v=view: self.remove_series_peaks(self._series_peaks_of(v)))
         self.series_table = QTableWidget(0, 0)
         self.series_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.series_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1981,7 +2061,10 @@ class PeakFittingDialog(QDialog):
         self.current_label = QLabel()
         self.current_label.setToolTip("The spectrum whose peaks are in the tab Peaks; Fit Peaks "
                                       "fits this one")
-        h.addWidget(self.current_label, 1)
+        h.addWidget(self.current_label)
+        # the "?" of the list of spectra (below): what its marks mean
+        h.addWidget(self._quick_help_button('spectra-list'))
+        h.addStretch(1)
         h.addSpacing(12)
         h.addWidget(QLabel("Several selected:"))
         self.view_combo = QComboBox()
@@ -2007,14 +2090,7 @@ class PeakFittingDialog(QDialog):
         self.list_delegate = _SelectedTextDelegate(self.spectra_list)
         self.spectra_list.setItemDelegate(self.list_delegate)
         self.spectra_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.spectra_list.setToolTip(
-            "One spectrum selected: its data, fit, single peaks and residual.\n"
-            "Several selected (Ctrl/Shift+click): shown together - see 'Several selected'.\n"
-            "Green dot (green bold text): the spectrum has peaks to fit; grey: no peaks yet.\n"
-            "\u26a0 a poor fit (R\u00b2 below 0.9).\n"
-            "✓ fitted, ✗ the fit failed.\n"
-            "Orange frame (bold): the shown spectrum - its peaks are in the table of peaks\n"
-            "(click a spectrum alone to show another one).")
+        # (what the list and its marks mean: the orange "?" above it)
         for sp in self.series:
             self.spectra_list.addItem(self._list_text(sp, None))
         self.spectra_list.setCurrentRow(self.current_index)
@@ -2042,6 +2118,8 @@ class PeakFittingDialog(QDialog):
         POOR = 0.9                      # R² below this: the fit is marked ⚠
         if not res or res.get('pending'):
             mark = ''
+        elif res.get('ok') and res.get('manual'):
+            mark = '\u270e '                     # values set by hand, not a fit
         elif not res.get('ok'):
             mark = '\u2717 '
         else:
@@ -2249,6 +2327,7 @@ class PeakFittingDialog(QDialog):
                 item = self._cell(v)
                 if c == 0:
                     item.setToolTip(str(row[0]))
+                    item.setData(Qt.UserRole + 1, rows[r])     # its spectrum (for Remove)
                 if row[2] in ('not fitted yet', 'fit failed', 'no such peak'):
                     item.setForeground(grey)
                 t.setItem(r, c_out, item)
@@ -2262,6 +2341,9 @@ class PeakFittingDialog(QDialog):
         self.series_peak_next.setEnabled(j < n - 1)
         # By spectrum
         columns, data = pfs.peaks_long(self.series_results, rows, sigmas=self._sigmas())
+        owners = []                                # the spectrum of each row of data
+        for k in rows:
+            owners += [k] * len(pfs.peaks_long(self.series_results, [k])[1])
         tree = self.by_spectrum_tree
         tree.clear()
         tree.setColumnCount(len(columns) - 1)
@@ -2269,10 +2351,11 @@ class PeakFittingDialog(QDialog):
         for c, name in enumerate(columns[2:], start=1):
             tree.headerItem().setToolTip(c, self._header_tip(name))
         last = None
-        for row in data:
-            if last is None or last.data(0, Qt.UserRole) != row[0]:
+        for row, k in zip(data, owners):
+            if last is None or last.data(0, Qt.UserRole + 1) != k:
                 last = QTreeWidgetItem([self._short_label(row[0])])
                 last.setData(0, Qt.UserRole, row[0])
+                last.setData(0, Qt.UserRole + 1, k)
                 last.setToolTip(0, str(row[0]))
                 font = last.font(0)
                 font.setBold(True)
@@ -2281,6 +2364,10 @@ class PeakFittingDialog(QDialog):
                 if row[2] in ('not fitted yet', 'fit failed'):
                     last.setText(1, row[2])
                     last.setForeground(1, grey)
+                elif self.is_set_by_hand(k):
+                    last.setText(1, "\u270e set by hand")
+                    last.setToolTip(1, "Values changed by hand after the fit (no \u00b1).\n"
+                                       "Fit Peaks fits them again.")
                 else:
                     last.setText(1, "\u2713 fitted")
                 if isinstance(r2, float):
@@ -2293,6 +2380,7 @@ class PeakFittingDialog(QDialog):
                                         else '') for v in row[3:-1]])
             for c in range(2, len(columns) - 2):
                 child.setTextAlignment(c, int(Qt.AlignRight | Qt.AlignVCenter))
+            child.setData(0, Qt.UserRole + 1, (k, int(row[1]) - 1))   # (spectrum, peak)
             last.addChild(child)
         for i in range(tree.topLevelItemCount()):
             it = tree.topLevelItem(i)
@@ -2303,6 +2391,92 @@ class PeakFittingDialog(QDialog):
         for c in range(tree.columnCount()):
             tree.resizeColumnToContents(c)
         tree.setColumnWidth(0, min(tree.columnWidth(0), 170))
+
+    def _series_peaks_of(self, view):
+        """The (spectrum, peak) pairs selected in By peak (the shown peak of
+        the selected rows' spectra) or By spectrum (the selected peak rows)."""
+        pairs = []
+        if view is self.by_peak_table:
+            for r in sorted({i.row() for i in view.selectedIndexes()}):
+                item = view.item(r, 0)
+                k = item.data(Qt.UserRole + 1) if item is not None else None
+                if k is None:
+                    continue
+                res = self.series_results[k] if self.series_results else None
+                n = (len(res.get('peaks') or []) if res and res.get('ok')
+                     else len(self.peaks_of(k)))
+                if self.series_peak < n:
+                    pairs.append((int(k), self.series_peak))
+        else:
+            for item in view.selectedItems():
+                kj = item.data(0, Qt.UserRole + 1)
+                if isinstance(kj, (tuple, list)):
+                    pairs.append((int(kj[0]), int(kj[1])))
+        return sorted(set(pairs))
+
+    def _series_remove_menu(self, view, pos):
+        pairs = self._series_peaks_of(view)
+        menu = QMenu(self)
+        if view is self.by_peak_table:
+            n = len({k for k, _ in pairs})
+            text = (f"Remove peak {self.series_peak + 1} from the selected spectrum"
+                    + ("" if n == 1 else f"s ({n})"))
+        else:
+            text = "Remove the selected peak" + ("" if len(pairs) == 1 else f"s ({len(pairs)})")
+        a = menu.addAction(text + "   Delete")
+        a.setEnabled(bool(pairs))
+        a.triggered.connect(lambda *_: self.remove_series_peaks(pairs))
+        menu.exec_(view.viewport().mapToGlobal(pos))
+
+    def remove_series_peaks(self, pairs, ask=True):
+        """Remove these (spectrum, peak) pairs from the spectra's peaks (as
+        Remove Selected Peak(s) on the tab Peaks): a fitted spectrum keeps the
+        rest of its fitted values, "set by hand". With more than one spectrum
+        a question first. Returns the spectra changed."""
+        pairs = sorted(set(pairs))
+        spectra = sorted({k for k, _ in pairs})
+        if not spectra:
+            return []
+        if ask and len(spectra) > 1:
+            n = len(pairs)
+            what = (f"peak {pairs[0][1] + 1}" if len({j for _, j in pairs}) == 1
+                    else f"{n} peaks")
+            if QMessageBox.question(
+                    self, "Remove peaks",
+                    f"Remove {what} from {len(spectra)} spectra?\n"
+                    "Their other values stay (set by hand until the next Fit Peaks).",
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes) != QMessageBox.Yes:
+                return []
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        for i in range(len(self.peaks)):
+            self.update_peak_from_table(i)
+        for k in spectra:
+            if k == self.current_index:
+                peaks = self.peaks
+            else:
+                if self.own_peaks[k] is None:
+                    self.own_peaks[k] = []
+                peaks = self.own_peaks[k]
+            res = self.series_results[k] if self.series_results else None
+            fitted = (res.get('peaks') or []) if res and res.get('ok') else []
+            if fitted:
+                # the values shown in Series results (fitted) become its peaks
+                base = (peaks if len(peaks) == len(fitted) else
+                        [{'color': self.colors[i % len(self.colors)]}
+                         for i in range(len(fitted))])
+                peaks[:] = pfs.start_from(fitted, base)
+            for j in sorted((j for kk, j in pairs if kk == k), reverse=True):
+                if 0 <= j < len(peaks):
+                    peaks.pop(j)
+            self._tidy_constraints(peaks)
+        self._peaks_changed(spectra, by_hand=True)
+        if self.current_index in spectra:
+            self.fit_results = None
+            self.update_peaks_table()
+        self._refresh_list_texts()
+        self._update_copy_results_button()
+        self.update_plot()
+        return spectra
 
     def series_view_text(self):
         """What Copy results copies on the tab Series results: the view shown,
@@ -2401,7 +2575,8 @@ class PeakFittingDialog(QDialog):
         self.x_roi = self.spectrum['x_scale']
         self.y_roi = self.spectrum['y_scale']
         result = self.series_results[k] if self.series_results else None
-        if result and result.get('ok') and len(result['peaks']) == len(self.peaks):
+        if (result and result.get('ok') and not result.get('manual')
+                and len(result['peaks']) == len(self.peaks)):
             self.fit_results = result['peaks']
             self.fit_background = result.get('background')
             self.update_peaks_table(from_fit_results=True)
@@ -3325,6 +3500,8 @@ class PeakFittingDialog(QDialog):
         fit), else the first guess of the chosen kind from the data."""
         if self.fit_results:
             return self.fit_background or None
+        if len(self.series) > 1 and self.is_set_by_hand():
+            return self.series_results[self.current_index].get('background') or None
         return initial_background(np.asarray(self.x_roi, dtype=float),
                                   np.asarray(self.y_roi, dtype=float), self.background_kind)
 

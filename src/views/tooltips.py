@@ -17,7 +17,7 @@ import re
 import textwrap
 
 from PyQt5.QtCore import QEvent, QObject, QRect, Qt
-from PyQt5.QtWidgets import QAbstractItemView, QHeaderView, QToolTip, QWidget
+from PyQt5.QtWidgets import QAbstractItemView, QHeaderView, QTabBar, QToolTip, QWidget
 
 WIDTH = 80
 RICH = 'rich_tooltips'            # a window property: its tooltips with bold terms
@@ -61,8 +61,13 @@ def rich(text, width=WIDTH):
 
 def _tip_of(obj, pos):
     """(the tooltip text at pos, the rectangle it belongs to) - of a table
-    cell or a column heading when obj is the viewport of a view, else of the
-    widget itself."""
+    cell or a column heading when obj is the viewport of a view, of a tab
+    of a tab bar, else of the widget itself."""
+    if isinstance(obj, QTabBar):
+        index = obj.tabAt(pos)
+        if index < 0:
+            return obj.toolTip(), None
+        return obj.tabToolTip(index) or obj.toolTip(), obj.tabRect(index)
     view = obj.parentWidget()
     if isinstance(view, QAbstractItemView) and view.viewport() is obj:
         if isinstance(view, QHeaderView):
@@ -89,9 +94,7 @@ class _TooltipFilter(QObject):
                 if window is not None and window.property(RICH):
                     text, rect = _tip_of(obj, event.pos())
                     if not text:
-                        QToolTip.hideText()
-                        event.ignore()
-                        return True
+                        return False                # nothing here: as Qt does it
                     if rect is None:
                         QToolTip.showText(event.globalPos(), rich(str(text)), obj)
                     else:

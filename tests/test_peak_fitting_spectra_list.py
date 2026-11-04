@@ -168,7 +168,9 @@ def test_the_shown_spectrum_has_a_frame_among_the_selected():
     assert dlg.current_index == 2 and dlg.list_delegate.shown_row == 2
     dlg._select_in_list([1, 2, 4], notify=True)               # several: the shown one stays
     assert dlg.current_index == 2 and dlg.list_delegate.shown_row == 2
-    assert 'Orange frame' in dlg.spectra_list.toolTip()
+    from src.help.peak_fitting_quick_help import QUICK_HELP
+    assert 'Orange frame' in QUICK_HELP['spectra-list'][2]          # the ? above the list
+    assert 'spectra-list' in dlg.quick_help_buttons
 
 
 def test_add_via_click_with_several_spectra_adds_to_the_shown_one(monkeypatch):
