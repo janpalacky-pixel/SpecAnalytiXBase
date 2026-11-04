@@ -1479,6 +1479,25 @@ class PeakFittingDialog(QDialog):
                     p[key[name]] = tv + v if name == 'center' else (tv * v if name == 'height'
                                                                     else tv)
 
+    def _show_linked_values(self):
+        """The linked values in the table as they are now in the peaks."""
+        from src.modules.data_analysis.peak_fitting_manager import constraint_of
+        t = self.peaks_table
+        cells = (('center', 2, 'center'), ('height', 3, 'amplitude'), ('width', 4, 'width'),
+                 ('extra', 5, 'extra'))
+        t.blockSignals(True)
+        try:
+            for row, p in enumerate(self.peaks[:t.rowCount()]):
+                for name, col, key in cells:
+                    spec = constraint_of(p, name)
+                    item = t.item(row, col)
+                    if (spec is None or spec['kind'] != 'link' or item is None
+                            or p.get(key) is None):
+                        continue
+                    item.setText(f"{float(p[key]):.4f}")
+        finally:
+            t.blockSignals(False)
+
     def _constraint_text(self, peak, name):
         """('fixed' / '=P1' / 'P1+12.5' / 'P1×0.5', tooltip) or (None, None)."""
         from src.modules.data_analysis.peak_fitting_manager import constraint_of
@@ -1825,6 +1844,10 @@ class PeakFittingDialog(QDialog):
         """Fired when user edits the table. This invalidates the 'fit'."""
         for i in range(self.peaks_table.rowCount()): 
             self.update_peak_from_table(i)
+        # a linked value follows at once (peak 2 = peak 1 + 2935: peak 1 typed
+        # 410 -> peak 2 3345)
+        self._apply_links()
+        self._show_linked_values()
         self.fit_results = None
         self._clear_errors()                # start values now: no uncertainties
         self._peaks_changed(by_hand=True)

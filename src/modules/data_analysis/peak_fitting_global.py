@@ -246,12 +246,15 @@ def fit_global(spectra, template, share='positions', amplitude_constraints=None,
         return pr.residuals(theta)
     try:
         if pr.n_theta():
+            # the sparse solver needs at least two values to fit (with one - e.g.
+            # every position fixed or linked and one width left - scipy fails)
+            sparse = dict(jac_sparsity=pr.sparsity()) if pr.n_theta() > 1 else {}
             fit = least_squares(fun, pr.theta0, bounds=(pr.lo, pr.hi), method='trf',
-                                jac_sparsity=pr.sparsity(), x_scale='jac', max_nfev=400)
+                                x_scale='jac', max_nfev=400, **sparse)
             theta = fit.x
         else:
             theta = np.zeros(0)
-    except (ValueError, RuntimeError, np.linalg.LinAlgError) as exc:
+    except (ValueError, RuntimeError, IndexError, np.linalg.LinAlgError) as exc:
         logger.error("Global peak fit failed: %s", exc)
         return failed
     results = _results(pr, theta, spectra)

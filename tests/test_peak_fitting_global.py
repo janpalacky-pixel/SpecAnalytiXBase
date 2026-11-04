@@ -81,6 +81,24 @@ def test_fixed_and_linked_values_apply_to_all_spectra():
         assert _value(r, 1, 'sigma') == pytest.approx(_value(r, 0, 'sigma'))
 
 
+def test_every_position_fixed_or_linked_leaves_few_values_and_still_fits():
+    """The same widths, peak 1's centre fixed, peak 2 at a constant distance
+    from it: only the two shared widths are fitted - and when Needed? takes
+    a peak out, a single one, which used to stop with an error."""
+    spectra = _series(4)
+    start = [dict(p) for p in START[:2]]                   # two peaks: two widths
+    start[0] = dict(start[0], center=60.0, constraints={'center': {'kind': 'fixed'}})
+    for k in (1,):
+        start[k] = dict(start[k], constraints={'center': {'kind': 'link', 'peak': 'p1',
+                                                          'value': start[k]['center'] - 60.0}})
+    results = pg.fit_global(spectra, start, share='widths')
+    assert all(r['ok'] for r in results)
+    for r in results:
+        assert _value(r, 0, 'center') == 60.0
+        assert _value(r, 1, 'center') == pytest.approx(74.0)
+        assert r['peaks'][0].get('delta_bic') is not None
+
+
 def test_positive_peaks_only_and_a_cd_like_series_without_background():
     rng = np.random.default_rng(3)
     x = np.linspace(190, 260, 141)

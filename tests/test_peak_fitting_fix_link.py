@@ -198,3 +198,14 @@ def test_a_link_back_in_a_circle_cannot_be_made(dlg):
     link = [a for a in menu.actions() if a.menu() is not None][0].menu()
     assert not link.actions()[0].isEnabled()
 
+
+
+def test_a_linked_value_follows_at_once_when_its_peak_is_typed(dlg):
+    """Center of peak 2 kept at +Δ from peak 1: typing a new Center of peak 1
+    moves peak 2 in the table at once (not only after the next action)."""
+    dlg._tidy_constraints()
+    dlg.set_constraint([1], 'center', {'kind': 'link', 'peak': dlg.peaks[0]['id']})
+    distance = dlg.peaks[1]['center'] - dlg.peaks[0]['center']
+    dlg.peaks_table.item(0, 2).setText('35')
+    assert float(dlg.peaks_table.item(1, 2).text()) == pytest.approx(35 + distance)
+    assert dlg.peaks[1]['center'] == pytest.approx(35 + distance)
