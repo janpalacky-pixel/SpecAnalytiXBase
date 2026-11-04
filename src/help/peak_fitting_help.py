@@ -431,7 +431,8 @@ def get_peak_fitting_help_content():
             change only the peaks of this spectrum. Its fit then no longer belongs to these
             peaks: Series results shows it as not fitted yet until you click Fit Peaks again.</li>
             <li><b>Clear All Peaks</b> clears the shown spectrum; with several selected,
-            <b>Clear All Peaks &ndash; N spectra</b> clears all of them (and their fits).</li>
+            <b>Clear All Peaks &ndash; N spectra</b> removes all peaks of each selected spectrum
+            (and their fits).</li>
             <li>The shown spectrum changes when you select <b>one</b> spectrum alone (a plain
             click), with &#9664; &#9654; (Alt+Left / Alt+Right: with several selected it moves
             among them, all stay selected) and with Add via Click in Waterfall and Grid (the
@@ -451,6 +452,22 @@ def get_peak_fitting_help_content():
             <li>In the list, spectra with peaks have a <b>green dot</b> and green bold names (the dot
             is seen also when they are selected); those without peaks are grey.</li>
         </ul>
+        <p><b>Which button removes what</b> &mdash; the buttons under the table of peaks act on
+        the peaks; with several spectra selected, some of them on each selected spectrum.
+        Series results can remove peaks too:</p>
+        <table border="1" cellspacing="0" cellpadding="4">
+        <tr><th>Button or key</th><th>One spectrum selected</th><th>Several selected</th></tr>
+        <tr><td>Remove Selected Peak(s), or Delete in the table of peaks</td><td colspan="2">the
+        peaks whose rows are selected in the table &mdash; of the shown spectrum only</td></tr>
+        <tr><td>Clear All Peaks</td><td>all peaks of the shown spectrum</td><td>(<i>Clear All
+        Peaks &ndash; N spectra</i>) all peaks of each selected spectrum, and their fits</td></tr>
+        <tr><td>Auto-Detect Peaks (adds peaks)</td><td>the shown spectrum</td><td>(<i>Auto-Detect
+        Peaks &ndash; N spectra</i>) each selected spectrum, into its own table</td></tr>
+        <tr><td>Delete in Series results</td><td colspan="2">By peak: the shown peak (e.g. Peak
+        3) of the spectra of the selected rows; By spectrum: the selected peak rows (see <a
+        href="#series-results">Series results</a>)</td></tr>
+        </table>
+        <p>Spectra that are not selected in the list are never changed.</p>
         <p>So for spectra with different bands (e.g. Raman and CD spectra selected together):
         select all, Auto-Detect Peaks &ndash; N spectra, Fit Peaks &ndash; each is fitted from its
         own peaks. In Series results, Peak 1, Peak 2, &hellip; are each spectrum's own peaks in
@@ -660,6 +677,42 @@ def get_peak_fitting_help_content():
             too small &mdash; fit the original data.</li>
         </ul>
 
+        <h3 id="fit-quality">Is the fit good? (&#10003; or &#9888;, R&sup2; and the noise)</h3>
+        <p>After a fit two questions are asked, both from the <b>residual</b> (data minus fit):</p>
+        <table border="1" cellspacing="0" cellpadding="4">
+            <tr><th>Question</th><th>Shown as</th><th>How it is judged</th></tr>
+            <tr><td><b>Is something missing?</b> (a band without a peak, a wrong
+                background)</td><td>&#9888; in the list of spectra</td><td>R&sup2; and the
+                residual compared with the noise (below)</td></tr>
+            <tr><td><b>Is something extra?</b> (a peak the data do not need)</td><td>the column
+                Needed? (yes / probably / no)</td><td>&Delta;BIC: the fit without that peak
+                compared with the fit with it (<a href="#needed">next section</a>)</td></tr>
+        </table>
+        <p><b>R&sup2;</b> says how much of the spectrum the fit describes: 1 = everything. But
+        the noise can never be fitted, so for noisy data R&sup2; stays low even when the fit
+        is as good as it can be. Therefore the residual is also compared with the
+        <b>noise</b> of the data: the noise is taken from how much neighbouring points of the
+        residual differ (a leftover band changes slowly and hardly adds to that). <b>Residual
+        &divide; noise</b> is about 1 when only noise is left, and clearly larger when the fit
+        misses something. A fit is marked <b>&#9888;</b> only when both say so:</p>
+        <table border="1" cellspacing="0" cellpadding="4">
+            <tr><th>R&sup2;</th><th>Residual &divide; noise</th><th>What it means</th>
+                <th>Mark</th></tr>
+            <tr><td>0.9 or more</td><td>any</td><td>the fit describes almost all of the
+                spectrum</td><td>&#10003;</td></tr>
+            <tr><td>below 0.9</td><td>about 1 (below 1.3)</td><td>the data are noisy; the fit
+                describes everything except the noise &mdash; as good as it can be</td>
+                <td>&#10003;</td></tr>
+            <tr><td>below 0.9</td><td>1.3 or more</td><td>something is not described: a band
+                without a peak, a wrong background, a wrong peak shape &mdash; look at the
+                residual plot</td><td>&#9888;</td></tr>
+            <tr><td>below 0.9</td><td>2 to 3 or more</td><td>clearly: e.g. a whole band
+                missing</td><td>&#9888;</td></tr>
+        </table>
+        <p>Hold the mouse over a name in the list of spectra to see its R&sup2; and residual
+        &divide; noise. A small band missing in noisy data hardly changes either number (it is
+        hidden in the noise) &mdash; whether such a peak is needed, Needed? tells.</p>
+
         <h3 id="needed">Is a peak needed? (the column Needed?, &Delta;BIC)</h3>
         <p>Every extra peak makes the fit a little better &mdash; it also fits some noise. To tell
         whether a peak is really needed, after Fit Peaks the program fits the spectrum
@@ -842,7 +895,9 @@ def get_peak_fitting_help_content():
             orange frame, in Grid its small plot has an orange frame and a bold title.</li>
             <li>In the list, spectra with peaks to fit have a <b>green dot</b> (green bold names),
             those without peaks are grey; fitted spectra are marked &#10003;, a poor fit
-            (R&sup2; below 0.9) &#9888; and a failed fit &#10007;. The <b>shown spectrum</b> (the
+            &#9888; (R&sup2; below 0.9 <i>and</i> a residual clearly larger than the noise, see
+            <a href="#fit-quality">Is the fit good?</a>) and a failed fit &#10007;. Hold the mouse
+            over a name in the list to see its numbers. The <b>shown spectrum</b> (the
             one whose peaks the tab Peaks lists) has an <b>orange frame</b> and a bold name &mdash;
             also when several are selected (blue); &#9664; &#9654; move it among them, a click on a
             spectrum alone shows only that one.
@@ -1067,12 +1122,23 @@ def get_peak_fitting_help_content():
         from all spectra together they are found much better, and each spectrum only has to
         give its heights. Example: 7 noisy Raman spectra, the small band at about 428: fitted
         one by one its position comes out 413 &plusmn; 6, 421 &plusmn; 6, 436 &plusmn; 6, &hellip;
-        (scattered from 413 to 438); together 428.1 &plusmn; 2.2 for all.</p>
+        (scattered from 413 to 438); together 428.1 &plusmn; 2.2 for all. The &plusmn; is
+        smaller because every spectrum adds its own measurement of the same position: with 7
+        spectra about &radic;7 &asymp; 2.6 times smaller (6 &rarr; 2.2) &mdash; as a mean of 7
+        measurements is more precise than one.</p>
+        <p><b>What Series results then show</b> (By peak): the shared values are the same in
+        every row, with the same &plusmn; (e.g. Center 428.1 &plusmn; 2.2 and Width 72.8
+        &plusmn; 2.4 in all 7 rows; with <i>the same widths</i> only the Width); the Height,
+        the Area and R&sup2; are each spectrum's own. <b>&Delta;BIC</b> (Needed?) is also the
+        same in every row: the whole fit of all spectra is done once more without that peak
+        &mdash; in all of them at once &mdash; because the peak is shared, so it is needed
+        (or not) for all spectra together.</p>
         <p><b>How</b>: set the peaks on one spectrum and fit it (as in Step by step), keep it
         shown, choose <b>Together: &hellip;</b>, select the spectra (<b>All</b>) and click
         <b>Fit Peaks &ndash; N spectra together</b>. The fit starts from the peaks of the shown
         spectrum (the table); the orange line under the button says so. The other spectra
-        need no peaks of their own; after the fit each gets its fitted peaks. Fixed and linked
+        need no peaks of their own (so <i>Spectra without peaks: start from the fit before
+        them</i> is greyed); after the fit each gets its fitted peaks. Fixed and linked
         values (<a href="#fix-link">Fixing and linking values</a>) apply to all spectra, the
         Amplitude Constraint and the Background to each spectrum (Automatic chooses for each).
         The results are in Series results (the summary says &ldquo;fitted together&rdquo;);

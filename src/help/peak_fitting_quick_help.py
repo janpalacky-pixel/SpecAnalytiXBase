@@ -118,7 +118,9 @@ among them and all stay selected. The plain arrow keys in the list select one sp
 as in every list.</li>
 <li><b>Green dot</b> (green bold name): the spectrum has peaks to fit; grey: no peaks yet.</li>
 <li><b>&#10003;</b> fitted; <b>&#9998;</b> values set by hand after the fit (no &plusmn;);
-<b>&#9888;</b> a poor fit (R&sup2; below 0.9); <b>&#10007;</b> the fit failed.</li>
+<b>&#9888;</b> a poor fit: R&sup2; below 0.9 <i>and</i> the residual clearly larger than the
+noise (something is not described, e.g. a missing peak); <b>&#10007;</b> the fit failed. Hold
+the mouse over a name to see why. Low R&sup2; alone is no warning: noisy data keep R&sup2; low.</li>
 </ul>
 """),
     'tabs': ("Quick help \u2013 the tabs Peaks and Series results", 'series-results', """

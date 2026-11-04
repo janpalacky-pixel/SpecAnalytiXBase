@@ -325,6 +325,49 @@ def model_curves(x, fitted, manager=None, background=None):
     return total, parts
 
 
+# A poor fit (marked \u26a0 in the window's list of spectra): R\u00b2 below POOR_R2
+# AND the residual clearly larger than the noise (POOR_NOISE times or more).
+# R\u00b2 alone is low also for a good fit of noisy data (the noise itself is
+# not described by any peak); a residual no larger than the noise is all a
+# fit can do.
+POOR_R2 = 0.9
+POOR_NOISE = 1.3
+
+
+def residual_to_noise(result, x, y, manager=None):
+    """How many times the residual (data minus fit) is larger than the noise
+    of the data: about 1 when the fit leaves only noise, clearly more when
+    something is not described (a missing peak, a wrong background). The
+    noise is taken from the residual itself - from the differences of
+    neighbouring points, which a smooth leftover band hardly changes:
+    rms(residual) / (rms(differences) / sqrt 2). None when it cannot be told."""
+    if not result or not result.get('ok') or not result.get('peaks'):
+        return None
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    total, _ = model_curves(x, result['peaks'], manager, result.get('background'))
+    res = y - total
+    res = res[np.isfinite(res)]
+    if res.size < 10:
+        return None
+    res = res - np.mean(res)
+    noise = np.sqrt(np.mean(np.diff(res) ** 2)) / np.sqrt(2.0)
+    if not np.isfinite(noise) or noise <= 0:
+        return None
+    return float(np.sqrt(np.mean(res ** 2)) / noise)
+
+
+def poor_fit(result, x, y, manager=None):
+    """(poor?, R\u00b2, residual / noise or None): poor when R\u00b2 is below
+    POOR_R2 and the residual is POOR_NOISE times the noise or more (or the
+    noise cannot be told)."""
+    r2 = result.get('r2') if result else None
+    if r2 is None or not np.isfinite(r2) or r2 >= POOR_R2:
+        return False, r2, None
+    ratio = residual_to_noise(result, x, y, manager)
+    return (ratio is None or ratio >= POOR_NOISE), r2, ratio
+
+
 def hand_result(label, fitted, x, y, background=None, manager=None):
     """The result of a spectrum whose values were set by hand (changed in
     the table of peaks after a fit, or a peak removed): its values as they

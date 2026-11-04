@@ -307,3 +307,27 @@ def test_ok_with_output_options_adds_the_curves_of_every_fitted_spectrum(tmp_pat
     finally:
         mc.autosave_controller.shutdown()
         mc.view.deleteLater()
+
+
+def test_a_poor_fit_needs_a_low_r2_and_a_residual_larger_than_the_noise():
+    """Noisy counts (whole numbers) fitted well: R² below 0.9 only because of
+    the noise - the residual is about the noise: not poor (✓). The large band
+    left out: R² low and the residual far above the noise - poor (⚠)."""
+    from src.modules.data_analysis import peak_fitting_series as pfs
+    from src.modules.data_analysis.peak_fitting_manager import PeakFittingManager, gaussian
+    rng = np.random.default_rng(4)
+    x = np.linspace(200, 3900, 1280)
+    y = np.round(668 + gaussian(x, 3, 428, 72) + gaussian(x, 12, 3400, 180)
+                 + rng.normal(0, 1.3, x.size))
+    m = PeakFittingManager()
+    start = [{'model': 'Gaussian', 'center': 430.0, 'amplitude': 3.0, 'width': 70.0},
+             {'model': 'Gaussian', 'center': 3400.0, 'amplitude': 12.0, 'width': 180.0}]
+    fitted, r2, bg = pfs.fit_one(x, y, start, 'unrestricted', m, 'linear', bic=False)
+    good = {'ok': True, 'peaks': fitted, 'background': bg, 'r2': r2}
+    poor, r2_good, ratio = pfs.poor_fit(good, x, y, m)
+    assert r2_good < 0.9 and ratio < 1.2 and not poor
+    fitted, r2, bg = pfs.fit_one(x, y, start[:1], 'unrestricted', m, 'linear', bic=False)
+    bad = {'ok': True, 'peaks': fitted, 'background': bg, 'r2': r2}
+    poor, r2_bad, ratio = pfs.poor_fit(bad, x, y, m)
+    assert r2_bad < 0.5 and ratio > 2 and poor
+    assert not pfs.poor_fit(dict(good, r2=0.95), x, y, m)[0]          # R² high: never poor

@@ -284,7 +284,14 @@ class PeakFittingDialog(QDialog):
         # right-click on a value: fix it, or link it to another peak
         self.peaks_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.peaks_table.customContextMenuRequested.connect(self._peaks_table_menu)
-        self.peaks_table.setToolTip("List of peaks for fitting.\n- Double-click a color swatch (col 1) to change it.\n- Select rows and press the Delete key to remove peaks.\n- 'Width' is σ for Gaussian/Voigt, γ for Lorentzian, or the shared FWHM for Pseudo-Voigt.\n- 'Extra' applies only to Voigt (γ) and Pseudo-Voigt (η, 0-1) — shown as '—' and disabled for other models.\n- Right-click a value: fix it (not fitted), or link it to another peak (the same width, a fixed distance, a fixed height ratio).")
+        self.peaks_table.setToolTip(
+            "The peaks of the shown spectrum.\n"
+            "Double-click: a value to edit it, the colour swatch to change the colour.\n"
+            "Delete key: removes the selected rows (peaks).\n"
+            "Width: \u03c3 for Gaussian and Voigt, \u03b3 for Lorentzian, the FWHM for Pseudo-Voigt.\n"
+            "Extra: \u03b3 for Voigt, \u03b7 (0-1) for Pseudo-Voigt (shown only when a peak has it).\n"
+            "Right-click a value: fix it (not fitted), or link it to another peak\n"
+            "(the same width, a constant distance, a constant height ratio).")
         
         peaks_layout.addWidget(self.peaks_table)
 
@@ -292,7 +299,12 @@ class PeakFittingDialog(QDialog):
         btn_layout1 = QHBoxLayout()
         
         self.auto_detect_btn = QPushButton("Auto-Detect Peaks")
-        self.auto_detect_btn.setToolTip("Automatically find peaks in the current spectrum view.\nRight-click to set initial peak width.")
+        self.auto_detect_btn.setToolTip(
+            "Auto-Detect Peaks: finds the peaks of the shown spectrum and adds them\n"
+            "to the table (not those already there).\n"
+            "Auto-Detect Peaks \u2013 N spectra (several spectra selected in the list):\n"
+            "finds the peaks of each selected spectrum, each into its own table.\n"
+            "Right-click: the initial width of new peaks.")
         self.auto_detect_btn.clicked.connect(self.auto_detect_peaks)
         from src.views import icons as _icons
         self.auto_detect_btn.setIcon(_icons.run_icon())
@@ -331,12 +343,18 @@ class PeakFittingDialog(QDialog):
 
         btn_layout2 = QHBoxLayout()
         remove_peak_btn = QPushButton("Remove Selected Peak(s)")
-        remove_peak_btn.setToolTip("Remove all currently selected rows from the peak list.")
+        remove_peak_btn.setToolTip(
+            "Removes the peaks whose rows are selected in the table above -\n"
+            "the peaks of the shown spectrum only (also: the Delete key).\n"
+            "To remove a peak from several spectra: Series results, select rows, Delete.")
         remove_peak_btn.clicked.connect(self.remove_peak)
         
         clear_peaks_btn = QPushButton("Clear All Peaks")
-        clear_peaks_btn.setToolTip("Clear all peaks of the shown spectrum - with several spectra "
-                                   "selected in the list, of all of them (and their fits).")
+        clear_peaks_btn.setToolTip(
+            "Clear All Peaks: removes all peaks of the shown spectrum.\n"
+            "Clear All Peaks \u2013 N spectra (several spectra selected in the list):\n"
+            "removes all peaks of each selected spectrum, and their fits.\n"
+            "Spectra that are not selected keep their peaks.")
         self.clear_peaks_btn = clear_peaks_btn
         clear_peaks_btn.clicked.connect(self.clear_peaks)
         
@@ -2113,20 +2131,33 @@ class PeakFittingDialog(QDialog):
         self._update_nav(self.current_index)
         return self.spectra_panel
 
-    @staticmethod
-    def _list_text(sp, res):
-        POOR = 0.9                      # R² below this: the fit is marked ⚠
-        if not res or res.get('pending'):
-            mark = ''
-        elif res.get('ok') and res.get('manual'):
-            mark = '\u270e '                     # values set by hand, not a fit
-        elif not res.get('ok'):
-            mark = '\u2717 '
-        else:
-            r2 = res.get('r2')
-            mark = '\u26a0 ' if r2 is not None and np.isfinite(r2) and r2 < POOR else '\u2713 '
+    def _list_text(self, sp, res):
+        return self._list_mark(sp, res)[0] + str(sp.get('label', '')).rsplit(' : ', 1)[-1]
 
-        return mark + str(sp.get('label', '')).rsplit(' : ', 1)[-1]
+    def _list_mark(self, sp, res):
+        """(the mark before a spectrum's name in the list, its tooltip):
+        \u2713 fitted, \u26a0 a poor fit (R\u00b2 below 0.9 and the residual clearly
+        larger than the noise - pfs.poor_fit), \u270e set by hand, \u2717 failed."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        if not res or res.get('pending'):
+            return '', ''
+        if res.get('ok') and res.get('manual'):
+            return '\u270e ', "Values set by hand after the fit (no \u00b1)."
+        if not res.get('ok'):
+            return '\u2717 ', "The fit failed."
+        poor, r2, ratio = pfs.poor_fit(res, sp.get('x_scale', []), sp.get('y_scale', []),
+                                       self.manager)
+        r2_text = f"R\u00b2 {r2:.3f}" if r2 is not None and np.isfinite(r2) else "R\u00b2 -"
+        if poor:
+            return '\u26a0 ', (f"A poor fit: {r2_text}, and the residual is "
+                               + (f"{ratio:.1f} \u00d7 the noise" if ratio else "large")
+                               + " - something is not described\n"
+                               "(a missing peak, a wrong background). Check the residual.")
+        if ratio is not None:
+            return '\u2713 ', (f"Fitted: {r2_text} - low because the data are noisy; the "
+                               f"residual is only\n{ratio:.1f} \u00d7 the noise, so the fit "
+                               "describes everything but the noise.")
+        return '\u2713 ', f"Fitted: {r2_text}."
 
     def _toggle_spectra_list(self, shown):
         self.spectra_panel.setVisible(shown)
@@ -2788,7 +2819,9 @@ class PeakFittingDialog(QDialog):
         own = self.own_constraints is not None and self.own_constraint_check.isChecked()
         for k in range(self.spectra_list.count()):
             res = self.series_results[k] if self.series_results else None
-            text = self._list_text(self.series[k], res)
+            mark, tip = self._list_mark(self.series[k], res)
+            text = mark + str(self.series[k].get('label', '')).rsplit(' : ', 1)[-1]
+            self.spectra_list.item(k).setToolTip(tip)
             if own:
                 text += {'positive': '  (+)', 'negative': '  (\u2212)'}.get(self.constraint_of(k), '')
             self.spectra_list.item(k).setText(text)
