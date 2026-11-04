@@ -356,9 +356,23 @@ def get_peak_fitting_help_content():
             <li>The <b>mouse wheel</b> scrolls the left part, the table of peaks or the list
             &mdash; it never changes a drop-down list (e.g. Background or the Model of a peak)
             the mouse happens to be over. To change one, click it.</li>
+            <li>The <b>tooltips</b> (hold the mouse over a control) name the choices in bold,
+            e.g. <b>Automatic (default)</b>: chosen for each spectrum&hellip;</li>
         </ul>
-        <p>The small orange <b>?</b> buttons give a short help on each part of the window, with a
-        link to its section here.</p>
+        <p>The small orange <b>?</b> buttons give a short help, with a link to its section here.
+        Each sits right after what it explains:</p>
+        <ul>
+            <li>Auto-Detect Peaks / Add via Click &mdash; adding peaks and the table of peaks
+            (editing, fixing and linking values);</li>
+            <li>Copy / Paste peaks &mdash; the peaks of several spectra;</li>
+            <li>Remove Selected Peak(s) / Clear All Peaks &mdash; the column Needed? (which peaks
+            can be removed);</li>
+            <li>&plusmn; shown as &mdash; the uncertainties;</li>
+            <li>Amplitude Constraint &mdash; the constraint, the Background and a good fit;</li>
+            <li>Several spectra &mdash; each on its own, or together (a global fit);</li>
+            <li>Fit Peaks &mdash; fitting a series (also Several spectra: Together);</li>
+            <li>Series results, Output Options and the row above the plot &mdash; each its own.</li>
+        </ul>
         <div class="screenshot">
             <img src="$QUICK_HELP" width="${QUICK_HELP_W}" height="${QUICK_HELP_H}" alt="The short help of the orange question mark next to the Amplitude Constraint" />
             <p class="caption">The orange "?" next to the Amplitude Constraint: what helps a fit; Full help&hellip; opens the section here.</p>
@@ -714,8 +728,8 @@ def get_peak_fitting_help_content():
             <p class="caption">The band at about 731, zoomed in: two dotted peaks under one band.
             Without peak 1 the other peak takes the whole band and the fit is just as good.</p>
         </div>
-        <p>Hold the mouse over the word to see the number; the orange <b>?</b> right under the
-        table explains it in short. <b>not fitted</b> (grey): the values are start values (before
+        <p>Hold the mouse over the word to see the number; the orange <b>?</b> next to
+        <b>Remove Selected Peak(s)</b> explains it in short. <b>not fitted</b> (grey): the values are start values (before
         Fit Peaks, or after a value was changed).</p>
         <p><b>Several peaks not needed.</b> Each peak alone may be replaceable by another one,
         but not all of them together. Examples: two peaks on one band (either one describes

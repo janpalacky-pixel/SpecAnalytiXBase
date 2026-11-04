@@ -135,6 +135,9 @@ class PeakFittingDialog(QDialog):
                  open_data_table=None):
         super().__init__(parent)
         self.setWindowTitle("Peak Fitting & Deconvolution")
+        # tooltips with the names of the options in bold (src/views/tooltips.py)
+        from src.views import tooltips as _tooltips
+        self.setProperty(_tooltips.RICH, True)
         self.setModal(True)
         self.spectrum = spectrum
         # A series: the spectra selected in the main window (this one among
@@ -306,8 +309,9 @@ class PeakFittingDialog(QDialog):
         
         btn_layout1.addWidget(self.auto_detect_btn)
         btn_layout1.addWidget(self.interactive_add_cb)
-        # the orange "?" of the column Needed? (just above it in the table)
-        btn_layout1.addWidget(self._quick_help_button('needed'))
+        # each orange "?" next to what it explains: here adding peaks (and
+        # the table above: editing, fixing, linking)
+        btn_layout1.addWidget(self._quick_help_button('peaks'))
         peaks_layout.addLayout(btn_layout1)
 
         if len(self.series) > 1:
@@ -337,7 +341,8 @@ class PeakFittingDialog(QDialog):
         clear_peaks_btn.clicked.connect(self.clear_peaks)
         
         btn_layout2.addWidget(remove_peak_btn); btn_layout2.addWidget(clear_peaks_btn)
-        btn_layout2.addWidget(self._quick_help_button('peaks'))
+        # next to Remove: the column Needed? (which peaks can be removed)
+        btn_layout2.addWidget(self._quick_help_button('needed'))
         peaks_layout.addLayout(btn_layout2)
         peaks_group.setLayout(peaks_layout)
         # Peaks (as set up / fitted for the shown spectrum) and, with several
@@ -382,7 +387,8 @@ class PeakFittingDialog(QDialog):
             "How large the \u00b1 after the fitted values are:\n"
             "1 \u03c3 (default): the standard error - the true value lies within \u00b1 in about\n"
             "2 of 3 cases (68 %);\n"
-            "2 \u03c3: in 19 of 20 cases (95 %); 3 \u03c3: in 997 of 1000 cases (99.7 %).\n"
+            "2 \u03c3: in 19 of 20 cases (95 %);\n"
+            "3 \u03c3: in 997 of 1000 cases (99.7 %).\n"
             "Only the shown and copied \u00b1 change, not the fit.")
         self.sigma_combo.currentIndexChanged.connect(lambda *_: self._sigmas_chosen())
         background_layout.addWidget(self.sigma_combo)
@@ -392,7 +398,11 @@ class PeakFittingDialog(QDialog):
         constraint_layout.addWidget(QLabel("Amplitude Constraint:"))
         self.amplitude_combo = QComboBox()
         self.amplitude_combo.addItems(["Unrestricted", "Positive Peaks Only", "Negative Peaks Only"])
-        self.amplitude_combo.setToolTip("Constrain the fitting algorithm to find only positive, only negative, or unrestricted amplitude peaks.")
+        self.amplitude_combo.setToolTip(
+            "Which peaks the fit may use:\n"
+            "Unrestricted (default): peaks up and down (e.g. CD spectra).\n"
+            "Positive Peaks Only: only peaks up (Raman, IR absorbance, fluorescence).\n"
+            "Negative Peaks Only: only peaks down.")
         self.amplitude_combo.currentIndexChanged.connect(lambda *_: self._constraint_chosen())
         constraint_layout.addWidget(self.amplitude_combo)
         self.own_constraint_check = QCheckBox("Each spectrum its own")
@@ -404,8 +414,9 @@ class PeakFittingDialog(QDialog):
         self.own_constraint_check.toggled.connect(lambda *_: self._own_constraint_toggled())
         self.own_constraint_check.setVisible(len(self.series) > 1)
         constraint_layout.addWidget(self.own_constraint_check)
-        constraint_layout.addStretch() # Fixes the gap
+        # the "?" right after what it explains
         constraint_layout.addWidget(self._quick_help_button('fitting'))
+        constraint_layout.addStretch()
         fit_layout.addLayout(constraint_layout)
         self.constraint_note = QLabel()
         self.constraint_note.setStyleSheet("color: #555;")
@@ -424,20 +435,24 @@ class PeakFittingDialog(QDialog):
             self.together_combo.addItem(text, key)
         self.together_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.together_combo.setToolTip(
-            "How several selected spectra are fitted.\n"
-            "Each on its own (default): every spectrum from its own peaks, one after another.\n"
-            "Together: the same positions and widths - a global fit: one set of peaks for all "
-            "selected spectra, every spectrum with its own heights and background. For a noisy "
-            "series (temperature, titration) much more stable: the positions and widths are "
-            "found from all spectra at once.\n"
-            "Together: the same widths - each spectrum its own positions (bands that shift), "
-            "the widths the same for all.\n"
+            "How several selected spectra are fitted:\n"
+            "**Each on its own** (default): every spectrum from its own peaks,\n"
+            "one after another.\n"
+            "**Together: the same positions and widths** - one fit of all selected\n"
+            "spectra: the same peak positions and widths for all, every spectrum\n"
+            "its own heights and background. Much more stable for a noisy series\n"
+            "(temperature, titration): positions and widths come from all spectra.\n"
+            "**Together: the same widths** - each spectrum its own positions\n"
+            "(bands that shift), the widths the same for all.\n"
             "Together starts from the peaks of the shown spectrum (the table).")
         self.together_combo.currentIndexChanged.connect(lambda *_: self._together_chosen())
         together_layout.addWidget(self.together_combo)
+        together_help = self._quick_help_button('together')
+        together_layout.addWidget(together_help)
         together_layout.addStretch()
         self.together_label.setVisible(n_series > 1)
         self.together_combo.setVisible(n_series > 1)
+        together_help.setVisible(n_series > 1)
         fit_layout.addLayout(together_layout)
         self.follow_check = QCheckBox("Spectra without peaks: start from the fit before them "
                                       "(a band shifting along a series)")
@@ -506,8 +521,9 @@ class PeakFittingDialog(QDialog):
         self.add_peaks_check.setToolTip("Adds each fitted component as a new, separate spectrum.")
         
         first_row = QHBoxLayout()
-        first_row.addWidget(self.add_fit_check, 1)
+        first_row.addWidget(self.add_fit_check)
         first_row.addWidget(self._quick_help_button('output'))
+        first_row.addStretch()
         output_layout.addLayout(first_row)
         output_layout.addWidget(self.add_residual_check)
         output_layout.addWidget(self.add_peaks_check)
@@ -1973,8 +1989,10 @@ class PeakFittingDialog(QDialog):
             self.view_combo.addItem(text, key)
         self.view_combo.setToolTip(
             "How several spectra selected in the list are shown:\n"
-            "Overlay - in one plot; Waterfall - each shifted up; Grid - one small plot each "
-            f"(at most {self.GRID_MAX}).\nData thin, fits thick (once fitted).")
+            "Overlay: in one plot.\n"
+            "Waterfall: each shifted up.\n"
+            f"Grid: one small plot each (at most {self.GRID_MAX}).\n"
+            "Data thin, fits thick (once fitted).")
         self.view_combo.currentIndexChanged.connect(lambda *_: self._view_changed())
         h.addWidget(self.view_combo)
         return bar

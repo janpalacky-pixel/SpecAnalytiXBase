@@ -4,7 +4,7 @@ per part of the window, each with a link to its section of the full help
 (peak_fitting_help.py)."""
 
 QUICK_HELP = {
-    'peaks': ("Quick help – the peaks to fit", 'adding-peaks', """
+    'peaks': ("Quick help – adding peaks and the table of peaks", 'adding-peaks', """
 <p><b>Auto-Detect Peaks</b> finds the bands of the shown spectrum and fills the table with a
 starting position, height and width for each. Check the list: remove what you do not want
 (select rows, <b>Remove Selected Peak(s)</b>) and add what is missing.</p>
@@ -40,7 +40,7 @@ left out (unless <i>Spectra without peaks: start from the fit before them</i> is
 &#10007; failed.</li>
 </ul>
 """),
-    'fitting': ("Quick help – getting a good fit", 'converge', """
+    'fitting': ("Quick help – Amplitude Constraint, Background and a good fit", 'converge', """
 <p><b>Fit Peaks</b> adjusts all peaks together until their sum matches the data - for the
 spectra selected in the list beside the plot (its text says how many). It starts from the
 values in the table, so it works best when they are already close:</p>
@@ -88,6 +88,23 @@ for all, each spectrum its own heights and background. Much more stable for a no
 <b>Copy table - &hellip;</b> (the peaks of the shown spectrum: start values, or after Fit Peaks
 the fitted values); on the tab Series results e.g. <b>Copy peak 1 - N spectra</b>.</p>
 """),
+    'together': ("Quick help \u2013 Several spectra: each on its own or together", 'together', """
+<p>How the spectra selected in the list are fitted when there are several:</p>
+<ul>
+<li><b>Each on its own</b> (default) - every spectrum is fitted separately from its own peaks,
+one after another. For spectra that differ (other bands, other kinds).</li>
+<li><b>Together: the same positions and widths</b> - one fit of all selected spectra at once
+(a global fit): the peaks have the same positions and widths in every spectrum, only the
+heights (and the background) are each spectrum's own. Example: a temperature or titration
+series where the bands only grow or shrink - much more stable for noisy data, because
+every position and width is found from all spectra together.</li>
+<li><b>Together: the same widths</b> - each spectrum its own positions (bands that shift a
+little), the widths shared by all.</li>
+</ul>
+<p>Together starts from the peaks of the <b>shown spectrum</b> (the table): fit it first, then
+choose Together, select the spectra (All) and click Fit Peaks. Fixed and linked values apply
+in every spectrum.</p>
+"""),
     'series-results': ("Quick help – Series results", 'series-results', """
 <p>The results of the spectra <b>selected in the list</b> (All = the whole series), with
 <b>Show</b>: <b>By peak</b> - one peak at a time (&#9664; &#9654;), a row per spectrum;
@@ -127,7 +144,7 @@ the shown and copied &plusmn; change (their columns are then named e.g. <i>Cente
 are compared (&Delta;BIC).</p>
 <p>The uncertainties assume independent noise: after smoothing they come out too small.</p>
 """),
-    'needed': ("Quick help – is a peak needed? (the column Needed?)", 'needed', """
+    'needed': ("Quick help – is a peak needed? which to remove (the column Needed?)", 'needed', """
 <p>After <b>Fit Peaks</b> the column <b>Needed?</b> says for each peak whether the data really
 need it: the spectrum is fitted <b>once more without that peak</b>, and the two fits are
 compared.</p>

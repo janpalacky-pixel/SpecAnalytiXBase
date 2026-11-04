@@ -155,3 +155,39 @@ def test_ok_adds_the_outputs_for_the_chosen_spectra_only(tmp_path, monkeypatch):
     finally:
         mc.autosave_controller.shutdown()
         mc.view.deleteLater()
+
+
+def test_tooltips_show_the_names_of_the_options_in_bold():
+    """rich(): the term before a colon bold (or the **marked** parts); the
+    Peak Fitting window shows all its tooltips so - of widgets, table cells
+    and column headings."""
+    from PyQt5.QtCore import QEvent, QPoint
+    from PyQt5.QtGui import QHelpEvent
+    from PyQt5.QtWidgets import QToolTip
+    from src.views import tooltips
+    r = tooltips.rich("A background under the peaks.\nAutomatic (default): chosen\nNone: no "
+                      "background.\nHow large the values are:")
+    assert '<b>Automatic (default)</b>: chosen' in r and '<b>None</b>: no' in r
+    assert 'How large the values are:' in r and r.count('<b>') == 2
+    assert tooltips.rich("**Each on its own** (default): x\nTogether: y").count('<b>') == 1
+    assert '<b>' not in tooltips.rich("raman_2comp : raman_01")       # a name, not a term
+    tooltips.install(app)
+    dlg = _window(_series())
+    dlg.show()
+    try:
+        app.processEvents()
+        for widget, bold in ((dlg.background_combo, 'Automatic (default)'),
+                             (dlg.together_combo, 'Together: the same widths'),
+                             (dlg.amplitude_combo, 'Positive Peaks Only')):
+            event = QHelpEvent(QEvent.ToolTip, QPoint(5, 5), widget.mapToGlobal(QPoint(5, 5)))
+            app.sendEvent(widget, event)
+            assert f'<b>{bold}</b>' in QToolTip.text(), widget
+        dlg.fit_selected()                                        # cells with tooltips
+        vp = dlg.peaks_table.viewport()
+        rect = dlg.peaks_table.visualRect(dlg.peaks_table.model().index(0, 2))
+        app.sendEvent(vp, QHelpEvent(QEvent.ToolTip, rect.center(), vp.mapToGlobal(rect.center())))
+        assert '±' in QToolTip.text() and QToolTip.text().startswith('<p')
+    finally:
+        QToolTip.hideText()
+        dlg.hide()
+        dlg.deleteLater()
