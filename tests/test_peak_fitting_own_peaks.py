@@ -444,3 +444,103 @@ def test_a_peak_added_is_put_in_its_place_by_position():
     Click.inaxes = dlg.ax_main
     dlg.on_canvas_click(Click())
     assert [round(p['center']) for p in dlg.peaks] == [60, 100, 140]
+
+
+def test_hide_spectra_without_values_works_in_all_three_views():
+    """Hide spectra without values is beside Show (not only All in one
+    table): By peak and By spectrum leave out the spectra not fitted yet,
+    Copy copies only those shown; Delete still finds the right spectrum."""
+    dlg = _window(_mixed())
+    _select(dlg, [0, 2])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    _select(dlg, [0, 1, 2, 3])                                     # r2 and u1 not fitted
+    dlg.set_series_view('peak')
+    assert not dlg.hide_empty_check.isHidden()
+    bp, tree = dlg.by_peak_table, dlg.by_spectrum_tree
+    assert bp.rowCount() == 4
+    dlg.hide_empty_check.setChecked(True)
+    assert bp.rowCount() == 2
+    assert [bp.item(r, 0).text() for r in range(2)] == ['r1', 'r3']
+    assert 'without those not fitted yet' in dlg.series_info.text()
+    assert dlg.copy_results_btn.text().endswith('2 spectra')
+    bp.selectRow(1)
+    assert dlg._series_peaks_of(bp) == [(2, 0)]                    # r3, Peak 1
+    assert len(dlg.series_view_text().strip().split('\n')) == 3      # header + 2 rows
+    dlg.set_series_view('spectrum')
+    assert not dlg.hide_empty_check.isHidden()
+    assert [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())] == ['r1', 'r3']
+    dlg.hide_empty_check.setChecked(False)
+    assert tree.topLevelItemCount() == 4
+
+
+def test_hide_values_in_by_peak_and_by_spectrum():
+    """Hide: Position, FWHM, Height, Area, ±, R² - in all three views and
+    in Copy (By peak, By spectrum too)."""
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    _select(dlg, [0, 1])
+    dlg.set_series_view('peak')
+    bp, tree = dlg.by_peak_table, dlg.by_spectrum_tree
+
+    def heads(t):
+        return [t.horizontalHeaderItem(c).text() for c in range(t.columnCount())]
+    assert 'FWHM' in heads(bp) and '±' in heads(bp)
+    for key in ('FWHM', '±', 'R²'):
+        dlg.hide_value_checks[key].setChecked(True)
+    assert heads(bp) == ['Spectrum', 'Model', 'Center', 'Height', 'Width', 'Area', 'ΔBIC']
+    first = dlg.series_view_text().split('\n')[0].split('\t')
+    assert 'FWHM' not in first and 'R²' not in first and 'Center' in first
+    assert not any('±' in h for h in first)
+    dlg.set_series_view('spectrum')
+    shown = [tree.headerItem().text(c) for c in range(tree.columnCount())
+             if not tree.isColumnHidden(c)]
+    assert shown == ['Spectrum / peak', 'Model', 'Center', 'Height', 'Width', 'Area', 'ΔBIC']
+    dlg.hide_value_checks['±'].setChecked(False)
+    assert tree.headerItem().text(3) == '±' and not tree.isColumnHidden(3)
+
+
+def test_all_in_one_table_hides_empty_rows_chooses_columns_and_transposes():
+    """All in one table: Hide spectra without values; Columns (Position,
+    FWHM, Height, Area, ±, R²); the row number names its spectrum (tooltip);
+    Transposed: a column per spectrum. Copy copies what is shown."""
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    _select(dlg, [0, 1])
+    dlg.set_series_view('wide')
+    assert not dlg.hide_options.isHidden() and dlg.transpose_check.isEnabled()
+    t = dlg.series_table
+    assert t.verticalHeaderItem(1).toolTip() == 'raman : r2'
+    assert not t.isRowHidden(3)                                    # u1: not fitted
+    dlg.hide_empty_check.setChecked(True)
+    assert t.isRowHidden(3) and not t.isRowHidden(1)
+    columns, _ = dlg.series_rows()
+    for key in ('FWHM', 'area', '±'):
+        dlg.hide_value_checks[key].setChecked(True)
+    shown = [columns[c] for c in range(t.columnCount()) if not t.isColumnHidden(c)]
+    assert shown[:4] == ['Spectrum', 'Peak 1 position', 'Peak 1 height', 'Peak 2 position']
+    assert shown[-1] == 'R²'
+    text = dlg.copy_series([0, 1, 3])                              # u1 hidden: not copied
+    lines = text.strip().split('\n')
+    assert len(lines) == 3 and lines[0].split('\t')[:3] == shown[:3]
+    dlg.transpose_check.setChecked(True)                           # a column per spectrum
+    assert t.columnCount() == 6 and t.horizontalHeaderItem(1).text() == 'r2'
+    assert t.isColumnHidden(3)
+    assert t.verticalHeaderItem(0).text() == 'Peak 1 position'
+    assert dlg.selected_series_rows() == [0, 1]                    # columns now
+    text = dlg.copy_series([0, 1])
+    assert text.split('\n')[0].split('\t')[:3] == ['Spectrum', 'raman : r1', 'raman : r2']
+    settings = dlg.get_results()
+    assert settings['series_transposed'] and settings['wide_hide_empty']
+    assert set(settings['wide_columns_off']) == {'FWHM', 'area', '±'}
+    dlg.set_series_view('spectrum')
+    assert not dlg.hide_options.isHidden() and not dlg.transpose_check.isEnabled()
+    dlg.set_series_view('peak')                                    # By peak transposed too
+    bp = dlg.by_peak_table
+    assert bp.columnCount() == 2 and bp.verticalHeaderItem(0).text() == 'Model'
+    bp.selectColumn(1)
+    assert dlg._series_peaks_of(bp) == [(1, 0)]                    # Delete: r2's peak 1

@@ -905,6 +905,10 @@ class PeakFittingDialog(QDialog):
         self.set_series_view(s.get('series_view', 'peak'))
         if hasattr(self, 'match_combo'):
             self.match_combo.setCurrentIndex(1 if s.get('match_by_position') else 0)
+            self.transpose_check.setChecked(bool(s.get('series_transposed')))
+            self.hide_empty_check.setChecked(bool(s.get('wide_hide_empty')))
+            for k, cb in self.hide_value_checks.items():
+                cb.setChecked(k in (s.get('wide_columns_off') or []))
         own_c = s.get('own_constraints')
         if own_c and len(own_c) == len(self.series):
             self.own_constraints = [c if c in self.CONSTRAINTS else None for c in own_c]
@@ -2086,6 +2090,13 @@ class PeakFittingDialog(QDialog):
             self.series_view_group.addButton(b)
             self.series_view_buttons[key] = b
             show.addWidget(b)
+        show.addSpacing(16)
+        self.transpose_check = QCheckBox("Transposed")
+        self.transpose_check.setToolTip(
+            "Rows and columns swapped: one column per spectrum, one row per value\n"
+            "(By peak and All in one table; By spectrum is a list of each spectrum's peaks).")
+        self.transpose_check.toggled.connect(lambda *_: self._refresh_series_table())
+        show.addWidget(self.transpose_check)
         show.addStretch(1)
         v.addLayout(show)
         # Peak 1, 2, ...: the rows of each spectrum's table, or matched by
@@ -2109,6 +2120,34 @@ class PeakFittingDialog(QDialog):
         numbering.addWidget(self._quick_help_button('matching'))
         numbering.addStretch(1)
         v.addLayout(numbering)
+        # Hide: (all three views) the spectra not fitted yet; values not needed
+        self.hide_options = QWidget()
+        wo = QHBoxLayout(self.hide_options)
+        wo.setContentsMargins(0, 0, 0, 0)
+        wo.addWidget(QLabel("Hide:"))
+        self.hide_empty_check = QCheckBox("Spectra without values")
+        self.hide_empty_check.setToolTip(
+            "Spectra without values: hide the spectra not fitted yet\n"
+            "(or whose fit failed), so that the fitted ones are together.\n"
+            "By peak, By spectrum and All in one table; Copy copies what is shown.")
+        self.hide_empty_check.toggled.connect(lambda *_: self._hide_empty_changed())
+        wo.addWidget(self.hide_empty_check)
+        wo.addSpacing(16)
+        self.hide_value_checks = {}
+        for key, text, tip in (('position', "Position", "the position (Center) of each peak"),
+                               ('FWHM', "FWHM", "the full width at half height of each peak"),
+                               ('height', "Height", "the height of each peak"),
+                               ('area', "Area", "the area of each peak"),
+                               ('\u00b1', "\u00b1", "the uncertainty after each value"),
+                               ('R\u00b2', "R\u00b2", "R\u00b2 of each spectrum's fit")):
+            cb = QCheckBox(text)
+            cb.setToolTip(f"{text}: hide {tip}\n(in all three views and in Copy;\n"
+                          "Export and the Data table always get all).")
+            cb.toggled.connect(lambda *_: self._refresh_series_table())
+            self.hide_value_checks[key] = cb
+            wo.addWidget(cb)
+        wo.addStretch(1)
+        v.addWidget(self.hide_options)
         self.series_view_buttons['peak'].setChecked(True)
         self.series_view_group.buttonToggled.connect(
             lambda b, on: on and self._series_view_changed())
@@ -2344,8 +2383,12 @@ class PeakFittingDialog(QDialog):
         t.blockSignals(True)
         t.clearSelection()
         model = t.selectionModel()
+        across = self.transposed() and self.series_view() == 'wide'
         for r in rows:
-            if r < t.rowCount():
+            if across and r < t.columnCount():
+                model.select(t.model().index(0, r),
+                             QItemSelectionModel.Select | QItemSelectionModel.Columns)
+            elif not across and r < t.rowCount():
                 model.select(t.model().index(r, 0),
                              QItemSelectionModel.Select | QItemSelectionModel.Rows)
         t.blockSignals(False)
@@ -2424,9 +2467,57 @@ class PeakFittingDialog(QDialog):
             self.series_view_buttons[key].setChecked(True)
 
     def _series_view_changed(self):
-        self.series_stack.setCurrentIndex(['peak', 'spectrum', 'wide'].index(self.series_view()))
-        self._refresh_series_views()
+        view = self.series_view()
+        self.series_stack.setCurrentIndex(['peak', 'spectrum', 'wide'].index(view))
+        self.transpose_check.setEnabled(view != 'spectrum')
+        self._refresh_series_table() if view == 'wide' else self._refresh_series_views()
         self._update_copy_results_button()
+
+    def transposed(self):
+        """True: Series results (By peak, All in one table) with one column per
+        spectrum, one row per value."""
+        check = getattr(self, 'transpose_check', None)
+        return bool(check is not None and check.isChecked() and self.series_view() != 'spectrum')
+
+    _VALUE_KEYS = {'position': 'position', 'Center': 'position', 'FWHM': 'FWHM',
+                   'height': 'height', 'Height': 'height', 'area': 'area', 'Area': 'area'}
+
+    def _value_shown(self, name):
+        """Is this column (By peak, By spectrum: Center, Center \u00b1, ...; All
+        in one table: Peak 1 position, ...) shown - not hidden by Hide:
+        Position, FWHM, Height, Area, \u00b1, R\u00b2? The spectrum's name always."""
+        checks = getattr(self, 'hide_value_checks', None)
+        name = str(name)
+        if not checks or name in ('Spectrum', 'Peak'):
+            return True
+        if name.startswith('R\u00b2'):
+            return not checks['R\u00b2'].isChecked()
+        if ' \u00b1' in name and checks['\u00b1'].isChecked():
+            return False
+        base = name.split(' \u00b1')[0]
+        if base.startswith('Peak '):
+            base = base.split(' ', 2)[-1]
+        key = self._VALUE_KEYS.get(base)
+        return key is None or not checks[key].isChecked()
+
+    def _hide_empty_changed(self):
+        self._refresh_series_table()
+        self._update_copy_results_button()
+
+    def _hidden_spectrum(self, k):
+        """Hide spectra without values (all three views): spectrum k hidden -
+        not fitted yet, or its fit failed."""
+        check = getattr(self, 'hide_empty_check', None)
+        res = (self.series_results or [None])[k] if self.series_results else None
+        return bool(check is not None and check.isChecked() and not (res or {}).get('ok'))
+
+    @staticmethod
+    def _transpose_text(columns, data):
+        """(columns, rows) with rows and columns swapped: the first column's
+        values become the headings."""
+        new_columns = [str(columns[0])] + [str(row[0]) for row in data]
+        new_rows = [[columns[c]] + [row[c] for row in data] for c in range(1, len(columns))]
+        return new_columns, new_rows
 
     def matched_by_position(self):
         """True: Series results match the peaks by position (Peak numbers)."""
@@ -2460,8 +2551,10 @@ class PeakFittingDialog(QDialog):
                           if r.get('ok')])
 
     def _series_view_rows(self):
-        """The spectra in the views: those selected in the list."""
-        return self.selected_spectra() or [self.current_index]
+        """The spectra in the views: those selected in the list (without
+        those hidden by Hide spectra without values)."""
+        rows = self.selected_spectra() or [self.current_index]
+        return [k for k in rows if not self._hidden_spectrum(k)]
 
     def _show_series_peak(self, j):
         n = self._series_n_peaks()
@@ -2522,26 +2615,53 @@ class PeakFittingDialog(QDialog):
         extra = columns.index('Extra')
         no_extra = not any(row[extra] is not None for row in data)
         shown = [c for c in range(len(columns)) if columns[c] != 'Peak'
-                 and not (no_extra and c in (extra, extra + 1))]
+                 and not (no_extra and c in (extra, extra + 1))
+                 and self._value_shown(columns[c])]
         t = self.by_peak_table
         t.clear()
-        t.setColumnCount(len(shown))
-        self._set_headers(t, [columns[c] for c in shown])
-        t.setRowCount(len(data))
         grey = QColor('#888888')
-        for r, row in enumerate(data):
-            for c_out, c in enumerate(shown):
-                v = self._short_label(row[c]) if c == 0 else row[c]
-                item = self._cell(v)
-                if c == 0:
-                    item.setToolTip(str(row[0]))
-                    item.setData(Qt.UserRole + 1, rows[r])     # its spectrum (for Remove)
-                if row[2] in ('not fitted yet', 'fit failed', 'no such peak'):
-                    item.setForeground(grey)
-                t.setItem(r, c_out, item)
-        t.resizeColumnsToContents()
-        t.resizeRowsToContents()
-        t.setColumnWidth(0, min(t.columnWidth(0), 160))
+        self._by_peak_spectra = list(rows)                 # the spectrum of each row (column)
+        if not self.transposed():
+            t.setSelectionBehavior(QAbstractItemView.SelectRows)
+            t.verticalHeader().setVisible(False)
+            t.setColumnCount(len(shown))
+            self._set_headers(t, [columns[c] for c in shown])
+            t.setRowCount(len(data))
+            for r, row in enumerate(data):
+                for c_out, c in enumerate(shown):
+                    v = self._short_label(row[c]) if c == 0 else row[c]
+                    item = self._cell(v)
+                    if c == 0:
+                        item.setToolTip(str(row[0]))
+                        item.setData(Qt.UserRole + 1, rows[r])     # its spectrum (for Remove)
+                    if row[2] in ('not fitted yet', 'fit failed', 'no such peak'):
+                        item.setForeground(grey)
+                    t.setItem(r, c_out, item)
+            t.resizeColumnsToContents()
+            t.resizeRowsToContents()
+            t.setColumnWidth(0, min(t.columnWidth(0), 160))
+        else:
+            # one column per spectrum, one row per value
+            t.setSelectionBehavior(QAbstractItemView.SelectColumns)
+            t.verticalHeader().setVisible(True)
+            values = [c for c in shown if c != 0]
+            t.setColumnCount(len(data))
+            t.setRowCount(len(values))
+            for r, row in enumerate(data):
+                head = QTableWidgetItem(self._short_label(row[0]))
+                head.setToolTip(str(row[0]))
+                t.setHorizontalHeaderItem(r, head)
+                for i, c in enumerate(values):
+                    item = self._cell(row[c])
+                    if row[2] in ('not fitted yet', 'fit failed', 'no such peak'):
+                        item.setForeground(grey)
+                    t.setItem(i, r, item)
+            for i, c in enumerate(values):
+                head = QTableWidgetItem(str(columns[c]))
+                head.setToolTip(self._header_tip(columns[c]) or str(columns[c]))
+                t.setVerticalHeaderItem(i, head)
+            t.resizeColumnsToContents()
+            t.resizeRowsToContents()
         centres = [row[3] for row in data if isinstance(row[3], float)]
         where = f" (\u2248 {float(np.mean(centres)):.4g})" if centres else ""
         self.series_peak_label.setText(f"{j + 1} of {n}{where}" if n else "\u2013")
@@ -2595,8 +2715,10 @@ class PeakFittingDialog(QDialog):
             it = tree.topLevelItem(i)
             it.setExpanded(it.data(0, Qt.UserRole) not in self._closed_in_tree)
         no_extra = all(row[columns.index('Extra')] is None for row in data)
-        tree.setColumnHidden(columns.index('Extra') - 1, no_extra)
-        tree.setColumnHidden(columns.index('Extra' + pfs.pm(self._sigmas())) - 1, no_extra)
+        extras = (columns.index('Extra'), columns.index('Extra' + pfs.pm(self._sigmas())))
+        for c in range(2, len(columns)):                  # Hide: Position, FWHM, ...
+            tree.setColumnHidden(c - 1, (no_extra and c in extras)
+                                 or not self._value_shown(columns[c]))
         for c in range(tree.columnCount()):
             tree.resizeColumnToContents(c)
         tree.setColumnWidth(0, min(tree.columnWidth(0), 170))
@@ -2606,9 +2728,14 @@ class PeakFittingDialog(QDialog):
         the selected rows' spectra) or By spectrum (the selected peak rows)."""
         pairs = []
         if view is self.by_peak_table:
-            for r in sorted({i.row() for i in view.selectedIndexes()}):
-                item = view.item(r, 0)
-                k = item.data(Qt.UserRole + 1) if item is not None else None
+            across = self.transposed()
+            spectra = getattr(self, '_by_peak_spectra', [])
+            for r in sorted({(i.column() if across else i.row()) for i in view.selectedIndexes()}):
+                if across:
+                    k = spectra[r] if r < len(spectra) else None
+                else:
+                    item = view.item(r, 0)
+                    k = item.data(Qt.UserRole + 1) if item is not None else None
                 if k is None:
                     continue
                 res = self.series_results[k] if self.series_results else None
@@ -2705,6 +2832,11 @@ class PeakFittingDialog(QDialog):
         columns, data = pfs.peaks_long(self._view_results(), rows,
                                        peak=self.series_peak if view == 'peak' else None,
                                        sigmas=self._sigmas())
+        keep = [c for c, name in enumerate(columns) if self._value_shown(name)]
+        columns = [columns[c] for c in keep]
+        data = [[row[c] for c in keep] for row in data]
+        if view == 'peak' and self.transposed():
+            columns, data = self._transpose_text(columns, data)
         text = pl.rows_as_text(data, columns)
         QApplication.clipboard().setText(text)
         self.copied_rows = len(rows)
@@ -2817,8 +2949,12 @@ class PeakFittingDialog(QDialog):
         self.update_plot_with_fit_results()
 
     def selected_series_rows(self):
+        """The spectra selected in All in one table (its rows - or its
+        columns when transposed)."""
         if not hasattr(self, 'series_table'):
             return []
+        if self.transposed() and self.series_view() == 'wide':
+            return sorted({i.column() for i in self.series_table.selectedIndexes()})
         return sorted({i.row() for i in self.series_table.selectedIndexes()})
 
     def series_rows(self):
@@ -2836,28 +2972,63 @@ class PeakFittingDialog(QDialog):
         columns, rows = self.series_rows()
         t = self.series_table
         keep = self.selected_spectra() or self.selected_series_rows()
+        transposed = self.transposed() and self.series_view() == 'wide'
         t.blockSignals(True)
         t.clear()
-        t.setColumnCount(len(columns))
-        self._set_headers(t, columns)
-        t.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            for c, v in enumerate(row):
-                item = QTableWidgetItem()
-                if isinstance(v, float) and np.isfinite(v):
-                    item.setData(Qt.DisplayRole, float(f'{v:.6g}'))
-                    item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
-                elif isinstance(v, str):
-                    item.setText(self._short_label(v) if c == 0 else v)
-                    if c == 0:
-                        item.setToolTip(v)
-                t.setItem(r, c, item)
-        t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        t.setSelectionBehavior(QAbstractItemView.SelectColumns if transposed
+                               else QAbstractItemView.SelectRows)
+
+        def cell(v, c):
+            item = QTableWidgetItem()
+            if isinstance(v, float) and np.isfinite(v):
+                item.setData(Qt.DisplayRole, float(f'{v:.6g}'))
+                item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+            elif isinstance(v, str):
+                item.setText(self._short_label(v) if c == 0 else v)
+                if c == 0:
+                    item.setToolTip(v)
+            return item
+        if not transposed:
+            t.setColumnCount(len(columns))
+            self._set_headers(t, columns)
+            t.setRowCount(len(rows))
+            for r, row in enumerate(rows):
+                for c, v in enumerate(row):
+                    t.setItem(r, c, cell(v, c))
+                # the row number: hold the mouse over it - the spectrum's name
+                head = QTableWidgetItem(str(r + 1))
+                head.setToolTip(str(row[0]))
+                t.setVerticalHeaderItem(r, head)
+                t.setRowHidden(r, self._hidden_spectrum(r))
+            for c, name in enumerate(columns):
+                t.setColumnHidden(c, not self._value_shown(name))
+            t.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        else:
+            # one column per spectrum, one row per value
+            t.setColumnCount(len(rows))
+            t.setRowCount(len(columns) - 1)
+            for r, row in enumerate(rows):
+                head = QTableWidgetItem(self._short_label(row[0]))
+                head.setToolTip(str(row[0]))
+                t.setHorizontalHeaderItem(r, head)
+                for c in range(1, len(columns)):
+                    t.setItem(c - 1, r, cell(row[c], c))
+                t.setColumnHidden(r, self._hidden_spectrum(r))
+            for c in range(1, len(columns)):
+                head = QTableWidgetItem(str(columns[c]))
+                head.setToolTip(self._header_tip(columns[c]) or str(columns[c]))
+                t.setVerticalHeaderItem(c - 1, head)
+                t.setRowHidden(c - 1, not self._value_shown(columns[c]))
         t.resizeColumnsToContents()
-        t.setColumnWidth(0, min(t.columnWidth(0), 220))
+        if not transposed:
+            t.setColumnWidth(0, min(t.columnWidth(0), 220))
+        model = t.selectionModel()
         for r in keep:
             if r < len(rows):
-                t.selectRow(r)
+                model.select(t.model().index(0, r) if transposed else t.model().index(r, 0),
+                             QItemSelectionModel.Select | (QItemSelectionModel.Columns
+                                                           if transposed else
+                                                           QItemSelectionModel.Rows))
         t.blockSignals(False)
         text = pfs.summary(self.series_results)
         if self.matched_by_position():
@@ -2866,7 +3037,9 @@ class PeakFittingDialog(QDialog):
                      + ", ".join(f"\u2248{b['center']:.4g}" for b in bands[:8])
                      + (", \u2026" if len(bands) > 8 else "") + ").")
         self.series_info.setText(text + " Shown: the spectra selected in the list beside the "
-                                 "plot (All = the whole series).")
+                                 "plot (All = the whole series)"
+                                 + (", without those not fitted yet."
+                                    if self.hide_empty_check.isChecked() else "."))
         self.series_info.setToolTip(
             "Select spectra in the list to see their results here and their fits in the plot "
             "(several: Overlay, Waterfall or Grid). A bad fit: select that spectrum alone, "
@@ -3113,9 +3286,10 @@ class PeakFittingDialog(QDialog):
                     else "results")
             btn.setText(f"Copy {peak} \u2013 {n} spectr{'um' if n == 1 else 'a'}")
             btn.setToolTip(
-                "Copy the Series results as shown (By peak, By spectrum or All in one table) for "
-                "the spectra selected in the list - those in the plot - ready to paste into "
-                "Excel. A spectrum not fitted yet gives an empty row.")
+                "Copy the Series results as shown (By peak, By spectrum or All in one table)\n"
+                "for the spectra selected in the list - those in the plot - ready to paste\n"
+                "into Excel. A spectrum not fitted yet gives an empty row\n"
+                "(none with Hide: Spectra without values).")
             btn.setEnabled(self.series_results is not None)
             return
         if len(self.series) > 1:
@@ -3349,10 +3523,17 @@ class PeakFittingDialog(QDialog):
             self.copied_what = 'all fitted ones'
         else:
             self.copied_what = 'the selected ones'
+        picked = [r for r in picked if not self._hidden_spectrum(r)]
         self.copied_rows = len(picked)
         self.copied_empty = sum(1 for r in picked
                                 if not ((self.series_results or [])[r] or {}).get('ok'))
-        text = pl.rows_as_text([rows[r] for r in picked], columns)
+        # what is shown: the columns chosen, transposed when shown so
+        keep = [c for c, name in enumerate(columns) if self._value_shown(name)]
+        columns = [columns[c] for c in keep]
+        data = [[rows[r][c] for c in keep] for r in picked]
+        if self.transposed() and self.series_view() == 'wide':
+            columns, data = self._transpose_text(columns, data)
+        text = pl.rows_as_text(data, columns)
         QApplication.clipboard().setText(text)
         return text
 
@@ -3950,6 +4131,10 @@ class PeakFittingDialog(QDialog):
                'follow_fit_before': self.follow_check.isChecked(),
                'series_view': self.series_view(),
                'match_by_position': self.matched_by_position(),
+               'series_transposed': self.transpose_check.isChecked(),
+               'wide_hide_empty': self.hide_empty_check.isChecked(),
+               'wide_columns_off': [k for k, cb in self.hide_value_checks.items()
+                                    if cb.isChecked()],
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
                'together': self.together(),
                'list_selection': self.selected_spectra(),

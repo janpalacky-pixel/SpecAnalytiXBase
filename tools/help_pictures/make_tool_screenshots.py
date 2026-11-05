@@ -850,6 +850,76 @@ def part_peak_fitting_several():
     mc.run_visualization_analysis('Peak Fitting')
 
 
+def part_peak_fitting_tables():
+    """Series results: All in one table with its options (spectra without
+    values hidden, only Position and R\u00b2), transposed; Peak numbers as in
+    each table / matched by position, with one spectrum (raman_04) whose
+    band at 1149 is fitted with two peaks."""
+    F = 'peak_fitting'
+    mc = load([os.path.join(SYN, 'raman_2comp_noisy.xlsx')], select=list(range(10)))
+
+    @on('Peak Fitting')
+    def _(d):
+        from PyQt5.QtCore import QItemSelectionModel
+        d.resize(1900, 1000)
+        settle(0.5)
+
+        def select(rows):
+            lst = d.spectra_list
+            lst.clearSelection()
+            for r in rows:
+                lst.selectionModel().select(lst.model().index(r, 0), QItemSelectionModel.Select)
+            settle(0.4)
+        d.amplitude_combo.setCurrentIndex(1)              # Positive Peaks Only
+        select(list(range(6)))
+        d.auto_detect_peaks()                             # each its own peaks
+        # raman_04: the band at 1149 as two peaks
+        peaks = d.peaks_of(3)
+        k = min(range(len(peaks)), key=lambda i: abs(peaks[i]['center'] - 1149))
+        p = dict(peaks[k])
+        peaks[k] = dict(p, center=p['center'] - 0.5 * p['width'], amplitude=0.6 * p['amplitude'],
+                        width=0.8 * p['width'])
+        peaks.insert(k + 1, dict(p, center=p['center'] + 0.5 * p['width'],
+                                 amplitude=0.6 * p['amplitude'], width=0.8 * p['width'],
+                                 color='#8c564b', id=None, constraints={}))
+        d.fit_selected()
+        settle(0.6)
+        d.left_tabs.setCurrentIndex(1)
+        # By peak, the peak after the split band: by row number vs matched
+        d.set_series_view('peak')
+        d._show_series_peak(k + 1)
+        settle(0.5)
+        shot(d, F, 'series_by_row.png', [d.left_tabs], margin=0)
+        d.match_combo.setCurrentIndex(1)
+        settle(0.4)
+        bands = __import__('src.modules.data_analysis.peak_fitting_series',
+                           fromlist=['x']).match_by_position(d.series_results)[0]
+        extra = next((i for i, b in enumerate(bands) if len(b['peaks']) == 1), k + 1)
+        d._show_series_peak(extra)
+        settle(0.5)
+        shot(d, F, 'series_matched.png', [d.left_tabs], margin=0)
+        d.match_combo.setCurrentIndex(0)
+        # All in one table: all 10 spectra, 6 fitted
+        select(list(range(10)))
+        d.set_series_view('wide')
+        d.hide_empty_check.setChecked(True)
+        for key in ('FWHM', 'height', 'area', '\u00b1'):
+            d.hide_value_checks[key].setChecked(True)
+        settle(0.5)
+        shot(d, F, 'series_wide_options.png', [d.left_tabs], margin=0)
+        select(list(range(4)))
+        d.transpose_check.setChecked(True)
+        settle(0.5)
+        shot(d, F, 'series_transposed.png', [d.left_tabs], margin=0)
+        # as it was (the window remembers these)
+        d.transpose_check.setChecked(False)
+        d.hide_empty_check.setChecked(False)
+        for cb in d.hide_value_checks.values():
+            cb.setChecked(False)
+        d.set_series_view('peak')
+    mc.run_visualization_analysis('Peak Fitting')
+
+
 def part_interactive_subtraction():
     F = 'interactive_subtraction'
     mc = load([RAMAN])
@@ -1472,6 +1542,7 @@ PARTS = {'peak_detection': part_peak_detection, 'user_guide': part_user_guide, '
          'x_axis_alignment': part_x_axis_alignment, 'svd_interpolation': part_svd_interpolation,
          'peak_fitting': part_peak_fitting, 'peak_fitting_own': part_peak_fitting_own,
          'peak_fitting_several': part_peak_fitting_several,
+         'peak_fitting_tables': part_peak_fitting_tables,
          'interactive_subtraction': part_interactive_subtraction}
 
 

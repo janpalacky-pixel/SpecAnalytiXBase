@@ -30,6 +30,10 @@ _SCREENSHOT_FILES = {
     "SERIES_RESULTS": "series_results.png",
     "SERIES_BY_SPECTRUM": "series_by_spectrum.png",
     "SERIES_WIDE": "series_wide.png",
+    "SERIES_WIDE_OPTIONS": "series_wide_options.png",
+    "SERIES_TRANSPOSED": "series_transposed.png",
+    "SERIES_BY_ROW": "series_by_row.png",
+    "SERIES_MATCHED": "series_matched.png",
     "SERIES_WATERFALL": "series_waterfall.png",
     "SERIES_GRID": "series_grid.png",
     "SPECTRA_LIST": "spectra_list.png",
@@ -338,8 +342,24 @@ def get_peak_fitting_help_content():
         <h2 id="window">The window</h2>
         <div class="screenshot">
             <img src="$OVERVIEW" width="${OVERVIEW_W}" height="${OVERVIEW_H}" alt="Peak Fitting window: the peaks table and controls on the left, the list of spectra in the middle, the plot with the fit and residual on the right" />
-            <p class="caption">The Peak Fitting window with a series of ten Raman spectra (raman_2comp_noisy).</p>
+            <p class="caption">The Peak Fitting window with ten Raman spectra (raman_01 &hellip; raman_10 of the test dataset Raman &mdash; 2 components, noisy).</p>
         </div>
+        <p id="examples"><b>About the examples.</b> The pictures and most examples of this help use two test
+        series that come with the program &mdash; open them with <b>Help &rsaquo; Test datasets
+        &rsaquo; Synthetic &rsaquo; Raman</b>:</p>
+        <ul>
+            <li><b>Raman &mdash; 2 components, noisy</b>: thirty spectra named raman_01 &hellip;
+            raman_30, seven bands at about 731, 1083, 1149, 1293, 1495, 1640 and 1742
+            (some pictures use only the first ten);</li>
+            <li><b>Raman &mdash; 2 components, clean</b>: thirty spectra raman_01 &hellip;
+            raman_30, seven bands at about 345, 726, 830, 1140, 1245, 1438 and 1597.</li>
+        </ul>
+        <p>A few examples use seven measured, noisy Raman spectra named 0001 &hellip; 0007
+        (a small band near 428 and a large one near 3200&ndash;3430). They are seven spectra
+        picked from the measured test dataset <b>Help &rsaquo; Test datasets &rsaquo; Real
+        (measured) &rsaquo; 2D maps &rsaquo; Chlorella (WITec 2D map, 25&times;25)</b>; any
+        other noisy spectra of that map work the same way. Other names in the text (e.g. uv_03, raman_12) are just examples of
+        what the window shows.</p>
         <ul>
             <li><b>Left</b> &mdash; the tab <b>Peaks</b> (the peaks of the shown spectrum and the
             buttons to add, copy, remove them) and the tab <b>Series results</b>; below them
@@ -497,7 +517,8 @@ def get_peak_fitting_help_content():
             <img src="$WIDTH_DIALOG" width="${WIDTH_DIALOG_W}" height="${WIDTH_DIALOG_H}" alt="Set Initial Peak Width dialog, opened by right-clicking Auto-Detect Peaks" />
             <p class="caption">Set Initial Peak Width&hellip; (right-click Auto-Detect Peaks).</p>
         </div>
-        <p><b>Add via Click with several spectra shown.</b> Example: six Raman spectra selected,
+        <p><b>Add via Click with several spectra shown.</b> Example: six spectra of the test
+        dataset Raman &mdash; 2 components, noisy, selected,
         only raman_01 has peaks. In Waterfall, three clicks on the bands of raman_04 give
         raman_04 three peaks; raman_04 becomes the shown spectrum (orange frame in the list and
         around its band) and its peaks are drawn dashed. In Grid, a click in the small plot of
@@ -767,7 +788,8 @@ def get_peak_fitting_help_content():
             <tr><td>70</td><td>35</td><td>1.6&times;10<sup>15</sup></td><td>practically
                 certain</td><td>yes</td></tr>
         </table>
-        <p>Examples (the noisy Raman spectrum 0001): the three peaks at 413, 3202 and 3432 have
+        <p>Examples (0001, the first of the seven Chlorella spectra, see <a
+        href="#examples">About the examples</a>): the three peaks at 413, 3202 and 3432 have
         &Delta;BIC 196, 70 and 70 &mdash; all <i>yes</i>; two peaks on the small band
         (359 and 441): &minus;1.5 and 0.2 &mdash; either one alone is enough; the less certain
         one (359) is taken out, and without it the peak at 441 has &Delta;BIC 156:
@@ -776,7 +798,8 @@ def get_peak_fitting_help_content():
         a simple estimate, and it assumes independent noise. That is why the column shows only
         three words (yes, probably, no) and not the odds themselves &mdash; a number such as
         &ldquo;148 times&rdquo; would look more exact than it is.</p>
-        <p><b>Example</b> (the test dataset raman_2comp_noisy, spectrum raman_01): the band at
+        <p><b>Example</b> (the test dataset Raman &mdash; 2 components, noisy, spectrum
+        raman_01): the band at
         about 731 is described by <b>two</b> peaks, 717 and 739 (peaks 1 and 8). The fit is
         good &mdash; the red line goes through the data &mdash; but one peak describes this band
         as well. <b>Needed?</b> says <i>no</i> for peak 1 (the less certain one: height
@@ -1128,7 +1151,8 @@ def get_peak_fitting_help_content():
         </ul>
         <p><b>Why</b>: in a noisy spectrum a small band's position and width are hard to find;
         from all spectra together they are found much better, and each spectrum only has to
-        give its heights. Example: 7 noisy Raman spectra, the small band at about 428: fitted
+        give its heights. Example: the seven Chlorella spectra 0001 &hellip; 0007
+        (see <a href="#examples">About the examples</a>), the small band at about 428: fitted
         one by one its position comes out 413 &plusmn; 6, 421 &plusmn; 6, 436 &plusmn; 6, &hellip;
         (scattered from 413 to 438); together 428.1 &plusmn; 2.2 for all. The &plusmn; is
         smaller because every spectrum adds its own measurement of the same position: with 7
@@ -1162,7 +1186,8 @@ def get_peak_fitting_help_content():
         Peak 1 is <b>the same band</b> in every spectrum. That is why a click on the heading
         Center, Height or Width sorts the peaks of <b>all</b> spectra of the series, whatever
         is selected in the list.</p>
-        <p>Example: in raman_06 the peak at 345 was removed and added again, so it is now the
+        <p>Example (Raman &mdash; 2 components, clean: thirty spectra with bands at about 345,
+        726, 830, &hellip;): in raman_06 the peak at 345 was removed and added again, so it is now the
         last one; in the other spectra it is the first. Peak 1 &ndash; Center in By peak would
         show 345 in every row but raman_06, where it shows 726 &mdash; two different bands in
         one column. A click on <b>Center</b> sorts every spectrum by position: Peak 1 is the
@@ -1177,9 +1202,10 @@ def get_peak_fitting_help_content():
 
         <h4 id="matching">Matching the peaks by position</h4>
         <p>Sorting helps when all spectra have the <b>same number of peaks</b>. When one has a
-        peak more or less, the rows no longer match: the others have one peak at 832, but in
-        one spectrum Auto-Detect found that band as two peaks, at 814 and 842 &mdash; from
-        there on its Peak 3 is 814 while theirs is 832, its Peak 4 is 842 while theirs is 1140,
+        peak more or less, the rows no longer match. Example (Raman &mdash; 2 components,
+        clean): the others have one peak at 830, but in one spectrum Auto-Detect found that band
+        as two peaks, at 814 and 842 &mdash; from
+        there on its Peak 3 is 814 while theirs is 830, its Peak 4 is 842 while theirs is 1140,
         and so on: every later column mixes two bands.</p>
         <p>Series results therefore have a choice, <b>Peak numbers</b> (under Show):</p>
         <ul>
@@ -1187,10 +1213,70 @@ def get_peak_fitting_help_content():
             each spectrum's table, as described above;</li>
             <li><b>matched by position</b> &mdash; the peaks of all spectra are matched by where
             they are, and the same band gets the same number in every spectrum. In the example
-            the peak at 842 joins the band at 832 (the nearer one), and 814 becomes a band of its
+            the peak at 842 joins the band at 830 (the nearer one), and 814 becomes a band of its
             own: Peak 3 &asymp; 814, with a value only in that one spectrum and an empty row
-            (<i>no such peak</i>) in the others; the band at 832 is Peak 4 in all of them.</li>
+            (<i>no such peak</i>) in the others; the band at 830 is Peak 4 in all of them.</li>
         </ul>
+        <svg viewBox="0 0 940 300" xmlns="http://www.w3.org/2000/svg" style="width:100%; max-width:860px; height:auto; display:block; margin:8px auto; font-family:Arial,sans-serif;">
+            <text x="20" y="24" font-size="14" font-weight="bold" fill="#37474F">By row number</text>
+            <text x="20" y="74" font-size="12" fill="#37474F">spectrum A</text>
+            <text x="20" y="134" font-size="12" fill="#37474F">spectrum B</text>
+            <line x1="110" y1="70" x2="450" y2="70" stroke="#B0BEC5"/>
+            <line x1="110" y1="130" x2="450" y2="130" stroke="#B0BEC5"/>
+            <text x="490" y="24" font-size="14" font-weight="bold" fill="#37474F">Matched by position</text>
+            <text x="490" y="74" font-size="12" fill="#37474F">spectrum A</text>
+            <text x="490" y="134" font-size="12" fill="#37474F">spectrum B</text>
+            <line x1="580" y1="70" x2="920" y2="70" stroke="#B0BEC5"/>
+            <line x1="580" y1="130" x2="920" y2="130" stroke="#B0BEC5"/>
+            <line x1="140" y1="70" x2="140" y2="130" stroke="#1E88E5" stroke-width="2.5"/>
+            <line x1="210" y1="70" x2="210" y2="130" stroke="#43A047" stroke-width="2.5"/>
+            <line x1="335" y1="70" x2="275" y2="130" stroke="#FB8C00" stroke-width="2.5" stroke-dasharray="5,3"/>
+            <line x1="420" y1="70" x2="350" y2="130" stroke="#E53935" stroke-width="2.5" stroke-dasharray="5,3"/>
+            <circle cx="140" cy="70" r="6" fill="#1E88E5"/><text x="140" y="59" text-anchor="middle" font-size="11" fill="#37474F">345</text>
+            <circle cx="210" cy="70" r="6" fill="#43A047"/><text x="210" y="59" text-anchor="middle" font-size="11" fill="#37474F">726</text>
+            <circle cx="335" cy="70" r="6" fill="#FB8C00"/><text x="335" y="59" text-anchor="middle" font-size="11" fill="#37474F">830</text>
+            <circle cx="420" cy="70" r="6" fill="#E53935"/><text x="420" y="59" text-anchor="middle" font-size="11" fill="#37474F">1140</text>
+            <circle cx="140" cy="130" r="6" fill="#1E88E5"/><text x="140" y="150" text-anchor="middle" font-size="11" fill="#37474F">345</text>
+            <circle cx="210" cy="130" r="6" fill="#43A047"/><text x="210" y="150" text-anchor="middle" font-size="11" fill="#37474F">726</text>
+            <circle cx="275" cy="130" r="6" fill="#FB8C00"/><text x="275" y="150" text-anchor="middle" font-size="11" fill="#37474F">814</text>
+            <circle cx="350" cy="130" r="6" fill="#E53935"/><text x="350" y="150" text-anchor="middle" font-size="11" fill="#37474F">842</text>
+            <circle cx="420" cy="130" r="6" fill="#8E24AA"/><text x="420" y="150" text-anchor="middle" font-size="11" fill="#37474F">1140</text>
+            <text x="140" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E88E5">Peak 1</text>
+            <text x="210" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#43A047">Peak 2</text>
+            <text x="275" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#FB8C00">Peak 3</text>
+            <text x="350" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#E53935">Peak 4</text>
+            <text x="420" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#8E24AA">Peak 5</text>
+            <rect x="588" y="40" width="44" height="120" rx="6" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1" stroke-dasharray="4,3"/>
+            <rect x="658" y="40" width="44" height="120" rx="6" fill="#E8F5E9" stroke="#43A047" stroke-width="1" stroke-dasharray="4,3"/>
+            <rect x="723" y="40" width="44" height="120" rx="6" fill="#FFF3E0" stroke="#FB8C00" stroke-width="1" stroke-dasharray="4,3"/>
+            <rect x="782" y="40" width="60" height="120" rx="6" fill="#FFEBEE" stroke="#E53935" stroke-width="1" stroke-dasharray="4,3"/>
+            <rect x="868" y="40" width="44" height="120" rx="6" fill="#F3E5F5" stroke="#8E24AA" stroke-width="1" stroke-dasharray="4,3"/>
+            <circle cx="610" cy="70" r="6" fill="#1E88E5"/><text x="610" y="59" text-anchor="middle" font-size="11" fill="#37474F">345</text>
+            <circle cx="680" cy="70" r="6" fill="#43A047"/><text x="680" y="59" text-anchor="middle" font-size="11" fill="#37474F">726</text>
+            <circle cx="805" cy="70" r="6" fill="#E53935"/><text x="805" y="59" text-anchor="middle" font-size="11" fill="#37474F">830</text>
+            <circle cx="890" cy="70" r="6" fill="#8E24AA"/><text x="890" y="59" text-anchor="middle" font-size="11" fill="#37474F">1140</text>
+            <text x="745" y="74" text-anchor="middle" font-size="10" font-style="italic" fill="#8D6E63">none</text>
+            <circle cx="610" cy="130" r="6" fill="#1E88E5"/><text x="610" y="150" text-anchor="middle" font-size="11" fill="#37474F">345</text>
+            <circle cx="680" cy="130" r="6" fill="#43A047"/><text x="680" y="150" text-anchor="middle" font-size="11" fill="#37474F">726</text>
+            <circle cx="745" cy="130" r="6" fill="#FB8C00"/><text x="745" y="150" text-anchor="middle" font-size="11" fill="#37474F">814</text>
+            <circle cx="820" cy="130" r="6" fill="#E53935"/><text x="820" y="150" text-anchor="middle" font-size="11" fill="#37474F">842</text>
+            <circle cx="890" cy="130" r="6" fill="#8E24AA"/><text x="890" y="150" text-anchor="middle" font-size="11" fill="#37474F">1140</text>
+            <text x="610" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E88E5">Peak 1</text>
+            <text x="680" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#43A047">Peak 2</text>
+            <text x="745" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#FB8C00">Peak 3</text>
+            <text x="812" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#E53935">Peak 4</text>
+            <text x="890" y="185" text-anchor="middle" font-size="12" font-weight="bold" fill="#8E24AA">Peak 5</text>
+            <text x="20" y="215" font-size="12" fill="#37474F">Lines join the peaks with the same number:</text>
+            <text x="20" y="233" font-size="12" fill="#C62828">Peak 3 = 830 in A, but 814 in B;</text>
+            <text x="20" y="251" font-size="12" fill="#C62828">Peak 4 = 1140 in A, but 842 in B;</text>
+            <text x="20" y="269" font-size="12" fill="#C62828">Peak 5 only in B (its 1140).</text>
+            <text x="20" y="287" font-size="12" fill="#C62828">From Peak 3 on, each column mixes two bands.</text>
+            <text x="490" y="215" font-size="12" fill="#37474F">A shaded band = one Peak number in both spectra:</text>
+            <text x="490" y="233" font-size="12" fill="#2E7D32">Peak 3 = 814, only in B (A: <tspan font-style="italic">no such peak</tspan>);</text>
+            <text x="490" y="251" font-size="12" fill="#2E7D32">Peak 4 = the band at 830: A's 830 and B's 842;</text>
+            <text x="490" y="269" font-size="12" fill="#2E7D32">Peak 5 = 1140 in both.</text>
+            <text x="490" y="287" font-size="12" fill="#78909C">(schematic, not to scale)</text>
+                    </svg>
         <p>How the matching works: the positions of all fitted peaks are put in order; peaks
         closer to each other than half their FWHM belong to one band, so a band that moves a
         little along the series stays one band. Where most spectra have two peaks close
@@ -1199,7 +1285,16 @@ def get_peak_fitting_help_content():
         &ldquo;9 bands (&asymp;345, &asymp;726, &asymp;814, &hellip;)&rdquo;).</p>
         <p>Only how the results are shown changes &mdash; the fits stay as they are. Export,
         Copy, Open in the Data table and removing peaks (Delete) use the same numbering. The
-        orange <b>?</b> next to the choice explains it in short. To avoid the problem in the
+        orange <b>?</b> next to the choice explains it in short.</p>
+        <div class="screenshot">
+            <img src="$SERIES_BY_ROW" width="${SERIES_BY_ROW_W}" height="${SERIES_BY_ROW_H}" alt="By peak with Peak numbers as in each table: one spectrum's row holds another band" />
+            <p class="caption">As in each table of peaks: in raman_04 one band was fitted with two peaks &mdash; its row of this peak holds another band than the others.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$SERIES_MATCHED" width="${SERIES_MATCHED_W}" height="${SERIES_MATCHED_H}" alt="By peak with Peak numbers matched by position: the extra peak is a band of its own, the other rows say no such peak" />
+            <p class="caption">Matched by position: the extra peak of raman_04 is a band of its own; the other spectra have <i>no such peak</i> there.</p>
+        </div>
+        <p>To avoid the problem in the
         first place, give all spectra the same peaks (Copy peaks &rsaquo; Paste) or remove
         the extra one &mdash; Needed? usually says <i>no</i> for one of two peaks on one
         band.</p>
@@ -1232,10 +1327,50 @@ def get_peak_fitting_help_content():
         <h4>All in one table</h4>
         <p>One row per spectrum with position, FWHM, height and area of every peak side by side
         &mdash; as Export and the Data table get them. Wide for many peaks (scroll to the right).
-        Selecting rows here selects the same spectra in the list.</p>
+        Selecting rows here selects the same spectra in the list. Unlike By peak and By
+        spectrum, it lists <b>all</b> spectra of the series; the selected ones are marked.</p>
         <div class="screenshot">
             <img src="$SERIES_WIDE" width="${SERIES_WIDE_W}" height="${SERIES_WIDE_H}" alt="The tab Series results shown All in one table: one row per spectrum, the peaks side by side" />
             <p class="caption">All in one table: a row per spectrum, all peaks side by side.</p>
+        </div>
+        <p><b>The row numbers</b> on the left: hold the mouse over one to see the name of its
+        spectrum &mdash; useful when the column Spectrum is scrolled out of view. The number is
+        the spectrum's place in the series, so it stays the same when rows are hidden (1, 2, 3,
+        7, &hellip;: spectra 4 to 6 hidden).</p>
+        <h4 id="hide-empty">Hide: spectra without values, values you do not need</h4>
+        <p>The row <b>Hide:</b> (under Peak numbers) works in all three views &mdash; By peak,
+        By spectrum and All in one table. Tick what you do not want to see:</p>
+        <ul>
+            <li><b>Spectra without values</b> &mdash; the spectra not fitted yet (or whose fit
+            failed) are left out, so that the fitted ones are together. Example: All selected
+            (30 spectra), 10 of them fitted &mdash; By peak shows 10 rows instead of 30, By
+            spectrum only the 10 fitted spectra with their peaks (no lines "not fitted yet").
+            The line at the top then ends with "without those not fitted yet".</li>
+            <li><b>Position, FWHM, Height, Area, &plusmn;, R&sup2;</b> &mdash; these values are
+            hidden (&plusmn;: all uncertainties). By peak and By spectrum: the columns Center,
+            FWHM, Height, Area, the &plusmn; columns, R&sup2;; All in one table: Peak 1 position,
+            Peak 1 FWHM, &hellip; Example: All in one table with FWHM, Height, Area and &plusmn;
+            ticked &mdash; with 7 peaks 9 columns (Spectrum, 7 positions, R&sup2;) instead of
+            58. Transposed, the same values are hidden as rows.</li>
+        </ul>
+        <p>What the table shows is what <b>Copy &hellip;</b> (next to Fit Peaks) copies: without
+        the hidden spectra and values (the button says how many spectra).
+        <b>Export&hellip;</b> and <b>Open in the Data table</b> always get the whole table.</p>
+        <div class="screenshot">
+            <img src="$SERIES_WIDE_OPTIONS" width="${SERIES_WIDE_OPTIONS_W}" height="${SERIES_WIDE_OPTIONS_H}" alt="All in one table with Hide: spectra without values, FWHM, Height, Area and plus-minus ticked: only the positions and R squared shown" />
+            <p class="caption">All in one table, Hide: spectra without values, FWHM, Height, Area
+            and &plusmn; &mdash; only the positions and R&sup2; are left.</p>
+        </div>
+        <h4>Transposed</h4>
+        <p><b>Transposed</b> (next to Show) swaps rows and columns: one <b>column per
+        spectrum</b>, one row per value (Peak 1 position, Peak 1 FWHM, &hellip;). Handy to
+        compare a few spectra side by side, or to paste into Excel in this orientation (Copy
+        copies it so). It works for By peak and All in one table; By spectrum is a list of
+        each spectrum's peaks and stays as it is. In a transposed table, select a column to
+        select its spectrum.</p>
+        <div class="screenshot">
+            <img src="$SERIES_TRANSPOSED" width="${SERIES_TRANSPOSED_W}" height="${SERIES_TRANSPOSED_H}" alt="All in one table transposed: one column per spectrum, one row per value" />
+            <p class="caption">Transposed: a column per spectrum, a row per value.</p>
         </div>
         <p>A spectrum <i>not fitted yet</i> or whose fit failed (with the previous-result start,
         the next one then starts from the last good fit) is shown as such, without values.</p>
