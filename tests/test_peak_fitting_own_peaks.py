@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtCore import QItemSelectionModel
+from PyQt5.QtCore import QItemSelectionModel, Qt
 from PyQt5.QtWidgets import QApplication
 
 from src.modules.data_analysis import peak_fitting_series as pfs
@@ -371,3 +371,36 @@ def test_a_link_copied_to_other_spectra_works_in_each_of_them():
         assert e1 is not None and e1 == pytest.approx(e2)
     dlg.show_series_spectrum(2)
     assert dlg.peaks_table.item(1, 4).data(Qt.UserRole + 2) == '=P1'   # [=P1] in r3's table
+
+
+def test_a_click_on_a_heading_sorts_the_peaks_and_keeps_the_fit():
+    """Center heading: the peaks (and their fitted values) sorted by the
+    position, again: the other way round - of all spectra, also those not
+    selected. The fit stays a fit (✓, the same ±)."""
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1])
+    dlg.auto_detect_peaks()
+    dlg.fit_selected()
+    _select(dlg, [0])                                              # r2 not selected
+    dlg._sort_by_column(2)                                         # ascending (as found)
+    dlg._sort_by_column(2)                                         # descending
+    for k in (0, 1):
+        res = dlg.series_results[k]
+        centres = [p['parameters']['center'] for p in res['peaks']]
+        assert centres == sorted(centres, reverse=True) and res['ok'] and not res.get('manual')
+        assert [p['center'] for p in dlg.peaks_of(k)] == pytest.approx(centres, abs=2)
+    _select(dlg, [0])
+    assert float(dlg.peaks_table.item(0, 2).text()) == pytest.approx(140, abs=1)
+    assert '±' in dlg.peaks_table.item(0, 2).data(Qt.UserRole + 1)      # still fitted
+    dlg._sort_by_column(3)                                         # by height, ascending
+    heights = [p['parameters']['height'] for p in dlg.series_results[0]['peaks']]
+    assert heights == sorted(heights)
+
+
+def test_a_new_peak_gets_a_colour_no_other_peak_has():
+    dlg = _window(_mixed())
+    dlg.auto_detect_peaks()
+    first = dlg.peaks[0]['color']
+    dlg.peaks_table.selectRow(0)
+    dlg.remove_peak()
+    assert dlg._free_color(dlg.peaks) == first                     # the freed colour again

@@ -14,7 +14,10 @@ shown one (Overlay), or to the one clicked on (Waterfall: its band; Grid: its sm
 plot's toolbar: that switches Add via Click off (tick it again to add more peaks).</p>
 <p>The table: <b>Model</b> (the peak shape), <b>Center</b> (position of the top), <b>Height</b>
 (of the top), <b>Width</b> and <b>Extra</b>. Every value can be edited (double-click). Drag the
-line between two headings to make a column wider.
+line between two headings to make a column wider. <b>Click the heading</b> Center, Height or
+Width to sort the peaks by it (again: the other way round) - of all spectra, so that Peak 1 is
+the same band in every spectrum of Series results; only the order changes, a fit stays a
+fit.
 <b>Width</b> is &sigma; for Gaussian and Voigt, &gamma; for Lorentzian, the FWHM for
 Pseudo-Voigt; <b>Extra</b> is &gamma; for Voigt, &eta; (0&ndash;1) for Pseudo-Voigt (shown only
 when a peak has it). Hold the mouse over a column heading to see this.</p>
@@ -145,6 +148,9 @@ Peaks - only it changes. A value changed by hand after a fit stays here, marked 
 by hand</b> (no &plusmn;, the R&sup2; of your values) until the next Fit Peaks.</p>
 <p><b>Delete</b> (or right-click): By peak - removes the shown peak from the selected rows'
 spectra; By spectrum - removes the selected peaks. The tables of peaks change too.</p>
+<p><b>Peak 1, Peak 2, &hellip;</b> are the rows of each spectrum's table of peaks. If Peak 1 is
+not the same band in every spectrum (e.g. a peak added later comes last), click the heading
+<b>Center</b> in the tab Peaks: the peaks of all spectra are sorted by position.</p>
 <p><b>Copy &hellip;</b> next to Fit Peaks copies what is shown; <b>Export…</b> for Excel;
 <b>Open in the Data table</b> to plot e.g. a position against temperature.</p>
 """),

@@ -416,6 +416,13 @@ def get_peak_fitting_help_content():
             Gaussian and Lorentzian have none ("&mdash;").</li>
             <li><b>Which peak is which</b>: select a row (or several) in the table &mdash; that
             peak is drawn thick and filled in the plot.</li>
+            <li><b>Sort the peaks</b>: click the heading <b>Center</b>, <b>Height</b> or
+            <b>Width</b> &mdash; the peaks are sorted by it, from the smallest; click it again:
+            from the largest. Example: a peak added at 345 after the others comes last; a click
+            on Center puts it first. Only the order changes: the values stay, and a fit stays a
+            fit (&#10003;, the same &plusmn;, Needed?). See <a href="#sorting">Sorting the peaks
+            of a series</a> for why all spectra are sorted at once. A new peak gets a colour no
+            other peak of the spectrum has.</li>
             <li><b>Remove</b>: select rows and press Delete, or <b>Remove Selected Peak(s)</b>;
             <b>Clear All Peaks</b> empties the table.</li>
         </ul>
@@ -1146,6 +1153,26 @@ def get_peak_fitting_help_content():
         temperature.</p>
         <p>Use it only for spectra of one kind with the same bands. Spectra that differ (new
         bands appear, a band moves far): Each on its own, or Together: the same widths.</p>
+
+        <h3 id="sorting">Sorting the peaks of a series</h3>
+        <p>Each spectrum has its own list of peaks, and <b>Peak 1</b>, <b>Peak 2</b>, &hellip;
+        in Series results are simply the first, second, &hellip; row of each spectrum's list.
+        By peak shows Peak 1 of every spectrum in one table, a row each &mdash; useful only when
+        Peak 1 is <b>the same band</b> in every spectrum. That is why a click on the heading
+        Center, Height or Width sorts the peaks of <b>all</b> spectra of the series, whatever
+        is selected in the list.</p>
+        <p>Example: in raman_06 the peak at 345 was removed and added again, so it is now the
+        last one; in the other spectra it is the first. Peak 1 &ndash; Center in By peak would
+        show 345 in every row but raman_06, where it shows 726 &mdash; two different bands in
+        one column. A click on <b>Center</b> sorts every spectrum by position: Peak 1 is the
+        band at 345 everywhere again.</p>
+        <p>Sorting by <b>Center</b> helps for a series whose bands move only a little from
+        spectrum to spectrum (a temperature or concentration series): the same band keeps the
+        same number. When spectra have different bands (e.g. Raman and CD spectra together),
+        no order can make Peak 1 the same band in all of them &mdash; compare such spectra By
+        spectrum instead. Sorting by Height or Width can change the order from spectrum to
+        spectrum when two peaks are almost equally high or wide; for a series, sort by
+        Center.</p>
 
         <h3 id="series-results">Series results</h3>
         <p>The tab <b>Series results</b> next to the tab Peaks shows the results of <b>the spectra

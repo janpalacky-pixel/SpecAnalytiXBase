@@ -255,6 +255,10 @@ class PeakFittingDialog(QDialog):
                              "yes - without the peak the fit is clearly worse;\n"
                              "probably - without it the fit is somewhat worse;\n"
                              "no - without it the fit is just as good: the peak is not needed.")):
+            if col in self.SORT_KEYS:
+                tip += ("\nClick the heading: the peaks sorted by it, from the smallest\n"
+                        "(again: from the largest) - of all spectra, so that Peak 1 is\n"
+                        "the same band in every spectrum. Only the order changes.")
             self.peaks_table.horizontalHeaderItem(col).setToolTip(tip)
         # the value columns: their widths can be moved with the mouse (drag the
         # line between two headings; double-click it: as wide as the content);
@@ -265,6 +269,14 @@ class PeakFittingDialog(QDialog):
         self._columns_moved = False
         self._setting_columns = False
         header.sectionResized.connect(self._column_moved)
+        # a click on Center, Height or Width sorts the peaks by it
+        header.setSectionsClickable(True)
+        try:
+            header.sectionPressed.disconnect()          # (not: select the column)
+        except TypeError:
+            pass
+        header.sectionClicked.connect(self._sort_by_column)
+        self._sort_state = None                         # (column, ascending)
         self.peaks_table.viewport().installEventFilter(self)
         self.peaks_table.setItemDelegate(_ErrorDelegate(self.peaks_table))
         # Make the first column (color swatch) narrow - the values (with
@@ -1025,8 +1037,8 @@ class PeakFittingDialog(QDialog):
             if estimate:
                 width = estimate
         
-        # Assign the next color in the cycle
-        new_color = self.colors[self.peak_color_index % len(self.colors)]
+        # a colour no other peak of this spectrum has
+        new_color = self._free_color(self.peaks)
         self.peak_color_index += 1
         
         # Add the new peak to our list of initial guesses
@@ -1093,6 +1105,84 @@ class PeakFittingDialog(QDialog):
                 self.ax_main.set_ylim(*(getattr(self, '_y_range', None) or self._y_limits()))
             self.canvas.draw()
 
+    SORT_KEYS = {2: 'center', 3: 'height', 4: 'width'}
+
+    def _sort_by_column(self, col):
+        """A click on the heading Center, Height or Width: the peaks sorted by
+        it, ascending; a second click on the same heading: descending."""
+        if col not in self.SORT_KEYS:
+            return
+        ascending = not (self._sort_state == (col, True))
+        self._sort_state = (col, ascending)
+        self.sort_peaks(self.SORT_KEYS[col], ascending)
+
+    def sort_peaks(self, key, ascending=True, rows=None):
+        """Sort the peaks of every spectrum (default: all of the series,
+        whatever is selected - only the order changes, so that Peak 1 is
+        the same band in all spectra of Series results) by 'center',
+        'height' or 'width' (the fitted values when fitted). A fit stays a
+        fit: its results are sorted the same way."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        for i in range(len(self.peaks)):
+            self.update_peak_from_table(i)
+        if rows is None:
+            rows = list(range(len(self.series))) if len(self.series) > 1 \
+                else [self.current_index]
+        start_key = {'center': 'center', 'height': 'amplitude', 'width': 'width'}[key]
+        for k in rows:
+            if k == self.current_index:
+                peaks = self.peaks
+            else:
+                peaks = (self.own_peaks[k] if self.own_peaks is not None else None) or []
+            res = self.series_results[k] if self.series_results else None
+            fitted = (res['peaks'] if res and res.get('ok') and res.get('peaks')
+                      and len(res['peaks']) == len(peaks) else None)
+            if k == self.current_index and fitted is None and self.fit_results \
+                    and len(self.fit_results) == len(peaks):
+                fitted = self.fit_results
+            if len(peaks) < 2:
+                continue
+
+            def value(i):
+                if fitted is not None:
+                    par = fitted[i]['parameters']
+                    name = pfs.WIDTH_KEY.get(fitted[i]['model'], 'sigma') if key == 'width' \
+                        else key
+                    return float(par.get(name, 0.0))
+                return float(peaks[i].get(start_key) or 0.0)
+            order = sorted(range(len(peaks)), key=value, reverse=not ascending)
+            if order == list(range(len(peaks))):
+                continue
+            peaks[:] = [peaks[i] for i in order]
+            if res and res.get('ok') and res.get('peaks') and len(res['peaks']) == len(order):
+                res['peaks'] = [res['peaks'][i] for i in order]
+            if k == self.current_index and self.fit_results \
+                    and len(self.fit_results) == len(order):
+                self.fit_results = [self.fit_results[i] for i in order]
+        self.update_peaks_table(from_fit_results=bool(self.fit_results))
+        self._refresh_series_table()
+        if self.fit_results and self.view_mode == 'one':
+            self.update_plot_with_fit_results()
+        else:
+            self.update_plot()
+
+    def _free_color(self, peaks):
+        """The first colour of the cycle that none of `peaks` has (a peak added
+        after one was removed does not repeat a colour); all used: the next."""
+        used = set()
+        for p in peaks:
+            try:
+                used.add(_mpl_to_hex(p.get('color')).lower())
+            except (ValueError, TypeError):
+                pass
+        for c in self.colors:
+            try:
+                if _mpl_to_hex(c).lower() not in used:
+                    return c
+            except (ValueError, TypeError):
+                continue
+        return self.colors[len(peaks) % len(self.colors)]
+
     def _detect_into(self, peaks, x, y):
         """Add the peaks found in (x, y) to the list `peaks` (not those already
         there: within half a width). Returns how many were added."""
@@ -1105,7 +1195,7 @@ class PeakFittingDialog(QDialog):
             tolerance = abs(peak['width'] * 0.5)
             if any(abs(peak['center'] - c) < tolerance for c in centres):
                 continue
-            peak['color'] = self.colors[len(peaks) % len(self.colors)]
+            peak['color'] = self._free_color(peaks)
             peaks.append(peak)
             centres.append(peak['center'])
             added += 1
