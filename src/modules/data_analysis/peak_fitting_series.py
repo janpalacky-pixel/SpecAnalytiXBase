@@ -296,7 +296,7 @@ def peaks_long(results, rows, peak=None, sigmas=1):
         peaks = (r.get('peaks') or []) if r.get('ok') else []
         numbers = range(len(peaks)) if peak is None else [peak]
         rows_k = [[r['label'], j + 1] + peak_values(peaks[j], sigmas) + [r2]
-                  for j in numbers if j < len(peaks)]
+                  for j in numbers if j < len(peaks) and peaks[j] is not None]
         if not rows_k:
             rows_k = [[r['label'], None if peak is None else peak + 1, status(r) or 'no such peak']
                       + [None] * (len(PEAK_COLUMNS) - 1) + [r2]]
@@ -332,6 +332,110 @@ def model_curves(x, fitted, manager=None, background=None):
 # fit can do.
 POOR_R2 = 0.9
 POOR_NOISE = 1.3
+
+
+def _best_assignment(centres, refs):
+    """Peaks (centres, ascending) to bands (refs, ascending), in order, each
+    band at most one peak: {peak index: band index} with the smallest total
+    distance. More peaks than bands: the farthest ones get none."""
+    import itertools
+    n, m = len(centres), len(refs)
+    best, best_cost = {}, None
+    if n <= m:
+        for bands in itertools.combinations(range(m), n):
+            cost = sum(abs(centres[i] - refs[b]) for i, b in enumerate(bands))
+            if best_cost is None or cost < best_cost:
+                best, best_cost = {i: b for i, b in enumerate(bands)}, cost
+    else:
+        for keep in itertools.combinations(range(n), m):
+            cost = sum(abs(centres[i] - refs[b]) for b, i in enumerate(keep))
+            if best_cost is None or cost < best_cost:
+                best, best_cost = {i: b for b, i in enumerate(keep)}, cost
+    return best
+
+
+def match_by_position(results):
+    """The peaks of the fitted spectra matched by position across the
+    series, instead of by their row number: (bands, aligned results).
+
+    bands: one per band of the series, ascending by position, each
+    {'center': median position, 'peaks': {spectrum: its peak index}};
+    aligned results: copies of `results` whose 'peaks' lists have one entry
+    per band - the spectrum's peak in that band (with '_index', its row in
+    the spectrum's own list) or None.
+
+    How: the positions of all fitted peaks, sorted, are grouped wherever
+    neighbouring ones are closer than half their FWHM (so a band that moves
+    a little along the series stays one group). A group in which most
+    spectra have m peaks (e.g. a doublet: 2) gives m bands - their
+    positions the medians of the spectra with m peaks; every spectrum's
+    peaks of the group go to these bands in order of position, the nearest
+    ones. Peaks left over (a spectrum with a band split into two, e.g. 814
+    and 842 where the others have one at 832) get bands of their own,
+    shown as extra bands next to it."""
+    from collections import Counter
+    items = []
+    for k, r in enumerate(results):
+        if r.get('ok') and r.get('peaks'):
+            for j, p in enumerate(r['peaks']):
+                if p is None:
+                    continue
+                par = p.get('parameters') or {}
+                try:
+                    c = float(par['center'])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                w = abs(float(par.get('fwhm') or 0.0))
+                items.append((c, w, k, j))
+    if not items:
+        return [], [dict(r) for r in results]
+    items.sort()
+
+    def close(a, b):
+        widths = [w for w in (a[1], b[1]) if w > 0]
+        return b[0] - a[0] <= 0.5 * min(widths) if widths else b[0] == a[0]
+    groups = [[items[0]]]
+    for a, b in zip(items, items[1:]):
+        if close(a, b):
+            groups[-1].append(b)
+        else:
+            groups.append([b])
+    bands = []
+    for group in groups:
+        by_k = {}
+        for it in group:
+            by_k.setdefault(it[2], []).append(it)
+        counts = Counter(len(v) for v in by_k.values())
+        m = max(counts, key=lambda n: (counts[n], -n))       # most common; a tie: fewer
+        refs = [float(np.median([v[i][0] for v in by_k.values() if len(v) == m]))
+                for i in range(m)]
+        main = [{} for _ in range(m)]
+        extras = []
+        for k, v in by_k.items():
+            pick = _best_assignment([it[0] for it in v], refs)
+            for i, it in enumerate(v):
+                if i in pick:
+                    main[pick[i]][k] = it[3]
+                else:
+                    extras.append(it)
+        found = [{'center': refs[b], 'peaks': main[b]} for b in range(m) if main[b]]
+        # the left-over peaks: bands of their own (one peak per spectrum each)
+        for it in sorted(extras):
+            for band in found[m:] if len(found) > m else []:
+                if it[2] not in band['peaks'] and abs(it[0] - band['center']) <= 0.5 * max(it[1], 1e-12):
+                    band['peaks'][it[2]] = it[3]
+                    break
+            else:
+                found.append({'center': it[0], 'peaks': {it[2]: it[3]}})
+        bands += sorted(found, key=lambda b: b['center'])
+    aligned = []
+    for k, r in enumerate(results):
+        a = dict(r)
+        if r.get('ok') and r.get('peaks'):
+            a['peaks'] = [(dict(r['peaks'][b['peaks'][k]], _index=b['peaks'][k])
+                           if k in b['peaks'] else None) for b in bands]
+        aligned.append(a)
+    return bands, aligned
 
 
 def residual_to_noise(result, x, y, manager=None):

@@ -422,7 +422,8 @@ def get_peak_fitting_help_content():
             on Center puts it first. Only the order changes: the values stay, and a fit stays a
             fit (&#10003;, the same &plusmn;, Needed?). See <a href="#sorting">Sorting the peaks
             of a series</a> for why all spectra are sorted at once. A new peak gets a colour no
-            other peak of the spectrum has.</li>
+            other peak of the spectrum has. A peak added (Auto-Detect, Add via Click, Paste)
+            is put in its place by position, not last.</li>
             <li><b>Remove</b>: select rows and press Delete, or <b>Remove Selected Peak(s)</b>;
             <b>Clear All Peaks</b> empties the table.</li>
         </ul>
@@ -1173,6 +1174,35 @@ def get_peak_fitting_help_content():
         spectrum instead. Sorting by Height or Width can change the order from spectrum to
         spectrum when two peaks are almost equally high or wide; for a series, sort by
         Center.</p>
+
+        <h4 id="matching">Matching the peaks by position</h4>
+        <p>Sorting helps when all spectra have the <b>same number of peaks</b>. When one has a
+        peak more or less, the rows no longer match: the others have one peak at 832, but in
+        one spectrum Auto-Detect found that band as two peaks, at 814 and 842 &mdash; from
+        there on its Peak 3 is 814 while theirs is 832, its Peak 4 is 842 while theirs is 1140,
+        and so on: every later column mixes two bands.</p>
+        <p>Series results therefore have a choice, <b>Peak numbers</b> (under Show):</p>
+        <ul>
+            <li><b>as in each table of peaks</b> (default) &mdash; Peak 1 is the first row of
+            each spectrum's table, as described above;</li>
+            <li><b>matched by position</b> &mdash; the peaks of all spectra are matched by where
+            they are, and the same band gets the same number in every spectrum. In the example
+            the peak at 842 joins the band at 832 (the nearer one), and 814 becomes a band of its
+            own: Peak 3 &asymp; 814, with a value only in that one spectrum and an empty row
+            (<i>no such peak</i>) in the others; the band at 832 is Peak 4 in all of them.</li>
+        </ul>
+        <p>How the matching works: the positions of all fitted peaks are put in order; peaks
+        closer to each other than half their FWHM belong to one band, so a band that moves a
+        little along the series stays one band. Where most spectra have two peaks close
+        together (a doublet), these give two bands. A peak left over in a spectrum (like 814)
+        gets a band of its own. The summary line says how many bands there are and where (e.g.
+        &ldquo;9 bands (&asymp;345, &asymp;726, &asymp;814, &hellip;)&rdquo;).</p>
+        <p>Only how the results are shown changes &mdash; the fits stay as they are. Export,
+        Copy, Open in the Data table and removing peaks (Delete) use the same numbering. The
+        orange <b>?</b> next to the choice explains it in short. To avoid the problem in the
+        first place, give all spectra the same peaks (Copy peaks &rsaquo; Paste) or remove
+        the extra one &mdash; Needed? usually says <i>no</i> for one of two peaks on one
+        band.</p>
 
         <h3 id="series-results">Series results</h3>
         <p>The tab <b>Series results</b> next to the tab Peaks shows the results of <b>the spectra

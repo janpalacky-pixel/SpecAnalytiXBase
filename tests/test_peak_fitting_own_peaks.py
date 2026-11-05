@@ -404,3 +404,43 @@ def test_a_new_peak_gets_a_colour_no_other_peak_has():
     dlg.peaks_table.selectRow(0)
     dlg.remove_peak()
     assert dlg._free_color(dlg.peaks) == first                     # the freed colour again
+
+
+def test_series_results_can_match_the_peaks_by_position():
+    """r2 has an extra peak (a split band): by row number its Peak 2 is the
+    extra one; matched by position the band at 140 is Peak 2... in all.
+    Delete in By peak removes the right peak of each spectrum."""
+    dlg = _window(_mixed())
+    _select(dlg, [0, 1])
+    dlg.auto_detect_peaks()
+    extra = dict(dlg.peaks_of(1)[0], center=100.0, amplitude=0.05, width=3.0, id=None,
+                 constraints={})
+    dlg.own_peaks[1].insert(1, extra)                              # 60, 100, 140
+    dlg.fit_selected()
+    _select(dlg, [0, 1])
+    assert dlg.match_combo.currentIndex() == 0                     # as in each table
+    def centres(j):
+        return [r[3] for r in pfs.peaks_long(dlg._view_results(), [0, 1], peak=j)[1]]
+    c = centres(1)                                                 # Peak 2 by row number
+    assert c[0] == pytest.approx(140, abs=2) and c[1] != pytest.approx(140, abs=2)
+    dlg.match_combo.setCurrentIndex(1)                             # matched by position
+    assert 'Peaks matched by position' in dlg.series_info.text()
+    n = dlg._series_n_peaks()
+    dlg._show_series_peak(n - 1)                                   # the last band: 140
+    c = centres(n - 1)
+    assert c[0] == pytest.approx(140, abs=2) and c[1] == pytest.approx(140, abs=2)
+    assert dlg.get_results()['match_by_position'] is True
+    t = dlg.by_peak_table
+    t.selectRow(1)                                                 # r2's band at 140
+    assert dlg._series_peaks_of(t) == [(1, 2)]                     # its 3rd row
+
+
+def test_a_peak_added_is_put_in_its_place_by_position():
+    dlg = _window(_mixed())
+    dlg.auto_detect_peaks()                                        # 60, 140
+
+    class Click:
+        button, xdata, ydata = 1, 100.0, 0.1
+    Click.inaxes = dlg.ax_main
+    dlg.on_canvas_click(Click())
+    assert [round(p['center']) for p in dlg.peaks] == [60, 100, 140]

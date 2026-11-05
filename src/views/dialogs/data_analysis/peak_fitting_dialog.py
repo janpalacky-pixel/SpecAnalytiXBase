@@ -903,6 +903,8 @@ class PeakFittingDialog(QDialog):
         if k >= 0:
             self.together_combo.setCurrentIndex(k)
         self.set_series_view(s.get('series_view', 'peak'))
+        if hasattr(self, 'match_combo'):
+            self.match_combo.setCurrentIndex(1 if s.get('match_by_position') else 0)
         own_c = s.get('own_constraints')
         if own_c and len(own_c) == len(self.series):
             self.own_constraints = [c if c in self.CONSTRAINTS else None for c in own_c]
@@ -1043,6 +1045,7 @@ class PeakFittingDialog(QDialog):
         
         # Add the new peak to our list of initial guesses
         self.peaks.append({'model': 'Gaussian', 'center': center, 'amplitude': amplitude, 'width': width, 'extra': width, 'color': new_color})
+        self._order_by_centre(self.peaks)          # in its place by position
         self._peaks_changed()
         
         # Invalidate any previous fit
@@ -1166,6 +1169,16 @@ class PeakFittingDialog(QDialog):
         else:
             self.update_plot()
 
+    @staticmethod
+    def _order_by_centre(peaks):
+        """Peaks added (Auto-Detect, Add via Click, Paste): the list in order
+        of position, so a new peak is in its place, not last. Only the order
+        changes (colours, fixed and linked values go with their peaks)."""
+        try:
+            peaks.sort(key=lambda p: float(p.get('center', 0.0)))
+        except (TypeError, ValueError):
+            pass
+
     def _free_color(self, peaks):
         """The first colour of the cycle that none of `peaks` has (a peak added
         after one was removed does not repeat a colour); all used: the next."""
@@ -1221,6 +1234,7 @@ class PeakFittingDialog(QDialog):
                 sp = self.series[r]
                 n = self._detect_into(target, sp['x_scale'], sp['y_scale'])
                 if n:
+                    self._order_by_centre(target)
                     self._peaks_changed([r])
                 added += n
             if not added:
@@ -1233,6 +1247,7 @@ class PeakFittingDialog(QDialog):
         added = self._detect_into(self.peaks, self.x_roi, self.y_roi)
         self.peak_color_index = len(self.peaks)
         if added:
+            self._order_by_centre(self.peaks)
             self._peaks_changed()
         if not added:
             QMessageBox.information(self, "Auto-Detect", "No new peaks were detected.")
@@ -1316,6 +1331,7 @@ class PeakFittingDialog(QDialog):
         rows = self.selected_spectra() if rows is None else list(rows)
         for r in rows:
             peaks = copy.deepcopy(self.peaks_clipboard[1])
+            self._order_by_centre(peaks)
             if r == self.current_index:
                 self.peaks[:] = peaks
             else:
@@ -2072,6 +2088,27 @@ class PeakFittingDialog(QDialog):
             show.addWidget(b)
         show.addStretch(1)
         v.addLayout(show)
+        # Peak 1, 2, ...: the rows of each spectrum's table, or matched by
+        # position across the spectra (the same band = the same number)
+        numbering = QHBoxLayout()
+        numbering.addWidget(QLabel("Peak numbers:"))
+        self.match_combo = QComboBox()
+        self.match_combo.addItem("as in each table of peaks", False)
+        self.match_combo.addItem("matched by position", True)
+        self.match_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.match_combo.setToolTip(
+            "How Peak 1, Peak 2, ... of the spectra are put side by side:\n"
+            "As in each table of peaks (default): Peak 1 is the first row of each\n"
+            "spectrum's table - right when all spectra have the same peaks.\n"
+            "Matched by position: the peaks of all spectra are matched by where they\n"
+            "are - the same band gets the same number in every spectrum, also when a\n"
+            "spectrum has a peak more or less (a band split into two, a peak missing).\n"
+            "A spectrum without a peak in a band: an empty row.")
+        self.match_combo.currentIndexChanged.connect(lambda *_: self._match_changed())
+        numbering.addWidget(self.match_combo)
+        numbering.addWidget(self._quick_help_button('matching'))
+        numbering.addStretch(1)
+        v.addLayout(numbering)
         self.series_view_buttons['peak'].setChecked(True)
         self.series_view_group.buttonToggled.connect(
             lambda b, on: on and self._series_view_changed())
@@ -2391,8 +2428,35 @@ class PeakFittingDialog(QDialog):
         self._refresh_series_views()
         self._update_copy_results_button()
 
+    def matched_by_position(self):
+        """True: Series results match the peaks by position (Peak numbers)."""
+        combo = getattr(self, 'match_combo', None)
+        return bool(combo is not None and combo.currentData())
+
+    def _view_results(self):
+        """The series results as Series results show them: as they are, or
+        with the peaks matched by position (pfs.match_by_position)."""
+        from src.modules.data_analysis import peak_fitting_series as pfs
+        if not self.series_results or not self.matched_by_position():
+            return self.series_results
+        return pfs.match_by_position(self.series_results)[1]
+
+    def _original_index(self, k, j):
+        """The row in spectrum k's table of the peak shown as Peak j+1 in
+        Series results (None: the spectrum has no peak there)."""
+        if not self.matched_by_position():
+            return j
+        res = (self._view_results() or [])[k] if self.series_results else None
+        peaks = (res or {}).get('peaks') or []
+        p = peaks[j] if res and res.get('ok') and 0 <= j < len(peaks) else None
+        return None if p is None else p.get('_index')
+
+    def _match_changed(self):
+        self._refresh_series_table()
+        self._update_copy_results_button()
+
     def _series_n_peaks(self):
-        return max([0] + [len(r.get('peaks') or []) for r in (self.series_results or [])
+        return max([0] + [len(r.get('peaks') or []) for r in (self._view_results() or [])
                           if r.get('ok')])
 
     def _series_view_rows(self):
@@ -2453,7 +2517,7 @@ class PeakFittingDialog(QDialog):
         self.series_peak = max(0, min(self.series_peak, n - 1)) if n else 0
         j = self.series_peak
         # By peak
-        columns, data = pfs.peaks_long(self.series_results, rows, peak=j,
+        columns, data = pfs.peaks_long(self._view_results(), rows, peak=j,
                                        sigmas=self._sigmas())
         extra = columns.index('Extra')
         no_extra = not any(row[extra] is not None for row in data)
@@ -2484,10 +2548,11 @@ class PeakFittingDialog(QDialog):
         self.series_peak_prev.setEnabled(j > 0)
         self.series_peak_next.setEnabled(j < n - 1)
         # By spectrum
-        columns, data = pfs.peaks_long(self.series_results, rows, sigmas=self._sigmas())
+        shown = self._view_results()
+        columns, data = pfs.peaks_long(shown, rows, sigmas=self._sigmas())
         owners = []                                # the spectrum of each row of data
         for k in rows:
-            owners += [k] * len(pfs.peaks_long(self.series_results, [k])[1])
+            owners += [k] * len(pfs.peaks_long(shown, [k])[1])
         tree = self.by_spectrum_tree
         tree.clear()
         tree.setColumnCount(len(columns) - 1)
@@ -2547,15 +2612,21 @@ class PeakFittingDialog(QDialog):
                 if k is None:
                     continue
                 res = self.series_results[k] if self.series_results else None
-                n = (len(res.get('peaks') or []) if res and res.get('ok')
-                     else len(self.peaks_of(k)))
-                if self.series_peak < n:
-                    pairs.append((int(k), self.series_peak))
+                if res and res.get('ok'):
+                    j = self._original_index(k, self.series_peak)
+                elif self.series_peak < len(self.peaks_of(k)):
+                    j = self.series_peak
+                else:
+                    j = None
+                if j is not None:
+                    pairs.append((int(k), int(j)))
         else:
             for item in view.selectedItems():
                 kj = item.data(0, Qt.UserRole + 1)
                 if isinstance(kj, (tuple, list)):
-                    pairs.append((int(kj[0]), int(kj[1])))
+                    j = self._original_index(int(kj[0]), int(kj[1]))
+                    if j is not None:
+                        pairs.append((int(kj[0]), int(j)))
         return sorted(set(pairs))
 
     def _series_remove_menu(self, view, pos):
@@ -2631,7 +2702,7 @@ class PeakFittingDialog(QDialog):
         view = self.series_view()
         if view == 'wide':
             return self.copy_series(rows)
-        columns, data = pfs.peaks_long(self.series_results, rows,
+        columns, data = pfs.peaks_long(self._view_results(), rows,
                                        peak=self.series_peak if view == 'peak' else None,
                                        sigmas=self._sigmas())
         text = pl.rows_as_text(data, columns)
@@ -2753,9 +2824,10 @@ class PeakFittingDialog(QDialog):
     def series_rows(self):
         """(columns, rows) of the series results (pfs.series_table)."""
         from src.modules.data_analysis import peak_fitting_series as pfs
-        n = max([len(self.peaks)] + [len(r.get('peaks') or []) for r in (self.series_results or [])
-                                     if r.get('ok')])
-        return pfs.series_table(self.series_results or [], n, self._sigmas())
+        shown = self._view_results() or []
+        n = max([0 if self.matched_by_position() else len(self.peaks)]
+                + [len(r.get('peaks') or []) for r in shown if r.get('ok')])
+        return pfs.series_table(shown, n, self._sigmas())
 
     def _refresh_series_table(self):
         from src.modules.data_analysis import peak_fitting_series as pfs
@@ -2787,8 +2859,14 @@ class PeakFittingDialog(QDialog):
             if r < len(rows):
                 t.selectRow(r)
         t.blockSignals(False)
-        self.series_info.setText(pfs.summary(self.series_results) + " Shown: the spectra "
-                                 "selected in the list beside the plot (All = the whole series).")
+        text = pfs.summary(self.series_results)
+        if self.matched_by_position():
+            bands = pfs.match_by_position(self.series_results)[0]
+            text += (f" Peaks matched by position: {len(bands)} bands ("
+                     + ", ".join(f"\u2248{b['center']:.4g}" for b in bands[:8])
+                     + (", \u2026" if len(bands) > 8 else "") + ").")
+        self.series_info.setText(text + " Shown: the spectra selected in the list beside the "
+                                 "plot (All = the whole series).")
         self.series_info.setToolTip(
             "Select spectra in the list to see their results here and their fits in the plot "
             "(several: Overlay, Waterfall or Grid). A bad fit: select that spectrum alone, "
@@ -3871,6 +3949,7 @@ class PeakFittingDialog(QDialog):
                'series_index': self.current_index,
                'follow_fit_before': self.follow_check.isChecked(),
                'series_view': self.series_view(),
+               'match_by_position': self.matched_by_position(),
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
                'together': self.together(),
                'list_selection': self.selected_spectra(),

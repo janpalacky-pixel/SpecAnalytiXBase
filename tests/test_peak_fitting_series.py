@@ -331,3 +331,41 @@ def test_a_poor_fit_needs_a_low_r2_and_a_residual_larger_than_the_noise():
     poor, r2_bad, ratio = pfs.poor_fit(bad, x, y, m)
     assert r2_bad < 0.5 and ratio > 2 and poor
     assert not pfs.poor_fit(dict(good, r2=0.95), x, y, m)[0]          # R² high: never poor
+
+
+def _fp(c, w=40.0):
+    return {'model': 'Gaussian', 'errors': {},
+            'parameters': {'center': c, 'fwhm': w, 'height': 1.0, 'sigma': w / 2.355, 'area': 1.0}}
+
+
+def test_peaks_matched_by_position_across_the_series():
+    """The others: 345, 726, 832, 1140; one spectrum has the band at 832 as
+    two peaks (814, 842) and its peaks in another order; one a doublet at
+    726 (722, 731). Matched: 842 joins 832, 814 and 731 are bands of their
+    own; every spectrum's peaks in their bands, _index its own row."""
+    res = [{'label': f's{k}', 'ok': True, 'r2': 0.9,
+            'peaks': [_fp(345, 34), _fp(726, 46), _fp(832, 80), _fp(1140, 52)]} for k in range(4)]
+    res.append({'label': 's4', 'ok': True, 'r2': 0.9,
+                'peaks': [_fp(1140, 52), _fp(345, 34), _fp(726, 46), _fp(814, 34), _fp(842, 34)]})
+    res.append({'label': 's5', 'ok': False, 'peaks': None, 'r2': None, 'pending': True})
+    bands, aligned = pfs.match_by_position(res)
+    assert [round(b['center']) for b in bands] == [345, 726, 814, 832, 1140]
+    s4 = [None if p is None else (round(p['parameters']['center']), p['_index'])
+          for p in aligned[4]['peaks']]
+    assert s4 == [(345, 1), (726, 2), (814, 3), (842, 4), (1140, 0)]
+    assert aligned[0]['peaks'][2] is None                          # no peak near 814
+    assert aligned[5]['peaks'] is None                             # not fitted: as it was
+    columns, rows = pfs.peaks_long(aligned, [0, 4], peak=2)        # By peak, Peak 3
+    assert rows[0][2] == 'no such peak' and rows[1][3] == 814
+    columns, rows = pfs.series_table(aligned, len(bands))
+    assert rows[0][columns.index('Peak 4 position')] == 832
+    assert rows[4][columns.index('Peak 4 position')] == 842
+
+
+def test_a_doublet_gives_two_bands():
+    res = [{'label': f's{k}', 'ok': True, 'r2': 0.9,
+            'peaks': [_fp(722 + k, 10), _fp(731 + k, 10)]} for k in range(3)]
+    res.append({'label': 's3', 'ok': True, 'r2': 0.9, 'peaks': [_fp(733, 10)]})
+    bands, aligned = pfs.match_by_position(res)
+    assert len(bands) == 2
+    assert aligned[3]['peaks'][0] is None and aligned[3]['peaks'][1]['_index'] == 0   # the 2nd

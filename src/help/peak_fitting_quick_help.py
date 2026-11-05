@@ -138,6 +138,22 @@ each: fitted (&#10003;) or set by hand (&#9998;).</li>
 (&#9998; set by hand until the next Fit Peaks), a peak removed in the table or in Series results
 (Delete).</p>
 """),
+    'matching': ("Quick help \u2013 Peak numbers: by row or by position", 'matching', """
+<p>Series results put Peak 1, Peak 2, &hellip; of the spectra side by side. <b>Peak numbers</b>
+chooses what &ldquo;Peak 1&rdquo; is:</p>
+<ul>
+<li><b>As in each table of peaks</b> (default) - the first, second, &hellip; row of each
+spectrum's table. Right when all spectra have the same peaks (e.g. after Copy peaks &rsaquo;
+Paste): then Peak 1 is the same band everywhere.</li>
+<li><b>Matched by position</b> - the peaks of all spectra are matched by where they are: the
+same band gets the same number in every spectrum. Use it when spectra have a peak more or
+less. Example: the others have one peak at 832, one spectrum two at 814 and 842 - by row
+number every later column would mix two bands; matched, 842 joins the band at 832, and 814 is
+a band of its own (empty in the other rows).</li>
+</ul>
+<p>Only how the results are shown changes - the fits stay. Export, Copy and the Data table
+take the same numbering.</p>
+"""),
     'series-results': ("Quick help – Series results", 'series-results', """
 <p>The results of the spectra <b>selected in the list</b> (All = the whole series), with
 <b>Show</b>: <b>By peak</b> - one peak at a time (&#9664; &#9654;), a row per spectrum;
