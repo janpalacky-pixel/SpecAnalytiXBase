@@ -706,19 +706,6 @@ def part_peak_fitting():
             shot(d, F, 'needed_plot.png', [d.canvas], margin=0)
             d.legend_check.setChecked(True)
 
-        from PyQt5.QtWidgets import QInputDialog
-        q = QInputDialog(d)
-        q.setWindowTitle('Initial Peak Parameters')
-        q.setInputMode(QInputDialog.DoubleInput)
-        q.setLabelText('Enter initial width (\u03c3/\u03b3) for new peaks:')
-        q.setDoubleDecimals(4)
-        q.setDoubleMinimum(1e-6)
-        q.setDoubleMaximum(1e9)
-        q.setDoubleValue(8.0)
-        q.show()
-        settle(0.4)
-        shot(q, F, 'initial_width_dialog.png')
-        q.close()
     mc.run_visualization_analysis('Peak Fitting')
 
 

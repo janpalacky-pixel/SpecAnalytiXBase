@@ -3522,9 +3522,14 @@ def _natural_sort_key(cls, label):
             2.4&times; too broad). With a background the heights are above its first guess;
             <code>_merge_split()</code> keeps one of two maxima closer than &sigma; (one noisy
             band). <code>estimate_width()</code> gives a clicked peak the &sigma; of
-            the band under the click (<code>peak_widths</code> at half height), on noisy data
-            re-measured on Savitzky&ndash;Golay-smoothed data (windows 7&ndash;61) until the
-            width is more than a few points.</li>
+            the band under the click: <code>_climb()</code> uphill to its top, then
+            <code>peak_widths</code> at half height; noisy data (range &lt; 50&times; noise) are
+            measured on <code>gaussian_filter1d</code>-smoothed data (k = 1, 2, 4 &hellip; 32
+            points) and corrected, &sigma; = &radic;(&sigma;<sub>s</sub>&sup2; &minus; k&sup2;);
+            accepted when &sigma;<sub>s</sub> &ge; 3k, the height &ge; 5&times; the remaining noise
+            and the click within the FWHM. The dialog's "fixed width &sigma;" (next to Add via
+            Click) replaces the old right-click Auto-Detect Peaks &rsaquo; Set Initial Peak
+            Width.</li>
             <li>A series (<code>src/modules/data_analysis/peak_fitting_series.py</code>, Qt-free):
             <code>fit_series()</code> sequential, each fit from the previous result (follows moving
             bands); <code>fit_series_independent()</code> each from the same start, in a process

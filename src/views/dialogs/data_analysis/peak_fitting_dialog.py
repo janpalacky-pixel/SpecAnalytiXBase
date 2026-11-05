@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
                              QAbstractSpinBox, QColorDialog, QAbstractItemView, QMenu, QApplication,
                              QTabWidget, QToolButton, QFileDialog, QShortcut, QSizePolicy,
                              QListWidget, QStyledItemDelegate, QStyle, QButtonGroup,
-                             QStackedWidget, QTreeWidget, QTreeWidgetItem)
+                             QStackedWidget, QTreeWidget, QTreeWidgetItem, QLineEdit)
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtCore import Qt, QTimer, QItemSelectionModel
 from PyQt5.QtGui import QColor, QFont # Import QColor and QFont
@@ -95,6 +95,21 @@ class _ErrorDelegate(QStyledItemDelegate):
         if tag:
             option.text = f"[{tag}] {option.text}"     # the tag first: never cut off
 
+    def createEditor(self, parent, option, index):
+        """Center, Height, Width, Extra: only a number can be typed (e.g.
+        354.5, -2, 1e-3) - letters are not accepted."""
+        editor = super().createEditor(parent, option, index)
+        if index.column() in COLUMN_PARAM and isinstance(editor, QLineEdit):
+            from PyQt5.QtCore import QLocale
+            from PyQt5.QtGui import QDoubleValidator
+            validator = QDoubleValidator(editor)
+            validator.setNotation(QDoubleValidator.ScientificNotation)
+            locale = QLocale(QLocale.C)
+            locale.setNumberOptions(QLocale.RejectGroupSeparator)
+            validator.setLocale(locale)
+            editor.setValidator(validator)
+        return editor
+
 
 class _BarScroll(QScrollArea):
     """A row of controls that scrolls sideways when there is not room for it
@@ -177,9 +192,9 @@ class PeakFittingDialog(QDialog):
         # Tracks the next color to use from the cycle
         self.peak_color_index = 0
         
-        # Stores the user-defined width for 'Add via Click'
+        # the width of a clicked peak where no band can be measured (1/20 of
+        # the x range); "fixed width" next to Add via Click: always its own
         self.initial_peak_width = None
-        self.width_set_by_user = False  # the width of clicked peaks: from the band unless set
 
         # These will be set to the full spectrum data
         self.x_roi = np.array([])
@@ -315,24 +330,43 @@ class PeakFittingDialog(QDialog):
             "Auto-Detect Peaks: finds the peaks of the shown spectrum and adds them\n"
             "to the table (not those already there).\n"
             "Auto-Detect Peaks \u2013 N spectra (several spectra selected in the list):\n"
-            "finds the peaks of each selected spectrum, each into its own table.\n"
-            "Right-click: the initial width of new peaks.")
+            "finds the peaks of each selected spectrum, each into its own table.")
         self.auto_detect_btn.clicked.connect(self.auto_detect_peaks)
         from src.views import icons as _icons
         self.auto_detect_btn.setIcon(_icons.run_icon())
-        # Add context menu for setting initial parameters
-        self.auto_detect_btn.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.auto_detect_btn.customContextMenuRequested.connect(self.show_auto_detect_context_menu)
-        
+
         self.interactive_add_cb = QCheckBox("Add via Click")
         self.interactive_add_cb.setToolTip(
-            "When ticked, a click on the plot adds a peak there (its width from the band under "
-            "the click).\nChoosing Zoom or Pan in the plot's toolbar switches this off; tick it "
-            "again to add more peaks.")
+            "When ticked, a click on the plot adds a peak there (Model Gaussian;\n"
+            "its width as chosen in the drop-down list next to it).\n"
+            "Choosing Zoom or Pan in the plot's toolbar switches this off;\n"
+            "tick it again to add more peaks.")
         self.interactive_add_cb.stateChanged.connect(self._toggle_interactive_add)
         
+        # the width of a clicked peak: from the band under the click
+        # (default), or a fixed width chosen here
+        self.click_width_combo = QComboBox()
+        self.click_width_combo.addItem("width from the band", 'band')
+        self.click_width_combo.addItem("fixed width \u03c3:", 'fixed')
+        self.click_width_combo.setToolTip(
+            "The width of a peak added by a click:\n"
+            "Width from the band (default): the width of the band under the click -\n"
+            "measured on smoothed data, so that the noise does not make it too narrow;\n"
+            "a click on the side of a band gets that band's width. Where there is no\n"
+            "band (flat baseline): 1/20 of the x range.\n"
+            "Fixed width: every clicked peak gets the width (\u03c3) typed next to it.\n"
+            "Fit Peaks changes the width anyway; it is only where the fit starts.")
+        self.click_width_spin = QDoubleSpinBox()
+        self.click_width_spin.setDecimals(3)
+        self.click_width_spin.setRange(0.0, 1e9)
+        self.click_width_spin.setToolTip(
+            "Fixed width: the width (\u03c3, in x units) of every peak added by a click.")
+        self.click_width_spin.setVisible(False)
+        self.click_width_combo.currentIndexChanged.connect(lambda *_: self._click_width_changed())
         btn_layout1.addWidget(self.auto_detect_btn)
         btn_layout1.addWidget(self.interactive_add_cb)
+        btn_layout1.addWidget(self.click_width_combo)
+        btn_layout1.addWidget(self.click_width_spin)
         # each orange "?" next to what it explains: here adding peaks (and
         # the table above: editing, fixing, linking)
         btn_layout1.addWidget(self._quick_help_button('peaks'))
@@ -610,50 +644,16 @@ class PeakFittingDialog(QDialog):
         
         return widget
 
-    def show_auto_detect_context_menu(self, pos):
-        """Show context menu for the Auto-Detect Peaks button."""
-        context_menu = QMenu(self)
-        
-        # Add action to set initial peak width
-        set_width_action = context_menu.addAction("Set Initial Peak Width...")
-        
-        # Show the menu and get the action
-        action = context_menu.exec_(self.auto_detect_btn.mapToGlobal(pos))
-        
-        # Handle the action
-        if action == set_width_action:
-            self.show_initial_params_dialog()
+    def _click_width_fixed(self):
+        """True: a clicked peak gets the fixed width (next to Add via Click)."""
+        combo = getattr(self, 'click_width_combo', None)
+        return combo is not None and combo.currentData() == 'fixed'
 
-    def show_initial_params_dialog(self):
-        """
-        Show a dialog to set the initial width for new peaks.
-        """
-        from PyQt5.QtWidgets import QInputDialog
-
-        # Calculate a reasonable default width if not set, based on current view
-        if hasattr(self, 'ax_main') and self.toolbar.mode == '':
-            xmin, xmax = self.ax_main.get_xlim()
-            default_width = abs((xmax - xmin) / 20.0)
-            if default_width == 0: # Failsafe
-                 default_width = abs((self.x_roi[-1] - self.x_roi[0]) / 20.0)
-        else:
-            default_width = abs((self.x_roi[-1] - self.x_roi[0]) / 20.0)
-
-        # Use the currently stored width if it exists, otherwise use the calculated default
-        current_val = self.initial_peak_width if self.initial_peak_width is not None else default_width
-
-        new_width, ok = QInputDialog.getDouble(
-            self,
-            "Initial Peak Parameters",
-            "Enter initial width (σ/γ) for new peaks:",
-            value=current_val,
-            decimals=4,
-            min=1e-6
-        )
-
-        if ok and new_width:
-            self.initial_peak_width = new_width
-            self.width_set_by_user = True
+    def _click_width_changed(self):
+        fixed = self._click_width_fixed()
+        if fixed and self.click_width_spin.value() <= 0:
+            self.click_width_spin.setValue(float(self.initial_peak_width or 1.0))
+        self.click_width_spin.setVisible(fixed)
 
     def create_canvas_panel(self):
         """Creates the right-hand panel with the plot canvas and toolbar."""
@@ -784,6 +784,11 @@ class PeakFittingDialog(QDialog):
 
     def _load_plot_options(self):
         s = self.current_settings or {}
+        if s.get('click_width_value'):
+            self.click_width_spin.setValue(float(s['click_width_value']))
+        k = self.click_width_combo.findData(s.get('click_width', 'band'))
+        self.click_width_combo.setCurrentIndex(max(k, 0))
+        self._click_width_changed()
         k = self.output_for_combo.findData(s.get('output_for', 'all'))
         if k >= 0:
             self.output_for_combo.setCurrentIndex(k)
@@ -1032,13 +1037,18 @@ class PeakFittingDialog(QDialog):
             x = np.asarray(self.x_roi, dtype=float)
             order = np.argsort(x)
             amplitude = float(np.interp(center, x[order], np.asarray(self.y_roi, float)[order]))
-        # the peak's height is above the background (the clicked point minus it)
-        amplitude -= float(background_values(self._shown_background(), [center])[0])
+        # the peak's height is above the background (the clicked point minus
+        # it) - unless "− background" is ticked: then the plot is already
+        # drawn without it and the clicked height is the peak's height
+        if several or not self._subtract_background():
+            amplitude -= float(background_values(self._shown_background(), [center])[0])
         
-        # The width: as set (right-click Auto-Detect Peaks), else from the
-        # band under the click (its half-height width), else the default
+        # The width: fixed (next to Add via Click), else from the band under
+        # the click (its width at half height), else 1/20 of the x range
         width = self.initial_peak_width
-        if not self.width_set_by_user:
+        if self._click_width_fixed() and self.click_width_spin.value() > 0:
+            width = float(self.click_width_spin.value())
+        else:
             estimate = self.manager.estimate_width(self.x_roi, self.y_roi, center)
             if estimate:
                 width = estimate
@@ -1950,8 +1960,19 @@ class PeakFittingDialog(QDialog):
         self.update_peaks_table()
         self.update_plot()
 
-    def on_table_cell_changed(self):
-        """Fired when user edits the table. This invalidates the 'fit'."""
+    def on_table_cell_changed(self, row=-1, col=-1):
+        """Fired when user edits the table. This invalidates the 'fit'.
+        A value that is not a number (e.g. pasted text, an empty cell): the
+        table shows the values as they were - nothing changes."""
+        if col in COLUMN_PARAM:
+            item = self.peaks_table.item(row, col)
+            try:
+                ok = item is None or np.isfinite(float(item.text()))
+            except ValueError:
+                ok = False
+            if not ok:
+                self.update_peaks_table(from_fit_results=bool(self.fit_results))
+                return
         for i in range(self.peaks_table.rowCount()): 
             self.update_peak_from_table(i)
         # a linked value follows at once (peak 2 = peak 1 + 2935: peak 1 typed
@@ -4114,6 +4135,8 @@ class PeakFittingDialog(QDialog):
             'data_style': self._data_style(),
             'error_sigmas': self._sigmas(),
             'subtract_background': self._subtract_background(),
+            'click_width': 'fixed' if self._click_width_fixed() else 'band',
+            'click_width_value': float(self.click_width_spin.value()),
             # the background: its kind and the one fitted with fit_results
             'background': self.background_kind,
             'fit_background': background,

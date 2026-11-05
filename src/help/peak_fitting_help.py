@@ -23,7 +23,6 @@ _SCREENSHOT_FILES = {
     "PLOT":          "plot_area.png",
     "TABLE":         "peaks_table.png",
     "ADD_CONTROLS":  "peak_adding_controls.png",
-    "WIDTH_DIALOG":  "initial_width_dialog.png",
     "FIT_CONTROLS":  "fitting_controls.png",
     "OUTPUT_OPTIONS":"output_options.png",
     "SERIES_OVERVIEW": "series_overview.png",
@@ -410,17 +409,23 @@ def get_peak_fitting_help_content():
             stands out by at least 10&nbsp;% of the spectrum's range and clearly above the noise
             (looked for in lightly smoothed data, so a single noisy point is not taken for a
             narrow peak).
-            Each gets its position, height and width (&sigma;, from the band's width at half
-            height). Negative bands are found only where the data really go below the baseline
+            Each gets its starting values: <b>Center</b> (where its top is), <b>Height</b> and
+            <b>Width</b> (&sigma;, from the band's width at half height). Negative bands are found only where the data really go below the baseline
             &mdash; the dip between two neighbouring bands is not a peak. Peaks already in the
             table are not added again.</li>
-            <li><b>Add via Click</b> (ticked by default): click on the top of a band in the plot.
-            A Gaussian peak is added there, with the width of the band under the click (its width
-            at half height). Where no band can be measured (a shoulder, flat baseline) it gets the
-            initial width: right-click <b>Auto-Detect Peaks</b> &rsaquo; <b>Set Initial Peak
-            Width&hellip;</b>. A width set there is used for every clicked peak. With
+            <li><b>Add via Click</b> (ticked by default): click on a band in the plot. A peak is
+            added there, with Model Gaussian (change it in the table to Lorentzian, Voigt or
+            Pseudo-Voigt). Its width is chosen in the drop-down list next to Add via Click:
+            <b>width from the band</b> (default) &mdash; the width of the band under the click,
+            measured on smoothed data so that the noise does not make it too narrow; a click on
+            the side of a band gets that band's width (on a flat baseline: 1/20 of the x range);
+            or <b>fixed width &sigma;</b> &mdash; every clicked peak gets the width typed there.
+            Example: water's broad band near 3200&ndash;3450 in a noisy spectrum &mdash; a click at
+            3200 gets &sigma; &asymp; 200 (the whole band), not &asymp; 8 (one step of the noise);
+            Fit Peaks then finds the widths of its parts. With
             <b>several spectra shown</b> the peak goes to one spectrum: in <b>Overlay</b> to the
-            <b>shown spectrum</b> (orange frame in the list); in <b>Waterfall</b> to the spectrum
+            <b>shown spectrum</b> (orange frame in the list; change it with &#9664; &#9654; above
+            the list or Alt+Left / Alt+Right); in <b>Waterfall</b> to the spectrum
             whose band you click in; in <b>Grid</b> to the spectrum of the small plot you click
             in. That spectrum becomes the shown one. Its height is taken from that spectrum's
             data under the click, and its starting peaks are drawn dashed. The line next to the
@@ -429,7 +434,9 @@ def get_peak_fitting_help_content():
             Click off, so dragging does not add peaks; tick Add via Click again to add more. The
             line next to the toolbar tells which of the two a click on the plot does. Home (the
             house) shows the whole spectrum again.</li>
-            <li><b>Edit</b> any value: double-click a cell. Double-click the colour swatch to change
+            <li><b>Edit</b> any value: double-click a cell. Center, Height, Width and Extra take
+            numbers only (e.g. 354.5, &minus;2, 1e-3; a dot as the decimal sign) &mdash; letters
+            cannot be typed, and a text pasted there is not taken. Double-click the colour swatch to change
             the colour. <b>Column widths</b>: drag the line between two headings to make a column
             wider (e.g. to see a long value with its &plusmn;); double-click the line: as wide as
             its content. Holding the mouse over a value shows it in full too. <b>Extra</b> is the 4th value of Voigt (&gamma;) and Pseudo-Voigt (&eta;);
@@ -512,10 +519,6 @@ def get_peak_fitting_help_content():
         <div class="screenshot">
             <img src="$ADD_CONTROLS" width="${ADD_CONTROLS_W}" height="${ADD_CONTROLS_H}" alt="Auto-Detect Peaks, Add via Click, Remove Selected Peak(s) and Clear All Peaks" />
             <p class="caption">Adding and removing peaks.</p>
-        </div>
-        <div class="screenshot">
-            <img src="$WIDTH_DIALOG" width="${WIDTH_DIALOG_W}" height="${WIDTH_DIALOG_H}" alt="Set Initial Peak Width dialog, opened by right-clicking Auto-Detect Peaks" />
-            <p class="caption">Set Initial Peak Width&hellip; (right-click Auto-Detect Peaks).</p>
         </div>
         <p><b>Add via Click with several spectra shown.</b> Example: six spectra of the test
         dataset Raman &mdash; 2 components, noisy, selected,
@@ -1488,12 +1491,16 @@ def get_peak_fitting_help_content():
             height is measured above its first guess, not from zero.</li>
             <li>Two maxima closer than one width (&sigma;) are one band split by noise (two real
             bands that close never show two maxima): it is kept once.</li>
-            <li>A peak added by a click gets &sigma; from the width at half height of the band under
-            the click (the highest point within a few points of the click); on noisy data, where
-            the width found is only a few points (noise), it is measured again on more and more
-            smoothed data. Where it cannot be measured (a shoulder, flat baseline) it gets the
-            initial width (right-click Auto-Detect Peaks). Its height is the clicked point minus
-            the background.</li>
+            <li>A peak added by a click (width from the band) gets &sigma; from the band under the
+            click: from the click uphill to the band's top, then its width at half height. On
+            noisy data this is measured on data smoothed with a Gaussian of 2, 4, 8, &hellip;
+            points: smoothing makes a band of &sigma; wider to &radic;(&sigma;&sup2; + k&sup2;)
+            (k: the smoothing), so its own &sigma; is found back exactly; a bump of the noise is
+            only about as wide as the smoothing and is not taken. The width found must be at least
+            3 &times; the smoothing, the band at least 5 &times; higher than the noise left after
+            it, and the click within its width at half height. Where nothing is found (a flat
+            baseline): 1/20 of the x range. Its height is the clicked point minus the
+            background.</li>
         </ul>
         <h3>The fit</h3>
         <ul>

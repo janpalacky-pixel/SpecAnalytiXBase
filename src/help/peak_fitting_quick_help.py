@@ -5,13 +5,19 @@ per part of the window, each with a link to its section of the full help
 
 QUICK_HELP = {
     'peaks': ("Quick help – adding peaks and the table of peaks", 'adding-peaks', """
-<p><b>Auto-Detect Peaks</b> finds the bands of the shown spectrum and fills the table with a
-starting position, height and width for each. Check the list: remove what you do not want
-(select rows, <b>Remove Selected Peak(s)</b>) and add what is missing.</p>
-<p><b>Add via Click</b>: click on the top of a band in the plot - a Gaussian peak is added there,
-its width taken from the band under the click. With several spectra shown it goes to the
-shown one (Overlay), or to the one clicked on (Waterfall: its band; Grid: its small plot). To zoom or pan, simply choose Zoom or Pan in the
-plot's toolbar: that switches Add via Click off (tick it again to add more peaks).</p>
+<p><b>Auto-Detect Peaks</b> finds the bands of the shown spectrum and fills the table with the
+starting values of each peak: its <b>Center</b> (where its top is), <b>Height</b> and
+<b>Width</b>. Check the list: remove what you do not want (select rows, <b>Remove Selected
+Peak(s)</b>) and add what is missing.</p>
+<p><b>Add via Click</b>: click on a band in the plot - a peak is added there (Model Gaussian;
+change it in the table to Lorentzian, Voigt or Pseudo-Voigt). Its width: choose in the
+drop-down list next to Add via Click - <b>width from the band</b> under the click, or a
+<b>fixed width</b> you type. With several spectra shown it goes to the shown one (Overlay; the
+orange frame in the list - change it with &#9664; &#9654; above the list or <b>Alt+Left /
+Alt+Right</b>), or to the one clicked on (Waterfall: its band; Grid: its small plot). To zoom or
+pan, simply choose Zoom or Pan in the plot's toolbar: that switches Add via Click off (tick it
+again to add more peaks).</p>
+<p>Values are numbers only (e.g. 354.5, -2, 1e-3): letters cannot be typed.</p>
 <p>The table: <b>Model</b> (the peak shape), <b>Center</b> (position of the top), <b>Height</b>
 (of the top), <b>Width</b> and <b>Extra</b>. Every value can be edited (double-click). Drag the
 line between two headings to make a column wider. <b>Click the heading</b> Center, Height or

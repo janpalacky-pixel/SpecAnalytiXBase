@@ -145,6 +145,21 @@ def test_noisy_band_width_is_the_band_not_the_noise():
     assert sigma is not None and sigma > 50          # not a point of noise (a few units)
 
 
+def test_a_click_on_noisy_data_gets_the_band_width_not_a_bump_of_the_noise():
+    """Whole-number counts with noise (as measured): a click near the top
+    or on the side of a band gets about that band's width - not a bump of
+    the noise (a few units); on the flat baseline: None."""
+    m = PeakFittingManager()
+    y = _offset_spectrum()
+    for click in (380.0, 430.0, 470.0):                          # the small band (sigma 65)
+        sigma = m.estimate_width(X, y, click)
+        assert sigma is not None and 40 < sigma < 100, (click, sigma)
+    for click in (3150.0, 3220.0, 3300.0, 3430.0, 3550.0):       # the large one (two bands)
+        sigma = m.estimate_width(X, y, click)
+        assert sigma is not None and 90 < sigma < 300, (click, sigma)
+    assert m.estimate_width(X, y, 1500.0) is None                # flat baseline
+
+
 def test_one_band_split_by_noise_is_found_once():
     m = PeakFittingManager()
     guesses = [{'model': 'Gaussian', 'center': 391.0, 'amplitude': 3.0, 'width': 80.0},
@@ -251,6 +266,22 @@ def test_a_clicked_peak_gets_its_height_above_the_background(dialog):
         ydata = 680.0
     dlg.on_canvas_click(Click())
     assert 5 < dlg.peaks[-1]['amplitude'] < 15
+
+
+def test_a_clicked_peak_with_the_background_subtracted_is_not_negative(dialog):
+    """"− background" ticked: the plot is drawn without the background, so
+    the clicked height is already the peak's height (not minus ~669 again)."""
+    dlg = dialog()
+    dlg.subtract_check.setChecked(True)
+
+    class Click:
+        inaxes = dlg.ax_main
+        button = 1
+        xdata = 3430.0
+        ydata = 11.0
+    dlg.on_canvas_click(Click())
+    peak = min(dlg.peaks, key=lambda p: abs(p['center'] - 3430.0))
+    assert peak['amplitude'] == 11.0
 
 
 def test_data_as_points_or_line_is_remembered(dialog):

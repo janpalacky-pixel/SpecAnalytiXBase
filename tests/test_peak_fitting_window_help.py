@@ -99,10 +99,13 @@ def test_a_clicked_peak_gets_the_width_of_the_band():
             self.inaxes = dlg.ax_main                            # the plot is redrawn each time
     dlg.on_canvas_click(Click())
     assert dlg.peaks[-1]['width'] == pytest.approx(6.0, rel=0.1)
-    dlg.initial_peak_width = 2.5                                  # set by the user: kept
-    dlg.width_set_by_user = True
+    dlg.click_width_combo.setCurrentIndex(dlg.click_width_combo.findData('fixed'))
+    assert dlg.click_width_spin.isVisibleTo(dlg)
+    dlg.click_width_spin.setValue(2.5)                            # a fixed width: kept
     dlg.on_canvas_click(Click())
     assert dlg.peaks[-1]['width'] == 2.5
+    settings = dlg.get_results()
+    assert settings['click_width'] == 'fixed' and settings['click_width_value'] == 2.5
 
 
 def test_add_for_the_selected_fitted_spectra():
@@ -218,3 +221,27 @@ def test_the_tabs_have_tooltips_and_a_question_mark():
         QToolTip.hideText()
         dlg.hide()
         dlg.deleteLater()
+
+
+def test_the_peaks_table_takes_only_numbers():
+    """Center, Height, Width: the editor accepts only a number (letters are
+    not typed); a text that is not a number (e.g. pasted) is not taken -
+    the table shows the values as they were."""
+    from PyQt5.QtGui import QValidator
+    from PyQt5.QtWidgets import QLineEdit, QStyleOptionViewItem
+    dlg = _window()
+    t = dlg.peaks_table
+    index = t.model().index(0, 2)
+    editor = t.itemDelegate().createEditor(t.viewport(), QStyleOptionViewItem(), index)
+    assert isinstance(editor, QLineEdit) and editor.validator() is not None
+    v = editor.validator()
+    for text, state in (('354.5', QValidator.Acceptable), ('-2', QValidator.Acceptable),
+                        ('1e-3', QValidator.Acceptable), ('sdsffsf', QValidator.Invalid),
+                        ('35a', QValidator.Invalid)):
+        assert v.validate(text, 0)[0] == state, text
+    before = t.item(0, 2).text()
+    centre = dlg.peaks[0]['center']
+    t.item(0, 2).setText('sdsffsf')                               # e.g. pasted
+    assert t.item(0, 2).text() == before and dlg.peaks[0]['center'] == centre
+    t.item(0, 2).setText('61.5')                                  # a number: taken
+    assert dlg.peaks[0]['center'] == 61.5

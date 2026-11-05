@@ -347,7 +347,7 @@ def needed_text(delta_bic, remove=None, n_removed=0):
                   "How it is found: the spectrum is fitted once more without this peak,\n"
                   "and the two fits are compared (\u0394BIC = " + f"{d:.1f}" + ").\n"
                   "\u0394BIC above 10: needed; 2 to 10: probably needed; below 2: not needed.\n"
-                  "The orange ? right under the table explains it.")
+                  "The orange ? next to Clear All Peaks explains it.")
 
 
 def _smoothed(y, window):
@@ -825,27 +825,88 @@ class PeakFittingManager:
         return float(n * np.log(ssr / n) + A.shape[1] * np.log(n) - full)
 
     def estimate_width(self, x_data, y_data, center):
-        """The Gaussian width (sigma) of the band at `center`: its width at
-        half height, measured on the data (the highest point within a few
-        points of `center`). None when there is no band there."""
-        from scipy.signal import peak_widths
+        """The Gaussian width (sigma) of the band under `center` (a click):
+        from the click uphill to the band's top, then its width at half
+        height. None when there is no band there (flat baseline), or the
+        click is not on a band. Noisy data: measured on smoothed data
+        (more and more), so that a bump of the noise near the click is not
+        taken for a narrow band - the width found must be clearly larger
+        than the smoothing, and the click within the band."""
         x = np.asarray(x_data, dtype=float)
         y = np.asarray(y_data, dtype=float)
         if x.size < 5 or center is None:
             return None
-        # noisy data: a point of noise near the top passes for a very narrow
-        # band - then measured again on more and more smoothed data
         step = float(np.median(np.abs(np.diff(x)))) if x.size > 1 else 1.0
-        for window in (0, 7, 15, 31, 61):
-            ys = y if window == 0 else _smoothed(y, window)
-            if window and ys is y:
+        if step <= 0:
+            return None
+        noise = float(np.median(np.abs(np.diff(y)))) / 0.6745 / np.sqrt(2)
+        noisy = float(np.ptp(y)) < 50 * noise
+        k0 = int(np.argmin(np.abs(x - center)))
+        # the data smoothed with a Gaussian of `kernel` points: a band of
+        # sigma s becomes sqrt(s^2 + kernel^2) wide - so its own width is
+        # found back exactly; a bump of the noise is only about as wide
+        # as the smoothing and is not taken
+        from scipy.ndimage import gaussian_filter1d
+        for kernel in (0, 1, 2, 4, 8, 16, 32):
+            if kernel == 0 and noisy:
+                continue                     # a top of the raw data is mostly noise
+            if kernel and 6 * kernel >= x.size:
                 break
-            sigma = self._width_at(x, ys, center)
-            if sigma is not None and sigma * _FWHM_PER_SIGMA >= max(5, window) * step:
-                return sigma
-            if sigma is None and window == 0 and self._flat(y):
-                return None
+            ys = y if kernel == 0 else gaussian_filter1d(y, kernel, mode='nearest')
+            top = self._climb(ys, k0)
+            found = self._fwhm_points(ys, top)
+            measured, height = found if found else (None, 0.0)
+            if measured is None:
+                if kernel == 0 and self._flat(y):
+                    return None
+                continue
+            s_measured = measured / _FWHM_PER_SIGMA
+            if kernel == 0:
+                ok = measured >= 5
+                s_points = s_measured
+            else:
+                # clearly wider than the smoothing, and higher than what is
+                # left of the noise after it
+                left_noise = noise / np.sqrt(2 * np.sqrt(np.pi) * kernel)
+                ok = s_measured >= 3 * kernel and height >= 5 * left_noise
+                s_points = float(np.sqrt(max(s_measured ** 2 - kernel ** 2, 0.0)))
+            # and the click on the band (within its width at half height)
+            if ok and abs(top - k0) <= s_points * _FWHM_PER_SIGMA:
+                sigma = s_points * step
+                return sigma if sigma <= (x.max() - x.min()) / 4 else None
         return None
+
+    @staticmethod
+    def _climb(y, k):
+        """From point k uphill (to the higher neighbour) to a top."""
+        n = len(y)
+        while True:
+            best = k
+            if k > 0 and y[k - 1] > y[best]:
+                best = k - 1
+            if k < n - 1 and y[k + 1] > y[best]:
+                best = k + 1
+            if best == k:
+                return k
+            k = best
+
+    @staticmethod
+    def _fwhm_points(y, k):
+        """(width at half height in points, height) of the band whose top
+        is k - the height above its feet (its prominence)."""
+        import warnings
+        from scipy.signal import peak_widths
+        if k <= 0 or k >= len(y) - 1:
+            return None
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                widths, levels = peak_widths(y, [k], rel_height=0.5)[:2]
+        except ValueError:
+            return None
+        if not len(widths) or not np.isfinite(widths[0]) or widths[0] <= 0:
+            return None
+        return float(widths[0]), 2.0 * float(y[k] - levels[0])
 
     @staticmethod
     def _flat(y):
@@ -856,25 +917,6 @@ class PeakFittingManager:
             return True
         noise = float(np.median(np.abs(np.diff(y)))) / 0.6745 / np.sqrt(2)
         return float(np.ptp(y)) <= 6 * noise + 1e-12
-
-    def _width_at(self, x, y, center):
-        from scipy.signal import peak_widths
-        k = int(np.argmin(np.abs(x - center)))
-        lo, hi = max(k - 5, 1), min(k + 6, x.size - 1)
-        k = lo + int(np.argmax(y[lo:hi]))
-        if not (y[k] >= y[k - 1] and y[k] >= y[k + 1]):
-            return None
-        try:
-            widths = peak_widths(y, [k], rel_height=0.5)[0]
-        except ValueError:
-            return None
-        if not len(widths) or not np.isfinite(widths[0]) or widths[0] <= 0:
-            return None
-        step = float(np.median(np.abs(np.diff(x))))
-        sigma = float(widths[0]) * step / _FWHM_PER_SIGMA
-        if sigma <= 0 or sigma > (x.max() - x.min()) / 4:
-            return None
-        return sigma
 
     @staticmethod
     def _merge_split(guesses):
