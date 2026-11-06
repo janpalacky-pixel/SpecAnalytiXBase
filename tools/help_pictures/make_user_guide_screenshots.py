@@ -120,6 +120,13 @@ def main():
     mc.show()
     settle()
 
+    # 0. the start page (no spectra yet), with two shipped files as recent ones
+    for path in (TBA, RAMAN):
+        mc.autosave_controller.recent.add(path, 'file')
+    mc._update_start_page()
+    settle()
+    save(view.grab(), 'start_page.png')
+
     # 1. the main window
     load(mc, RAMAN)
     plot_type(mc, 'Overlay plot')

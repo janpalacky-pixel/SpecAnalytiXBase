@@ -200,6 +200,10 @@ def get_quick_start_help_content():
         </div>
 
         <h2 id="import">2. Importing Data</h2>
+        <p>At the start, while no spectra are loaded, the plot area shows the <b>start
+        page</b>: Import data, Open snapshot, Try a test dataset, Quick start and the files
+        you opened last - or drop files onto the window
+        (<a href="help://user_guide#start-page">the start page</a>).</p>
         <p>The Import dialog reads plain-text (<code>.txt</code>, <code>.csv</code>,
         <code>.dat</code>), Excel (<code>.xlsx</code>, <code>.xls</code>,
         <code>.xlsm</code>), and several instrument-specific binary formats

@@ -170,6 +170,35 @@ class MainController(QMainWindow):
 
         # Connect signals & slots
         self.connect_signals()
+        self._build_start_page()
+
+    def _build_start_page(self):
+        """The start page over the empty plot (src/views/start_page.py):
+        shown while no spectra are loaded."""
+        from src.views.start_page import StartPage
+        view = self.view
+        recent = getattr(getattr(self, 'autosave_controller', None), 'recent', None)
+        self.start_page = StartPage(
+            view.graphicsView,
+            {'import': getattr(view, 'actionImport_new', None),
+             'snapshot': getattr(view, 'actionImport_Snapshot', None),
+             'quick_start': getattr(view, 'actionQuickStart', None)},
+            test_menu=getattr(view, 'menuHelpTestDatasets', None),
+            recent=(recent.items if recent is not None else None),
+            open_recent=getattr(self.autosave_controller, 'open_recent', None))
+        model = self.spectra_list_widget.model()
+        for signal in (model.rowsInserted, model.rowsRemoved, model.modelReset,
+                       model.layoutChanged):
+            signal.connect(lambda *_: self._update_start_page())
+        self._update_start_page()
+
+    def _update_start_page(self):
+        page = getattr(self, 'start_page', None)
+        try:
+            if page is not None:
+                page.show_if(self.spectra_list_widget.count() == 0)
+        except RuntimeError:                       # the window is being closed
+            pass
 
     def setup_controllers(self):
         """Initialize sub-controllers."""

@@ -22,6 +22,7 @@ _SCREENSHOT_DIR = os.path.join("resources", "images", "help_screenshots", "user_
 
 _SCREENSHOT_FILES = {
     "OVERVIEW":                    "main_window_overview.png",
+    "START_PAGE":                  "start_page.png",
     "IMPORT_DIALOG":               "import_spectra_dialog.png",
     "SPECTRUM_LIST_CONTEXT_MENU":  "spectrum_list_context_menu.png",
     "SPECTRUM_LIST":               "spectrum_list_panel.png",
@@ -157,6 +158,20 @@ def get_user_guide_help_content():
                 <li><strong>Commit</strong> &mdash; every operation's dialog has its own
                     <strong>Apply</strong> / <strong>Add as New</strong> buttons right inside it</li>
             </ol>
+        </div>
+
+        <h3 id="start-page">The start page</h3>
+        <p>While no spectra are loaded, the plot area shows the <strong>start page</strong>
+        instead of an empty plot: <strong>Import data&hellip;</strong>, <strong>Open
+        snapshot&hellip;</strong>, <strong>Try a test dataset</strong> (spectra that come with the
+        program, to try every tool without own data), <strong>Quick start</strong>, and the last
+        five files you opened (<strong>Open recent</strong>; two files of the same name are told
+        apart by their folder). You can also simply drag files from File Explorer onto the window.
+        The page disappears as soon as spectra are loaded and comes back when all of them are
+        deleted.</p>
+        <div class="screenshot">
+            <img src="$START_PAGE" width="${START_PAGE_W}" height="${START_PAGE_H}" alt="The start page: Import data, Open snapshot, Try a test dataset, Quick start and the recent files over the empty plot" />
+            <p class="caption">The start page, shown while no spectra are loaded.</p>
         </div>
 
         <h3 id="pipeline-scheme">Processing Pipeline — Schematic</h3>
@@ -2673,7 +2688,7 @@ def get_user_guide_help_content():
         PowerPoint or an e-mail with Ctrl+V. It is copied at 300 dpi (sharp also when printed), on a
         white background, and is pasted in the size it has on the screen &mdash; make the program
         window larger or smaller first for a larger or smaller picture.</p>
-        <p>Use the Save icon in the matplotlib toolbar to export the current plot.
+        <p>Use the Save icon in the matplotlib toolbar to export the current plot as it is.
         For publication-quality output, use <strong>Open in new window</strong>
         (right-click on plot) which gives a full matplotlib window with all export
         options (PNG, PDF, SVG, EPS).</p>
