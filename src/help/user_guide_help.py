@@ -2688,6 +2688,22 @@ def get_user_guide_help_content():
         PowerPoint or an e-mail with Ctrl+V. It is copied at 300 dpi (sharp also when printed), on a
         white background, and is pasted in the size it has on the screen &mdash; make the program
         window larger or smaller first for a larger or smaller picture.</p>
+        <p id="publication"><strong>Save plot for publication&hellip;</strong> (File menu, or
+        right-click on the plot) saves the plot as a journal asks for it, in one step:</p>
+        <ul>
+            <li><strong>Column</strong> / <strong>Width</strong> / <strong>Height</strong> in cm
+            &mdash; 1 column (8.5 cm), 1.5 columns (11.4 cm), 2 columns (17.5 cm) or your own size.</li>
+            <li><strong>Text size</strong> &mdash; one size for all labels, the numbers on the
+            axes and the legend (titles 1 pt larger); journals usually ask for 6&ndash;9 pt.</li>
+            <li><strong>Lines at least</strong> &mdash; thinner lines are drawn this thick
+            (e.g. 1 pt).</li>
+            <li><strong>Resolution</strong> &mdash; 300, 600 (most journals) or 1200 dpi for a
+            TIFF or PNG picture; the window shows its size in pixels (8.5 &times; 6.5 cm at 600 dpi:
+            2008 &times; 1535). PDF, SVG and EPS are sharp at any size.</li>
+        </ul>
+        <p>The preview shows the picture about as large as in the paper. <strong>Save&hellip;</strong>
+        asks for the file and its kind (TIFF, PNG, PDF, SVG, EPS). The plot on the screen is not
+        changed; the window remembers your choices.</p>
         <p>Use the Save icon in the matplotlib toolbar to export the current plot as it is.
         For publication-quality output, use <strong>Open in new window</strong>
         (right-click on plot) which gives a full matplotlib window with all export

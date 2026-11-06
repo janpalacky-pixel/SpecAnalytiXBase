@@ -310,7 +310,7 @@ KNOWN_KEYS = {'autosave_minutes', 'large_plot_settings', 'large_plot_dialog_coun
               'peak_fit_map_settings', 'methods_report_include_table',
               'methods_report_include_references', 'theme', 'whats_new_hidden_for',
               'parallel_processing_mode', 'parallel_max_workers', 'update_check',
-              'update_skipped'}
+              'update_skipped', 'publication_figure'}
 
 
 def groups():

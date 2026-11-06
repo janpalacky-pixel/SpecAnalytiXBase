@@ -2173,12 +2173,41 @@ class MainController(QMainWindow):
         else:
             menu.addAction(action)
         self.view.actionCopyPlot = action
+        # File -> Save plot for publication… right after it
+        pub = QAction("Save plot for publication\u2026", self.view)
+        pub.setObjectName("actionSavePlotForPublication")
+        pub.setIcon(_icons.standard('SP_DialogSaveButton', self.view))
+        pub.setStatusTip("The plot in the size of a journal column, at 600 dpi (TIFF, PNG) "
+                         "or as PDF / SVG / EPS")
+        pub.triggered.connect(self.save_plot_for_publication)
+        actions = menu.actions()
+        if action in actions and actions.index(action) + 1 < len(actions):
+            menu.insertAction(actions[actions.index(action) + 1], pub)
+        else:
+            menu.addAction(pub)
+        self.view.actionSavePlotForPublication = pub
         # also a button under the menu bar, the last of the main buttons
         tb = getattr(self.view, 'mainToolBar', None)
         if tb is not None:
             tb.addSeparator()
             tb.addAction(action)
             tb.widgetForAction(action).setObjectName("toolbarCopyPlotButton")
+
+    def save_plot_for_publication(self):
+        """File -> Save plot for publication… (also right-click on the plot):
+        the plot in a journal's column width, one text size, 600 dpi."""
+        canvas = getattr(self, 'static_canvas', None)
+        figure = getattr(canvas, 'figure', None)
+        if figure is None or not figure.axes:
+            self._status("There is no plot to save \u2014 select some spectra first.")
+            return None
+        from src.views.dialogs.visualization.publication_dialog import PublicationDialog
+        prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
+        dlg = PublicationDialog(figure, self.view, preferences=prefs)
+        dlg.exec_()
+        if dlg.saved_path:
+            self._status(f"Saved for publication: {dlg.saved_path}")
+        return dlg
 
     def copy_plot_to_clipboard(self):
         """The main plot as a picture on the clipboard (Ctrl+Shift+C)."""
@@ -2904,6 +2933,7 @@ class MainController(QMainWindow):
         context_menu.addSeparator()
         new_figure_action = context_menu.addAction("Open in New Window")        
         copy_plot_action = context_menu.addAction("Copy plot to clipboard\tCtrl+Shift+C")
+        publication_action = context_menu.addAction("Save plot for publication\u2026")
 
         # Pinned cursors (Cursor checkbox above the plot)
         cursor = getattr(self, 'plot_cursor_controller', None)
@@ -2945,6 +2975,8 @@ class MainController(QMainWindow):
             self.open_external_figure()
         elif action == copy_plot_action:
             self.copy_plot_to_clipboard()
+        elif action == publication_action:
+            self.save_plot_for_publication()
         elif copy_cursor_action is not None and action == copy_cursor_action:
             n = cursor.copy_table()
             self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "
