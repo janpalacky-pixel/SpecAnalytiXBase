@@ -119,7 +119,8 @@ in every spectrum.</p>
 <li><b>One spectrum selected</b> (a click): it alone, with its fit, single peaks and
 residual.</li>
 <li><b>Several selected</b> (Ctrl+click, Shift+click, or <b>All</b> / <b>Fitted</b> under the
-list): shown together, as chosen in <i>Several selected</i> (Overlay, Waterfall, Grid).</li>
+list): shown together, as chosen in <i>Several selected</i> (Overlay, Waterfall, Grid; kept
+when the window is opened again).</li>
 <li><b>Orange frame</b> (bold name): the <b>shown spectrum</b> - its peaks are in the table of
 peaks, Add via Click adds to it. &#9664; &#9654; above the list, or <b>Alt+Left / Alt+Right</b>
 (also Alt+Up / Alt+Down): the previous / next spectrum; with several selected the frame moves

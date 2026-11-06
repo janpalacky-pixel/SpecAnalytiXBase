@@ -157,6 +157,12 @@ def test_the_list_selection_is_kept_when_opened_again(monkeypatch):
     again = PeakFittingDialog(None, spectrum=sp[0], series=sp,
                               current_settings=dlg.get_results())
     assert again.selected_spectra() == [0, 1, 2, 3] and again.view_mode != 'one'
+    # Overlay / Waterfall / Grid as last time
+    for key in ('waterfall', 'grid', 'overlay'):
+        dlg.view_combo.setCurrentIndex(dlg.view_combo.findData(key))
+        again = PeakFittingDialog(None, spectrum=sp[0], series=sp,
+                                  current_settings=dlg.get_results())
+        assert again.view_combo.currentData() == key and again.view_mode == key
 
 
 def test_the_shown_spectrum_has_a_frame_among_the_selected():

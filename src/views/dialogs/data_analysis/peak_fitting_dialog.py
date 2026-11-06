@@ -784,6 +784,12 @@ class PeakFittingDialog(QDialog):
 
     def _load_plot_options(self):
         s = self.current_settings or {}
+        combo = getattr(self, 'view_combo', None)
+        if combo is not None:                        # Overlay / Waterfall / Grid as last time
+            k = combo.findData(s.get('several_view', 'overlay'))
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(k, 0))
+            combo.blockSignals(False)
         if s.get('click_width_value'):
             self.click_width_spin.setValue(float(s['click_width_value']))
         k = self.click_width_combo.findData(s.get('click_width', 'band'))
@@ -4161,6 +4167,8 @@ class PeakFittingDialog(QDialog):
                'constraint_per_spectrum': self.own_constraint_check.isChecked(),
                'together': self.together(),
                'list_selection': self.selected_spectra(),
+               'several_view': (self.view_combo.currentData()
+                                if hasattr(self, 'view_combo') else 'overlay'),
                'own_constraints': list(self.own_constraints)}
         if self.own_peaks is not None:
             own = list(self.own_peaks)

@@ -917,7 +917,8 @@ def get_peak_fitting_help_content():
             under the list) &mdash; shown together, as chosen in <b>Several selected</b>:
             <b>Overlay</b> (in one plot), <b>Waterfall</b> (each shifted up a little) or
             <b>Grid</b> (one small plot each, at most 16). Each spectrum has its own colour: the
-            data thin, its fit thick. Before fitting only the data are drawn.</li>
+            data thin, its fit thick. Before fitting only the data are drawn. The window
+            remembers the choice when it is opened again.</li>
             <li><b>Several selected: which one is shown</b> &mdash; one of them is the <b>shown
             spectrum</b> (its peaks are in the tab Peaks). &#9664; &#9654; (or <b>Alt+Left</b> /
             <b>Alt+Right</b>, or <b>Alt+Up</b> / <b>Alt+Down</b>; wherever the focus is in the window)
