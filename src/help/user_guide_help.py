@@ -174,6 +174,14 @@ def get_user_guide_help_content():
             <p class="caption">The start page, shown while no spectra are loaded.</p>
         </div>
 
+        <h3 id="search-help">Searching the help</h3>
+        <p><strong>Help &rsaquo; Search the help&hellip;</strong> (<span class="kbd">F1</span>) finds
+        a word in <em>all</em> help pages at once &mdash; the browser's Ctrl+F searches only the
+        page that is open. Type one or a few words (e.g. <i>legend</i>, <i>600 dpi</i>,
+        <i>isosbestic</i>): the list shows every section that contains all of them, with its page,
+        its heading and the words around the first one; sections whose heading has the words come
+        first. Double-click one (or press Enter for the first) to open its page at that section.</p>
+
         <h3 id="pipeline-scheme">Processing Pipeline — Schematic</h3>
 
         <table style="width:auto; border:none; border-collapse:separate; border-spacing:0;">

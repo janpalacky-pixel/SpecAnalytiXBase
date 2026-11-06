@@ -1703,6 +1703,7 @@ class MainController(QMainWindow):
         self.view.actionSVDBackgroundHelp.triggered.connect(self.show_svd_background_help)
         self.view.actionUserGuide.triggered.connect(self.show_user_guide_help)
         self.view.actionQuickStart.triggered.connect(self.show_quick_start_help)
+        self.view.actionSearchHelp.triggered.connect(self.show_help_search)
         self.view.actionInstallationHelp.triggered.connect(self.show_installation_help)
         self.view.actionDeveloperGuide.triggered.connect(self.show_developer_guide_help)
         self.view.actionLicense.triggered.connect(self.show_license_help)
@@ -2104,6 +2105,20 @@ class MainController(QMainWindow):
         """Show comprehensive user guide."""
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'user_guide')
+
+    def show_help_search(self):
+        """Help -> Search the help… (F1): a word in all help pages at once."""
+        from src.views.dialogs.misc.help_search_dialog import HelpSearchDialog
+        dlg = getattr(self, '_help_search_dialog', None)
+        if dlg is None:
+            dlg = HelpSearchDialog(self.view)
+            self._help_search_dialog = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        dlg.field.setFocus()
+        dlg.field.selectAll()
+        return dlg
 
     def show_quick_start_help(self):
         """Show the short single-page Quick Start orientation — basic

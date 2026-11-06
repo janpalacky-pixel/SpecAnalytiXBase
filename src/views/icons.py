@@ -781,6 +781,22 @@ def book_icon():
     return _tool_icon(draw)
 
 
+def search_icon():
+    """A magnifying glass over a page (Search the help)."""
+    def draw(p, QPen):
+        from PyQt5.QtCore import QRectF
+        _box(p, QPen, (1, 1, 10, 13.5), '#FFFFFF', DARK, 1.0, 0.8)
+        for y in (4, 6.5):
+            _line(p, QPen, (3, y), (8.5, y), '#90A4AE', 0.9)
+        pen = QPen(QColor('#1565C0'))
+        pen.setWidthF(1.6)
+        p.setPen(pen)
+        p.setBrush(QColor('#E3F2FD'))
+        p.drawEllipse(QRectF(6.5, 6.5, 6, 6))
+        _line(p, QPen, (11.6, 11.6), (15, 15), '#1565C0', 2.0)
+    return _tool_icon(draw)
+
+
 def quick_start_icon():
     """A green Run triangle on a page (start quickly)."""
     def draw(p, QPen):

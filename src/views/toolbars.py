@@ -251,6 +251,7 @@ def apply_menu_icons(view):
 # of that tool (found by its name in the menus)
 HELP_ICONS = {
     'actionUserGuide': icons.book_icon, 'actionQuickStart': icons.quick_start_icon,
+    'actionSearchHelp': icons.search_icon,
     'actionWhatsNew': icons.whats_new_icon, 'actionKeyboardShortcuts': icons.keyboard_icon,
     'actionCheckUpdate': icons.update_icon,
     'actionInstallationHelp': icons.installation_icon,

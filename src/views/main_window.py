@@ -1640,6 +1640,13 @@ class MainWindow(QMainWindow):
         self.actionQuickStart.setObjectName("actionQuickStart")
         self.actionQuickStart.setText("Quick Start")
 
+        # Search the help: a word in all help pages at once (F1)
+        self.actionSearchHelp = QAction(self)
+        self.actionSearchHelp.setObjectName("actionSearchHelp")
+        self.actionSearchHelp.setText("Search the help\u2026")
+        self.actionSearchHelp.setShortcut(QKeySequence("F1"))
+        self.actionSearchHelp.setStatusTip("Find a word in all help pages at once")
+
         # Installation — how to get/run the application itself (installer,
         # from source, building your own installer), as opposed to how to
         # use it once it's running.
@@ -2110,6 +2117,7 @@ class MainWindow(QMainWindow):
         self.menuHelpVisualization.addAction(self.menuHelpVizDataAnalysis.menuAction())
 
         # Assemble Help menu
+        self.menuHelp.addAction(self.actionSearchHelp)
         self.menuHelp.addAction(self.actionUserGuide)
         self.menuHelp.addAction(self.actionQuickStart)
         self.menuHelp.addAction(self.actionWhatsNew)
