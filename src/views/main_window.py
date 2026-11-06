@@ -283,6 +283,99 @@ class OperationTreeComboBox(QWidget):
         self._update_button_text()
         self._button.clicked.connect(self._toggle_popup)
         layout.addWidget(self._button)
+        self._build_search(layout, combo_h)
+
+    # ------------------------------------------------------------------ #
+    # Search field (next to the drop-down list)                          #
+    # ------------------------------------------------------------------ #
+
+    def _build_search(self, layout, height):
+        """A search field after the drop-down list: type a part of a tool's
+        name or what it does - the closest tools are offered in a list;
+        choosing one selects it in the drop-down list (tool_search.search)."""
+        from PyQt5.QtWidgets import QLineEdit, QCompleter
+        from PyQt5.QtCore import QStringListModel
+        self._search_partner = None            # (the other drop-down list, its box title)
+        self._search_choices = {}              # shown text -> (drop-down list, tool)
+        self.search_field = QLineEdit(self)
+        self.search_field.setPlaceholderText("Search\u2026")
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.setFixedWidth(130)
+        self.search_field.setFixedHeight(height)
+        # white with a frame, like the drop-down list beside it: a field to type in
+        self.search_field.setStyleSheet(
+            "QLineEdit { padding: 2px 4px; border: 1px solid #B0B8C8; border-radius: 4px;"
+            "  background-color: #FFFFFF; color: #2C3E6B; }"
+            "QLineEdit:focus { border-color: #7A9CC8; }"
+            "QLineEdit:disabled { background-color: #F2F3F5; color: #9AA0A8;"
+            "  border-color: #D3D7DE; }")
+        self.search_field.setToolTip(
+            "Search a tool: type a part of its name or a word for what it does\n"
+            "(e.g. baseline, smooth, pca, peak, normalise) and choose one of the\n"
+            "closest tools from the list (or press Enter for the first one).\n"
+            "It is then selected in the drop-down list; click Run to open it.")
+        self._search_model = QStringListModel(self)
+        self._completer = QCompleter(self._search_model, self)
+        self._completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
+        self._completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._completer.setWidget(self.search_field)
+        self._completer.activated[str].connect(self._search_chosen)
+        self.search_field.textEdited.connect(self._search_typed)
+        self.search_field.returnPressed.connect(self._search_enter)
+        layout.addSpacing(4)
+        layout.addWidget(self.search_field)
+
+    def set_search_partner(self, other, title):
+        """Tools of the other drop-down list (`other`, in the box `title`)
+        are offered too when none of this list fits."""
+        self._search_partner = (other, title)
+
+    def search_matches(self, text):
+        """[(shown text, drop-down list, tool)]: the closest tools of this
+        list; when none fits, those of the partner list (with its box)."""
+        from src.modules.misc.tool_search import search
+        found = [(tool, self, tool) for tool in search(text, self.CATEGORIES)]
+        if not found and self._search_partner is not None:
+            other, title = self._search_partner
+            found = [(f"{tool}  (in {title})", other, tool)
+                     for tool in search(text, other.CATEGORIES)]
+        return found
+
+    def _search_typed(self, text):
+        found = self.search_matches(text)
+        self._search_choices = {shown: (combo, tool) for shown, combo, tool in found}
+        self._search_model.setStringList([shown for shown, _, _ in found] if found
+                                         else ([] if not text.strip() else ["(no tool found)"]))
+        if text.strip():
+            # the list as wide as its longest line (wider than the field)
+            fm = self.search_field.fontMetrics()
+            widest = max([fm.horizontalAdvance(t) for t in self._search_model.stringList()]
+                         or [0])
+            rect = self.search_field.rect()
+            rect.setWidth(max(rect.width(), widest + 40))
+            self._completer.complete(rect)
+        else:
+            self._completer.popup().hide()
+
+    def _search_chosen(self, shown):
+        choice = self._search_choices.get(shown)
+        if choice is None:
+            return
+        combo, tool = choice
+        combo._set_current(tool)
+        self.search_field.clear()
+        self._search_choices = {}
+        QTimer.singleShot(0, self._completer.popup().hide)
+
+    def _search_enter(self):
+        found = self.search_matches(self.search_field.text())
+        if found:
+            self._search_chosen_first(found[0])
+
+    def _search_chosen_first(self, entry):
+        shown, combo, tool = entry
+        self._search_choices = {shown: (combo, tool)}
+        self._search_chosen(shown)
 
     def _build_popup(self):
         """Build the floating tree popup (created once, shown/hidden on demand)."""
@@ -376,8 +469,9 @@ class OperationTreeComboBox(QWidget):
         self._open_popup()
 
     def _open_popup(self):
-        # Width = button width (at least 160 px)
-        width = max(self._button.width(), 160)
+        # Width = the button and the search field beside it (at least 160
+        # px), so that the names are not cut off
+        width = max(self.width(), 160)
 
         # Height: one row per leaf + one per category header, capped at 300 px
         row_h = max(self._tree.sizeHintForRow(0), 20)
@@ -1122,6 +1216,11 @@ class MainWindow(QMainWindow):
         self.gridLayout_9.addWidget(self.help_operations_pushButton, 1, 1, 1, 1)
 
         self.gridLayout_7.addWidget(self.groupBox_operations, 1, 3, 1, 1)  # MOVED to column 3
+        # each search field also offers the tools of the other drop-down list
+        self.available_operations_comboBox.set_search_partner(
+            self.visualization_method_comboBox, "Spectra Analysis & Visualization")
+        self.visualization_method_comboBox.set_search_partner(
+            self.available_operations_comboBox, "Spectra Processing")
 
         # --- Splitter: spectrum list (left) | plot + controls (right) ---
         self.main_splitter = QSplitter(Qt.Horizontal, self.centralwidget)

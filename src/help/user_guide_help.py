@@ -151,7 +151,8 @@ def get_user_guide_help_content():
             <ol>
                 <li><strong>Import</strong> &mdash; File → Import data → New&hellip; (or the <strong>Import data</strong> button, Ctrl+I)</li>
                 <li><strong>Select</strong> spectra in the left-hand list</li>
-                <li><strong>Choose</strong> an operation from the Spectra Processing dropdown</li>
+                <li><strong>Choose</strong> an operation from the Spectra Processing dropdown (or
+                    type what you need in the <strong>Search</strong> field next to it)</li>
                 <li><strong>Run</strong> &mdash; click Run to open the operation's settings dialog</li>
                 <li><strong>Commit</strong> &mdash; every operation's dialog has its own
                     <strong>Apply</strong> / <strong>Add as New</strong> buttons right inside it</li>
@@ -1174,7 +1175,15 @@ def get_user_guide_help_content():
         <div class="pipeline">
             <strong>Step 1 — Select operation:</strong> Choose from the dropdown
             (grouped by category: Baseline Correction, Smoothing, Data Manipulation,
-            Axis &amp; Unit Conversion, Spike Removal, Resolution).<br><br>
+            Axis &amp; Unit Conversion, Spike Removal, Resolution).
+            <strong>Search&hellip;</strong> next to the dropdown (and next to the one of
+            Spectra Analysis &amp; Visualization): type a part of a tool's name or a word for
+            what it does &mdash; e.g. <i>baseline</i>, <i>smooth</i>, <i>snv</i>,
+            <i>raman shift</i>, <i>pca</i>, <i>melting</i> &mdash; and choose one of the closest
+            tools from the list (Enter: the first one); a small typo is forgiven. The tool is
+            then selected in the dropdown; click Run. A tool of the other panel is offered too,
+            with where it is (e.g. typing <i>peak fit</i> here: Peak Fitting, in Spectra
+            Analysis &amp; Visualization).<br><br>
             <strong>Step 2 — Run:</strong> Click <strong>Run</strong> to
             open the settings dialog for the chosen operation. Define all parameters.<br><br>
             <strong>Step 3 — Commit:</strong> every operation in the dropdown has its own
