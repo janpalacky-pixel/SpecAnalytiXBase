@@ -2277,25 +2277,14 @@ class SVDAnalysisDialog(QDialog):
         self.xaxis_label_radio.toggled.connect(self._on_xaxis_mode_changed)
         self.xaxis_group.addButton(self.xaxis_label_radio)
         xaxis_row.addWidget(self.xaxis_label_radio)
-        xaxis_row.addStretch()
 
-        self.xaxis_help_btn = QPushButton("?")
-        self.xaxis_help_btn.setFixedWidth(24)
+        from src.views import icons as _icons
+
+        self.xaxis_help_btn = _icons.help_button('')
         self.xaxis_help_btn.setToolTip("Help for Coefficient X-axis")
-        self.xaxis_help_btn.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #F57C00;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  font-weight: bold;"
-            "  padding: 2px;"
-            "}"
-            "QPushButton:hover { background-color: #E65100; }"
-            "QPushButton:pressed { background-color: #BF360C; }"
-        )
         self.xaxis_help_btn.clicked.connect(self.show_xaxis_help)
         xaxis_row.addWidget(self.xaxis_help_btn)
+        xaxis_row.addStretch()
         param_layout.addLayout(xaxis_row)
 
         # This dialog's OWN "Shorten names" toggle for the 'Spectrum labels'

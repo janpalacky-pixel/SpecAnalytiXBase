@@ -184,19 +184,13 @@ class SpectralRangeDialog(QDialog):
         bg.addButton(self._rb_exclude)
         mode_row.addWidget(self._rb_include)
         mode_row.addWidget(self._rb_exclude)
-        mode_row.addStretch()
-        help_btn = QPushButton("?")
-        help_btn.setFixedWidth(32)
-        help_btn.setFixedHeight(24)
+        from src.views import icons as _icons
+        help_btn = _icons.help_button('')
         help_btn.setFlat(False)
         help_btn.setToolTip("Show help for this dialog")
-        help_btn.setStyleSheet(
-            "QPushButton { font-weight:bold; border-radius:11px; "
-            "background:#1565C0; color:white; }"
-            "QPushButton:hover { background:#1976D2; }"
-        )
         help_btn.clicked.connect(self._show_help)
         mode_row.addWidget(help_btn)
+        mode_row.addStretch()
         ranges_lay.addLayout(mode_row)
 
         # Range list — ExtendedSelection so Ctrl/Shift-click can select

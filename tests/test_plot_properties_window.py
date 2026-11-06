@@ -103,6 +103,7 @@ def test_tooltip_filter_wraps_when_shown():
     tooltips.install(app)
     try:
         b = QPushButton('x')
+        b.setProperty(tooltips.RICH, False)                    # a window without bold terms
         b.setToolTip('word ' * 60)
         app.sendEvent(b, QHelpEvent(QEvent.ToolTip, QPoint(1, 1), QPoint(1, 1)))
         assert '\n' in b.toolTip()

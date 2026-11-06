@@ -119,27 +119,15 @@ class SaveOptionsDialog(QDialog):
         for w in (self.layout_columns, self.layout_rows):
             self._layout_btn_group.addButton(w)
             layout_layout.addWidget(w)
-
-        layout_layout.addStretch()
-        self._layout_help_btn = QPushButton("?")
-        self._layout_help_btn.setFixedWidth(24)
+        from src.views import icons as _icons
+        self._layout_help_btn = _icons.help_button('')
         self._layout_help_btn.setToolTip(
             "Why is this only available with 'Use common x-scale'?"
         )
-        self._layout_help_btn.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #F57C00;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  font-weight: bold;"
-            "  padding: 2px;"
-            "}"
-            "QPushButton:hover { background-color: #E65100; }"
-            "QPushButton:pressed { background-color: #BF360C; }"
-        )
         self._layout_help_btn.clicked.connect(self._show_layout_help)
         layout_layout.addWidget(self._layout_help_btn)
+
+        layout_layout.addStretch()
 
         self.layout_group.setLayout(layout_layout)
         layout.addWidget(self.layout_group)

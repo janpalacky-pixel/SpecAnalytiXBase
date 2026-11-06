@@ -165,14 +165,8 @@ class TwoDCorrelationDialog(QDialog):
         same orange-square style as the main window's own '?' buttons
         (e.g. next to Legend), for the longer explanations that used to
         sit as permanently-visible paragraphs cluttering this panel."""
-        btn = QPushButton('?')
-        btn.setFixedSize(28, 28)
-        btn.setStyleSheet(
-            'QPushButton { background-color:#F57C00; color:white; '
-            'font-weight:bold; font-size:11pt; border:none; border-radius:4px; }'
-            'QPushButton:hover { background-color:#EF6C00; }'
-        )
-        btn.setToolTip('About this section')
+        from src.views import icons as _icons
+        btn = _icons.help_button('About this section')
         btn.clicked.connect(lambda: QMessageBox.information(self, title, text))
         return btn
 
@@ -366,7 +360,6 @@ class TwoDCorrelationDialog(QDialog):
         cl = QVBoxLayout(cmp_grp)
         cmp_header = QHBoxLayout()
         cmp_header.addWidget(QLabel('Compare snapshots:'))
-        cmp_header.addStretch()
         cmp_header.addWidget(self._make_info_button(
             'About Compare Runs',
             '"Store as A" and "Store as B" each save a full snapshot of the '
@@ -383,6 +376,7 @@ class TwoDCorrelationDialog(QDialog):
             'file, then reopen this dialog with only cooling-phase spectra '
             'selected, run, and load both files here to compare.'
         ))
+        cmp_header.addStretch()
         cl.addLayout(cmp_header)
         row_a = QHBoxLayout()
         self._store_a_btn = QPushButton('Store as A')

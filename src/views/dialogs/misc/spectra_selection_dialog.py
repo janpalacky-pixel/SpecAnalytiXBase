@@ -161,7 +161,6 @@ class SpectraSelectionDialog(QDialog):
         for btn in (self._radio_range, self._radio_search, self._radio_root):
             self._mode_group.addButton(btn)
             mode_row.addWidget(btn)
-        mode_row.addStretch()
         mode_row.addWidget(self._make_info_button(
             "About Select Spectra",
             "Three ways to pick which spectra the Select / Add to Selection /\n"
@@ -182,6 +181,7 @@ class SpectraSelectionDialog(QDialog):
             "groups to select every spectrum in them at once. A label that\n"
             "doesn't match any of those conventions still shows up as its\n"
             "own one-spectrum group, rather than being left out."))
+        mode_row.addStretch()
         layout.addLayout(mode_row)
 
         self._stack = QStackedWidget()

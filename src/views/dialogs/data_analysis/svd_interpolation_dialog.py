@@ -634,9 +634,9 @@ class SVDInterpolationDialog(QDialog):
             "doesn't pick a number for you.")
         self._guess_components_btn.clicked.connect(self._show_component_diagnostics_dialog)
         comp_header.addWidget(self._guess_components_btn)
-        comp_header.addStretch()
         comp_header.addWidget(_make_help_button(
             "Help for Components & curve fit", self._show_components_help))
+        comp_header.addStretch()
         cv.addLayout(comp_header)
         self._component_list = QListWidget()
         self._component_list.setMinimumHeight(140)
@@ -761,10 +761,10 @@ class SVDInterpolationDialog(QDialog):
         target_header = QHBoxLayout()
         target_desc = QLabel("New parameter values (comma or newline separated), "
                               "e.g. 22, 37, 42:")
-        target_desc.setWordWrap(True)
-        target_header.addWidget(target_desc, 1)
+        target_header.addWidget(target_desc)       # one line: the "?" right after it
         target_header.addWidget(_make_help_button(
             "Help for Target values", self._show_target_values_help))
+        target_header.addStretch(1)
         tv.addLayout(target_header)
         self._target_edit = QTextEdit()
         self._target_edit.setMinimumHeight(60)

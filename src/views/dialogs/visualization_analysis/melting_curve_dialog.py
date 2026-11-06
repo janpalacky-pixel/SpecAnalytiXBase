@@ -285,7 +285,6 @@ class MeltingCurveDialog(QDialog):
         self.saved_fits_toggle_btn.setToolTip("Click to show/hide the saved-fits list and its buttons.")
         self.saved_fits_toggle_btn.clicked.connect(self._toggle_saved_fits_section)
         header_row.addWidget(self.saved_fits_toggle_btn)
-        header_row.addStretch()
         header_row.addWidget(self._make_help_button(
             "Saved Fits",
             "This dialog always works on ONE melting curve at a time — extract, "
@@ -306,6 +305,7 @@ class MeltingCurveDialog(QDialog):
             "the next time you click \"Show Summary\" — uncheck any you want to "
             "leave out without deleting them. \"Remove Selected\"/\"Remove All\" "
             "delete entries from the container entirely."))
+        header_row.addStretch()
         v.addLayout(header_row)
 
         self.saved_fits_content_widget = QWidget()
@@ -1131,13 +1131,8 @@ class MeltingCurveDialog(QDialog):
         for anything too long to read comfortably as a single hover-line
         (Qt tooltips don't wrap long plain text); short tooltips stay as
         tooltips, just manually wrapped onto a few lines with '\\n'."""
-        btn = QPushButton("?")
-        btn.setFixedSize(20, 20)
-        btn.setStyleSheet(
-            "QPushButton { background-color: #FF8C00; color: white; border-radius: 10px; "
-            "font-weight: bold; padding: 0px; }"
-            "QPushButton:hover { background-color: #FFA500; }")
-        btn.setToolTip(f"About: {title}")
+        from src.views import icons as _icons
+        btn = _icons.help_button(f"About: {title}")
         btn.clicked.connect(lambda: QMessageBox.information(self, title, text))
         return btn
 
@@ -1244,7 +1239,6 @@ class MeltingCurveDialog(QDialog):
         self.guesses_table_toggle_btn.setToolTip("Click to show/hide this table.")
         self.guesses_table_toggle_btn.clicked.connect(self._toggle_guesses_table)
         table_header_row.addWidget(self.guesses_table_toggle_btn)
-        table_header_row.addStretch()
         table_header_row.addWidget(self._make_help_button(
             "Sigmoid Fit — the guesses table",
             "Before fitting: this table shows the current starting guesses "
@@ -1264,6 +1258,7 @@ class MeltingCurveDialog(QDialog):
             "different, independent notion of uncertainty from the deltaH/deltaS/"
             "Tm errors in the thermodynamics table below, which come from the "
             "Arrhenius regression instead."))
+        table_header_row.addStretch()
         v.addLayout(table_header_row)
 
         self.fit_results_table = QTableWidget()

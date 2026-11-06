@@ -912,31 +912,19 @@ class ImportDialog(QDialog):
         self._mat_rows_spin.setValue(1)
         self._mat_rows_spin.valueChanged.connect(self._on_mat_rows_changed)
         mat_rows_row.addWidget(self._mat_rows_spin)
-        mat_rows_row.addStretch(1)
 
         # Small orange "?" button — same style as the Interactive Update
         # / Legend help button on the main window's plot controls — for
         # a quick pointer to the actual post-import workflow (Select All
         # + 2D Map), which nothing else in this dialog hints at.
-        self._mat_workflow_help_button = QPushButton("?")
-        self._mat_workflow_help_button.setFixedWidth(24)
+        from src.views import icons as _icons
+        self._mat_workflow_help_button = _icons.help_button('')
         self._mat_workflow_help_button.setToolTip(
             "How to visualize this map after importing it."
         )
-        self._mat_workflow_help_button.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #F57C00;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  font-weight: bold;"
-            "  padding: 2px;"
-            "}"
-            "QPushButton:hover { background-color: #E65100; }"
-            "QPushButton:pressed { background-color: #BF360C; }"
-        )
         self._mat_workflow_help_button.clicked.connect(self._show_mat_workflow_help)
         mat_rows_row.addWidget(self._mat_workflow_help_button)
+        mat_rows_row.addStretch(1)
 
         self._mat_rows_row_widget.setVisible(False)
         preview_layout.addWidget(self._mat_rows_row_widget)

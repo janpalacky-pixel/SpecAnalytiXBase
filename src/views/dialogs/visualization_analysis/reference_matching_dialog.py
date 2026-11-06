@@ -345,14 +345,8 @@ class ReferenceMatchingDialog(QDialog):
 
         hdr = QHBoxLayout()
         hdr.addWidget(QLabel('Click: select & preview  |  Shift: extend  |  Ctrl: toggle'))
-        hdr.addStretch()
-        help_btn = QPushButton('?')
-        help_btn.setFixedSize(18, 18)
-        help_btn.setStyleSheet(
-            'QPushButton { border-radius:9px; background:#1565C0; color:white; '
-            'font-weight:bold; font-size:10px; padding:0px; }'
-            'QPushButton:hover { background:#0D47A1; }'
-        )
+        from src.views import icons as _icons
+        help_btn = _icons.help_button('')
         help_btn.setToolTip(
             'Click any spectrum to select it and preview its top matches.\n'
             'Select several to see one subplot per spectrum in Preview\n'
@@ -363,6 +357,7 @@ class ReferenceMatchingDialog(QDialog):
         )
         help_btn.clicked.connect(self._show_query_help)
         hdr.addWidget(help_btn)
+        hdr.addStretch()
         layout.addLayout(hdr)
 
         # Own, independent "Shorten names" toggle for this dialog — feeds

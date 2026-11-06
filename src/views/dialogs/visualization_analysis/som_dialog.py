@@ -498,9 +498,9 @@ class SOMDialog(QDialog):
 
         header = QHBoxLayout()
         header.addWidget(QLabel("What should the map be trained on?"))
-        header.addStretch()
         header.addWidget(_make_help_button(
             "What does 'Train on' mean?", self._show_training_data_help))
+        header.addStretch()
         layout.addLayout(header)
 
         self.radio_train_shape = QRadioButton("Full spectrum shape")
@@ -641,9 +641,9 @@ class SOMDialog(QDialog):
 
         header = QHBoxLayout()
         header.addWidget(QLabel("Grid size, learning rate, radius, iterations"))
-        header.addStretch()
         header.addWidget(_make_help_button(
             "What do these training parameters mean?", self._show_training_params_help))
+        header.addStretch()
         som_layout.addLayout(header)
 
         # Training method: the classic online algorithm (slow for hundreds
@@ -817,9 +817,9 @@ class SOMDialog(QDialog):
 
         cp_header = QHBoxLayout()
         cp_header.addWidget(QLabel("Component Plane shows:"))
-        cp_header.addStretch()
         cp_header.addWidget(_make_help_button(
             "What can the Component Plane show?", self._show_component_plane_help))
+        cp_header.addStretch()
         cp_layout.addLayout(cp_header)
 
         self.cp_metric_combo = QComboBox()

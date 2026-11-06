@@ -538,19 +538,10 @@ class NormalizationDialog(QDialog):
             'QTabBar::tab { padding: 4px 8px; min-width: 120px; }'
         )
 
-        self.method_info_button = QPushButton('? Method info')
-        self.method_info_button.setToolTip('Show a description of the selected method')
-        self.method_info_button.setStyleSheet(
-            'QPushButton {'
-            '  background-color: #F57C00;'
-            '  color: white;'
-            '  border: none;'
-            '  border-radius: 4px;'
-            '  padding: 3px 8px;'
-            '  font-weight: bold;'
-            '}'
-            'QPushButton:hover { background-color: #E65100; }'
-        )
+        # the orange "?" right after the tabs: what the selected method does
+        from src.views import icons as _icons
+        self.method_info_button = _icons.help_button(
+            'Method info: what the selected method does')
         self.method_info_button.clicked.connect(self._show_method_info)
 
         btn_id = 0
@@ -581,8 +572,8 @@ class NormalizationDialog(QDialog):
             self.method_tabs.addTab(scroll, tab_name)
 
         self.mode_button_group.buttonClicked.connect(self._on_method_changed)
+        _icons.place_after_tabs(self.method_tabs, self.method_info_button)
         layout.addWidget(self.method_tabs)
-        layout.addWidget(self.method_info_button, alignment=Qt.AlignRight)
 
         # Reference spectrum selector (shown only for 'reference' mode)
         self.ref_row = QWidget()
@@ -675,23 +666,14 @@ class NormalizationDialog(QDialog):
         )
         self.target_mode_group.addButton(self.target_standard_radio, 0)
         standard_row.addWidget(self.target_standard_radio)
-        standard_row.addStretch()
 
-        self.target_info_button = QPushButton('?')
-        self.target_info_button.setFixedWidth(24)
-        self.target_info_button.setToolTip('Explain the result scaling options')
-        self.target_info_button.setStyleSheet(
-            'QPushButton {'
-            '  background-color: #F57C00;'
-            '  color: white;'
-            '  border: none;'
-            '  border-radius: 4px;'
-            '  font-weight: bold;'
-            '}'
-            'QPushButton:hover { background-color: #E65100; }'
-        )
+        # the orange "?" right after the first choice: the three choices
+        from src.views import icons as _icons
+        self.target_info_button = _icons.help_button(
+            'Result scaling: what Standard, Keep original scale and Custom target do')
         self.target_info_button.clicked.connect(self._show_target_scaling_info)
         standard_row.addWidget(self.target_info_button)
+        standard_row.addStretch()
         target_layout.addLayout(standard_row)
 
         self.target_mean_relative_radio = QRadioButton('Keep original scale')
@@ -781,24 +763,14 @@ class NormalizationDialog(QDialog):
         self._include_radio.setChecked(True)   # default
         mode_row.addWidget(self._include_radio)
         mode_row.addWidget(self._exclude_radio)
-        mode_row.addStretch()
 
-        # Small round "?" — quick reminder of how to add/edit/remove
-        # regions, right next to the controls it explains, same style and
-        # pattern as the Band Ratio / 2D map "Define Spectral Range"
-        # dialog's own help button (a self-contained popup, not the full
-        # Help window opened by the dialog's main Help button).
-        region_help_btn = QPushButton('?')
-        region_help_btn.setFixedWidth(32)
-        region_help_btn.setFixedHeight(24)
-        region_help_btn.setToolTip('Quick help for defining regions')
-        region_help_btn.setStyleSheet(
-            'QPushButton { font-weight:bold; border-radius:11px; '
-            'background:#1565C0; color:white; }'
-            'QPushButton:hover { background:#1976D2; }'
-        )
+        # the orange "?" right after Include / Exclude: how to add, edit and
+        # remove regions (a short popup, not the full Help window)
+        from src.views import icons as _icons
+        region_help_btn = _icons.help_button('Regions: how to add, change and remove them')
         region_help_btn.clicked.connect(self._show_region_quick_help)
         mode_row.addWidget(region_help_btn)
+        mode_row.addStretch()
         layout.addLayout(mode_row)
 
         # Restore saved mode if present
@@ -926,19 +898,8 @@ class NormalizationDialog(QDialog):
         delete_preset_btn.clicked.connect(self._delete_region_preset)
         preset_row.addWidget(delete_preset_btn)
 
-        preset_info_btn = QPushButton('?')
-        preset_info_btn.setFixedWidth(24)
-        preset_info_btn.setToolTip('Explain region presets')
-        preset_info_btn.setStyleSheet(
-            'QPushButton {'
-            '  background-color: #F57C00;'
-            '  color: white;'
-            '  border: none;'
-            '  border-radius: 4px;'
-            '  font-weight: bold;'
-            '}'
-            'QPushButton:hover { background-color: #E65100; }'
-        )
+        from src.views import icons as _icons
+        preset_info_btn = _icons.help_button('Presets: saved sets of regions')
         preset_info_btn.clicked.connect(self._show_preset_info)
         preset_row.addWidget(preset_info_btn)
 

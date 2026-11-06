@@ -1391,9 +1391,10 @@ class GroupStatisticsDialog(QDialog):
             "of each sample (Sample column) are averaged first, so the test uses one value per\n"
             "independent sample. Spectra without a sample count as their own sample.")
         sample_row = QHBoxLayout()
-        sample_row.addWidget(self.per_sample_check, 1)
+        sample_row.addWidget(self.per_sample_check)
         sample_row.addWidget(_help_button(self, "One value per sample", _HELP_REPLICATES,
                                           "Why spectra of one sample are not independent"))
+        sample_row.addStretch(1)
         tl.addLayout(sample_row)
         self.compute_btn = QPushButton("Compute")
         self.compute_btn.setStyleSheet("font-weight:bold;")

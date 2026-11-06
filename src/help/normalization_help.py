@@ -173,7 +173,7 @@ def get_normalization_help_content():
 
     <div class="screenshot">
         $REGIONS
-        <p class="caption">Normalization region(s) — Include regions / Exclude regions toggle with a small round "?" quick-help button next to it, the region list, From / To fields (with Full range on the same row) and, below, Add region (becomes Update when editing) with Cancel edit right next to it, and Remove. A thin separator then divides these region controls from the Preset row below.</p>
+        <p class="caption">Normalization region(s) — Include regions / Exclude regions toggle with the orange "?" quick-help button right after it, the region list, From / To fields (with Full range on the same row) and, below, Add region (becomes Update when editing) with Cancel edit right next to it, and Remove. A thin separator then divides these region controls from the Preset row below.</p>
     </div>
 
     <div class="tip">
@@ -195,7 +195,7 @@ def get_normalization_help_content():
 
     <div class="screenshot">
         $METHOD
-        <p class="caption">Normalization method — Intensity / Scatter correction tabs, each method as a radio button with its formula, and the orange "? Method info" button below.</p>
+        <p class="caption">Normalization method — Intensity / Scatter correction tabs, each method as a radio button with its formula, and the orange "?" (what the selected method does) right after the tabs.</p>
     </div>
 
     <div class="tip">
@@ -281,7 +281,7 @@ def get_normalization_help_content():
 
     <div class="screenshot">
         $SCALING
-        <p class="caption">Result scaling — Standard, Keep original scale, and Custom target (with its value spinbox), plus the orange "?" button that explains the three options.</p>
+        <p class="caption">Result scaling — Standard, Keep original scale, and Custom target (with its value spinbox), with the orange "?" right after Standard that explains the three options.</p>
     </div>
 
     <h2>Live preview</h2>

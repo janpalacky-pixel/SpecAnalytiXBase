@@ -96,9 +96,9 @@ class CDUnitConversionDialog(QDialog):
         self.concentration_unit_combo.addItems(list(CDUnitConversionManager.CONCENTRATION_UNITS))
         self.concentration_unit_combo.currentTextChanged.connect(self._update_field_states)
         unit_row.addWidget(self.concentration_unit_combo)
-        unit_row.addStretch()
         self.concentration_help_btn = self._make_help_button(self.show_concentration_help)
         unit_row.addWidget(self.concentration_help_btn)
+        unit_row.addStretch()
         table_layout.addLayout(unit_row)
 
         hint_label = QLabel(
@@ -206,9 +206,9 @@ class CDUnitConversionDialog(QDialog):
         # disabled parent.
         header_row = QHBoxLayout()
         header_row.addWidget(QLabel("Only used when the output above is [θ] or Δε:"))
-        header_row.addStretch()
         self.convention_help_btn = self._make_help_button(self.show_convention_help)
         header_row.addWidget(self.convention_help_btn)
+        header_row.addStretch()
         convention_layout.addLayout(header_row)
 
         self.molecular_radio = QRadioButton("Molecular / per-strand (whole molecule)")

@@ -1414,7 +1414,6 @@ class Map2DDialog(QDialog):
             "Show all valid (rows × cols) factor pairs and auto-fill the most square option."
         )
         row.addWidget(self._btn_autofill)
-        row.addStretch()
         row.addWidget(self._make_info_button(
             "About Map Dimensions",
             "Rows × Cols must equal the total number of selected spectra — "
@@ -1426,6 +1425,7 @@ class Map2DDialog(QDialog):
             "so it falls back to manual entry — type the values directly, "
             "or use Suggest… to pick from the valid (rows, cols) factor "
             "pairs of the spectrum count."))
+        row.addStretch()
         lay.addLayout(row)
 
         self._dim_hint_label = QLabel("")
@@ -1491,7 +1491,6 @@ class Map2DDialog(QDialog):
         radio_row2.addWidget(self._radio_arith)
         radio_row2.addWidget(self._radio_cluster)
         radio_row2.addWidget(self._radio_rgb)
-        radio_row2.addStretch()
         radio_row2.addWidget(self._make_info_button(
             "About Map Type",
             "Intensity metric: colours each pixel by a band metric (integral, "
@@ -1515,6 +1514,7 @@ class Map2DDialog(QDialog):
             "MCR-ALS component maps to the Red/Green/Blue channels of one "
             "composite image — available once at least one of those has "
             "been computed."))
+        radio_row2.addStretch()
         lay.addLayout(radio_row1)
         lay.addLayout(radio_row2)
 
@@ -1749,7 +1749,6 @@ class Map2DDialog(QDialog):
             "in the chosen range, compared with what pure noise of the estimated\n"
             "level gives). Sets the Endmembers box; press Update Map afterwards.")
         em_row1.addWidget(self._btn_em_suggest)
-        em_row1.addStretch()
         em_row1.addWidget(self._make_info_button(
             "About Unmixing",
             "Endmember unmixing assumes that every pixel is a mixture of a few "
@@ -1767,6 +1766,7 @@ class Map2DDialog(QDialog):
             "endmembers do not -- often a sign that one more endmember is needed.\n\n"
             "If a substance never occurs pure in the map, its endmember is a "
             "mixture; NMF or MCR-ALS can then resolve it better."))
+        em_row1.addStretch()
         em_v.addLayout(em_row1)
         em_row_dn = QHBoxLayout()
         em_row_dn.setSpacing(4)
@@ -1995,7 +1995,6 @@ class Map2DDialog(QDialog):
             "free to adapt.")
         ref_fix_row = QHBoxLayout()
         ref_fix_row.addWidget(self._ref_fix_cb)
-        ref_fix_row.addStretch()
         ref_fix_row.addWidget(self._make_info_button(
             "About Reference Spectra",
             "Anchor a component slot to a KNOWN component spectrum — the "
@@ -2013,6 +2012,7 @@ class Map2DDialog(QDialog):
             "reference always stays part of the fitted data here — "
             "removing it would leave fewer spectra than Rows × Cols "
             "pixels, breaking the map's fixed grid."))
+        ref_fix_row.addStretch()
         ref_v.addLayout(ref_fix_row)
         self._ref_autorecompute_cb = QCheckBox(
             "Auto-recompute when references change")

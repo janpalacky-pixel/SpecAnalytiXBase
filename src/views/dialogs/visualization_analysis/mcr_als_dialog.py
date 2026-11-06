@@ -208,7 +208,6 @@ class MCRALSDialog(QDialog):
 
         constraints_header = QHBoxLayout()
         constraints_header.addWidget(QLabel('Constraints:'))
-        constraints_header.addStretch()
         constraints_header.addWidget(self._make_info_button(
             'About MCR-ALS Constraints',
             'Non-negativity is applied independently to the concentration '
@@ -227,6 +226,7 @@ class MCRALSDialog(QDialog):
             '(same reconstruction either way), only on keeping the raw '
             'numbers well-behaved.'
         ))
+        constraints_header.addStretch()
         gl.addLayout(constraints_header)
         self._c_nonneg_cb = QCheckBox('Non-negative concentrations (C)')
         self._c_nonneg_cb.setChecked(True)
@@ -654,14 +654,8 @@ class MCRALSDialog(QDialog):
     def _make_info_button(self, title, text):
         """Small orange '?' button — same style used throughout the rest
         of the app (e.g. the main window's Legend '?')."""
-        btn = QPushButton('?')
-        btn.setFixedSize(28, 28)
-        btn.setStyleSheet(
-            'QPushButton { background-color:#F57C00; color:white; '
-            'font-weight:bold; font-size:11pt; border:none; border-radius:4px; }'
-            'QPushButton:hover { background-color:#EF6C00; }'
-        )
-        btn.setToolTip('About this section')
+        from src.views import icons as _icons
+        btn = _icons.help_button('About this section')
         btn.clicked.connect(lambda: QMessageBox.information(self, title, text))
         return btn
 

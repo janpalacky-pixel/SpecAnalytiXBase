@@ -805,7 +805,8 @@ class AutomatedBaselineDialog(QDialog):
         self.method_combo.addItem(_M['mpspline']['label'], 'mpspline', _MORPH_FAMILY)
         self.method_combo.addItem(_M['jbcd']['label'], 'jbcd', _MORPH_FAMILY)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
-        method_layout.addWidget(self.method_combo)
+        method_row = QHBoxLayout()
+        method_row.addWidget(self.method_combo, 1)
 
         # "? Method info" -- same pattern as NormalizationDialog's own
         # button: the description that used to sit as a fixed, always-
@@ -813,21 +814,13 @@ class AutomatedBaselineDialog(QDialog):
         # vertical space for whichever method's note happened to be
         # longest) now shows on demand instead, for whichever method is
         # currently selected in the combo above.
-        self.method_info_button = QPushButton('? Method info')
-        self.method_info_button.setToolTip('Show a description of the selected baseline method')
-        self.method_info_button.setStyleSheet(
-            'QPushButton {'
-            '  background-color: #F57C00;'
-            '  color: white;'
-            '  border: none;'
-            '  border-radius: 4px;'
-            '  padding: 3px 8px;'
-            '  font-weight: bold;'
-            '}'
-            'QPushButton:hover { background-color: #E65100; }'
-        )
+        # The orange "?" right after the drop-down list (as everywhere).
+        from src.views import icons as _icons
+        self.method_info_button = _icons.help_button(
+            'Method info: what the selected baseline method does')
         self.method_info_button.clicked.connect(self._show_method_info)
-        method_layout.addWidget(self.method_info_button, alignment=Qt.AlignRight)
+        method_row.addWidget(self.method_info_button)
+        method_layout.addLayout(method_row)
 
         method_group.setLayout(method_layout)
         layout.addWidget(method_group)

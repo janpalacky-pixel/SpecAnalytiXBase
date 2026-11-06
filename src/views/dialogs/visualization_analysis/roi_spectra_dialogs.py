@@ -312,22 +312,10 @@ class _ROISpectraDialog(QDialog):
 
         # Small ? button — same visual style as the main window's
         # orange plot-controls help button.
-        self._display_limit_help_button = QPushButton("?")
-        self._display_limit_help_button.setFixedWidth(22)
+        from src.views import icons as _icons
+        self._display_limit_help_button = _icons.help_button('')
         self._display_limit_help_button.setToolTip(
             "What does 'Display limit' do in each view mode?")
-        self._display_limit_help_button.setStyleSheet(
-            "QPushButton {"
-            "  background-color: #F57C00;"
-            "  color: white;"
-            "  border: none;"
-            "  border-radius: 4px;"
-            "  font-weight: bold;"
-            "  padding: 2px;"
-            "}"
-            "QPushButton:hover { background-color: #E65100; }"
-            "QPushButton:pressed { background-color: #BF360C; }"
-        )
         self._display_limit_help_button.clicked.connect(
             self._show_display_limit_help)
         max_row.addWidget(self._display_limit_help_button)

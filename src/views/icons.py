@@ -66,6 +66,39 @@ def help_button(tooltip):
     return btn
 
 
+def place_after_tabs(tabs, button):
+    """The orange "?" of a QTabWidget just to the right of its last tab
+    (outside the tabs, right after what it explains); kept there when the
+    window or the tabs change size."""
+    from PyQt5.QtCore import QEvent, QObject, QTimer
+
+    def place():
+        try:
+            bar = tabs.tabBar()
+            if bar.count() == 0:
+                return
+            last = bar.tabRect(bar.count() - 1)
+            right = bar.mapTo(tabs, last.topRight())
+            button.move(right.x() + 6, right.y() + max(0, (last.height() - button.height()) // 2))
+            button.show()
+            button.raise_()
+        except RuntimeError:                  # the window is gone
+            pass
+
+    class _Follow(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() in (QEvent.Resize, QEvent.Move, QEvent.Show, QEvent.LayoutRequest):
+                QTimer.singleShot(0, place)
+            return False
+
+    button.setParent(tabs)
+    follow = _Follow(button)
+    tabs.tabBar().installEventFilter(follow)
+    tabs.installEventFilter(follow)
+    QTimer.singleShot(0, place)
+    return button
+
+
 def plot_icon(size=16):
     """A small plot (axes and a curve) for 'Copy plot to clipboard'."""
     from PyQt5.QtGui import QPainterPath, QPen

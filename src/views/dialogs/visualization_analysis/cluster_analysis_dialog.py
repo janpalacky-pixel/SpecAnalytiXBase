@@ -1196,12 +1196,12 @@ class ClusterAnalysisDialog(QDialog):
         self.pca2d_labels_cb.setChecked(False)
         self.pca2d_labels_cb.stateChanged.connect(self._replot_pca2d)
         labels_row.addWidget(self.pca2d_labels_cb)
-        labels_row.addStretch()
-        pca2d_help_btn = QPushButton('?')
-        pca2d_help_btn.setFixedSize(28, 22)
+        from src.views import icons as _icons
+        pca2d_help_btn = _icons.help_button('')
         pca2d_help_btn.setToolTip('About these options')
         pca2d_help_btn.clicked.connect(self._show_pca2d_options_help)
         labels_row.addWidget(pca2d_help_btn)
+        labels_row.addStretch()
         pca2d_layout.addLayout(labels_row)
 
         pca2d_font_row = QHBoxLayout()
