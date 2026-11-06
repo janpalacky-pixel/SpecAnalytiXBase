@@ -2699,19 +2699,51 @@ def get_user_guide_help_content():
         <p id="publication"><strong>Save plot for publication&hellip;</strong> (File menu, or
         right-click on the plot) saves the plot as a journal asks for it, in one step:</p>
         <ul>
-            <li><strong>Column</strong> / <strong>Width</strong> / <strong>Height</strong> in cm
-            &mdash; 1 column (8.5 cm), 1.5 columns (11.4 cm), 2 columns (17.5 cm) or your own size.</li>
+            <li><strong>Size</strong> / <strong>Width</strong> / <strong>Height</strong> in cm
+            &mdash; a journal's column: 1 column (8.5 cm), 1.5 columns (11.4 cm), 2 columns
+            (17.5 cm) (the height stays); a page: A4 upright (its width, 18 &times; 13.5 cm), A4
+            or A5 or Letter sideways (all of it); a slide (16:9 or 4:3); or your own size. For a
+            page or a slide, a larger Text size (e.g. 12&ndash;16 pt) reads better.</li>
             <li><strong>Text size</strong> &mdash; one size for all labels, the numbers on the
             axes and the legend (titles 1 pt larger); journals usually ask for 6&ndash;9 pt.</li>
-            <li><strong>Lines at least</strong> &mdash; thinner lines are drawn this thick
-            (e.g. 1 pt).</li>
+            <li><strong>Lines at least</strong> &mdash; thinner lines of the spectra are drawn this
+            thick (e.g. 1 pt); the grid stays thin.</li>
             <li><strong>Resolution</strong> &mdash; 300, 600 (most journals) or 1200 dpi for a
             TIFF or PNG picture; the window shows its size in pixels (8.5 &times; 6.5 cm at 600 dpi:
             2008 &times; 1535). PDF, SVG and EPS are sharp at any size.</li>
+            <li><strong>Legend</strong> &mdash; Best place (inside the plot, where it covers the
+            fewest lines), a side or a corner (Top right, Left, Bottom, &hellip;) and then
+            <em>inside the plot</em> (over it; the plot keeps its size) or <em>outside the
+            plot</em> (beside, above or below it, without covering the numbers on the axes or the
+            axis titles; the picture keeps its size, so the plot in it gets narrower or lower to
+            make room), or no legend. Its text is 1 pt smaller than Text size.
+            <strong>Drag the legend in the preview</strong> with the mouse to put it anywhere;
+            choosing a place in Legend again puts it there.</li>
+            <li><strong>Short names</strong> &mdash; the spectra's names without the name of their
+            file ("raman_2comp_clean : raman_12" &rarr; "raman_12"), in the legend, in the titles
+            of a Grid plot and on a heatmap's rows.</li>
         </ul>
-        <p>The preview shows the picture about as large as in the paper. <strong>Save&hellip;</strong>
-        asks for the file and its kind (TIFF, PNG, PDF, SVG, EPS). The plot on the screen is not
-        changed; the window remembers your choices.</p>
+        <p>On a small picture there are fewer numbers on the axes (about one every 1.2 cm), so
+        they do not run into each other; with several plots (Grid plot) each gets the same text
+        size. Band markers and pinned cursors are kept; the cursor box that follows the mouse is
+        left out. The plot in the main window is not changed (the picture is made from a copy of
+        it).</p>
+        <p><strong>Preview</strong>: <em>Fit the window</em> shows the whole picture as large as
+        the window lets it (maximize the window for a larger one) &mdash; the text grows with
+        it, so it looks as it will on paper; <em>Real size</em> shows it about as large as in the
+        paper.</p>
+        <p><strong>Save&hellip;</strong> asks for the file and its kind (TIFF, PNG, PDF, SVG,
+        EPS). <strong>Printing</strong>: <em>On paper</em> Fit to page (as large as the page lets
+        it, the text grows with it; a wide picture turns the page sideways) or Actual size (its
+        size in cm, as in the journal); <em>Position</em> centre of the page or top left;
+        <em>Grey</em> prints in shades of grey (to see whether the lines can still be told apart
+        in a black-and-white copy); <em>Caption</em> a line of text under the picture (not in
+        the saved file). <strong>Print preview&hellip;</strong> shows the page first &mdash;
+        there you can choose the paper (A4, Letter, &hellip;), upright or sideways, and print;
+        <strong>Print&hellip;</strong> goes straight to the printer window (also Microsoft Print
+        to PDF). <strong>Restore defaults</strong> puts all choices back (1 column, 8.5 &times;
+        6.5 cm, 8 pt, 1 pt, 600 dpi, legend at the best place). The window keeps your choices
+        for the next time.</p>
         <p>Use the Save icon in the matplotlib toolbar to export the current plot as it is.
         For publication-quality output, use <strong>Open in new window</strong>
         (right-click on plot) which gives a full matplotlib window with all export

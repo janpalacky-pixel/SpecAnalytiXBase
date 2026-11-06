@@ -165,6 +165,8 @@ class PlotCursorController:
         vline, dots, box = self._artists_for(ax)
         x = float(event.xdata)
         text, shown = self.readout_text(ax, x, event.ydata)
+        for a in (vline, dots, box):
+            a.set_visible(True)
         vline.set_xdata([x, x])
         if shown:
             dots.set_data([x] * len(shown), [v for _, v in shown])
@@ -183,6 +185,10 @@ class PlotCursorController:
         self._live_ax = ax
 
     def _hide_live(self):
+        # hidden also for a saved or copied picture (savefig draws them too)
+        for artists in self._live.values():
+            for a in artists:
+                a.set_visible(False)
         if self.canvas is None or self._background is None or self._live_ax is None:
             return
         try:
@@ -212,8 +218,8 @@ class PlotCursorController:
             return
         for ax in self.canvas.figure.axes:
             for a in list(ax.lines) + list(ax.texts):
-                if a.get_gid() == CURSOR_GID + '_pinned':
-                    a.remove()
+                if a.get_gid() in (CURSOR_GID, CURSOR_GID + '_pinned'):
+                    a.remove()                 # the live cursor is made again
             for i, x in enumerate(self.pinned, 1):
                 ax.axvline(x, color='#6D4C41', lw=1.0, ls=':', gid=CURSOR_GID + '_pinned')
                 ax.text(x, 1.0, f" {i}", transform=ax.get_xaxis_transform(), va='bottom',
