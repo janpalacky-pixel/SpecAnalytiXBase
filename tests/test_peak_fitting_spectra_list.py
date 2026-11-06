@@ -186,7 +186,7 @@ def test_add_via_click_with_several_spectra_adds_to_the_shown_one(monkeypatch):
     dlg = _window(sp)
     _select(dlg, [0, 1, 3])
     assert dlg.view_mode == 'overlay' and dlg.current_index == 0
-    assert 'adds a peak to 01 (orange frame)' in dlg.click_hint.text()
+    assert 'adds a peak to 01 (the spectrum framed in orange in the list)' in dlg.click_hint.text()
 
     class Click:
         inaxes = dlg._series_ax

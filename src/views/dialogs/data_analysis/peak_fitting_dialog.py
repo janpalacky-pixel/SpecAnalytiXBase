@@ -1001,7 +1001,8 @@ class PeakFittingDialog(QDialog):
         if self.view_mode != 'one':
             where = {'grid': "A click in a small plot adds a peak to that spectrum.",
                      'waterfall': "A click adds a peak to the spectrum clicked on."}
-            text = (where.get(self.view_mode, f"A click adds a peak to {name} (orange frame).")
+            text = (where.get(self.view_mode, f"A click adds a peak to {name} (the spectrum framed "
+                                                 "in orange in the list).")
                     if self.interactive_add_cb.isChecked() else
                     "Add via Click is off: tick it to add peaks by clicking.")
             first = {'grid': "Grid: a click in a small plot adds a peak to its spectrum; it\n"
@@ -1010,7 +1011,7 @@ class PeakFittingDialog(QDialog):
                                   "click in; it becomes the shown one (orange frame)."}
             self.click_hint.setToolTip(
                 first.get(self.view_mode, f"Overlay: a click adds a peak to {name}, the shown\n"
-                                          "spectrum (orange frame).")
+                                          "spectrum (framed in orange in the list).")
                 + "\nIts height is taken from that spectrum's data under the click.\n"
                 "\u25c0 \u25b6 (Alt+Left / Alt+Right) choose the shown spectrum.")
         elif self.interactive_add_cb.isChecked():
