@@ -122,7 +122,7 @@ def main():
 
     # 0. the start page (no spectra yet), with two shipped files as recent ones
     for path in (TBA, RAMAN):
-        mc.autosave_controller.recent.add(path, 'file')
+        mc.autosave_controller.recent.add(path, 'data')
     mc._update_start_page()
     settle()
     save(view.grab(), 'start_page.png')
