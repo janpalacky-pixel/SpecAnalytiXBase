@@ -64,7 +64,7 @@ class StartPage(QFrame):
                  "Try a test dataset: spectra that come with the program (synthetic\n"
                  "series and measured data) - to try every tool without own data.\n"
                  "The same as Help › Test datasets.",
-                 icons.standard('SP_FileDialogContentsView', self)),
+                 icons.datasets_icon()),       # the flask of Help › Test datasets
                 ('quick_start', "Quick start",
                  "Quick start: a one-page introduction to the program\n"
                  "(the same as Help › Quick start).",
