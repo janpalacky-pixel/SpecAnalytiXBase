@@ -3667,6 +3667,57 @@ def _natural_sort_key(cls, label):
             not converted (plots stay white).</li>
         </ul>
 
+        <h2 id="publication-design">Save plot for publication, labels on the plot, rich texts</h2>
+        <ul>
+            <li><b>The picture</b> (<code>src/modules/visualization/publication_figure.py</code>,
+            Qt-free): <code>copy_for_publication(figure, ..., style, moved)</code> copies the main
+            figure by pickling (the main plot is never changed), sets size, fonts and line widths,
+            then calls <code>publication_style.apply_style</code> (titles, ranges, ticks, frame,
+            grid, colours, legend, colour map) and, last, <code>move_texts</code> (dragged titles
+            and labels; after it the layout engine is set to 'none' and
+            <code>_autotitlepos=False</code>, else a moved title snaps back). <code>render()</code>
+            returns the PNG and the boxes of the legend and of every draggable text; a label's box
+            carries the axes' frame, limits and scales (and an arrow's tip and tail) so
+            <code>pixel_to_data()</code> turns a drag into the plot's units.
+            <code>STYLE_DEFAULTS</code> in <code>publication_style.py</code>: <code>None</code> =
+            as in the plot.</li>
+            <li><b>The window</b> (<code>src/views/dialogs/visualization/publication_dialog.py</code>):
+            tabs shown by <code>publication_style.current()</code> (has_bands, has_cursors,
+            has_notes, has_legend, has_colours); every widget bound to a setting with
+            <code>_bind</code>; a change restarts a 250 ms timer, then the preview is rendered
+            again. Choices are kept in the module-level <code>_SESSION</code> (and the bar in
+            <code>_SESSION_PANEL</code>) only while the program runs; profiles go into the
+            preferences (<code>publication_profiles</code>). Undo / redo keep
+            <code>(settings, legend_xy, moved, notes)</code> after a change has settled (500 ms).
+            <code>PreviewLabel</code> handles the mouse on the picture: a dashed frame (texts) or
+            a blue line (an arrow, <code>dragged_arrow()</code>) follows the mouse; the picture is
+            rendered once, on release. Printing runs inside
+            <code>app_logger.crash_watch_paused()</code>: asking Windows about printers raises
+            errors Windows handles itself (0x80040155), which faulthandler would log as
+            "fatal".</li>
+            <li><b>Labels on the plot</b>: <code>src/modules/visualization/plot_notes.py</code>
+            (Qt-free: a list of dicts <code>DEFAULT</code>; x, y = the point / an arrow's tip;
+            tx, ty = the text / an arrow's tail, all in data units; drawn as annotations with gid
+            <code>sax_note:&lt;n&gt;</code>), <code>plot_notes_controller.py</code> (the mouse
+            on the main canvas: <code>hit()</code> with a grab radius scaled by
+            <code>devicePixelRatioF</code>, drag, double-click, Delete; attached after every
+            plot; <code>to_dict</code> / <code>from_dict</code> for snapshots) and
+            <code>plot_notes_dialog.py</code> (<code>NotesTable</code> with fixed, interactive
+            column widths; <code>NoteEditDialog</code>). The publication window shares the same
+            controller, so a change there changes the main plot. The cursor does not pin or follow
+            while a label is clicked or dragged.</li>
+            <li><b>Rich texts</b> (<code>src/views/dialogs/misc/rich_text.py</code>): texts are
+            stored as matplotlib mathtext in the regular font &mdash; superscript
+            <code>$\\mathregular{^{-1}}$</code>, subscript <code>$\\mathregular{_{2}}$</code>, a
+            plain <code>$</code> escaped as <code>\\$</code>. <code>from_document()</code> turns the
+            editor's QTextDocument into that, <code>to_html()</code> back, <code>plain()</code>
+            gives a Unicode version for buttons and tooltips. <code>RichTextButton</code> has
+            QLineEdit's <code>text()</code> / <code>setText()</code> / <code>textChanged</code>,
+            so it replaces a QLineEdit without other changes. Tests:
+            <code>tests/test_publication_figure.py</code>, <code>tests/test_plot_notes.py</code>,
+            <code>tests/test_rich_text.py</code>.</li>
+        </ul>
+
         <h2 id="factor-count-design">How many components: factor_diagnostics</h2>
         <ul>
             <li><code>src/modules/visualization_analysis/factor_diagnostics.py</code> (Qt-free) is the

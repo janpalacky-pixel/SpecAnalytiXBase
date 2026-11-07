@@ -327,6 +327,32 @@ def copy_plot_icon():
     return _tool_icon(draw)
 
 
+def publication_icon():
+    """A journal's page with a plot on it and a small ribbon (Save plot for
+    publication) - not the floppy disk of Save."""
+    def draw(p, QPen):
+        p.setPen(QColor('#555555'))
+        p.setBrush(QColor('#FFFFFF'))
+        p.drawPolygon(QPolygonF([QPointF(1.5, 0.5), QPointF(10.5, 0.5), QPointF(13.5, 3.5),
+                                 QPointF(13.5, 15.5), QPointF(1.5, 15.5)]))
+        p.setPen(QPen(QColor('#555555'), 0.9))
+        p.drawLine(QPointF(10.5, 0.5), QPointF(10.5, 3.5))
+        p.drawLine(QPointF(10.5, 3.5), QPointF(13.5, 3.5))
+        p.setPen(QPen(QColor('#9AA0A6'), 0.9))            # lines of text
+        p.drawLine(QPointF(3.5, 3), QPointF(8.5, 3))
+        p.drawLine(QPointF(3.5, 13.5), QPointF(11.5, 13.5))
+        p.setPen(QPen(QColor('#555555'), 0.9))            # the plot
+        p.drawLine(QPointF(3.5, 5.5), QPointF(3.5, 11.5))
+        p.drawLine(QPointF(3.5, 11.5), QPointF(11.5, 11.5))
+        _curve(p, QPen, [(4, 10.5), (6, 10.5), (6.5, 6), (7.5, 6), (8.5, 6), (9, 9.5),
+                         (11.5, 9.5)], '#1F77B4', 1.3)
+        p.setPen(Qt.NoPen)                                # a red ribbon at the corner
+        p.setBrush(QColor('#C62828'))
+        p.drawPolygon(QPolygonF([QPointF(11, 8), QPointF(15.5, 8), QPointF(15.5, 15.5),
+                                 QPointF(13.25, 13.5), QPointF(11, 15.5)]))
+    return _tool_icon(draw)
+
+
 # ---------------------------------------------------------------------------
 # Icons of the other menu entries (Spectra processing, Analysis &
 # Visualization), in the same style.

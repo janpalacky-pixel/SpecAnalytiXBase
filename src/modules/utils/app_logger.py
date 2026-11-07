@@ -268,3 +268,27 @@ def enable_crash_diagnostics() -> None:
 def get_logger(name: str) -> logging.Logger:
     """Return a named logger for the given module."""
     return logging.getLogger(name)
+
+
+class crash_watch_paused:
+    """`with crash_watch_paused(): ...` - the crash watcher (faulthandler) off
+    for a moment. On Windows it writes every error raised inside Windows,
+    also the ones Windows handles itself at once - asking Windows about the
+    printers raises such errors all the time (0x80040155, 0xe0000001), so
+    crash_trace.log filled with "Windows fatal exception" lines although
+    nothing crashed. Afterwards it is armed again as before."""
+
+    def __enter__(self):
+        self._was_on = faulthandler.is_enabled()
+        if self._was_on:
+            faulthandler.disable()
+        return self
+
+    def __exit__(self, *exc):
+        if self._was_on:
+            target = _crash_log_file if _crash_log_file is not None else sys.__stderr__
+            try:
+                faulthandler.enable(file=target, all_threads=True)
+            except Exception:
+                pass
+        return False

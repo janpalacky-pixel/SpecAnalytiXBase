@@ -109,7 +109,7 @@ def test_groups_can_be_hidden_and_the_text_left_out(mc, tmp_path):
     v.show()
     app.processEvents()
     texts = [a.text() for a in v.menuToolbars.actions() if not a.isSeparator()]
-    assert texts == ['Main buttons (Import, Open snapshot, Save, Help, Copy plot)',
+    assert texts == ['Main buttons (Import, Open snapshot, Save, Help, Copy plot, Publication)',
                      'Spectra processing', 'Analysis && visualization', 'Text on the buttons',
                      'Back to the default (all groups, text: Automatic)']
     assert [a.text() for a in v.menuToolbarText.actions()] == \

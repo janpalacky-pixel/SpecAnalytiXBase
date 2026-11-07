@@ -671,6 +671,14 @@ class SaveManager:
         except Exception:
             logger.warning("Snapshot: could not store the band markers", exc_info=True)
 
+        # Your own labels on the plot (right-click: band labels, text, arrows).
+        notes = getattr(main_controller, 'plot_notes_controller', None)
+        try:
+            if notes is not None and len(notes.notes):
+                state['plot_notes'] = notes.to_dict()
+        except Exception:
+            logger.warning("Snapshot: could not store the labels on the plot", exc_info=True)
+
         # Plot appearance set in the properties dialogs: axis titles and
         # fonts, legend, grid lines, layout -- only what differs from the
         # defaults.
@@ -1084,6 +1092,12 @@ class SaveManager:
                 self._restore_map2d_rois(main_controller, state['map2d_rois'])
             if 'band_markers' in state:
                 self._restore_band_markers(main_controller, state['band_markers'])
+            notes = getattr(main_controller, 'plot_notes_controller', None)
+            if notes is not None:                  # none in the snapshot: none now
+                try:
+                    notes.notes.from_dict(state.get('plot_notes') or {})
+                except Exception:
+                    logger.exception("Restoring the labels on the plot failed")
             if 'plot_appearance' in state:
                 self._restore_plot_appearance(main_controller, state['plot_appearance'])
             if 'group_statistics' in state:

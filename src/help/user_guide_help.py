@@ -1041,12 +1041,44 @@ def get_user_guide_help_content():
         lists x and the value of every spectrum there (interpolated between the measured points;
         a spectrum has no value outside its own x-range). With more than 10 spectra the 10 nearest
         to the mouse pointer's height are listed. <strong>Click</strong> to pin a cursor
-        (numbered 1, 2, &hellip;; several can be pinned); right-click on the plot &rarr;
+        (a dotted line labelled with its x value, e.g. 1004; several can be pinned); right-click
+        on the plot &rarr;
         <em>Copy cursor values</em> copies a table (one row per spectrum, one column per pinned
         cursor) to paste into Excel, <em>Clear pinned cursors</em> removes them. Pinned cursors
         stay when the plot is drawn again, e.g. for another selection. In a Waterfall plot only x
         is shown (the curves are shifted); Pan and Zoom of the toolbar switch the cursor off while
         they are active.</p>
+
+        <h3 id="plot-labels">Labels on the plot (band labels, text, arrows)</h3>
+        <p>To mark only the bands you need &mdash; e.g. the band positions above the peaks, as in
+        many papers &mdash; or to add a note or an arrow, right-click on the plot at the place:</p>
+        <ul>
+            <li><strong>Label the band here</strong> &mdash; a label with the band's position (e.g.
+            1004) just above the highest spectrum at that place; you can type another text (e.g.
+            "1004 Phe").</li>
+            <li><strong>Add text here&hellip;</strong> &mdash; any text at that place.</li>
+            <li><strong>Add an arrow here&hellip;</strong> &mdash; an arrow pointing at that place,
+            with an optional text at its tail.</li>
+        </ul>
+        <p>On the plot: <strong>click</strong> a label to choose it (a dashed frame) &mdash; the
+        <span class="kbd">Delete</span> key then deletes it; <strong>double-click</strong> it to
+        change its text, size, colour, rotation or bold (or delete it); <strong>drag</strong> it to
+        move it. An arrow, once chosen, shows its two ends as small squares: drag the tail end (or its
+        text) to turn and stretch it, the tip to move only the tip, the middle to move the whole
+        arrow (the same in the preview of Save plot for publication, where a blue line follows
+        the mouse and the picture is made again when you let go). An arrow's size (in the
+        list or the double-click window) makes its line and head thicker together with its
+        text; <em>Rotation</em> turns only its text; its <em>Head</em>: at the tip (pointing
+        at the place), at the text, at both ends, or none. A label's text: a click on it in the list opens the editor (superscript,
+        subscript, Greek letters, signs &mdash; see <a href="#rich-text">Texts</a>). (With the Cursor ticked, a click on the plot
+        pins a cursor &mdash; but not a click on a label.) <strong>Labels on the
+        plot&hellip;</strong> (also in the right-click menu) lists them all: change the text,
+        size, colour, rotation or bold, or delete one or all. The labels are kept in the plot's own units: they stay on their
+        band when you zoom or make the window larger,
+        are drawn on the (first) plot again for every new plot, are saved in snapshots, and are in
+        <a href="#publication">Save plot for publication</a> too (the same labels: changed or
+        dragged there, they change here too). Band markers (a line across the plot with a label) are
+        another way to mark bands &mdash; see <a href="#band-markers">Band Markers</a>.</p>
 
         <h3>Context Menu (right-click on plot)</h3>
         <p>Right-clicking anywhere on the plot canvas opens a context menu with the
@@ -1072,6 +1104,8 @@ def get_user_guide_help_content():
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
             <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
+            <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
+            <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
         </table>
 
         <h4 id="beside-the-plot">Windows beside the plot: zoom while they are open</h4>
@@ -1143,7 +1177,7 @@ def get_user_guide_help_content():
 
         <h3 id="toolbars">The buttons under the menu bar</h3>
         <p>The buttons are in groups: the main buttons (Import data, Open snapshot, Save, Help,
-        Copy plot), <em>Processing</em> (Data range, Smoothing, Baseline, Normalization) and
+        Copy plot, Publication &mdash; Save plot for publication), <em>Processing</em> (Data range, Smoothing, Baseline, Normalization) and
         <em>Analysis</em> (Peak list, Peak Fitting, SVD analysis, 2D map, Group Statistics, Data
         table). Each button does the same as its menu entry, which has the same
         icon. <strong>View &rarr; Toolbars</strong> (or a right-click on the buttons) hides or
@@ -2697,57 +2731,129 @@ def get_user_guide_help_content():
         white background, and is pasted in the size it has on the screen &mdash; make the program
         window larger or smaller first for a larger or smaller picture.</p>
         <p id="publication"><strong>Save plot for publication&hellip;</strong> (File menu, or
-        right-click on the plot) saves the plot as a journal asks for it, in one step:</p>
+        right-click on the plot) makes the picture a journal, a thesis or a slide needs. The plot
+        in the main window is for a quick look and is not changed: the picture is made from a
+        copy of it, and everything starts <em>as in the plot</em> &mdash; only what you change is
+        different. It works for every kind of plot (Overlay, Grid, Waterfall, Mean &plusmn; SD,
+        Heatmap &hellip;); also the <strong>Publication</strong> button under the menu bar.
+        The choices are on tabs on the left, the preview is on the right
+        (drag the bar between them to give either side more room); an orange
+        <strong>?</strong> explains the less obvious ones. A tab is shown only when the plot
+        has that part (e.g. Heatmap only for a heatmap). <strong>Undo</strong> and
+        <strong>Redo</strong> (also Ctrl+Z and Ctrl+Y) go back and forth through every change in
+        the window, dragging included.</p>
         <ul>
-            <li><strong>Size</strong> / <strong>Width</strong> / <strong>Height</strong> in cm
-            &mdash; a journal's column: 1 column (8.5 cm), 1.5 columns (11.4 cm), 2 columns
-            (17.5 cm) (the height stays); a page: A4 upright (its width, 18 &times; 13.5 cm), A4
-            or A5 or Letter sideways (all of it); a slide (16:9 or 4:3); or your own size. For a
-            page or a slide, a larger Text size (e.g. 12&ndash;16 pt) reads better.</li>
-            <li><strong>Text size</strong> &mdash; one size for all labels, the numbers on the
-            axes and the legend (titles 1 pt larger); journals usually ask for 6&ndash;9 pt.</li>
-            <li><strong>Lines at least</strong> &mdash; thinner lines of the spectra are drawn this
-            thick (e.g. 1 pt); the grid stays thin.</li>
-            <li><strong>Resolution</strong> &mdash; 300, 600 (most journals) or 1200 dpi for a
-            TIFF or PNG picture; the window shows its size in pixels (8.5 &times; 6.5 cm at 600 dpi:
-            2008 &times; 1535). PDF, SVG and EPS are sharp at any size.</li>
-            <li><strong>Legend</strong> &mdash; Best place (inside the plot, where it covers the
-            fewest lines), a side or a corner (Top right, Left, Bottom, &hellip;) and then
-            <em>inside the plot</em> (over it; the plot keeps its size) or <em>outside the
-            plot</em> (beside, above or below it, without covering the numbers on the axes or the
-            axis titles; the picture keeps its size, so the plot in it gets narrower or lower to
-            make room), or no legend. Its text is 1 pt smaller than Text size.
+            <li><strong>Page</strong> &mdash; <em>Size</em>: a journal's column (1 column
+            8.5 cm, 1.5 columns 11.4 cm, 2 columns 17.5 cm; only the width changes), a page (A4
+            upright: its width, 18 &times; 13.5 cm; A4, A5 or Letter sideways: all of it), a
+            slide (16:9 or 4:3), or your own <em>Width</em> and <em>Height</em> in cm.
+            <em>Resolution</em>: 300, 600 (most journals) or 1200 dpi for TIFF and PNG
+            (8.5 &times; 6.5 cm at 600 dpi: 2008 &times; 1535 pixels); PDF, SVG and EPS are sharp
+            at any size.</li>
+            <li><strong>Text</strong> &mdash; <em>Font</em> (e.g. Arial, Helvetica or Times New
+            Roman &mdash; the fonts on your computer) and <em>Text size</em> for all text (7 pt at first; the
+            plot title 1 pt larger, the legend 1 pt smaller; journals usually ask for
+            6&ndash;9 pt, a page or a slide reads better with 12&ndash;16 pt). <em>Own
+            sizes</em>: the axis titles, the numbers on the axes, the legend and the plot title
+            can each have their own size (<em>automatic</em>: from Text size &mdash; the axis
+            titles, numbers and labels get Text size); the labels' sizes are in the Labels
+            tab. The <em>plot title</em>: as in the plot (the main plot's own title,
+            e.g. "Waterfall plot &mdash; 28 spectra"; an Overlay has none), none, or your own (with several plots one title above all). <em>Short names</em>:
+            the spectra's names without the name of their file ("raman_2comp_clean : raman_12"
+            &rarr; "raman_12").</li>
+            <li><strong>Axes</strong> &mdash; the <em>X</em> and <em>Y title</em> (e.g. Raman
+            shift (cm&#8315;&#185;); empty: as in the plot, shown in grey); the <em>numbers</em>
+            of each axis shown or hidden (e.g. none on a y axis in arbitrary units); the
+            <em>range</em> of each axis (from &hellip; to; the plot's range in grey); the <em>X
+            direction</em> (decreasing e.g. for IR spectra); the <em>tick step</em> (e.g. 200:
+            400, 600, 800 &hellip;; automatic); <em>minor ticks</em>; <em>ticks</em> outside,
+            inside or across the frame, and their length; ticks on all four sides or only left
+            and bottom; the <em>frame</em> as a box or open (only the left and bottom axis) and
+            its width; the <em>grid</em>: none, at the numbers, or also between them (thinner),
+            for both axes or only x or y, its colour, line style and width.</li>
+            <li><strong>Lines</strong> &mdash; <em>Plot as</em> lines, points or both, the
+            <em>marker</em> (circle, square, &hellip;), its size and on which points (e.g. every
+            20th &mdash; a spectrum has hundreds of points); <em>Lines at least</em>: thinner
+            lines of the spectra are drawn this thick; <em>Colours</em> for all spectra at once:
+            colour-blind safe (Okabe-Ito), matplotlib's 10 colours, all black, black with
+            different line styles, shades of grey, or colours changing step by step (viridis,
+            cividis, plasma, cool-warm) for a series such as concentrations. The table
+            <em>Each spectrum</em> changes one spectrum: show or leave out, its name in the
+            legend, colour (click), line style, width, marker; <em>All as set above</em> undoes
+            the table's changes.</li>
+            <li><strong>Legend</strong> &mdash; <em>Place</em>: Best place (inside the plot,
+            where it covers the fewest lines), a side or a corner (Top right, Left, Bottom,
+            &hellip;) <em>inside the plot</em> (over it; the plot keeps its size) or <em>outside
+            the plot</em> (beside, above or below it, not over the numbers or titles of the axes;
+            the picture keeps its size, so the plot in it gets smaller), or no legend.
             <strong>Drag the legend in the preview</strong> with the mouse to put it anywhere;
-            choosing a place in Legend again puts it there.</li>
-            <li><strong>Short names</strong> &mdash; the spectra's names without the name of their
-            file ("raman_2comp_clean : raman_12" &rarr; "raman_12"), in the legend, in the titles
-            of a Grid plot and on a heatmap's rows.</li>
+            choosing a place again puts it there. <em>Columns</em>, <em>frame</em> and a
+            <em>title</em> above the names. Its text is 1 pt smaller than Text size.</li>
+            <li><strong>Labels</strong> &mdash; the band markers' labels shown or hidden,
+            horizontal or vertical, their size, and their lines shown or hidden (e.g. only the
+            number above a band); the pinned cursors kept or left out and the size of their values
+            (each part only when the plot has them; sizes <em>automatic</em>: Text size).
+            <em>Your labels</em> (see <a href="#plot-labels">Labels on the plot</a>): the same
+            labels as on the main plot &mdash; a change here changes them there too: their text,
+            size, colour, rotation, bold and an arrow's head in the table (<em>Delete</em> at
+            the end of a row deletes it; drag a column's edge in the header to make it wider),
+            <em>Add text</em> / <em>Add an arrow</em> in the middle of the plot; in the preview
+            click one to choose it (<span class="kbd">Delete</span> deletes it), double-click to
+            change it, drag to move it (an arrow: its tip, its tail or its middle, as on the
+            main plot). <strong>Drag</strong> a band marker's label, a pinned cursor's value, the plot
+            title or the legend in the preview to move it &mdash; only in the picture.</li>
+            <li><strong>Heatmap</strong> &mdash; only for a plot with a colour map: the <em>colour
+            map</em> (viridis and cividis read well also in grey and by colour-blind people;
+            Greys for black-and-white; RdBu_r or coolwarm for values around zero), the
+            <em>values</em> of the first and last colour (the same range for several pictures
+            makes them comparable), and the <em>colour bar title</em>.</li>
+            <li><strong>Printing</strong> &mdash; <em>On paper</em>: Fit to page (as large as the
+            page lets it, the text grows with it) or Actual size (its size in cm, as in the
+            journal); <em>Page</em>: automatic (sideways for a wide picture with Fit to page),
+            upright (portrait) or sideways (landscape); <em>Position</em>: centre of the page or
+            top left; <em>Grey</em>: in shades of grey, to see whether the lines can still be
+            told apart in a black-and-white copy (the preview turns grey too; a saved file stays
+            in colour); <em>Caption</em>: a line of text under the picture (not in the saved
+            file).</li>
         </ul>
-        <p>On a small picture there are fewer numbers on the axes (about one every 1.2 cm), so
-        they do not run into each other; with several plots (Grid plot) each gets the same text
-        size. Band markers and pinned cursors are kept; the cursor box that follows the mouse is
-        left out. The plot in the main window is not changed (the picture is made from a copy of
-        it).</p>
+        <p>On a small picture there are fewer numbers on the axes (about one every 1.2 cm, unless
+        you set a tick step), so they do not run into each other. Band markers and pinned cursors
+        are kept; the cursor box that follows the mouse is left out.</p>
+        <p id="rich-text"><strong>Texts</strong> (axis titles, the plot title, the legend's title and
+        names, the colour bar's title, your labels) are buttons showing the text; a click opens a
+        small editor where the text looks as it will: <strong>x&sup2;</strong> raises the chosen
+        letters (superscript, e.g. cm&#8315;&#185;), <strong>x&#8322;</strong> lowers them
+        (subscript, e.g. H&#8322;O), <strong>x</strong> makes them normal again;
+        <strong>&alpha;&beta;&gamma;</strong> adds a Greek letter, <strong>&deg; &plusmn;
+        &hellip;</strong> a sign (&deg;, &plusmn;, &times;, arrows, &Aring;, &micro; &hellip;),
+        <strong>cm&#8315;&#185;</strong> the unit; underneath, the text as it will be drawn in the
+        plot. A long text is cut short on its button; all of it is in the button's tooltip.</p>
+        <p><strong>Profiles</strong> (at the top): <em>Save as&hellip;</em> keeps all settings
+        under a name (e.g. "Journal X, 1 column" or "Thesis, A4"); choosing a profile in the list
+        uses its settings at once, also for another plot; <em>Delete</em> removes it. A profile
+        also keeps the axis titles, ranges and the spectra's own colours (1st, 2nd, &hellip;
+        spectrum), so it suits similar data. Without a profile, the window keeps the general look
+        (size, text, font, ticks, colours &hellip;) and the place of the bar for the next time it
+        is opened while the program runs &mdash; not what belongs to one plot (its titles, ranges, the table of
+        spectra), and not after the program is closed: each start of the program begins
+        <em>as in the plot</em>; what you want to keep longer, save as a profile. <strong>Restore defaults</strong>
+        puts everything back: all choices of all tabs (1 column, 8.5 &times; 6.5 cm, 7 pt, 600 dpi,
+        everything else as in the plot), the table of spectra, dragged legends, titles and labels,
+        the caption, and the look of your labels (8 pt, black, not turned, not bold &mdash; their
+        texts and places stay); <strong>Undo</strong> takes it back. The window can be maximized
+        (not minimized).</p>
         <p><strong>Preview</strong>: <em>Fit the window</em> shows the whole picture as large as
-        the window lets it (maximize the window for a larger one) &mdash; the text grows with
-        it, so it looks as it will on paper; <em>Real size</em> shows it about as large as in the
-        paper.</p>
-        <p><strong>Save&hellip;</strong> asks for the file and its kind (TIFF, PNG, PDF, SVG,
-        EPS). <strong>Printing</strong>: <em>On paper</em> Fit to page (as large as the page lets
-        it, the text grows with it; a wide picture turns the page sideways) or Actual size (its
-        size in cm, as in the journal); <em>Position</em> centre of the page or top left;
-        <em>Grey</em> prints in shades of grey (to see whether the lines can still be told apart
-        in a black-and-white copy); <em>Caption</em> a line of text under the picture (not in
-        the saved file). <strong>Print preview&hellip;</strong> shows the page first &mdash;
-        there you can choose the paper (A4, Letter, &hellip;), upright or sideways, and print;
-        <strong>Print&hellip;</strong> goes straight to the printer window (also Microsoft Print
-        to PDF). <strong>Restore defaults</strong> puts all choices back (1 column, 8.5 &times;
-        6.5 cm, 8 pt, 1 pt, 600 dpi, legend at the best place). The window keeps your choices
-        for the next time.</p>
-        <p>Use the Save icon in the matplotlib toolbar to export the current plot as it is.
-        For publication-quality output, use <strong>Open in new window</strong>
-        (right-click on plot) which gives a full matplotlib window with all export
-        options (PNG, PDF, SVG, EPS).</p>
+        the window lets it (maximize the window for a larger one) &mdash; the text grows with it,
+        so it looks as it will on paper; <em>Real size</em> shows it about as large as in the
+        paper. <strong>Save&hellip;</strong> asks for the file and its kind (TIFF, PNG, PDF, SVG,
+        EPS). <strong>Print preview&hellip;</strong> shows the page first (the paper &mdash; A4,
+        Letter, &hellip; &mdash; upright or sideways, then Print); <strong>Print&hellip;</strong>
+        goes straight to the printer window (also Microsoft Print to PDF).</p>
+        <p>The Save icon in the toolbar under the plot saves the plot just as it is on the
+        screen (its size in the window). <strong>Open in New Window</strong> (right-click on
+        the plot) shows it in a separate matplotlib window, which can also save it (PNG, PDF,
+        SVG, EPS). For a journal, a thesis or a slide, Save plot for publication is the better
+        way.</p>
 
         <h3>Operations History Export</h3>
         <p>The History dialog shows all applied operations with full parameters and

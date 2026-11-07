@@ -61,7 +61,8 @@ def test_the_buttons_under_the_menu_bar(mc):
         texts.append([b.text() for b in buttons
                       if b is not None and b.objectName().startswith('toolbar') and
                       isinstance(b, QToolButton)])
-    assert texts == [['Import data', 'Open snapshot', 'Save', 'Help', 'Copy plot'],
+    assert texts == [['Import data', 'Open snapshot', 'Save', 'Help', 'Copy plot',
+                      'Publication'],
                      ['Data range', 'Smoothing', 'Baseline', 'Normalization'],
                      ['Peak list', 'Peak Fitting', 'SVD analysis', '2D map', 'Group Statistics',
                       'Data table']]

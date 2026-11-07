@@ -185,6 +185,7 @@ class BandMarkerManager:
             linewidth = m['linewidth'],
             alpha     = 0.75,
             zorder    = 10,
+            gid       = 'sax_band',     # for Save plot for publication
         )
         ylim = ax.get_ylim()
         y_pos = ylim[1] - (ylim[1] - ylim[0]) * m.get('label_offset', self.DEFAULT_LABEL_OFFSET)
@@ -202,6 +203,7 @@ class BandMarkerManager:
             rotation    = rotation,
             clip_on     = True,
             zorder      = 11,
+            gid         = 'sax_band',
         )
 
     def _draw_horizontal_marker(self, ax, m):
@@ -217,6 +219,7 @@ class BandMarkerManager:
             linewidth = m['linewidth'],
             alpha     = 0.75,
             zorder    = 10,
+            gid       = 'sax_band',     # for Save plot for publication
         )
         xlim = ax.get_xlim()
         x_pos = xlim[1] - (xlim[1] - xlim[0]) * m.get('label_offset', self.DEFAULT_LABEL_OFFSET)
@@ -234,6 +237,7 @@ class BandMarkerManager:
             rotation    = rotation,
             clip_on     = True,
             zorder      = 11,
+            gid         = 'sax_band',
         )
 
     # ------------------------------------------------------------------ #

@@ -157,8 +157,9 @@ def main():
     QMenu.exec_ = capture_exec
     QMenu.exec = capture_exec
 
-    class Click:
-        x, y, button, inaxes, xdata, ydata = 300, 300, 3, None, None, None
+    class Click:                      # on the plot: "Label the band here (1004)" active
+        x, y, button = 300, 300, 3
+        inaxes, xdata, ydata = mc.static_canvas.figure.axes[0], 1004.0, 0.0
     mc.show_context_menu(Click())
     if menus:
         save(menus.pop(), 'plot_context_menu.png')

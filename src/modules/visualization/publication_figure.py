@@ -6,7 +6,10 @@ TIFF / PNG (at the chosen dots per inch) or PDF / SVG / EPS (sharp at any
 size). The figure on the screen is not changed."""
 
 import io
+import os
 import pickle
+
+from src.modules.visualization import publication_style as pst
 
 CM = 1 / 2.54                                   # inches per cm
 
@@ -23,10 +26,10 @@ SIZES = (("1 column", 8.5, None), ("1.5 columns", 11.4, None), ("2 columns", 17.
 COLUMNS = tuple((name, w) for name, w, h in SIZES[:3])
 DPI_CHOICES = (300, 600, 1200)
 FORMATS = (("TIFF", "tif"), ("PNG", "png"), ("PDF", "pdf"), ("SVG", "svg"), ("EPS", "eps"))
-DEFAULTS = {'width_cm': 8.5, 'height_cm': 6.5, 'dpi': 600, 'font_pt': 8.0, 'line_pt': 1.0,
+DEFAULTS = {'width_cm': 8.5, 'height_cm': 6.5, 'dpi': 600, 'font_pt': 7.0, 'line_pt': 1.0,
             'legend': 'best', 'legend_place': 'inside', 'short_names': True,
             'print_fit': True, 'print_centre': True, 'print_grey': False,
-            'preview_fit': True}
+            'print_orientation': 'auto', 'preview_fit': True}
 
 # Where the legend goes; with 'inside' / 'outside' the plot (Best place:
 # inside only). Outside, the corners are beside the plot (top or bottom).
@@ -81,8 +84,25 @@ def _short_names(figure):
         names += [ax.get_title()]
         names += [t.get_text() for t in ax.get_yticklabels() + ax.get_xticklabels()]
     names = [n for n in dict.fromkeys(str(n) for n in names) if ' : ' in n]
+    if not names:
+        return {}
     short = {n: n.rsplit(' : ', 1)[1].strip() for n in names}
-    if not names or len(set(short.values())) < len(names) or not all(short.values()):
+    if len(set(short.values())) == len(names) and all(short.values()):
+        return short
+    # spectra of several files with the same names (raman_01 in each): the file's
+    # name kept, but only the part that tells the files apart
+    # ("raman_2comp_clean : raman_01", "raman_2comp_noisy : raman_01" ->
+    # "clean : raman_01", "noisy : raman_01")
+    files = sorted({n.rsplit(' : ', 1)[0].strip() for n in names})
+    lead = os.path.commonprefix(files)
+    tail = os.path.commonprefix([f[::-1] for f in files])[::-1] if len(files) > 1 else ''
+    cut = {}
+    for f in files:
+        part = f[len(lead):len(f) - len(tail)] if len(lead) + len(tail) < len(f) else f
+        cut[f] = part.strip(' _-.') or f
+    short = {n: f"{cut[n.rsplit(' : ', 1)[0].strip()]} : {n.rsplit(' : ', 1)[1].strip()}"
+             for n in names}
+    if len(set(short.values())) < len(names):
         return {}
     return short
 
@@ -106,7 +126,8 @@ def _ticks(ax, figure):
 
 
 def copy_for_publication(figure, width_cm, height_cm, font_pt=None, line_pt=None,
-                         legend='best', short_names=True, legend_place=None, legend_xy=None):
+                         legend='best', short_names=True, legend_place=None, legend_xy=None,
+                         style=None, moved=None):
     """A copy of `figure` (the one on the screen stays as it is) in the size
     width_cm x height_cm: every text font_pt (titles 1 pt larger, the legend
     1 pt smaller), every data line at least line_pt thick (grid lines thin),
@@ -114,7 +135,11 @@ def copy_for_publication(figure, width_cm, height_cm, font_pt=None, line_pt=None
     or outside the plot; legend_xy {axes number: (x, y)}: its bottom left
     corner moved there, in parts of the plot's width and height) with the
     short spectrum names; white background; without the cursor that follows
-    the mouse. None: kept as it is."""
+    the mouse; then the look asked in `style` (publication_style: font, axis
+    titles, ranges, ticks, frame, grid, colours, the legend's columns, the
+    size of each kind of text ...); `moved` {key: (dx, dy) points}: texts
+    dragged in the preview (publication_style.movable_texts). None: kept as
+    it is."""
     copy = pickle.loads(pickle.dumps(figure))
     copy.set_size_inches(width_cm * CM, height_cm * CM)
     copy.patch.set_facecolor('white')
@@ -130,6 +155,8 @@ def copy_for_publication(figure, width_cm, height_cm, font_pt=None, line_pt=None
     from matplotlib.text import Text
     titles = set()
     legend_pt = max(4.0, font_pt - 1) if font_pt else None
+    if style and (pst._num(pst.style_of(style)['legend_pt']) or 0) > 0:
+        legend_pt = pst._num(pst.style_of(style)['legend_pt'])
     legends = []                                   # made at the end (sizes known then)
     for i, ax in enumerate(copy.axes):
         titles.add(id(ax.title))
@@ -167,34 +194,135 @@ def copy_for_publication(figure, width_cm, height_cm, font_pt=None, line_pt=None
                 handles = own_h                    # the plotted lines themselves
             leg.remove()
             if position != 'none' and handles:
-                legends.append((i, ax, handles, [short.get(t, t) for t in texts]))
+                legends.append((i, ax, handles, texts))
+    renamed, hidden = pst.apply_style(copy, style) if style else ({}, set())
+    if getattr(copy, '_suptitle', None) is not None:
+        titles.add(id(copy._suptitle))
+    legends = _legend_entries(legends, short, renamed, hidden)
     for text in copy.findobj(Text):
+        if style:
+            pst.set_font(text, style)
         if short and text.get_text():
             new = _shorten(text.get_text(), short)
             if new != text.get_text():
                 text.set_text(new)
+        if str(text.get_gid() or '').startswith(pst.NOTE_GID):
+            continue                               # your own labels keep their own size
         if font_pt:
             if id(text) in titles:
                 text.set_fontsize(font_pt + 1)
                 text.set_wrap(True)
             else:
                 text.set_fontsize(font_pt)
+    if style:
+        pst.apply_texts(copy, style, font_pt)
+    _heatmap_defaults(copy, pst.style_of(style) if style else pst.STYLE_DEFAULTS)
     _fit_layout(copy)
-    _add_legends(copy, legends, position, place, legend_pt, legend_xy or {}, width_cm)
+    _fit_titles(copy)
+    _add_legends(copy, legends, position, place, legend_pt, legend_xy or {}, width_cm,
+                 style)
+    pst.move_texts(copy, moved)                     # last: the layout is made then
     return copy
 
 
-def _add_legends(copy, legends, position, place, legend_pt, legend_xy, width_cm):
+def _heatmap_defaults(copy, style):
+    """A plot with a picture (a heatmap): no grid lines across it (unless a
+    grid was chosen), and not more spectra's names on an axis than fit (every
+    n-th name: one per text line)."""
+    from matplotlib.ticker import FixedFormatter
+    for ax in copy.axes:
+        if hasattr(ax, '_colorbar') or not (ax.images or any(
+                getattr(c, 'get_array', lambda: None)() is not None for c in ax.collections)):
+            continue
+        if style.get('grid', pst.KEEP) == pst.KEEP:
+            ax.grid(False, which='both')
+        box = ax.get_position()
+        w_in, h_in = copy.get_size_inches()
+        for axis, get_ticks, set_ticks, labels, room_pt in (
+                (ax.yaxis, ax.get_yticks, ax.set_yticks, ax.get_yticklabels(),
+                 box.height * h_in * 72),
+                (ax.xaxis, ax.get_xticks, ax.set_xticks, ax.get_xticklabels(),
+                 box.width * w_in * 72)):
+            names = [t.get_text() for t in labels]
+            if not names or not any(n and not _is_number(n) for n in names):
+                continue                           # numbers: thinned elsewhere
+            size = labels[0].get_fontsize() or 8
+            if axis is ax.xaxis:
+                size *= max(1, max(len(n) for n in names)) * 0.6   # names side by side
+            fit = max(1, int(room_pt / (size * 1.25)))
+            step = -(-len(names) // fit)
+            if step > 1:
+                ticks = list(get_ticks())
+                keep = list(range(0, len(names), step))
+                set_ticks([ticks[k] for k in keep])
+                (ax.set_yticklabels if axis is ax.yaxis else ax.set_xticklabels)(
+                    [names[k] for k in keep])
+
+
+def _is_number(text):
+    try:
+        float(str(text).replace('\u2212', '-'))
+        return True
+    except ValueError:
+        return False
+
+
+def _fit_titles(copy):
+    """A title longer than its plot (e.g. a heatmap's with its colour range)
+    gets smaller to fit on one or two lines (not below 6 pt)."""
+    titles = [ax.title for ax in copy.axes if ax.title.get_text() and ax.title.get_visible()]
+    if not titles:
+        return
+    try:
+        renderer = copy._get_renderer()
+    except Exception:
+        return
+    for t in titles:
+        ax = t.axes
+        try:
+            width = t.get_window_extent(renderer).width
+        except Exception:
+            continue
+        room = ax.bbox.width * 2                   # up to two lines
+        if width > room > 0:
+            t.set_fontsize(max(6.0, t.get_fontsize() * room / width))
+
+
+def _legend_entries(legends, short, renamed, hidden):
+    """The legends with the spectra's lines themselves (their new colours),
+    the names given (else the short names), without the hidden spectra."""
+    out = []
+    for i, ax, handles, texts in legends:
+        own = {str(line.get_label()): line for line in pst.data_lines(ax)}
+        hs, ns = [], []
+        for handle, text in zip(handles, texts):
+            if text in hidden:
+                continue
+            hs.append(own.get(text, handle))
+            ns.append(renamed.get(text) or short.get(text, text))
+        if hs:
+            out.append((i, ax, hs, ns))
+    return out
+
+
+def _add_legends(copy, legends, position, place, legend_pt, legend_xy, width_cm,
+                 style=None):
     if not legends:
         return
+    extras = pst.legend_extras(style) if style else {}
+    family = pst.style_of(style)['font_family'] if style else ''
     from matplotlib.transforms import offset_copy
     room = {}
     if place == 'outside' and any(i not in legend_xy for i, *_ in legends):
         room = _room_around(copy, [ax for _, ax, _, _ in legends])
     for i, ax, handles, names in legends:
         kw = {'fontsize': legend_pt} if legend_pt else {}
+        if family:
+            kw = {'prop': {'family': family, 'size': legend_pt}} if legend_pt \
+                else {'prop': {'family': family}}
         kw.update(handlelength=1.5, borderpad=0.3, labelspacing=0.25)
         if i in legend_xy:                         # moved by the mouse
+            kw.update(extras)
             x, y = legend_xy[i]
             new = ax.legend(handles, names, loc='lower left', bbox_to_anchor=(x, y),
                             bbox_transform=ax.transAxes, borderaxespad=0.0, **kw)
@@ -206,13 +334,19 @@ def _add_legends(copy, legends, position, place, legend_pt, legend_xy, width_cm)
             dy = {'top': top + _GAP_PT, 'bottom': -(bottom + _GAP_PT)}.get(side, 0.0)
             if side in ('top', 'bottom'):
                 kw['ncol'] = min(len(names), max(1, int(width_cm / 2.8)))
+            kw.update(extras)
             new = ax.legend(handles, names, loc=corner, bbox_to_anchor=point,
                             bbox_transform=offset_copy(ax.transAxes, fig=copy, x=dx, y=dy,
                                                        units='points'),
                             borderaxespad=0.0, **kw)
         else:
+            kw.update(extras)
             new = ax.legend(handles, names, loc=_INSIDE[position], **kw)
             new.set_in_layout(False)               # the plot keeps its size
+        if legend_pt and new.get_title().get_text():
+            new.get_title().set_fontsize(legend_pt)
+        if family:
+            new.get_title().set_fontfamily(family)
     if _tight(copy):
         _tight_layout(copy)
 
@@ -293,7 +427,7 @@ def _savefig(copy, target, **kwargs):
 def _options(kw):
     """The keyword choices that copy_for_publication takes."""
     return {k: kw[k] for k in ('font_pt', 'line_pt', 'legend', 'short_names', 'legend_place',
-                               'legend_xy') if k in kw}
+                               'legend_xy', 'style', 'moved') if k in kw}
 
 
 def save_for_publication(figure, path, width_cm, height_cm, dpi=600, font_pt=None,
@@ -312,9 +446,11 @@ def save_for_publication(figure, path, width_cm, height_cm, dpi=600, font_pt=Non
 
 
 def render(figure, width_cm, height_cm, dpi=100, **choices):
-    """(PNG bytes, legends) of the publication copy at dpi; legends: [(axes
-    number, legend box, plot frame)] in the picture's pixels (x0, y0, x1, y1
-    from its top left corner) - for moving a legend with the mouse."""
+    """(PNG bytes, boxes) of the publication copy at dpi; boxes: [(axes
+    number, legend box, plot frame)] of the legends and [(key, text box,
+    None)] of the titles and labels (publication_style.movable_texts), in the
+    picture's pixels (x0, y0, x1, y1 from its top left corner) - for moving
+    them with the mouse."""
     copy = copy_for_publication(figure, width_cm, height_cm, **_options(choices))
     copy.set_dpi(dpi)
     buf = io.BytesIO()
@@ -331,7 +467,48 @@ def render(figure, width_cm, height_cm, dpi=100, **choices):
             continue
         boxes.append((i, (lb.x0, height - lb.y1, lb.x1, height - lb.y0),
                       (fb.x0, height - fb.y1, fb.x1, height - fb.y0)))
+    for key, text in pst.movable_texts(copy).items():   # titles and labels: draggable too
+        try:
+            tb = text.get_window_extent()
+            arrow = getattr(text, 'arrow_patch', None)
+            if (tb.width <= 0 or not text.get_text()) and arrow is not None:
+                tb = arrow.get_window_extent()           # an arrow without text: the arrow
+        except Exception:
+            continue
+        if tb.width > 0 and tb.height > 0:
+            extra = None
+            if key.startswith('note:'):            # to turn a move into the plot's units
+                ax = copy.axes[int(key.split(':')[1])]
+                fb = ax.bbox
+                extra = {'frame': (fb.x0, height - fb.y1, fb.x1, height - fb.y0),
+                         'xlim': tuple(ax.get_xlim()), 'ylim': tuple(ax.get_ylim()),
+                         'xscale': ax.get_xscale(), 'yscale': ax.get_yscale()}
+                if getattr(text, 'arrow_patch', None) is not None and \
+                        getattr(text, 'anncoords', None) == 'data':
+                    tip = ax.transData.transform(text.xy)      # an arrow: its two ends
+                    tail = ax.transData.transform(text.xyann)
+                    extra['tip'] = (float(tip[0]), float(height - tip[1]))
+                    extra['tail'] = (float(tail[0]), float(height - tail[1]))
+                    extra['text'] = bool(text.get_text())     # the box is its text's
+            boxes.append((key, (tb.x0, height - tb.y1, tb.x1, height - tb.y0), extra))
     return buf.getvalue(), boxes
+
+
+def pixel_to_data(extra, px, py):
+    """A point of the picture (pixels from its top left) in the plot's
+    units, with the plot's frame and ranges as render gives them."""
+    import math
+    x0, y0, x1, y1 = extra['frame']
+    fx = (px - x0) / (x1 - x0)
+    fy = (y1 - py) / (y1 - y0)
+    out = []
+    for f, (a, b), scale in ((fx, extra['xlim'], extra['xscale']),
+                             (fy, extra['ylim'], extra['yscale'])):
+        if scale == 'log' and a > 0 and b > 0:
+            out.append(10 ** (math.log10(a) + f * (math.log10(b) - math.log10(a))))
+        else:
+            out.append(a + f * (b - a))
+    return tuple(out)
 
 
 def preview_png(figure, width_cm, height_cm, font_pt=None, line_pt=None, dpi=100,

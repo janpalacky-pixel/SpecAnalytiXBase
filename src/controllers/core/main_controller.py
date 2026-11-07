@@ -226,6 +226,9 @@ class MainController(QMainWindow):
         # 'Cursor' above the plot: vertical cursor with the spectra's values
         from src.controllers.visualization.plot_cursor_controller import PlotCursorController
         self.plot_cursor_controller = PlotCursorController(self)
+        # your own labels on the plot: band labels, text, arrows (right-click)
+        from src.controllers.visualization.plot_notes_controller import PlotNotesController
+        self.plot_notes_controller = PlotNotesController(self)
         # View -> Theme (light / dark, used from the next start)
         from src.views.theme import build_menu as _build_theme_menu
         _build_theme_menu(self)
@@ -1105,9 +1108,21 @@ class MainController(QMainWindow):
         delete_spectra_shortcut_ctrl_d.activated.connect(lambda: self.spectrum_selector.delete_selected_spectra())
 
         delete_spectra_shortcut_del = QShortcut(QKeySequence("Delete"), self.spectra_list_widget)
-        delete_spectra_shortcut_del.activated.connect(lambda: self.spectrum_selector.delete_selected_spectra())
+        delete_spectra_shortcut_del.activated.connect(self._delete_key)
 
         self._apply_stylesheet()
+
+    def _delete_key(self):
+        """The Delete key: a label chosen on the plot (a click on it) is
+        deleted - not the spectra; otherwise the selected spectra."""
+        notes = getattr(self, 'plot_notes_controller', None)
+        canvas = getattr(self, 'static_canvas', None)
+        from PyQt5.QtWidgets import QApplication
+        if notes is not None and notes.selected is not None and canvas is not None \
+                and QApplication.focusWidget() is canvas:
+            notes.delete_selected()
+            return
+        self.spectrum_selector.delete_selected_spectra()
 
     def _apply_stylesheet(self):
         """Apply a coherent light academic stylesheet to the entire application."""
@@ -2191,7 +2206,10 @@ class MainController(QMainWindow):
         # File -> Save plot for publication… right after it
         pub = QAction("Save plot for publication\u2026", self.view)
         pub.setObjectName("actionSavePlotForPublication")
-        pub.setIcon(_icons.standard('SP_DialogSaveButton', self.view))
+        pub.setIcon(_icons.publication_icon())
+        pub.setIconText("Publication")
+        pub.setToolTip("Save plot for publication: the plot in a journal's size, font and "
+                       "look - TIFF, PNG, PDF, SVG, EPS or printed")
         pub.setStatusTip("The plot in the size of a journal column, at 600 dpi (TIFF, PNG) "
                          "or as PDF / SVG / EPS")
         pub.triggered.connect(self.save_plot_for_publication)
@@ -2207,6 +2225,8 @@ class MainController(QMainWindow):
             tb.addSeparator()
             tb.addAction(action)
             tb.widgetForAction(action).setObjectName("toolbarCopyPlotButton")
+            tb.addAction(pub)                     # Save plot for publication, quickly
+            tb.widgetForAction(pub).setObjectName("toolbarPublicationButton")
 
     def save_plot_for_publication(self):
         """File -> Save plot for publication… (also right-click on the plot):
@@ -2218,7 +2238,8 @@ class MainController(QMainWindow):
             return None
         from src.views.dialogs.visualization.publication_dialog import PublicationDialog
         prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
-        dlg = PublicationDialog(figure, self.view, preferences=prefs)
+        dlg = PublicationDialog(figure, self.view, preferences=prefs,
+                                notes=getattr(self, 'plot_notes_controller', None))
         dlg.exec_()
         if dlg.saved_path:
             self._status(f"Saved for publication: {dlg.saved_path}")
@@ -2231,6 +2252,9 @@ class MainController(QMainWindow):
         if figure is None or not figure.axes:
             self._status("There is no plot to copy \u2014 select some spectra first.")
             return None
+        notes = getattr(self, 'plot_notes_controller', None)
+        if notes is not None and notes.selected is not None:
+            notes.select(None)                     # no frame of a chosen label in the copy
         from src.controllers.visualization.plot_clipboard import COPY_DPI, copy_figure
         try:
             image = copy_figure(figure)
@@ -2876,6 +2900,9 @@ class MainController(QMainWindow):
         cursor = getattr(self, 'plot_cursor_controller', None)
         if cursor is not None:
             cursor.attach(self.static_canvas, plot_type)
+        notes = getattr(self, 'plot_notes_controller', None)
+        if notes is not None:
+            notes.attach(self.static_canvas)
         # a window open beside the plot draws its marks again (plot_only_mode)
         lock = getattr(self.view, 'plot_only_lock', None)
         if lock is not None:
@@ -2950,6 +2977,18 @@ class MainController(QMainWindow):
         copy_plot_action = context_menu.addAction("Copy plot to clipboard\tCtrl+Shift+C")
         publication_action = context_menu.addAction("Save plot for publication\u2026")
 
+        # Your own labels: a band's label, text, an arrow - at the place clicked
+        context_menu.addSeparator()
+        xdata = getattr(event, 'xdata', None)
+        on_plot = getattr(event, 'inaxes', None) is not None and xdata is not None
+        label_band_action = context_menu.addAction(
+            f"Label the band here ({xdata:.0f})" if on_plot else "Label the band here")
+        add_text_action = context_menu.addAction("Add text here\u2026")
+        add_arrow_action = context_menu.addAction("Add an arrow here\u2026")
+        for a in (label_band_action, add_text_action, add_arrow_action):
+            a.setEnabled(on_plot)
+        notes_action = context_menu.addAction("Labels on the plot\u2026")
+
         # Pinned cursors (Cursor checkbox above the plot)
         cursor = getattr(self, 'plot_cursor_controller', None)
         copy_cursor_action = clear_cursor_action = None
@@ -2992,6 +3031,14 @@ class MainController(QMainWindow):
             self.copy_plot_to_clipboard()
         elif action == publication_action:
             self.save_plot_for_publication()
+        elif action == label_band_action:
+            self.plot_notes_controller.add_at('band', event)
+        elif action == add_text_action:
+            self.plot_notes_controller.add_at('text', event)
+        elif action == add_arrow_action:
+            self.plot_notes_controller.add_at('arrow', event)
+        elif action == notes_action:
+            self.plot_notes_controller.show_dialog()
         elif copy_cursor_action is not None and action == copy_cursor_action:
             n = cursor.copy_table()
             self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "

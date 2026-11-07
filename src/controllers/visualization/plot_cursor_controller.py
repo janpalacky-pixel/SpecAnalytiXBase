@@ -24,6 +24,12 @@ import numpy as np
 from src.modules.visualization import cursor_values as cv
 
 CURSOR_GID = 'sax_cursor'          # artists of this controller (not spectra)
+
+
+def _label(x):
+    """A pinned cursor's label: its x without needless decimals (1004, 12.35)."""
+    from src.modules.visualization.plot_notes import fmt
+    return fmt(x)
 _NO_VALUES_TYPES = ('Waterfall plot', 'Heatmap')
 
 
@@ -154,6 +160,9 @@ class PlotCursorController:
         return bool(tb is not None and str(getattr(tb, 'mode', '')))
 
     def _on_move(self, event):
+        notes = getattr(self.main, 'plot_notes_controller', None)
+        if notes is not None and notes.dragging():
+            return                             # a label is dragged: the cursor waits
         if not self.enabled or self.canvas is None or event.inaxes is None \
                 or event.xdata is None or self._toolbar_busy():
             return
@@ -203,6 +212,9 @@ class PlotCursorController:
         if (not self.enabled or event.button != 1 or event.inaxes is None
                 or event.xdata is None or self._toolbar_busy() or event.dblclick):
             return
+        notes = getattr(self.main, 'plot_notes_controller', None)
+        if notes is not None and notes.hit(event):
+            return                             # a label is dragged, no cursor pinned
         self.pin(float(event.xdata))
 
     def pin(self, x):
@@ -220,9 +232,9 @@ class PlotCursorController:
             for a in list(ax.lines) + list(ax.texts):
                 if a.get_gid() in (CURSOR_GID, CURSOR_GID + '_pinned'):
                     a.remove()                 # the live cursor is made again
-            for i, x in enumerate(self.pinned, 1):
+            for x in self.pinned:                    # labelled with its x value
                 ax.axvline(x, color='#6D4C41', lw=1.0, ls=':', gid=CURSOR_GID + '_pinned')
-                ax.text(x, 1.0, f" {i}", transform=ax.get_xaxis_transform(), va='bottom',
+                ax.text(x, 1.0, _label(x), transform=ax.get_xaxis_transform(), va='bottom',
                         ha='center', fontsize=7.5, color='#6D4C41', gid=CURSOR_GID + '_pinned')
         self._live = {}
         self.canvas.draw_idle()
