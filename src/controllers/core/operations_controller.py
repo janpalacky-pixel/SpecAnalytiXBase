@@ -842,7 +842,9 @@ class OperationsController:
                     commit_callback=isc.commit_interactive_subtraction,
                 )
                 if dialog:
-                    logger.info("DEBUG: Interactive subtraction dialog opened successfully")
+                    # beside the plot, as every other processing window: the
+                    # plot (zoom, pan) and Basic plot options stay usable
+                    run_beside_plot(dialog)
 
             except Exception as e:
                 logger.error(f"ERROR: Failed to open interactive subtraction dialog: {e}")

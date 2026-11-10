@@ -281,7 +281,9 @@ class InteractiveSubtractionController:
         dialog.factors_updated.connect(self._on_factors_updated)
         dialog.file_subtrahends_updated.connect(self._on_file_subtrahends_updated)
 
-        dialog.show()
+        # shown by the caller beside the plot (run_beside_plot), like every
+        # other processing window - it used to be shown here, modal, without
+        # the orange line above the plot
         return dialog
 
     def _on_factors_updated(self, factors: dict):

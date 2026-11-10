@@ -949,6 +949,7 @@ def part_interactive_subtraction():
             log(traceback.format_exc())
     isc = mc.interactive_subtraction_controller
     d = isc.show_dialog(list(mc.selected_spectra), commit_callback=isc.commit_interactive_subtraction)
+    d.show()        # the app shows it beside the plot (run_beside_plot), which waits
     settle(0.8)
     log(' [Spectra subtraction]')
     shoot(d)

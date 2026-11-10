@@ -688,5 +688,8 @@ class SpikeRemovalInteractiveDialog(QDialog):
         """
         if not self._committed:
             self.removal_applied.emit(self.get_settings())
-        event.accept()
+        # QDialog's own handling: reject() -> finished, so the window beside
+        # the plot ends (the orange line above the plot goes) - accepting the
+        # event alone left it waiting, closable only with "Close the window"
+        super().closeEvent(event)
 

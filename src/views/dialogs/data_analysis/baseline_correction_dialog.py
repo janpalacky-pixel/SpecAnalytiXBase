@@ -757,7 +757,10 @@ class BaselineCorrectionDialog(QDialog):
             'selected_row': self.spectra_list.currentRow(),
             'view_mode':    view_mode,
         }
-        event.accept()
+        # QDialog's own handling: reject() -> finished, so the window beside
+        # the plot ends (the orange line above the plot goes) - accepting the
+        # event alone left it waiting, closable only with "Close the window"
+        super().closeEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)

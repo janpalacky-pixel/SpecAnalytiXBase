@@ -1230,7 +1230,7 @@ def get_user_guide_help_content():
         <p>Most tool windows stay open <b>beside the plot</b>: the Peaks window; the plot windows
         Legend, Grid, Layout Properties, Axis properties, Line colours, Plot Properties and Band
         markers; the processing windows (e.g. baseline correction, smoothing, normalization, data
-        range, x-axis alignment); the analysis windows (e.g. Peak Fitting, Melting Curve, Band
+        range, x-axis alignment, interactive subtraction); the analysis windows (e.g. Peak Fitting, Melting Curve, Band
         Ratio, Group Statistics, SVD, PCA, NMF, MCR-ALS, 2D Map, Isosbestic points); the Data
         table, the Spectral Calculator, Mixture analysis and Spectrum properties.</p>
         <p>While one of them is open, <b>only the plot and the Basic plot options</b> of the main

@@ -2915,6 +2915,22 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
             <code>tests/test_table_sorting.py</code> (they fail when the pause is removed).
         </div>
 
+        <h2 id="beside-plot-close">Windows Beside the Plot: Let QDialog Handle the Close</h2>
+        <div class="rule">
+            <strong>Every processing / analysis window is opened with
+            <code>run_beside_plot(dialog)</code></strong> (<code>src/views/plot_only_mode.py</code>):
+            non-modal, the orange line above the plot, only the plot and Basic plot options usable,
+            waiting in a local event loop until the dialog's <code>finished</code> signal. So a
+            dialog's own <code>closeEvent</code> must end with
+            <code>super().closeEvent(event)</code> (QDialog then calls <code>reject()</code> &rarr;
+            <code>finished</code>), not with <code>event.accept()</code> alone: Manual baseline and
+            Spike removal did that (11-10) and the window's X did not end them &mdash; only
+            "Close the window" above the plot did. Interactive subtraction was shown by
+            <code>show()</code> and modal (no orange line); it now goes through
+            <code>run_beside_plot</code> like the others. Tests:
+            <code>tests/test_tool_windows_close.py</code>.
+        </div>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">
