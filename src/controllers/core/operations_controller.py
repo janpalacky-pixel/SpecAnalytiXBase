@@ -347,6 +347,12 @@ class OperationsController:
         }
         self.controller.selected_spectra = [
             s for s in self.controller.original_spectra if spectrum_key(s) in highlight_ids]
+        # the counter above the list (e.g. 5/36): with the signals blocked
+        # nothing else updates it - it showed the old numbers until a click
+        try:
+            self.controller.spectrum_selector.update_spectra_count_label()
+        except Exception:
+            logger.debug("Could not update the spectra counter", exc_info=True)
         if before and set(before) != chosen and hasattr(self.controller, 'push_selection'):
             self.controller.push_selection(before)         # Alt+Left: back to it
         if new and not keep_selected and chosen == set(new):

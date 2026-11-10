@@ -821,8 +821,10 @@ def get_user_guide_help_content():
                 <li><strong>Select All</strong>, <strong>Unselect All</strong> and
                 <strong>Select spectra</strong> keep the selection before for
                 <span class="kbd">Alt+Left</span> as well &mdash; a careful selection is not lost
-                by one Ctrl+U. Single clicks in the list are not kept (each click would be
-                a step).</li>
+                by one Ctrl+U. That works however the selection was made, also by clicking:
+                click one spectrum, Unselect All, <span class="kbd">Alt+Left</span> &rarr; that
+                spectrum is selected again. But going from one click to the next is not a step:
+                click A, then B, and <span class="kbd">Alt+Left</span> does not go back to A.</li>
             </ul>
             The spectra are recognised by their permanent identity, not by their names, so
             renaming, sorting or moving never changes the selection.

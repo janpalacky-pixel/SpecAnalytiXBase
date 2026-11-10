@@ -143,6 +143,24 @@ def test_rename_keeps_the_selection(mc):
     assert sorted(_selected(mc)) == ['sp005_r', 'sp006_r']
 
 
+def test_the_counter_above_the_list_follows_at_once(mc):
+    """The counter (selected/all) is right straight after Add as New and
+    after an Apply that adds a spectrum - not only after a click."""
+    def counter():
+        return mc.num_label.text()
+    _select(mc, 'sp002', 'sp003')
+    assert counter() == '2/11'
+    _smooth(mc, add_as_new=True)
+    assert counter() == '2/13'
+    _select(mc, 'sp001', 'sp002', 'sp003')
+    from src.controllers.data_analysis.mean_centering_controller import MeanCenteringController
+    mc.mean_centering_controller = MeanCenteringController(mc)
+    ok, msg = mc.mean_centering_controller.commit_mean_centering(
+        {'include_mean_spectrum': True}, False, mc.spectrum_selector.get_selected_spectra())
+    assert ok, msg
+    assert counter() == '4/14'
+
+
 def test_mean_centering_apply_keeps_the_selection_and_adds_the_mean(mc):
     """Apply that also makes a spectrum (the mean): the selection stays,
     the mean is selected too."""
