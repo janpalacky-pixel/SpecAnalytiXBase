@@ -2858,6 +2858,11 @@ def get_user_guide_help_content():
         copy of it, and everything starts <em>as in the plot</em> &mdash; only what you change is
         different. It works for every kind of plot (Overlay, Grid, Waterfall, Mean &plusmn; SD,
         Heatmap &hellip;); also the <strong>Publication</strong> button under the menu bar.
+        <strong>Tool windows</strong> have it too, for their own plots: in <strong>2D
+        Map</strong> right-click on the map or on the spectrum panel &rarr; <em>Save plot for
+        publication&hellip;</em> or <em>Print plot&hellip;</em> (the window opens on its Printing
+        tab), or the same button in that plot's toolbar &mdash; see the
+        <a href="help://map2d#publication">2D Map help</a>.
         The choices are on tabs on the left, the preview is on the right
         (drag the bar between them to give either side more room); an orange
         <strong>?</strong> explains the less obvious ones. A tab is shown only when the plot
@@ -2923,7 +2928,10 @@ def get_user_guide_help_content():
             click one to choose it (<span class="kbd">Delete</span> deletes it), double-click to
             change it, drag to move it (an arrow: its tip, its tail or its middle, as on the
             main plot). <strong>Drag</strong> a band marker's label, a pinned cursor's value, the plot
-            title or the legend in the preview to move it &mdash; only in the picture.</li>
+            title or the legend in the preview to move it &mdash; only in the picture.
+            <em>Marks on the plot</em> (a tool window's plot): e.g. on a 2D map the + of the
+            clicked pixel, the outlines of the regions (ROI) and the numbered reference pixels,
+            on its spectrum the shaded range &mdash; each kind shown or left out.</li>
             <li><strong>Heatmap</strong> &mdash; only for a plot with a colour map: the <em>colour
             map</em> (viridis and cividis read well also in grey and by colour-blind people;
             Greys for black-and-white; RdBu_r or coolwarm for values around zero), the

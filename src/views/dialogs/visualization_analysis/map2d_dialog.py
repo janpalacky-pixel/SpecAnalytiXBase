@@ -66,6 +66,8 @@ from src.views.dialogs.visualization_analysis.roi_spectra_dialogs import (
     _RemoveROIDialog, _ROISpectraDialog,
 )
 from src.modules.visualization.safe_layout import safe_tight_layout
+from src.modules.visualization import publication_style as pst
+from src.views import publication_actions
 
 logger = get_logger(__name__)
 
@@ -903,6 +905,10 @@ class Map2DDialog(QDialog):
         self._ellipse_selector    = None
         self._roi_selector        = None
         self._lasso_selector = None
+        # the drawing tools' own artists (the rectangle / ellipse being drawn
+        # with its handles, the lasso's line): never in a saved picture -
+        # they can stay on the axes after the tool is switched off
+        self._selector_artists = []
         self._line_roi_active = False    # line profile mode
         self._line_p1        = None      # first click point (col, row)
         self._remove_roi_active = False
@@ -1155,6 +1161,9 @@ class Map2DDialog(QDialog):
         # patches alone".
         self._map_canvas.set_post_redraw_hook(self._redraw_roi_patches)
         self._map_toolbar = NavigationToolbar(self._map_canvas, left_widget)
+        # Save plot for publication (also in the right-click menu)
+        publication_actions.add_toolbar_button(
+            self._map_toolbar, lambda: self.save_map_for_publication(), "map")
         left_layout.addWidget(self._map_toolbar)
         left_layout.addWidget(self._map_canvas, stretch=1)
 
@@ -2410,6 +2419,8 @@ class Map2DDialog(QDialog):
         self._spectrum_canvas  = _SpectrumCanvas(height_inches=2.4)
         self._spectrum_toolbar = NavigationToolbar(
             self._spectrum_canvas, container)
+        publication_actions.add_toolbar_button(
+            self._spectrum_toolbar, lambda: self.save_spectrum_for_publication(), "spectrum")
         vlay.addWidget(self._spectrum_toolbar)
         vlay.addWidget(self._spectrum_canvas, stretch=1)
         return container
@@ -5340,15 +5351,96 @@ class Map2DDialog(QDialog):
     def _show_right_panel_menu(self, pos):
         """Context menu (right-click on map or spectrum panel) to show/hide
         the entire right control column."""
-        from PyQt5.QtWidgets import QMenu
+        from PyQt5.QtWidgets import QApplication, QMenu
         menu   = QMenu(self)
+        where = (self.sender() or self).mapToGlobal(pos)
+        # on the map or on the spectrum: Save plot for publication / Print
+        # plot (of that plot)
+        under = QApplication.widgetAt(where)
+        if under is not None and (under is self._map_canvas
+                                  or self._map_canvas.isAncestorOf(under)):
+            publication_actions.add_menu_items(
+                menu, lambda: self.save_map_for_publication(),
+                lambda: self.save_map_for_publication(print_first=True), "map")
+            menu.addSeparator()
+        elif under is not None and (under is self._spectrum_canvas
+                                    or self._spectrum_canvas.isAncestorOf(under)):
+            publication_actions.add_menu_items(
+                menu, lambda: self.save_spectrum_for_publication(),
+                lambda: self.save_spectrum_for_publication(print_first=True), "spectrum")
+            menu.addSeparator()
         sizes  = self._outer_splitter.sizes()
         hidden = sizes[1] == 0
         action = menu.addAction("Show controls panel" if hidden
                                 else "Hide controls panel")
-        chosen = menu.exec_(self.sender().mapToGlobal(pos))
+        self._last_context_menu = menu             # for the tests
+        chosen = menu.exec_(where)
         if chosen == action:
             self._set_right_panel_visible(hidden)  # hidden→show, shown→hide
+
+    # ── Save plot for publication / Print plot ─────────────────────────
+
+    def _keep_selector_artists(self, selector):
+        """Remember a drawing tool's artists (see _selector_artists)."""
+        try:
+            self._selector_artists.extend(selector.artists)
+        except Exception:
+            pass
+
+    def map_figure_copy(self):
+        """A copy of the map for the publication window: the + of the
+        clicked pixel, the regions' outlines and the reference pixels
+        marked (each can be left out there), without the hover tooltip
+        and without the drawing tools' rectangle / ellipse / lasso with
+        their handles (the regions drawn are the dashed outlines)."""
+        c = self._map_canvas
+        marks = [(c._crosshair, pst.MAP_PIXEL_GID)]
+        marks += [(a, pst.MAP_REF_GID) for a in c._ref_marker_artists]
+        marks += [(reg.get('patch'), pst.MAP_ROI_GID) for reg in self._roi_regions]
+        return publication_actions.figure_copy(
+            c.fig, marks=marks, hide=[c._tooltip] + list(self._selector_artists))
+
+    def spectrum_figure_copy(self):
+        """A copy of the spectrum panel for the publication window: the
+        shaded range marked (can be left out there); the spectrum (and any
+        other curve) named, so the Lines tab lists them."""
+        ax = self._spectrum_canvas.ax
+        marks = [(p, pst.RANGE_GID) for p in ax.patches if getattr(p, '_range_band', False)]
+        names, n = [], 0
+        title = ax.get_title().strip()
+        for line in ax.get_lines():
+            if not line.get_visible() or not str(line.get_label()).startswith('_'):
+                continue
+            n += 1
+            names.append((line, (title.split('  ')[0] or "spectrum") if n == 1
+                          else f"curve {n}"))
+        copy = publication_actions.figure_copy(self._spectrum_canvas.fig, marks=marks,
+                                               names=names)
+        from matplotlib.colors import to_hex
+        for a in copy.axes:                        # the panel's light grey: white on paper
+            if to_hex(a.get_facecolor()) == '#f9f9f9':
+                a.set_facecolor('white')
+        return copy
+
+    def save_map_for_publication(self, print_first=False):
+        """Right-click on the map (or its toolbar's button): the map in a
+        journal's size, font and look - saved or printed."""
+        if not self._map_canvas.ax.images:          # a message instead of a map
+            QMessageBox.information(self, "No map", "Compute a map first (Update Map).")
+            return None
+        return publication_actions.open_publication(self, self.map_figure_copy(), "2D map",
+                                                    print_first)
+
+    def save_spectrum_for_publication(self, print_first=False):
+        """Right-click on the spectrum panel (or its toolbar's button): the
+        spectrum shown there - saved or printed."""
+        if not any(line.get_visible() for line in self._spectrum_canvas.ax.get_lines()):
+            QMessageBox.information(self, "No spectrum",
+                                    "Click a pixel of the map first - its spectrum is shown "
+                                    "here.")
+            return None
+        return publication_actions.open_publication(
+            self, self.spectrum_figure_copy(), "2D map spectrum", print_first)
 
     def _set_right_panel_visible(self, visible):
         """Collapse or restore the entire right control column."""
@@ -6308,6 +6400,7 @@ class Map2DDialog(QDialog):
             minspanx=0, minspany=0,
             spancoords='data', interactive=True,
         )
+        self._keep_selector_artists(self._roi_selector)
         self._last_rect_region = None
         self._last_rect_patch  = None
         self._map_canvas.draw_idle()
@@ -6343,6 +6436,7 @@ class Map2DDialog(QDialog):
             minspanx=0, minspany=0,
             spancoords='data', interactive=True,
         )
+        self._keep_selector_artists(self._ellipse_selector)
         self._last_ellipse_region = None
         self._last_ellipse_patch  = None
         self._map_canvas.draw_idle()
@@ -6548,6 +6642,7 @@ class Map2DDialog(QDialog):
             self._on_lasso_selected,
             useblit=True, button=[1],
         )
+        self._keep_selector_artists(self._lasso_selector)
         self._map_canvas.draw_idle()
 
     def _on_lasso_selected(self, verts):

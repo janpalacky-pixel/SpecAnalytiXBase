@@ -3787,6 +3787,25 @@ def _natural_sort_key(cls, label):
             <code>app_logger.crash_watch_paused()</code>: asking Windows about printers raises
             errors Windows handles itself (0x80040155), which faulthandler would log as
             "fatal".</li>
+            <li><b>Tool windows</b> (v1.7.0, 2D Map first): <code>src/views/publication_actions.py</code>
+            - <code>add_toolbar_button(toolbar, callback)</code> (after matplotlib's Save),
+            <code>add_menu_items(menu, save, print_)</code> ("Save plot for publication&hellip;",
+            "Print plot&hellip;") and <code>open_publication(parent, figure, what,
+            print_first)</code> (the same <code>PublicationDialog</code>; <code>title</code>,
+            <code>tab="Printing"</code>; the preferences found through the tool's controller).
+            The figure given is <code>figure_copy(fig, marks, names, hide)</code>: the tool's own
+            marks get a gid of <code>publication_style.MARKS</code> (<code>sax_map_pixel</code>,
+            <code>sax_map_roi</code>, <code>sax_map_ref</code>, <code>sax_range</code>) and
+            unnamed lines a name - set on the screen's artists only for the moment of pickling
+            and put back at once, so the plot on the screen never changes. <code>current()</code>
+            lists the marks it finds (<code>info['marks']</code>); the Labels tab gets a "shown /
+            left out" box for each, and <code>apply_texts</code> hides the ones set to 'off'.
+            Artists given in <code>hide</code> (e.g. the hover tooltip) get the cursor's gid and
+            are removed like it (2D Map: also every artist of its RectangleSelector /
+            EllipseSelector / LassoSelector, kept in <code>_selector_artists</code> when the
+            tool is made, since they can stay on the axes after the tool is switched off). A new tool window: build its own <code>*_figure_copy()</code>
+            naming its marks (add a gid to MARKS if it has a new kind), then the two calls above.
+            Tests: <code>tests/test_publication_tool_windows.py</code>.</li>
             <li><b>Labels on the plot</b>: <code>src/modules/visualization/plot_notes.py</code>
             (Qt-free: a list of dicts <code>DEFAULT</code>; x, y = the point / an arrow's tip;
             tx, ty = the text / an arrow's tail, all in data units; drawn as annotations with gid

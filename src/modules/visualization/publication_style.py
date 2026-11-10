@@ -9,7 +9,18 @@ Works for every plot type: one plot (Overlay, Waterfall, Mean ± SD ...),
 several (Grid plot) and pictures with a colour bar (Heatmap)."""
 
 KEEP = 'keep'                       # "as in the plot"
-CURSOR_GIDS = ('sax_cursor', 'sax_cursor_pinned', 'sax_band')
+# marks a tool window puts on its plot (set on a copy by
+# src/views/publication_actions.py): each kind can be left out of the picture
+MAP_PIXEL_GID = 'sax_map_pixel'     # 2D Map: the + of the clicked pixel
+MAP_ROI_GID = 'sax_map_roi'         # 2D Map: the outlines of the regions (ROI)
+MAP_REF_GID = 'sax_map_ref'         # 2D Map: the numbered reference pixels
+RANGE_GID = 'sax_range'             # a spectrum's shaded range (what the map is made of)
+# {gid: (style key, what it is - for the window)}
+MARKS = {MAP_PIXEL_GID: ('map_pixel', "The clicked pixel (+)"),
+         MAP_ROI_GID: ('map_rois', "Regions (ROI outlines)"),
+         MAP_REF_GID: ('map_refs', "Reference pixels (numbered circles)"),
+         RANGE_GID: ('ranges', "Shaded range")}
+CURSOR_GIDS = ('sax_cursor', 'sax_cursor_pinned', 'sax_band') + tuple(MARKS)
 
 STYLE_DEFAULTS = {
     'font_family': '',              # '' = as in the plot
@@ -43,6 +54,8 @@ STYLE_DEFAULTS = {
     'band_rotation': KEEP,                         # keep / horizontal / vertical
     'band_lines': KEEP,                            # keep / off: the band markers' lines
     'cursors': KEEP,                               # keep / off: the pinned cursors
+    # keep / off: the marks of a tool window's plot (MARKS)
+    'map_pixel': KEEP, 'map_rois': KEEP, 'map_refs': KEEP, 'ranges': KEEP,
 }
 
 BAND_GID = 'sax_band'               # band markers' lines and labels
@@ -152,13 +165,20 @@ def current(figure):
     info = {'x_title': '', 'y_title': '', 'title': '', 'x_range': None, 'y_range': None,
             'has_lines': False, 'has_colours': bool(_mappables(figure)),
             'has_legend': any(ax.get_legend() is not None for ax in figure.axes),
-            'has_bands': False, 'has_cursors': False, 'has_notes': False}
+            'has_bands': False, 'has_cursors': False, 'has_notes': False,
+            'marks': []}                # the MARKS gids the plot has, in MARKS' order
+    found = set()
     for ax in figure.axes:
         for a in list(ax.texts) + list(ax.get_lines()):
             gid = str(a.get_gid() or '')
             info['has_bands'] |= gid == BAND_GID
             info['has_cursors'] |= gid == PINNED_GID
             info['has_notes'] |= gid.startswith(NOTE_GID)
+        for a in ax.get_children():
+            gid = getattr(a, 'get_gid', lambda: None)()
+            if gid in MARKS and a.get_visible():
+                found.add(gid)
+    info['marks'] = [g for g in MARKS if g in found]
     if not axes:
         return info
     ax = axes[0]
@@ -474,6 +494,10 @@ def apply_texts(copy, style, font_pt=None):
                 line.set_visible(False)
             if gid == PINNED_GID and s['cursors'] == 'off':
                 line.set_visible(False)
+        for a in ax.get_children():                # a tool window's marks left out
+            gid = getattr(a, 'get_gid', lambda: None)()
+            if gid in MARKS and s[MARKS[gid][0]] == 'off':
+                a.set_visible(False)
     if title_pt and getattr(copy, '_suptitle', None) is not None:
         copy._suptitle.set_fontsize(title_pt)
 

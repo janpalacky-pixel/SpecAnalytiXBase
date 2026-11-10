@@ -278,9 +278,12 @@ class _BrightFromBlack(QObject):
 
 
 class PublicationDialog(QDialog):
-    def __init__(self, figure, parent=None, preferences=None, folder='', notes=None):
+    def __init__(self, figure, parent=None, preferences=None, folder='', notes=None,
+                 title=None, tab=None):
+        """title: the window's title (e.g. "... - 2D map"); tab: the tab to
+        show first (e.g. "Printing" for Print...)."""
         super().__init__(parent)
-        self.setWindowTitle("Save plot for publication")
+        self.setWindowTitle(title or "Save plot for publication")
         self.notes = notes              # PlotNotesController: your labels on the plot
         if notes is not None:
             notes.select(None)          # no frame of a chosen label in the picture
@@ -321,13 +324,15 @@ class PublicationDialog(QDialog):
                 ("Legend", self._legend_tab, info['has_legend']),
                 ("Labels", self._labels_tab,
                  info['has_bands'] or info['has_cursors'] or info['has_notes']
-                 or notes is not None),
+                 or bool(info.get('marks')) or notes is not None),
                 ("Heatmap", self._heatmap_tab, info['has_colours']),
                 ("Printing", self._print_tab, True)):
             page = build()
             self.tab_pages[name] = page
             if shown:
                 self.tabs.addTab(page, name)
+        if tab in self.tab_pages and self.tabs.indexOf(self.tab_pages[tab]) >= 0:
+            self.tabs.setCurrentWidget(self.tab_pages[tab])
         left.addWidget(self.tabs, 1)
         self.pixels_label = QLabel()
         self.pixels_label.setStyleSheet("color: #555;")
@@ -857,6 +862,17 @@ class PublicationDialog(QDialog):
             self.cursor_size_spin.setToolTip("Size of the pinned cursors' values (automatic: "
                                              "Text size).")
             form.addRow("Value size:", self.cursor_size_spin)
+        self.mark_combos = {}
+        if info.get('marks'):
+            # the marks of a tool window's plot (2D Map: the clicked pixel,
+            # the regions, the reference pixels; a spectrum's shaded range)
+            form.addRow(QLabel("<b>Marks on the plot</b>"))
+            for gid in info['marks']:
+                key, name = pst.MARKS[gid]
+                combo = self._combo([(KEEP, "shown"), ('off', "left out")], key)
+                combo.setToolTip(f"{name}: in the picture or left out.")
+                self.mark_combos[key] = combo
+                form.addRow(name + ":", combo)
         if self.notes is not None:
             form.addRow(QLabel("<b>Your labels</b> (also on the main plot)"))
             from src.views.dialogs.visualization.plot_notes_dialog import NotesTable
@@ -888,6 +904,10 @@ class PublicationDialog(QDialog):
             "the number above a band, as in many papers.<br>"
             "<b>Pinned cursors</b> (Cursor tick box, a click on the plot): kept in the "
             "picture or left out (shown here only when the plot has some).<br>"
+            "<b>Marks on the plot</b> (a tool window's plot, e.g. 2D Map): the + of the "
+            "clicked pixel, the outlines of the regions (ROI), the numbered reference "
+            "pixels, a spectrum's shaded range - each kept in the picture or left out "
+            "(only the kinds the plot has are shown).<br>"
             "<b>Your labels</b> (main window: right-click on the plot › Label the band here, "
             "Add text here, Add an arrow here; or <i>Add text</i> / <i>Add an arrow</i> here): "
             "the same labels as on the main plot - a change here changes them there too. "

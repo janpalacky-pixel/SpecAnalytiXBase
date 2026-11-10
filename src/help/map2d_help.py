@@ -229,7 +229,8 @@ recorded on a regular (x, y) grid.</p>
       <li><a href="#cluster">Cluster overlay</a> &middot; <a href="#rgb">RGB overlay</a></li>
     </ul></li>
   <li><a href="#range">3 — Spectral Range Configuration</a></li>
-  <li><a href="#display">4 — Display Options</a></li>
+  <li><a href="#display">4 — Display Options</a> &middot;
+      <a href="#publication">Save or print the map for publication</a></li>
   <li><a href="#spectrum-panel">5 — Spectrum Panel</a></li>
   <li><a href="#roi">6 — ROI Tools</a></li>
   <li><a href="#workflows">Typical workflows</a></li>
@@ -1201,6 +1202,28 @@ be mistaken for a low value of the colour scale. Hovering over one shows
 <tr><td><b>Auto colorbar range</b></td><td>When unchecked, set <b>Low %</b> and <b>High %</b> percentile clipping. For example, Low=2 / High=98 clips the bottom and top 2% of map values — useful to suppress outlier pixels without losing information in the bulk of the map.</td></tr>
 </table>
 <p>Colormap and interpolation are not applicable to Cluster overlay (which uses a fixed discrete tab10 palette).</p>
+</div>
+
+<h3 id="publication">Save or print the map (or the spectrum) for publication</h3>
+<div class="cat">
+<p><b>Right-click on the map</b> &rarr; <b>Save plot for publication&hellip;</b> opens the
+same window as the main window's File &rsaquo; Save plot for publication, with the map: its
+size in cm (e.g. one journal column, 8.5 cm), the font and text size, the axis titles and
+ranges, the colour map, the values of its first and last colour and the colour bar's title
+(Heatmap tab), saved at 300&ndash;1200 dpi (TIFF, PNG) or as PDF, SVG, EPS.
+<b>Print plot&hellip;</b> opens it on its Printing tab (print preview, fit to page, caption).
+The same button (a page with a plot on it) is in the map's toolbar, right after the
+floppy disk. <b>Right-click on the spectrum panel</b> does the same for the spectrum shown
+there (e.g. the clicked pixel's spectrum).</p>
+<p>The map on the screen is not changed: the picture is made from a copy. Its
+<b>marks</b> start as on the screen, and the window's <b>Labels</b> tab can leave out each
+kind: the white <b>+</b> of the clicked pixel, the <b>outlines of the regions</b> (ROI) and
+the numbered <b>reference pixels</b> (NMF / MCR-ALS); on the spectrum, the <b>shaded
+range</b> the map is made of. Never in the picture: the tooltip that follows the mouse and
+the rectangle, ellipse or lasso of an ROI tool while you draw (with its little squares and
+circles for resizing) &mdash; a region you have drawn is its dashed outline.</p>
+<p>See the <a href="help://user_guide#publication">User Guide</a> for every choice of the
+window.</p>
 </div>
 
 <p class="top-link"><a href="#contents">&uarr; Contents</a></p>
