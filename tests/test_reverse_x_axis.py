@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 app = QApplication.instance() or QApplication([])
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 DATA = os.path.join(ROOT, 'resources', 'test_data', 'real', 'Raman_DNA_conc_dep.txt')
-PLOT_TYPES = ["Single spectrum", "Overlay plot", "Grid plot", "Waterfall plot", "Mean ± SD",
+PLOT_TYPES = ["Overlay plot", "Grid plot", "Waterfall plot", "Mean ± SD",
               "Difference", "Heatmap"]
 
 

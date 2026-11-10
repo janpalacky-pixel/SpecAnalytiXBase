@@ -9,7 +9,7 @@ from PyQt5.QtCore import Qt, QItemSelection, QItemSelectionModel
 from src.views.dialogs.misc.rename_spectra_dialog import RenameSpectraDialog
 from src.modules.misc.rename_spectra_manager import RenameSpectraManager
 from src.modules.utils.app_logger import get_logger
-from src.modules.utils.spectrum_identity import spectrum_id
+from src.modules.utils.spectrum_identity import spectrum_id, spectrum_key
 from src.modules.utils.correction_history import append_correction_history
 logger = get_logger(__name__)
 
@@ -224,46 +224,12 @@ class RenameSpectraController:
         # unlike Copy/Add as New, which already resort immediately.
         self.controller.original_spectra = self.controller.order_spectra(self.controller.original_spectra)
         
-        self.controller.spectrum_selector.is_batch_updating = True
-        self.controller.spectra_list_widget.blockSignals(True)
-        try:
-            self.controller.spectra_list_widget.clear()
-            rows_to_select = []
-            for i, spectrum in enumerate(self.controller.original_spectra):
-                item = QListWidgetItem(spectrum['label'])
-                item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                item.setData(Qt.UserRole, spectrum_id(spectrum))
-                self.controller.spectra_list_widget.addItem(item)
-                if spectrum['label'] in selected_labels_after:
-                    rows_to_select.append(i)
-            # Batch selection — same fix as the confirmed anti-pattern
-            # found elsewhere in this app (Map2D, Peak Fitting, the main
-            # spectra-list rebuild): calling item.setSelected(True) once
-            # per row in a loop has a real, measurable per-call cost that
-            # scales with how many rows are being selected — confirmed
-            # to cost 83 of a ~90-second operation at ~4675 items
-            # elsewhere. A batch rename can plausibly select many rows
-            # here too, so this gets the same one-shot fix rather than
-            # re-introducing that per-item cost in a new spot.
-            if rows_to_select:
-                widget = self.controller.spectra_list_widget
-                model = widget.model()
-                selection = QItemSelection()
-                for row in rows_to_select:
-                    idx = model.index(row, 0)
-                    selection.select(idx, idx)
-                widget.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
-        finally:
-            self.controller.spectra_list_widget.blockSignals(False)
-            self.controller.spectrum_selector.is_batch_updating = False
-        
-        # Resync selected_indices from the rebuilt (and now differently
-        # ordered) list, by label rather than the stale positions
-        # captured before the rebuild.
-        selected_indices = {
-            i for i, spectrum in enumerate(self.controller.original_spectra)
-            if spectrum['label'] in selected_labels_after
-        }
+        # the shared rule: a rename keeps the selection (the same spectra,
+        # by identity); the History keeps it for Undo
+        self.controller.operations_controller._rebuild_spectra_list_with_selection(
+            {spectrum_key(s) for s in self.controller.original_spectra
+             if s['label'] in selected_labels_after})
+        selected_indices = set(self.controller.spectrum_selector.selected_indices)
         self.controller.spectrum_selector.selected_indices = selected_indices
         
         # Update spectrum counts and refresh the plot if in interactive mode
@@ -389,36 +355,12 @@ class RenameSpectraController:
 
         # Rebuild the list widget and select the newly added spectra.
         new_labels_set = set(renamed_labels.values())
-        self.controller.spectrum_selector.is_batch_updating = True
-        self.controller.spectra_list_widget.blockSignals(True)
-        try:
-            self.controller.spectra_list_widget.clear()
-            rows_to_select = []
-            for i, spectrum in enumerate(self.controller.original_spectra):
-                item = QListWidgetItem(spectrum['label'])
-                item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                item.setData(Qt.UserRole, spectrum_id(spectrum))
-                self.controller.spectra_list_widget.addItem(item)
-                if spectrum['label'] in new_labels_set:
-                    rows_to_select.append(i)
-            # Batch selection — same fix as above; see that comment for
-            # the full reasoning.
-            if rows_to_select:
-                widget = self.controller.spectra_list_widget
-                model = widget.model()
-                selection = QItemSelection()
-                for row in rows_to_select:
-                    idx = model.index(row, 0)
-                    selection.select(idx, idx)
-                widget.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
-        finally:
-            self.controller.spectra_list_widget.blockSignals(False)
-            self.controller.spectrum_selector.is_batch_updating = False
-
-        selected_indices = {
-            i for i, spectrum in enumerate(self.controller.original_spectra)
-            if spectrum['label'] in new_labels_set
-        }
+        # the shared rule: the new copies selected; Alt+Left - the selection
+        # before; the History keeps both
+        self.controller.operations_controller._rebuild_spectra_list_with_selection(
+            {spectrum_key(s) for s in self.controller.original_spectra
+             if s['label'] in new_labels_set})
+        selected_indices = set(self.controller.spectrum_selector.selected_indices)
         self.controller.spectrum_selector.selected_indices = selected_indices
         self.controller.spectrum_selector.update_spectra_count_label()
 

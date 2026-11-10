@@ -227,7 +227,7 @@ class BaselineCorrectionDialog(QDialog):
         nav_row.addWidget(self.next_btn)
 
         self.sort_button = QPushButton("▲")
-        self.sort_button.setToolTip("Toggle sort order")
+        self.sort_button.setToolTip("▲ as in the main list, ▼ upside down")
         self.sort_button.setMaximumWidth(30)
         self.sort_button.clicked.connect(self.toggle_sort_order)
         nav_row.addWidget(self.sort_button)
@@ -462,10 +462,10 @@ class BaselineCorrectionDialog(QDialog):
         )
         self.spectra_list.clear()
         self.list_to_spectra_map = {}
-        for i, sp in enumerate(
-            sorted(self.selected_spectra, key=lambda x: x['label'].lower(),
-                   reverse=not self.sort_ascending)
-        ):
+        spectra = list(self.selected_spectra)     # the main list's order
+        if not self.sort_ascending:
+            spectra.reverse()
+        for i, sp in enumerate(spectra):
             self.spectra_list.addItem(sp['label'])
             self.list_to_spectra_map[i] = sp
         if current_text:
@@ -476,7 +476,10 @@ class BaselineCorrectionDialog(QDialog):
     def populate_spectrum_list(self):
         self.spectra_list.clear()
         self.list_to_spectra_map = {}
-        for i, sp in enumerate(sorted(self.selected_spectra, key=lambda x: x['label'].lower())):
+        spectra = list(self.selected_spectra)     # the main list's order
+        if not self.sort_ascending:
+            spectra.reverse()
+        for i, sp in enumerate(spectra):
             self.spectra_list.addItem(sp['label'])
             self.list_to_spectra_map[i] = sp
         if self.spectra_list.count() > 0:

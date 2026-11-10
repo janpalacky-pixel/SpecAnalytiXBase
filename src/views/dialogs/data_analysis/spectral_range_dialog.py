@@ -407,7 +407,7 @@ class SpectralRangeDialog(QDialog):
         header_layout.addWidget(spectra_label)
         
         self.sort_button = QPushButton("▲")
-        self.sort_button.setToolTip("Toggle sort order")
+        self.sort_button.setToolTip("▲ as in the main list, ▼ upside down")
         self.sort_button.setMaximumWidth(30)
         self.sort_button.clicked.connect(self.toggle_sort_order)
         header_layout.addWidget(self.sort_button)
@@ -765,7 +765,9 @@ class SpectralRangeDialog(QDialog):
         self.spectra_list.clear()
         self.list_to_spectra_map = {}
         
-        sorted_spectra = sorted(self.selected_spectra, key=lambda x: x.get('label', 'Unknown'))
+        sorted_spectra = list(self.selected_spectra)       # the main list's order
+        if not self.sort_ascending:
+            sorted_spectra.reverse()
         
         for i, spectrum in enumerate(sorted_spectra):
             label = spectrum.get('label', f'Spectrum_{i}')
@@ -810,11 +812,9 @@ class SpectralRangeDialog(QDialog):
         self.spectra_list.clear()
         self.list_to_spectra_map = {}
         
-        sorted_spectra = sorted(
-            self.selected_spectra, 
-            key=lambda x: x.get('label', 'Unknown'),
-            reverse=not self.sort_ascending
-        )
+        sorted_spectra = list(self.selected_spectra)       # the main list's order
+        if not self.sort_ascending:
+            sorted_spectra.reverse()
         
         for index, spectrum in enumerate(sorted_spectra):
             label = spectrum.get('label', f'Spectrum_{index}')

@@ -71,7 +71,8 @@ def get_rename_help_content():
         <ul>
             <li><b>Apply</b> — renames the spectra in place. The spectrum
                 list is re-sorted afterward, since a new name can change
-                where a spectrum belongs alphabetically.</li>
+                where a spectrum belongs alphabetically (with your own order
+                of the list a renamed spectrum keeps its place).</li>
             <li><b>Add as New</b> — the original spectra are left completely
                 untouched, and new copies are added to the list under the
                 new names instead. Useful when you want to keep both the old

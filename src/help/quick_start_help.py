@@ -179,7 +179,8 @@ def get_quick_start_help_content():
             <li><b>Import</b> one or more spectrum files — <b>File &rarr; Import</b>,
                 drag and drop onto the window, or the <b>Import</b> toolbar button.</li>
             <li><b>Select</b> the spectra you want to work with in the list on the left
-                (click, Shift+click, Ctrl+click, or drag — see the User Guide's
+                (click, Shift+click, Ctrl+click, or drag; &darr; / &uarr; show one spectrum after
+                another &mdash; see the User Guide's
                 <a href="help://user_guide#selection">Spectrum Selection</a> section).</li>
             <li><b>Process</b> them with one or more operations from the
                 <b>Spectra Processing</b> panel/menu (baseline correction, smoothing,

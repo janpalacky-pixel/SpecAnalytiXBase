@@ -30,7 +30,7 @@ def test_which_plots_get_a_preview():
         assert not ls.needs_preview(2000, plot_type, s)
         assert not ls.needs_preview(5000, plot_type, s, plot_all=True)
         assert not ls.needs_preview(5000, plot_type, dict(s, mode='all'))
-    for plot_type in ('Heatmap', 'Mean ± SD', 'Difference', 'Single spectrum'):
+    for plot_type in ('Heatmap', 'Mean ± SD', 'Difference'):
         assert not ls.needs_preview(50000, plot_type, s)
 
 

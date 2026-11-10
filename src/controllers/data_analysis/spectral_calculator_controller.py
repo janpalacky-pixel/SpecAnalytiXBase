@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 
 from src.modules.data_analysis.spectral_calculator_manager import SpectralCalculatorManager
 from src.modules.utils.app_logger import get_logger
-from src.modules.utils.spectrum_identity import spectrum_id
+from src.modules.utils.spectrum_identity import spectrum_id, spectrum_key
 
 logger = get_logger(__name__)
 
@@ -199,31 +199,11 @@ class SpectralCalculatorController:
             # Update UI
             self.controller.original_spectra = self.oc.operations_manager.get_current_spectra()
             self.controller.original_spectra = self.controller.order_spectra(self.controller.original_spectra)
-            self.controller.spectra_list_widget.blockSignals(True)
-            try:
-                self.controller.spectra_list_widget.clear()
-                for spectrum in self.controller.original_spectra:
-                    item = QListWidgetItem(spectrum['label'])
-                    item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                    item.setData(Qt.UserRole, spectrum_id(spectrum))
-                    self.controller.spectra_list_widget.addItem(item)
-            finally:
-                self.controller.spectra_list_widget.blockSignals(False)
-
-            # Select the new spectra (all of them, if more than one)
-            self.controller.spectra_list_widget.blockSignals(True)
-            try:
-                for name in final_names:
-                    items = self.controller.spectra_list_widget.findItems(name, Qt.MatchExactly)
-                    if items:
-                        items[0].setSelected(True)
-            finally:
-                self.controller.spectra_list_widget.blockSignals(False)
-            if final_names:
-                first_items = self.controller.spectra_list_widget.findItems(final_names[0], Qt.MatchExactly)
-                if first_items:
-                    self.controller.spectra_list_widget.setCurrentItem(first_items[0])
-                self.controller.spectrum_selector.on_item_selection_changed()
+            # the shared rule: ALL the new spectra selected (setCurrentItem on
+            # the first one used to leave only it selected); Alt+Left - the
+            # selection before; the History keeps both
+            self.oc._rebuild_spectra_list_with_selection(
+                {spectrum_key(s) for s in new_spectra})
 
             self.controller.selected_spectra = (
                 spectra_to_process if add_as_new else new_spectra

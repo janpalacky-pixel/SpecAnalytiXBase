@@ -20,7 +20,7 @@ app = QApplication.instance() or QApplication([])
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TBA = os.path.join(ROOT, 'resources', 'test_data', 'real', 'CD_spectra_TBA.txt')
 PLOT_TYPES = ['Overlay plot', 'Grid plot', 'Waterfall plot', 'Mean ± SD',
-              'Difference', 'Heatmap', 'Single spectrum']
+              'Difference', 'Heatmap']
 
 
 @pytest.fixture(scope='module')

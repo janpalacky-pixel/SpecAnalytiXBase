@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QShortcut, QApplication, QMessageBox, QToolButton, QStyledItemDelegate
 )
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtCore import Qt, QPoint, QPointF, QEvent, QTimer, pyqtSignal
 
 from src.views.main_window import MainWindow
 from src.controllers.data_io.import_controller import ImportController
@@ -65,7 +65,66 @@ class _SpectraListWidget(QListWidget):
     silently collapses a multi-selection down to just the clicked item,
     *before* the context menu even opens. Selection should only ever
     change from a deliberate left-click.
+
+    Drag to move: every row has a small handle at its left (six dots);
+    dragging the handle moves the selected spectra (or, when its spectrum is
+    not selected, only that one); a blue line shows where they go, near the
+    top or the bottom the list scrolls, Esc cancels; on letting go
+    `dropped_at(row)` (the controller makes the new order, see
+    spectra_order.py). Everywhere else in a row the mouse selects exactly as
+    before (click, Shift / Ctrl+click, dragging over rows) - so selecting
+    and moving never get in each other's way. This is the widget's own
+    handling of the mouse, not Qt's drag and drop: on Windows Qt's drag of
+    list items reports a "move" to the system, after which Qt removes the
+    dragged items from the list.
     """
+    dropped_at = pyqtSignal(int)        # the row the selected spectra go before
+    HANDLE = 16                         # the handle's width (pixels) at the left of a row
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from PyQt5.QtWidgets import QFrame
+        self._press = None              # (position, modifiers) of a press on a selected item
+        self._moving = False
+        self._row = None
+        self._last_pos = None
+        self._line = QFrame(self.viewport())
+        self._line.setStyleSheet("background: #1976D2;")
+        self._line.hide()
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setInterval(60)
+        self._scroll_timer.timeout.connect(self._scroll_near_edge)
+        self.setMouseTracking(True)     # the hand over a handle
+
+    def on_handle(self, pos):
+        """True when `pos` (in the viewport) is on a row's move handle."""
+        return pos.x() < self.HANDLE and self.itemAt(pos) is not None
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self.count() == 0:
+            return
+        from PyQt5.QtGui import QPainter, QColor
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        top = self.indexAt(QPoint(5, 0)).row()
+        bottom = self.indexAt(QPoint(5, self.viewport().height() - 1)).row()
+        top = 0 if top < 0 else top
+        bottom = self.count() - 1 if bottom < 0 else bottom
+        for row in range(top, bottom + 1):
+            item = self.item(row)
+            rect = self.visualItemRect(item)
+            painter.setBrush(QColor('#FFFFFF') if item.isSelected() else QColor('#9AA3B2'))
+            cy = rect.center().y()
+            for dx in (5, 9):                      # six dots: the handle
+                for dy in (-4, 0, 4):
+                    painter.drawEllipse(QPointF(rect.left() + dx, cy + dy), 1.1, 1.1)
+        painter.end()
+
+    def is_moving(self):
+        return self._moving
+
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton and self.selectedItems():
             # Preserve whatever's already selected — don't let a
@@ -74,7 +133,107 @@ class _SpectraListWidget(QListWidget):
             # If nothing is selected yet, fall through to normal handling
             # so right-clicking an item selects it, a reasonable default.
             return
+        if event.button() == Qt.LeftButton and self.on_handle(event.pos()):
+            item = self.itemAt(event.pos())
+            if not item.isSelected():              # its handle: this one alone
+                self.clearSelection()
+                self.setCurrentItem(item)
+                item.setSelected(True)
+            self._press = QPoint(event.pos())
+            self.setFocus()
+            return
+        self._press = None
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press is not None and event.buttons() & Qt.LeftButton:
+            if not self._moving and (event.pos() - self._press).manhattanLength() >= \
+                    QApplication.startDragDistance():
+                self._moving = True
+                self.viewport().setCursor(Qt.ClosedHandCursor)
+                self._scroll_timer.start()
+            if self._moving:
+                self._last_pos = QPoint(event.pos())
+                self._show_line(self.drop_row(event.pos()))
+                return
+            return
+        if not event.buttons():                     # hovering: the hand over a handle
+            if self.on_handle(event.pos()):
+                self.viewport().setCursor(Qt.OpenHandCursor)
+            else:
+                self.viewport().unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._press is not None and event.button() == Qt.LeftButton:
+            press, self._press = self._press, None
+            if self._moving:
+                row = self.drop_row(event.pos())
+                self._end_move()
+                QTimer.singleShot(0, lambda: self.dropped_at.emit(row))
+                return
+            return                                 # a click on a handle: chosen above
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if self._moving and event.key() == Qt.Key_Escape:   # Esc: nothing moves
+            self._press = None
+            self._end_move()
+            return
+        super().keyPressEvent(event)
+
+    def _end_move(self):
+        self._moving = False
+        self._row = None
+        self._last_pos = None
+        self._line.hide()
+        self._scroll_timer.stop()
+        self.viewport().unsetCursor()
+
+    def _scroll_near_edge(self):
+        """While moving: near the top or the bottom the list scrolls."""
+        if not self._moving or self._last_pos is None:
+            return
+        y, h = self._last_pos.y(), self.viewport().height()
+        bar = self.verticalScrollBar()
+        step = 0
+        if y < 16:
+            step = -1 if y >= 0 else -3
+        elif y > h - 16:
+            step = 1 if y <= h else 3
+        if step:
+            bar.setValue(bar.value() + step)
+            self._show_line(self.drop_row(self._last_pos))
+
+    def _show_line(self, row):
+        """The blue line between the rows where the spectra go."""
+        self._row = row
+        if self.count() == 0:
+            self._line.hide()
+            return
+        if row < self.count():
+            y = self.visualItemRect(self.item(row)).top()
+        else:
+            y = self.visualItemRect(self.item(self.count() - 1)).bottom() + 1
+        self._line.setGeometry(0, max(0, y - 1), self.viewport().width(), 3)
+        self._line.show()
+        self._line.raise_()
+
+    def drop_row(self, pos):
+        """The row the moved spectra go before, for the mouse at `pos`
+        (in the list's viewport): above the middle of a row - before it,
+        below - after it; below the last spectrum - the end. Above or below
+        the list: the first / last row in sight."""
+        if self.count() == 0:
+            return 0
+        y = max(0, min(int(pos.y()), self.viewport().height() - 1))
+        index = self.indexAt(QPoint(max(1, int(pos.x())), y))
+        if not index.isValid():
+            index = self.indexAt(QPoint(5, y))
+        if not index.isValid():
+            return self.count()                    # below the last spectrum
+        rect = self.visualRect(index)
+        return index.row() + (1 if pos.y() > rect.center().y() else 0)
 
 
 class _DistinguishingNameDelegate(QStyledItemDelegate):
@@ -280,6 +439,12 @@ class MainController(QMainWindow):
         
         self.selected_spectra = []  # Clear selected spectra
         self.original_spectra = []  # Clear original spectra
+        self.custom_order = None    # all spectra gone: the next ones sorted by name
+        self.added_order = {}
+        self.sort_mode = {'by': 'name'}
+        self._update_sort_button()
+        self._selection_back = []
+        self._selection_forward = []
         self.custom_plot_properties_manager.spectrum_properties = {}  # Reset plot properties
         self.clear_graphics_view()  # Clear the plot
         
@@ -300,6 +465,7 @@ class MainController(QMainWindow):
         layout = QVBoxLayout(widget)
         
         layout.addLayout(self.create_num_label_row())
+        layout.addLayout(self.create_sort_row())
         layout.addWidget(self.create_spectra_list_widget())
         layout.addLayout(self.create_select_buttons_layout())
         layout.addLayout(self.create_spectra_actions_layout())
@@ -308,17 +474,10 @@ class MainController(QMainWindow):
         return widget
     
     def create_num_label_row(self):
-        """Row directly above the spectra list: the selection counter,
-        plus the Reverse sorting checkbox. Reverse sorting used to live
-        in Basic plot options, but it controls how *this list* is
-        ordered, not how the plot itself looks — moved here to sit next
-        to the thing it actually affects."""
+        """The row above the spectra list: the selection counter, shorten
+        names and the "?" (sorting: the row below it, create_sort_row)."""
         layout = QHBoxLayout()
         layout.addWidget(self.create_num_label())
-
-        self.checkBox_reverse_order = QCheckBox("reverse sorting")
-        self.checkBox_reverse_order.setObjectName("checkBox_reverse_order")
-        layout.addWidget(self.checkBox_reverse_order)
 
         # Purely cosmetic: shows each item's DISTINGUISHING part only
         # (see label_shortening.compute_distinguishing_labels) — the underlying spectrum
@@ -349,7 +508,7 @@ class MainController(QMainWindow):
         self.sort_shorten_help_button = QPushButton("?")
         self.sort_shorten_help_button.setFixedWidth(24)
         self.sort_shorten_help_button.setToolTip(
-            "Explain reverse sorting and shorten names"
+            "The spectra list: selecting, the arrow keys, Back / Forward, shorten names"
         )
         self.sort_shorten_help_button.setStyleSheet(
             "QPushButton {"
@@ -371,29 +530,212 @@ class MainController(QMainWindow):
         return layout
 
     def _show_sort_shorten_help(self):
-        """Show a popup explaining reverse sorting and shorten names."""
-        QMessageBox.information(
-            self.view,
-            'Sorting & Display',
-            '<b>Reverse sorting</b><br>'
-            'Reverses the order spectra appear in this list (and wherever '
-            'else that order is used, e.g. plot legend order). It does not '
-            'change any spectrum’s data or name — only the order the '
-            'list is displayed in.<br><br>'
-            '<b>Shorten names</b><br>'
-            'When checked, each spectrum’s list entry shows only the '
-            'part of its name that differs from every other spectrum '
-            'currently in the list — any text shared by ALL of them (e.g. '
-            'a common file-name prefix from importing several columns of '
-            'the same file) is hidden here, purely to keep long entries '
-            'readable. This is purely cosmetic: the spectrum’s actual '
-            'name is unchanged, and every operation that reads a '
-            'spectrum’s name (selection, saving, exporting, etc.) '
-            'still uses the full original name. This same checkbox also '
-            'controls shortened-name display in several analysis dialogs '
-            'that expose their own "Shorten Names" option.'
-        )
-    
+        """The "?" next to shorten names: the spectra list in short (selecting,
+        the arrow keys, Back / Forward, keys, right-click, shorten names);
+        "Open the help" - User Guide, 2. Spectrum Selection. (Sorting and
+        moving: the "?" of the Sort row, _show_sort_help.)"""
+        box = QMessageBox(self.view)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle("The spectra list")
+        box.setText(
+            '<b>The selected spectra</b> (red) are plotted and are what the tools work on.'
+            '<ul style="margin-top:2px">'
+            '<li><b>Click</b> &mdash; only that one; <b>Ctrl+click</b> &mdash; add or take '
+            'out one; <b>Shift+click</b> &mdash; a range; <b>drag</b> over the names &mdash; '
+            'a range</li>'
+            '<li><b>&darr; / &uarr;</b> &mdash; one spectrum after another: only the next '
+            '(previous) one is selected and shown; <b>Shift+&darr; / &uarr;</b> extend</li>'
+            '<li><b>Ctrl+A</b> / <b>Ctrl+U</b> &mdash; select all / none; '
+            '<b>Select spectra</b> &mdash; by a range or a name</li>'
+            '<li><b>Alt+Left</b> / <b>Alt+Right</b> &mdash; the previous / next selection, '
+            'like Back / Forward in a browser (e.g. after Add as New, which selects the new '
+            'spectra, or after Ctrl+U by mistake)</li>'
+            '<li><b>Ctrl+C</b> / <b>Ctrl+V</b> &mdash; copy / paste spectra; '
+            '<b>Delete</b> &mdash; delete them (Undo brings them back)</li>'
+            '<li><b>Right-click</b> &mdash; all of it in a menu, also Spectrum properties, '
+            'Rename, Order</li></ul>'
+            'After an operation: <b>Apply</b> keeps the selection, new spectra (Add as New, '
+            'copies, results) are selected, <b>Undo</b> brings back the selection you had at '
+            'that step.<br><br>'
+            '<b>shorten names</b> &mdash; the list shows only the part of the names that '
+            'differs (e.g. without the common file name); the names themselves do not '
+            'change.<br><br>'
+            'Sorting and moving spectra: the <b>?</b> of the Sort row.')
+        ok = box.addButton(QMessageBox.Ok)
+        box.setEscapeButton(ok)                 # the window's close button and Esc work
+        box.setDefaultButton(ok)
+        more = box.addButton("Open the help", QMessageBox.HelpRole)
+        box.exec_()
+        if box.clickedButton() is more:
+            from src.help.help_window import open_help_topic
+            open_help_topic(self.view, 'user_guide', 'selection')
+        return box
+
+    def create_sort_row(self):
+        """The row right above the list: Sort: [by name ▾] and reverse -
+        how the list is sorted (name, order added, a property, a number in
+        the name, your own order) and its direction, two separate choices."""
+        layout = QHBoxLayout()
+        label = QLabel("Sort:")
+        layout.addWidget(label)
+        self.sort_button = QPushButton()            # framed, with its menu's arrow
+        self.sort_button.setObjectName("sortButton")
+        self.sort_button.setAutoDefault(False)
+        self.sort_button.setStyleSheet("QPushButton#sortButton { text-align: left; "
+                                       "padding-left: 6px; }")
+        self.sort_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.sort_menu = QMenu(self.sort_button)
+        self.sort_menu.aboutToShow.connect(self._fill_sort_menu)
+        self.sort_button.setMenu(self.sort_menu)
+        self.sort_button.setToolTip(
+            "<b>Sort</b> the list: by name, in the order added, by a property<br>"
+            "(temperature, pH, ... - Spectrum properties), by a number in the<br>"
+            "name, or in your own order (drag the handles). Spectra without the<br>"
+            "value go to the end. The plot and the tool windows follow the list.")
+        layout.addWidget(self.sort_button, 1)
+        self.checkBox_reverse_order = QCheckBox("reverse")
+        self.checkBox_reverse_order.setObjectName("checkBox_reverse_order")
+        self.checkBox_reverse_order.setToolTip("<b>reverse</b>: the list upside down "
+                                               "(for any way of sorting).")
+        layout.addWidget(self.checkBox_reverse_order)
+        self.sort_help_button = self._orange_help_button(
+            "Explain sorting, reverse and moving spectra")
+        self.sort_help_button.clicked.connect(self._show_sort_help)
+        layout.addWidget(self.sort_help_button)
+        self._update_sort_button()
+        return layout
+
+    @staticmethod
+    def _orange_help_button(tip):
+        """A small orange "?" (as next to shorten names)."""
+        button = QPushButton("?")
+        button.setFixedWidth(24)
+        button.setAutoDefault(False)
+        button.setToolTip(tip)
+        button.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #F57C00;"
+            "  color: white;"
+            "  border: none;"
+            "  border-radius: 4px;"
+            "  font-weight: bold;"
+            "  padding: 2px;"
+            "}"
+            "QPushButton:hover { background-color: #E65100; }"
+            "QPushButton:pressed { background-color: #BF360C; }")
+        return button
+
+    def _show_sort_help(self):
+        """The orange "?" of the Sort row: sorting, reverse, moving spectra;
+        "Open the help" - User Guide › Sorting the list."""
+        box = QMessageBox(self.view)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle("Sorting the list")
+        box.setText(
+            '<b>Sort: ▾</b> &mdash; how the list is sorted:'
+            '<ul style="margin-top:2px">'
+            '<li><b>By name</b> &mdash; numbers as numbers (sp2 before sp10)</li>'
+            '<li><b>In the order added</b> &mdash; the columns of the files as imported, '
+            'then copies and results</li>'
+            '<li><b>By a property</b> &mdash; temperature, pH, concentration &hellip; '
+            '(Spectrum properties)</li>'
+            '<li><b>By a number in the name</b> &mdash; e.g. 25.5 in run3_T=25.5C</li>'
+            '<li><b>Your own order</b> &mdash; as you arrange the spectra: chosen, the list '
+            'stays as it is now; then move them (see below)</li></ul>'
+            'Spectra without the value go to the end. The plot (legend, colours) and '
+            'the tool windows follow the list; names and data do not change.<br><br>'
+            '<b>reverse</b> &mdash; the list upside down, for any way of sorting.<br><br>'
+            '<b>Moving spectra</b> (your own order):'
+            '<ul style="margin-top:2px">'
+            '<li>drag the <b>handle</b> (six dots) at the left of a row: the selected '
+            'spectra move together; a blue line shows where they go; near the top or the '
+            'bottom the list scrolls; <b>Esc</b> while dragging: nothing moves. The handle '
+            'of a spectrum that is not selected moves only it.</li>'
+            '<li><b>Alt+Up</b> / <b>Alt+Down</b> &mdash; the selected spectra one place up '
+            '/ down</li>'
+            '<li>right-click &rsaquo; <b>Order</b> &rsaquo; Move to top / Move up / Move '
+            'down / Move to bottom; Sort by name</li></ul>'
+            'Then <b>Sort:</b> shows <i>your own order</i>: the list keeps it, new spectra '
+            'go to the end, it is saved in snapshots. Sorting another way keeps it to come '
+            'back to (Sort: ▾ &rsaquo; Your own order). Elsewhere in the list the mouse '
+            'selects as always; <b>&darr; / &uarr;</b> show one spectrum after another '
+            '(more: the <b>?</b> next to shorten names).')
+        ok = box.addButton(QMessageBox.Ok)
+        box.setEscapeButton(ok)                 # the window's close button and Esc work
+        box.setDefaultButton(ok)
+        more = box.addButton("Open the help", QMessageBox.HelpRole)
+        box.exec_()
+        if box.clickedButton() is more:
+            from src.help.help_window import open_help_topic
+            open_help_topic(self.view, 'user_guide', 'sorting')
+        return box
+
+    def _update_sort_button(self):
+        from src.modules.utils import spectra_order
+        button = getattr(self, 'sort_button', None)
+        if button is not None:
+            button.setText(spectra_order.describe(getattr(self, 'sort_mode', None)))
+
+    def _fill_sort_menu(self):
+        """The ways of sorting, with what the spectra have now (their
+        properties, the numbers in their names)."""
+        from src.modules.utils import spectra_order
+        from src.modules.visualization import color_by_value as cbv
+        menu = self.sort_menu
+        menu.clear()
+        now = spectra_order.normalized(self.sort_mode)
+
+        def add(menu_, text, mode, enabled=True, tip=None):
+            action = menu_.addAction(text)
+            action.setCheckable(True)
+            action.setChecked(spectra_order.normalized(mode) == now)
+            action.setEnabled(enabled)
+            if tip:
+                action.setToolTip(tip)
+            action.triggered.connect(lambda _c=False, m=mode: self.set_sort_mode(m))
+            return action
+        menu.setToolTipsVisible(True)
+        add(menu, "By name", {'by': 'name'},
+            tip="Alphabetical; numbers compared as numbers (sp2 before sp10).")
+        add(menu, "In the order added", {'by': 'added'},
+            tip="As the spectra came into the list: imports file by file, copies, results.")
+        keys = cbv.metadata_keys(self.original_spectra)
+        props = menu.addMenu("By a property" + (f": {now['key']}" if now['by'] == 'property'
+                                                 else ""))
+        props.setToolTipsVisible(True)
+        props.setEnabled(bool(keys))
+        for k in keys:
+            add(props, k, {'by': 'property', 'key': k})
+        if not keys:
+            props.setToolTip("No properties yet: Spectrum properties… (right-click on the list).")
+        nums = menu.addMenu("By a number in the name" + (
+            ": " + spectra_order.describe(now, short=True) if now['by'] == 'number' else ""))
+        choices = cbv.name_number_choices(self.original_spectra)
+        nums.setEnabled(len(choices) > 1)
+        for n, text in choices:
+            add(nums, text[0].upper() + text[1:], {'by': 'number', 'number': n})
+        menu.addSeparator()
+        add(menu, "Your own order", {'by': 'own'}, enabled=bool(self.original_spectra),
+            tip="As you arrange the spectra: chosen now, the list stays as it is and you move\n"
+                "them with the handles (six dots), Alt+Up / Alt+Down or right-click › Order;\n"
+                "new spectra go to the end. Your arrangement comes back when chosen again.")
+
+    def set_sort_mode(self, mode):
+        """Sort the list another way (Sort: ▾); your own order is kept to
+        come back to. Your own order chosen before anything was moved: it
+        starts as the list is now (then arrange it with the handles)."""
+        from src.modules.utils import spectra_order
+        mode = spectra_order.normalized(mode)
+        if mode['by'] == 'own' and self.custom_order is None:
+            if not self.original_spectra:
+                return False
+            self.custom_order = spectra_order.from_visible(
+                self._visible_keys(), self.checkBox_reverse_order.isChecked())
+        self.sort_mode = mode
+        self._update_sort_button()
+        self.update_spectra_order_and_redraw_plot(replot=True)
+        return True
+
     def create_num_label(self):
         self.num_label = QLabel("Num:")
         self.num_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -401,6 +743,11 @@ class MainController(QMainWindow):
     
     def create_spectra_list_widget(self):
         self.spectra_list_widget = _SpectraListWidget()
+        self.spectra_list_widget.dropped_at.connect(self.move_selected_spectra)
+        self.spectra_list_widget.setToolTip(
+            "<b>Move spectra</b>: drag the handle (six dots) at the left of a row -<br>"
+            "the selected spectra move together (or Alt+Up / Alt+Down, right-click › Order).<br>"
+            "<b>Alt+Left / Alt+Right</b>: the previous / next selection (e.g. after Add as New).")
 
         # Setup context menu
         self.spectra_list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -457,6 +804,10 @@ class MainController(QMainWindow):
         select_all_action = context_menu.addAction("Select All")
         unselect_all_action = context_menu.addAction("Unselect All")
         select_range_action = context_menu.addAction("Select spectra")
+        back_action = context_menu.addAction("Previous selection\tAlt+Left")
+        back_action.setEnabled(bool(self._selection_back))
+        forward_action = context_menu.addAction("Next selection\tAlt+Right")
+        forward_action.setEnabled(bool(self._selection_forward))
 
         context_menu.addSeparator()
         rename_action = context_menu.addAction("Rename")
@@ -469,6 +820,21 @@ class MainController(QMainWindow):
             else "Paste\tCtrl+V")
         paste_action.setEnabled(bool(n_clip))
         paste_data_action = context_menu.addAction("Paste data from clipboard (Excel, text)\tCtrl+Shift+V")
+        context_menu.addSeparator()
+        order_menu = context_menu.addMenu("Order")
+        to_top_action = order_menu.addAction("Move to top")
+        up_action = order_menu.addAction("Move up\tAlt+Up")
+        down_action = order_menu.addAction("Move down\tAlt+Down")
+        to_bottom_action = order_menu.addAction("Move to bottom")
+        for a in (to_top_action, up_action, down_action, to_bottom_action):
+            a.setEnabled(bool(self.spectra_list_widget.selectedItems()))
+        order_menu.addSeparator()
+        by_name_action = order_menu.addAction("Sort by name")
+        by_name_action.setEnabled(self.sort_mode.get('by') != 'name')
+        order_menu.setToolTipsVisible(True)
+        by_name_action.setToolTip("Sort by name: the list sorted by the spectra's names "
+                                  "again (Sort: ▾ above the list: other ways, and your own "
+                                  "order back).")
         context_menu.addSeparator()
         delete_action = context_menu.addAction("Delete spectra")
 
@@ -505,6 +871,12 @@ class MainController(QMainWindow):
         elif action == select_range_action:
             self.spectrum_selector.show_spectra_selection_dialog()  
 
+        elif action == back_action:
+            self.selection_back()
+
+        elif action == forward_action:
+            self.selection_forward()
+
         elif action == rename_action:
             self.spectrum_selector.show_rename_dialog()
 
@@ -519,6 +891,127 @@ class MainController(QMainWindow):
 
         elif action == delete_action:
             self.spectrum_selector.delete_selected_spectra()
+
+        elif action in (to_top_action, up_action, down_action, to_bottom_action):
+            self.move_selected_spectra({to_top_action: 'top', up_action: 'up',
+                                        down_action: 'down', to_bottom_action: 'bottom'}[action])
+
+        elif action == by_name_action:
+            self.sort_spectra_by_name()
+
+    # ---- Back / Forward through the selections (Alt+Left / Alt+Right) ----
+    # When the program changes the selection (new spectra selected after an
+    # operation, Select All / Unselect All / Select spectra) the selection
+    # before is kept here, like a browser's Back. Clicks in the list are not
+    # kept (each click would be one step).
+    def current_selection_ids(self):
+        lw = self.spectra_list_widget
+        return [lw.item(i).data(Qt.UserRole) or lw.item(i).text()
+                for i in range(lw.count()) if lw.item(i).isSelected()]
+
+    def push_selection(self, ids=None):
+        """Keep a selection for Back (the current one when `ids` is None)."""
+        ids = list(self.current_selection_ids() if ids is None else ids)
+        if not ids:
+            return
+        back = self._selection_back
+        if back and set(back[-1]) == set(ids):
+            return
+        back.append(ids)
+        del back[:-30]
+        self._selection_forward = []
+
+    def select_ids(self, ids):
+        """Select these spectra (by identity) - the list, the plot."""
+        wanted = set(ids)
+        lw = self.spectra_list_widget
+        rows = [i for i in range(lw.count())
+                if (lw.item(i).data(Qt.UserRole) or lw.item(i).text()) in wanted]
+        lw.blockSignals(True)
+        try:
+            lw.clearSelection()
+            if rows:
+                select_rows(lw, rows)
+        finally:
+            lw.blockSignals(False)
+        self.spectrum_selector.selected_indices = set(rows)
+        self.selected_spectra = [self.original_spectra[i] for i in rows]
+        self.spectrum_selector.update_spectra_count_label()
+        if rows:
+            lw.scrollToItem(lw.item(rows[0]))
+        if self.interactive_mode_checkbox.isChecked():
+            if rows:
+                self.plot_spectra()
+            else:
+                self.clear_graphics_view()
+        return len(rows)
+
+    def _selection_step(self, source, target, word):
+        present = {lw_key for lw_key in (
+            self.spectra_list_widget.item(i).data(Qt.UserRole)
+            or self.spectra_list_widget.item(i).text()
+            for i in range(self.spectra_list_widget.count()))}
+        now = self.current_selection_ids()
+        while source:
+            ids = [k for k in source.pop() if k in present]
+            if ids and set(ids) != set(now):
+                if now:
+                    target.append(now)
+                n = self.select_ids(ids)
+                self._status(f"{word} selection: {n} spectr{'um' if n == 1 else 'a'}")
+                return True
+        self._status(f"No {word.lower()} selection")
+        return False
+
+    def selection_back(self):
+        """Alt+Left: the selection before (e.g. before the new spectra of an
+        operation were selected)."""
+        return self._selection_step(self._selection_back, self._selection_forward, "Previous")
+
+    def selection_forward(self):
+        """Alt+Right: forward again after Alt+Left."""
+        return self._selection_step(self._selection_forward, self._selection_back, "Next")
+
+    # ---- your own order of the spectra (see spectra_order.py) ----
+    def _visible_keys(self):
+        return [spectrum_key(s) for s in self.original_spectra]
+
+    def move_selected_spectra(self, where):
+        """The selected spectra moved: 'top', 'up', 'down', 'bottom' or a
+        row of the list (they go before it; a drag). From then on the list
+        keeps your own order (custom_order). Returns True when moved."""
+        from src.modules.utils import spectra_order
+        ids = {item.data(Qt.UserRole) for item in self.spectra_list_widget.selectedItems()}
+        moving = [spectrum_key(s) for s in self.original_spectra if spectrum_key(s) in ids]
+        if not moving:
+            return False
+        visible = self._visible_keys()
+        if where == 'up':
+            new = spectra_order.step(visible, moving, up=True)
+        elif where == 'down':
+            new = spectra_order.step(visible, moving, up=False)
+        else:
+            row = 0 if where == 'top' else len(visible) if where == 'bottom' else int(where)
+            new = spectra_order.move_to(visible, moving, row)
+        if new == visible and self.sort_mode.get('by') == 'own':
+            return False
+        own = self.sort_mode.get('by') == 'own'
+        self.custom_order = spectra_order.from_visible(
+            new, self.checkBox_reverse_order.isChecked(), self.custom_order if own else None)
+        self.sort_mode = {'by': 'own'}
+        self._update_sort_button()
+        self.update_spectra_order_and_redraw_plot(replot=True)
+        rows = [i for i, k in enumerate(self._visible_keys()) if k in ids]
+        if rows:                                   # the moved spectra stay in sight
+            self.spectra_list_widget.scrollToItem(self.spectra_list_widget.item(rows[0]))
+        return True
+
+    def sort_spectra_by_name(self, ask=False):
+        """Back to sorting by name (Sort: by name); your own order is kept -
+        Sort: ▾ › Your own order brings it back."""
+        if self.sort_mode.get('by') == 'name':
+            return False
+        return self.set_sort_mode({'by': 'name'})
 
     # ---- Ctrl+C / Ctrl+V on the spectra list (copy, then paste) ----
     # Ctrl+C only remembers WHICH spectra were selected (references, no
@@ -714,43 +1207,11 @@ class MainController(QMainWindow):
         self.original_spectra.extend(new_spectra)
         self.original_spectra = self.order_spectra(self.original_spectra)
 
-        # Identity (unique_id), not label — a copy's SOURCE spectrum
-        # keeps its own identity untouched by this operation, so this is
-        # actually safe to match by label too in this one spot, but
-        # unique_id is used for consistency with every other selection-
-        # restoration site in this file (see spectrum_identity.py).
-        source_ids = {spectrum_key(s) for s in selected}
-        from PyQt5.QtWidgets import QListWidgetItem
-        from PyQt5.QtCore import Qt, QItemSelection, QItemSelectionModel
-        self.spectra_list_widget.blockSignals(True)
-        try:
-            self.spectra_list_widget.clear()
-            rows_to_select = []
-            for i, spectrum in enumerate(self.original_spectra):
-                item = QListWidgetItem(spectrum['label'])
-                item.setData(Qt.UserRole, spectrum_id(spectrum))
-                item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                self.spectra_list_widget.addItem(item)
-                # Keep the originals selected, not the new copies —
-                # consistent with what every Add-as-New commit does.
-                if spectrum_key(spectrum) in source_ids:
-                    rows_to_select.append(i)
-            # Batch selection — same confirmed anti-pattern fixed
-            # elsewhere in this app (Map2D, Peak Fitting, Rename, the
-            # main spectra-list rebuild helper): calling
-            # item.setSelected(True) once per row in a loop costs real,
-            # measurable time at scale (83 of a ~90-second operation at
-            # ~4675 items, confirmed by direct profiling) — a large copy
-            # batch could hit the same cost here.
-            if rows_to_select:
-                model = self.spectra_list_widget.model()
-                selection = QItemSelection()
-                for row in rows_to_select:
-                    idx = model.index(row, 0)
-                    selection.select(idx, idx)
-                self.spectra_list_widget.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
-        finally:
-            self.spectra_list_widget.blockSignals(False)
+        # the copies selected (the shared rule: new spectra are selected;
+        # Alt+Left - the selection before), the plot follows
+        self.operations_controller._rebuild_spectra_list_with_selection(
+            {spectrum_key(s) for s in selected})
+        self.operations_controller._redraw_after_operation(context='copies')
 
         # Update count label and spinbox maximums
         self.spectrum_selector.update_spectra_count_label()
@@ -778,24 +1239,11 @@ class MainController(QMainWindow):
         self.original_spectra.extend(new_spectra)
         self.original_spectra = self.order_spectra(self.original_spectra)
 
-        new_ids = {spectrum_key(s) for s in new_spectra}
-        from PyQt5.QtWidgets import QListWidgetItem
-        from PyQt5.QtCore import Qt
-        self.spectra_list_widget.blockSignals(True)
-        try:
-            self.spectra_list_widget.clear()
-            rows = []
-            for row, spectrum in enumerate(self.original_spectra):
-                item = QListWidgetItem(spectrum['label'])
-                item.setData(Qt.UserRole, spectrum_id(spectrum))
-                item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                self.spectra_list_widget.addItem(item)
-                if select_new and spectrum_key(spectrum) in new_ids:
-                    rows.append(row)
-            if rows:
-                select_rows(self.spectra_list_widget, rows)    # one call, see list_selection.py
-        finally:
-            self.spectra_list_widget.blockSignals(False)
+        # the new spectra selected (the shared rule of every operation:
+        # new spectra are selected; Alt+Left - the selection before)
+        oc = self.operations_controller
+        oc._rebuild_spectra_list_with_selection({spectrum_key(s) for s in new_spectra})
+        oc._redraw_after_operation(context='new spectra')
 
         self.spectrum_selector.update_spectra_count_label()
         num = len(self.original_spectra)
@@ -997,6 +1445,16 @@ class MainController(QMainWindow):
         # confusingly, happens to share this same name.
         self.original_spectra = []  # List to store original imported spectra
         self.selected_spectra = []  # List to store currently selected spectra
+        # your own order of the spectra (ids), None: sorted by name
+        # (see order_spectra and src/modules/utils/spectra_order.py)
+        self.custom_order = None
+        # how the list is sorted (see spectra_order.py) and when each
+        # spectrum came into the list (id -> number; "in the order added")
+        self.sort_mode = {'by': 'name'}
+        self.added_order = {}
+        # earlier selections for Back / Forward (Alt+Left / Alt+Right)
+        self._selection_back = []
+        self._selection_forward = []
         
         # Settings for plot appearance
         self.use_automatic_line_colors = True  # Default to enabled
@@ -1025,7 +1483,7 @@ class MainController(QMainWindow):
 
         # Configure dropdowns and defaults
         self.view.comboBox_plot_type_choice.clear()
-        self.view.comboBox_plot_type_choice.addItems(["Single spectrum","Overlay plot","Grid plot","Waterfall plot","Mean ± SD","Difference","Heatmap"])
+        self.view.comboBox_plot_type_choice.addItems(["Overlay plot","Grid plot","Waterfall plot","Mean ± SD","Difference","Heatmap"])
         self.view.comboBox_plot_type_choice.setCurrentText("Overlay plot")
 
         self.view.comboBox_linking_x_axes.addItems(["all", "row", "col"])
@@ -1109,6 +1567,19 @@ class MainController(QMainWindow):
 
         delete_spectra_shortcut_del = QShortcut(QKeySequence("Delete"), self.spectra_list_widget)
         delete_spectra_shortcut_del.activated.connect(self._delete_key)
+
+        # Alt+Up / Alt+Down: the selected spectra one place up / down
+        move_up_shortcut = QShortcut(QKeySequence("Alt+Up"), self.spectra_list_widget)
+        move_up_shortcut.activated.connect(lambda: self.move_selected_spectra('up'))
+        move_down_shortcut = QShortcut(QKeySequence("Alt+Down"), self.spectra_list_widget)
+        move_down_shortcut.activated.connect(lambda: self.move_selected_spectra('down'))
+
+        # Alt+Left / Alt+Right: the previous / next selection (like Back /
+        # Forward in a browser)
+        back_shortcut = QShortcut(QKeySequence("Alt+Left"), self.spectra_list_widget)
+        back_shortcut.activated.connect(self.selection_back)
+        forward_shortcut = QShortcut(QKeySequence("Alt+Right"), self.spectra_list_widget)
+        forward_shortcut.activated.connect(self.selection_forward)
 
         self._apply_stylesheet()
 
@@ -1500,9 +1971,7 @@ class MainController(QMainWindow):
         self.view.link_y_axes_checkBox.stateChanged.connect(self.plot_spectra)
         self.view.comboBox_linking_x_axes.currentIndexChanged.connect(self.plot_spectra)
         self.view.comboBox_linking_y_axes.currentIndexChanged.connect(self.plot_spectra)
-    
-        # Connect spectrum list widget selection change for single spectrum mode
-        self.spectra_list_widget.itemSelectionChanged.connect(self.handle_single_spectrum_selection)
+
         
         # refresh plot
         self.refresh_plot_button.clicked.connect(self.spectrum_selector.plot_selected_spectra)
@@ -2514,39 +2983,15 @@ class MainController(QMainWindow):
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'two_d_correlation')
         
-    def handle_single_spectrum_selection(self):
-        """
-        Handle spectrum selection changes specifically for Single spectrum mode.
-        """
-        plot_type = self.view.comboBox_plot_type_choice.currentText()
-        
-        # Only plot if in Single spectrum mode
-        if plot_type == "Single spectrum":
-            self.plot_spectra()
-
     def change_plot_type(self):
         """
         Handles changes to the plot type selection and updates the UI accordingly.
         """
         plot_type = self.view.comboBox_plot_type_choice.currentText()
-        is_single_spectrum_mode = (plot_type == "Single spectrum")
+        # (The plot type no longer changes how the list selects: "Single
+        # spectrum" is gone - the Up / Down arrow keys in the list show one
+        # spectrum after another - and the list always selects like Excel.)
 
-        # Update selection mode
-        if not is_single_spectrum_mode:
-            self.spectra_list_widget.setSelectionMode(QListWidget.MultiSelection)
-        else:
-            self.spectra_list_widget.setSelectionMode(QListWidget.SingleSelection)
-            # Switching to Single spectrum mode should show exactly one
-            # spectrum, not whatever multi-selection was active before —
-            # setSelectionMode() alone doesn't retroactively trim an
-            # existing multi-selection, so do it explicitly: clear it and
-            # select the first item instead.
-            self.spectra_list_widget.clearSelection()
-            if self.spectra_list_widget.count() > 0:
-                first_item = self.spectra_list_widget.item(0)
-                self.spectra_list_widget.setCurrentItem(first_item)
-                first_item.setSelected(True)
-        
         # Toggle plot-type-specific controls
         self.toggle_grid_controls(plot_type == "Grid plot")
         self.toggle_link_axes_controls(plot_type == "Grid plot")
@@ -2642,7 +3087,7 @@ class MainController(QMainWindow):
 
     def plot_spectra(self, progress_callback=None):
         """
-        Handles the actual plotting of spectra for both grid, overlay, and single spectrum plot types.
+        Handles the actual plotting of spectra for every plot type (overlay, grid, waterfall, ...).
         Shows a wait cursor for the duration so the user knows rendering is in progress.
 
         progress_callback: optional callable, passed straight through to
@@ -2699,7 +3144,7 @@ class MainController(QMainWindow):
         # selection itself is never changed. See large_plot_controller.py.
         large = getattr(self, 'large_plot_controller', None)
         large_info = None
-        if large is not None and plot_type != "Single spectrum":
+        if large is not None:
             plot_spectra, large_info = large.choose(plot_spectra, plot_type, progress_callback)
         progressive = bool(large_info and large_info.get('progressive'))
         plotted = plot_spectra      # what ends up in the figure (CD quality shading)
@@ -2843,32 +3288,6 @@ class MainController(QMainWindow):
                 display_labels=display_labels,
             )
 
-        elif plot_type == "Single spectrum":
-            # Ensure only one spectrum is selected in single spectrum mode
-            selected_items = self.spectra_list_widget.selectedItems()
-            if selected_items:
-                # Get the index of the selected item
-                selected_index = self.spectra_list_widget.row(selected_items[0])
-                
-                # Create a list with just the single selected spectrum
-                single_spectrum = [self.original_spectra[selected_index]]
-                plotted = single_spectrum
-
-                # Plot the single spectrum
-                self.static_canvas, self.static_toolbar = overlay_plot_mode(plot_widget,
-                                                                            single_spectrum,
-                                                                            plot_settings = plot_settings,
-                                                                            use_automatic_line_colors = use_automatic_line_colors,
-                                                                            use_default_points = use_default_points,
-                                                                            x_scale=x_scale,
-                                                                            y_scale=y_scale,
-                                                                            grid_manager=self.grid_manager,
-                                                                            legend_manager=self.legend_manager,
-                                                                            axis_manager=self.axis_manager,
-                                                                            constrained_layout_manager=self.constrained_layout_manager,
-                                                                            band_marker_manager=self.band_marker_manager,
-                                                                            display_labels=display_labels,
-                                                                            )
 
         # The colour bar of "Colours by value" (Line colours)
         if line_colors and getattr(self, 'static_canvas', None) is not None:
@@ -3059,6 +3478,12 @@ class MainController(QMainWindow):
         Ensures spectra are ordered and UI is updated.
         """
         
+        # a new import: sorted by name again (a property, a number in the
+        # name or your own order may not fit the new spectra); reverse stays
+        self.custom_order = None
+        self.added_order = {}
+        self.sort_mode = {'by': 'name'}
+        self._update_sort_button()
         self.original_spectra = self.import_spectra()
         self.original_spectra = self.order_spectra(self.original_spectra)
         
@@ -3099,9 +3524,11 @@ class MainController(QMainWindow):
         if self.spectral_range_controller.current_ranges:
             self.spectral_range_controller.apply_ranges_to_spectra()        
 
-    def update_spectra_order_and_redraw_plot(self):
+    def update_spectra_order_and_redraw_plot(self, replot=False):
         """
         Updates spectra ordering and redraws the plot while preserving selected states.
+        `replot`: also without Interactive Update (a move of spectra: the
+        order of the colours and of the legend changes).
         """
         # Store the currently selected spectra's PERMANENT identity
         # (unique_id, via each item's Qt.UserRole data) rather than their
@@ -3143,7 +3570,7 @@ class MainController(QMainWindow):
             }
 
             # Update the plot if we're in interactive mode
-            if self.interactive_mode_checkbox.isChecked():
+            if replot or self.interactive_mode_checkbox.isChecked():
                 if selected_ids:
                     self.plot_spectra()
                 else:
@@ -3205,6 +3632,33 @@ class MainController(QMainWindow):
             return []
 
         reverse = self.checkBox_reverse_order.isChecked()
+
+        from src.modules.utils import spectra_order
+        added = getattr(self, 'added_order', None)
+        if added is not None:              # when each came into the list (in this order)
+            n = max(added.values(), default=-1) + 1
+            for s in spectra:
+                k = spectrum_key(s)
+                if k not in added:
+                    added[k] = n
+                    n += 1
+        mode = spectra_order.normalized(getattr(self, 'sort_mode', None))
+        name_key = lambda s: self._natural_sort_key(s['label'])
+        if mode['by'] in ('property', 'number') and spectra and not any(
+                spectra_order.value(s, mode) is not None for s in spectra):
+            # no spectrum has that value any more (the property removed, other
+            # names): sorted by name - the button never shows what cannot be
+            self._status(f"Sorted by name: no spectrum has "
+                         f"{spectra_order.describe(mode, short=True)} any more")
+            mode = self.sort_mode = {'by': 'name'}
+            self._update_sort_button()
+        if mode['by'] == 'own' and getattr(self, 'custom_order', None) is not None:
+            # your own order (dragged / moved); new spectra at the end
+            ordered, self.custom_order = spectra_order.apply(
+                spectra, self.custom_order, reverse, spectrum_key, name_key)
+            return ordered
+        if mode['by'] != 'name':
+            return spectra_order.sort(spectra, mode, reverse, name_key, spectrum_key, added)
 
         logger.debug("order_spectra: Ordering %d spectra (natural order), reverse=%s", len(spectra), reverse)
 

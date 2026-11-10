@@ -112,6 +112,100 @@ def capture_exec(self, *args, **kwargs):
     return None
 
 
+def _composed(view, region, popups):
+    """A picture of `region` of the window with the open menus drawn over it."""
+    from PyQt5.QtGui import QPixmap
+    for menu in popups:
+        top_left = view.mapFromGlobal(menu.mapToGlobal(QPoint(0, 0)))
+        region = region.united(QRect(top_left, menu.size()))
+    region = region.adjusted(-4, -4, 4, 4)
+    picture = view.grab(region)
+    painter = QPainter(picture)
+    for menu in popups:
+        top_left = view.mapFromGlobal(menu.mapToGlobal(QPoint(0, 0)))
+        painter.drawPixmap(top_left - region.topLeft(), menu.grab())
+    painter.end()
+    return picture
+
+
+def moving_pictures(mc, view):
+    from PyQt5.QtCore import QEvent, QPointF
+    from PyQt5.QtGui import QKeyEvent, QMouseEvent
+    lw = mc.spectra_list_widget
+    lw.clearSelection()
+    for row in (2, 5):
+        lw.item(row).setSelected(True)
+    settle()
+
+    def mouse(kind, pos, buttons):
+        event = QMouseEvent(kind, QPointF(pos), Qt.LeftButton, buttons, Qt.NoModifier)
+        (lw.mousePressEvent if kind == QEvent.MouseButtonPress else lw.mouseMoveEvent)(event)
+    start = QPoint(8, lw.visualItemRect(lw.item(2)).center().y())
+    end = QPoint(70, lw.visualItemRect(lw.item(8)).center().y() + 3)
+    mouse(QEvent.MouseButtonPress, start, Qt.LeftButton)
+    mouse(QEvent.MouseMove, start + QPoint(0, 12), Qt.LeftButton)
+    mouse(QEvent.MouseMove, end, Qt.LeftButton)
+    settle()
+    top = in_window(view, mc.sort_button)
+    rows = in_window(view, lw)
+    last = lw.visualItemRect(lw.item(min(lw.count() - 1, 11)))
+    region = QRect(0, top.y() - 6, rows.right() + 8,
+                   rows.y() + last.bottom() + 10 - (top.y() - 6))
+    save(view.grab(region), 'moving_spectra.png')
+    lw.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Escape, Qt.NoModifier))   # nothing moves
+    settle()
+
+    # right-click > Order (the submenu open)
+    def with_order(self, *args, **kwargs):
+        self.popup(view.mapToGlobal(in_window(view, lw).topLeft() + QPoint(60, 40)))
+        settle()
+        action = next(a for a in self.actions() if a.text() == 'Order')
+        self.setActiveAction(action)
+        sub = action.menu()
+        geo = self.actionGeometry(action)
+        sub.popup(self.mapToGlobal(QPoint(self.width() - 4, geo.top())))
+        settle()
+        top = view.mapFromGlobal(self.mapToGlobal(QPoint(0, 0))).y()
+        strip = QRect(in_window(view, lw).x(), top - 6, 30, 20)     # a little of the list
+        menus.append(_composed(view, strip, [self, sub]))
+        sub.hide()
+        self.hide()
+        return None
+    old = QMenu.exec_
+    QMenu.exec_ = with_order
+    QMenu.exec = with_order
+    try:
+        mc.show_spectra_list_context_menu(QPoint(20, 20))
+    finally:
+        QMenu.exec_ = old
+        QMenu.exec = old
+    if menus:
+        picture = menus.pop()
+        # only the menus (and a little of the list around them)
+        save(picture, 'order_menu.png')
+    lw.clearSelection()
+    settle()
+
+
+def sort_menu_picture(mc, view):
+    mc._fill_sort_menu()
+    menu = mc.sort_menu
+    menu.popup(mc.sort_button.mapToGlobal(QPoint(0, mc.sort_button.height())))
+    settle()
+    props = next(a for a in menu.actions() if a.text().startswith('By a property'))
+    menu.setActiveAction(props)
+    sub = props.menu()
+    geo = menu.actionGeometry(props)
+    sub.popup(menu.mapToGlobal(QPoint(menu.width() - 4, geo.top())))
+    settle()
+    row = in_window(view, mc.sort_button).united(in_window(view, mc.checkBox_reverse_order))
+    row = QRect(0, row.y() - 1, row.right() + 40, row.height() + 2)
+    save(_composed(view, row, [menu, sub]), 'sort_menu.png')
+    sub.hide()
+    menu.hide()
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -167,6 +261,10 @@ def main():
     if menus:
         save(menus.pop(), 'spectrum_list_context_menu.png')
 
+    # 3a. moving spectra: two selected ones dragged by the handle (the blue
+    #     line), and right-click > Order
+    moving_pictures(mc, view)
+
     # 3b. the buttons below the spectra list
     from PyQt5.QtWidgets import QAbstractButton
     names = {'Select All', 'Unselect All', 'Select spectra', 'Rename', 'Show Metadata',
@@ -211,6 +309,9 @@ def main():
     save(dlg.grab(), 'spectrum_properties_dialog.png')
     dlg.apply_button.setEnabled(False)
     dlg.close()
+
+    # 5b. Sort: > By a property (temperature_C read from the file)
+    sort_menu_picture(mc, view)
 
     mc.autosave_controller.shutdown()
     view.close()

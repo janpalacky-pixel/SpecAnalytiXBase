@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QApplication, QListWidgetItem
 from PyQt5.QtCore import Qt
 from src.modules.data_analysis.spectra_combine_manager import CombineSpectraManager
 from src.modules.utils.app_logger import get_logger
-from src.modules.utils.spectrum_identity import spectrum_id
+from src.modules.utils.spectrum_identity import spectrum_id, spectrum_key
 
 logger = get_logger(__name__)
 
@@ -155,27 +155,10 @@ class CombineSpectraController:
             # bounded call regardless of how large the spectrum list is.
             self.controller.original_spectra = self.oc.operations_manager.get_current_spectra()
             self.controller.original_spectra = self.controller.order_spectra(self.controller.original_spectra)
-            self.controller.spectra_list_widget.blockSignals(True)
-            try:
-                self.controller.spectra_list_widget.clear()
-                for spectrum in self.controller.original_spectra:
-                    item = QListWidgetItem(spectrum['label'])
-                    item.setFlags(item.flags() | Qt.ItemIsSelectable)
-                    # Identity, not just display text — on_item_selection_
-                    # changed() (called just below via findItems/setSelected)
-                    # reads this back via Qt.UserRole to rebuild
-                    # self.controller.selected_spectra by spectrum_key.
-                    item.setData(Qt.UserRole, spectrum_id(spectrum))
-                    self.controller.spectra_list_widget.addItem(item)
-            finally:
-                self.controller.spectra_list_widget.blockSignals(False)
-
-            # Auto-select the newly created spectrum
-            new_items = self.controller.spectra_list_widget.findItems(new_spectrum['label'], Qt.MatchExactly)
-            if new_items:
-                new_items[0].setSelected(True)
-                self.controller.spectra_list_widget.setCurrentItem(new_items[0])
-                self.controller.spectrum_selector.on_item_selection_changed()
+            # the shared rule (operations_controller._rebuild_spectra_list_with_
+            # selection): the new result selected; Alt+Left - the selection
+            # before; the History keeps both
+            self.oc._rebuild_spectra_list_with_selection({spectrum_key(new_spectrum)})
 
             self.controller.selected_spectra = (
                 spectra_to_process if add_as_new else [new_spectrum]

@@ -186,7 +186,49 @@ class OperationsController:
         QApplication.processEvents()
         return progress
 
-    def _rebuild_spectra_list_with_selection(self, highlight_ids):
+    @staticmethod
+    def _item_key(item):
+        """A list item's spectrum identity (as spectrum_key: its unique_id,
+        else its label)."""
+        return item.data(Qt.UserRole) or item.text()
+
+    def _status(self, text, ms=6000):
+        view = getattr(self.controller, 'view', None)
+        try:
+            view.statusBar().showMessage(text, ms)
+        except Exception:
+            pass
+
+    def remember_selection(self, before, after):
+        """The selection kept with the History: `after` with the step just
+        made (the active one), `before` with the step before it (the state
+        it was made from) - an Undo / a jump in the History then brings
+        back the selection you had at that step."""
+        mgr = self.operations_manager
+        chain = mgr.operations_chain
+        k = mgr.active_operation_index
+        if 0 <= k < len(chain):
+            chain[k]['selection'] = list(after)
+        self._store_selection(k - 1, before)
+
+    def _store_selection(self, index, ids):
+        mgr = self.operations_manager
+        if index == -1:
+            mgr.original_state_selection = list(ids)
+        elif 0 <= index < len(mgr.operations_chain):
+            mgr.operations_chain[index]['selection'] = list(ids)
+
+    def _stored_selection(self, index):
+        """The selection kept with History step `index` (-1: the original
+        state), or None (an older History / snapshot: none kept)."""
+        mgr = self.operations_manager
+        if index == -1:
+            return getattr(mgr, 'original_state_selection', None)
+        if 0 <= index < len(mgr.operations_chain):
+            return mgr.operations_chain[index].get('selection')
+        return None
+
+    def _rebuild_spectra_list_with_selection(self, highlight_ids, keep_selected=False):
         """Rebuild spectra_list_widget from self.controller.original_spectra,
         highlighting every spectrum whose identity (spectrum_key(spectrum) —
         metadata['unique_id'], see src.modules.utils.spectrum_identity) is in
@@ -238,15 +280,45 @@ class OperationsController:
         by direct benchmarking to be 200x+ faster at this scale, for
         both a contiguous block and a scattered selection.
 
-        Does NOT set self.controller.selected_spectra or call
-        plot_spectra() — callers already do that themselves immediately
-        afterward with whatever operation-specific source list is
-        correct (e.g. processed_spectra vs. source_spectra), which is not
-        always simply "whatever's highlighted by label" (Add as New can
-        highlight the ORIGINAL spectra's labels while wanting to plot the
-        NEW ones).
+        WHICH spectra are selected afterward is one rule for every
+        operation (v1.7.0; `highlight_ids` is only a fallback):
+          * new spectra appeared (Add as New, copies, Combine, results of a
+            tool, an added import): the new ones are selected;
+          * none (Apply, rename, properties): the selection stays as it was;
+          * keep_selected=True (Apply that also makes extra spectra, e.g.
+            the mean of Mean-centering): the selection stays, plus the new;
+          * nothing was selected: `highlight_ids`;
+          * the list was empty (the first import, e.g. from the Start page):
+            nothing selected, as File › Import.
+        A changed selection is kept for Back (Alt+Left, MainController.
+        selection_back), and the History keeps the selection of each step
+        (remember_selection). Sets self.controller.selected_spectra too;
+        _redraw_after_operation takes the selection from the list again,
+        so a caller's own selected_spectra afterwards does not count.
         """
         widget = self.controller.spectra_list_widget
+        old_keys, before = set(), []
+        for i in range(widget.count()):
+            item = widget.item(i)
+            key = self._item_key(item)
+            old_keys.add(key)
+            if item.isSelected():
+                before.append(key)
+        current = [spectrum_key(s) for s in self.controller.original_spectra]
+        present = set(current)
+        # spectra added to an empty list are a first import, like File ›
+        # Import: nothing selected (not "new ones selected")
+        new = [k for k in current if k not in old_keys] if old_keys else []
+        kept = [k for k in before if k in present]
+        if new and keep_selected:
+            chosen = set(kept) | set(new)
+        elif new:
+            chosen = set(new)
+        elif kept:
+            chosen = set(kept)
+        else:
+            chosen = set(highlight_ids) & present
+        highlight_ids = chosen
         widget.blockSignals(True)
         try:
             widget.clear()
@@ -273,6 +345,18 @@ class OperationsController:
             i for i, s in enumerate(self.controller.original_spectra)
             if spectrum_key(s) in highlight_ids
         }
+        self.controller.selected_spectra = [
+            s for s in self.controller.original_spectra if spectrum_key(s) in highlight_ids]
+        if before and set(before) != chosen and hasattr(self.controller, 'push_selection'):
+            self.controller.push_selection(before)         # Alt+Left: back to it
+        if new and not keep_selected and chosen == set(new):
+            n = len(new)
+            self._status(f"{n} new spectr{'um' if n == 1 else 'a'} added and selected"
+                         + (" — Alt+Left: the previous selection" if before else ""))
+        try:
+            self.remember_selection(before, [k for k in current if k in chosen])
+        except Exception:
+            logger.debug("Could not keep the selection with the History", exc_info=True)
 
         # NOTE: this used to force interactive_mode_checkbox back to
         # checked here ("every operation always redraws, so keep the
@@ -316,6 +400,11 @@ class OperationsController:
         context : short description used only in the log message if
             plot_spectra() raises (e.g. 'normalization', 'SNIP Baseline').
         """
+        # the selection is what the list shows (the shared rule in
+        # _rebuild_spectra_list_with_selection), not a caller's own list
+        sel = self.controller.spectrum_selector.selected_indices
+        self.controller.selected_spectra = [
+            s for i, s in enumerate(self.controller.original_spectra) if i in sel]
         if not self.controller.interactive_mode_checkbox.isChecked():
             return
         if progress is not None:
@@ -491,51 +580,17 @@ class OperationsController:
                 # Block signals during update
                 self.controller.spectra_list_widget.blockSignals(True)
                 
-                # Remember currently selected items (a set: looked up once per
-                # spectrum below -- a list made this O(n^2) on a 21 000-spectrum map)
-                selected_items = {item.text() for item in self.controller.spectra_list_widget.selectedItems()}
-                
-                try:
-                    # Clear and repopulate the list widget
-                    self.controller.spectra_list_widget.clear()
-                    rows_to_select = []
-                    for row, spectrum in enumerate(self.controller.original_spectra):
-                        item = QListWidgetItem(spectrum['label'])
-                        # Make sure items are selectable and checkable
-                        item.setFlags(item.flags() | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
-                        # Identity, not just display text — see jump_to_
-                        # operation_state's comment above for why this
-                        # matters on every rebuild of this widget.
-                        item.setData(Qt.UserRole, spectrum_id(spectrum))
-                        self.controller.spectra_list_widget.addItem(item)
-                        if spectrum['label'] in selected_items:
-                            rows_to_select.append(row)
+                self.controller.spectra_list_widget.blockSignals(False)
+                # the new spectra selected (the shared rule: new ones are
+                # selected; Alt+Left - the selection before)
+                self._rebuild_spectra_list_with_selection(set())
+                if hasattr(self.controller.view, 'number_of_rows_spinBox'):
+                    self.controller.view.number_of_rows_spinBox.setMaximum(
+                        len(self.controller.original_spectra))
+                if hasattr(self.controller.view, 'number_of_columns_spinBox'):
+                    self.controller.view.number_of_columns_spinBox.setMaximum(
+                        len(self.controller.original_spectra))
 
-                    # Restore the previous selection in ONE call (one
-                    # setSelected per item froze the window for ~40 s with
-                    # 21 000 selected spectra -- see list_selection.py).
-                    select_rows(self.controller.spectra_list_widget, rows_to_select)
-                    
-                    # Update spinbox maximum values
-                    if hasattr(self.controller.view, 'number_of_rows_spinBox'):
-                        self.controller.view.number_of_rows_spinBox.setMaximum(len(self.controller.original_spectra))
-                    if hasattr(self.controller.view, 'number_of_columns_spinBox'): 
-                        self.controller.view.number_of_columns_spinBox.setMaximum(len(self.controller.original_spectra))
-                finally:
-                    self.controller.spectra_list_widget.blockSignals(False)
-
-                # Same bug as every commit_* operation had (see
-                # _rebuild_spectra_list_with_selection): the selection
-                # above was restored on the WIDGET with signals blocked,
-                # so spectrum_selector.selected_indices — the cache
-                # get_selected_spectra() actually reads — was never told
-                # about it, and would otherwise keep pointing at whatever
-                # was selected before these spectra were added.
-                self.controller.spectrum_selector.selected_indices = {
-                    i for i, s in enumerate(self.controller.original_spectra)
-                    if s['label'] in selected_items
-                }
-            
             # Make the spectrum selection frame visible when spectra are added
             if hasattr(self.controller.view, 'spectrum_selection_frame'):
                 self.controller.view.spectrum_selection_frame.setVisible(True)
@@ -2042,6 +2097,15 @@ class OperationsController:
         original_state_labels = set(
             getattr(self.operations_manager, 'original_state_selected_labels', [])
         )
+        # the selection of the step we leave is kept with it (back again:
+        # it comes back), see remember_selection
+        try:
+            lw = self.controller.spectra_list_widget
+            self._store_selection(self.operations_manager.active_operation_index,
+                                  [self._item_key(it) for it in lw.selectedItems()])
+        except Exception:
+            logger.debug("Could not keep the selection of the step", exc_info=True)
+        stored_selection = self._stored_selection(index)
 
         # Show feedback to user
         if index < 0:
@@ -2137,8 +2201,14 @@ class OperationsController:
             # see _resolve_created_result_labels for the fix covering
             # both issues, plus Spectral Calculator, which this block
             # never handled in any mode before now.
-            if operation_details and (op_type.startswith('Combine Spectra')
-                                       or op_type.startswith('Spectral Calculator')):
+            if stored_selection is not None:
+                # the selection you had at that step (by identity)
+                wanted = set(stored_selection)
+                lw = self.controller.spectra_list_widget
+                select_rows(lw, [i for i in range(lw.count())
+                                 if self._item_key(lw.item(i)) in wanted], mode='add')
+            elif operation_details and (op_type.startswith('Combine Spectra')
+                                         or op_type.startswith('Spectral Calculator')):
                 for label in self._resolve_created_result_labels(operation_details):
                     items = self.controller.spectra_list_widget.findItems(label, Qt.MatchExactly)
                     if items:

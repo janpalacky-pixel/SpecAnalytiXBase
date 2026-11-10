@@ -1,6 +1,7 @@
 """Adding a dataset while many spectra are selected must not select list
 rows one by one (that froze the window for ~40 s with a 21 000-spectrum map
-selected) -- and must keep the selection. See list_selection.py."""
+selected). The added spectra are selected (new spectra are selected, v1.7.0);
+Alt+Left brings the selection before back. See list_selection.py."""
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -48,7 +49,7 @@ def mc(tmp_path, monkeypatch):
     controller.view.deleteLater()
 
 
-def test_adding_spectra_keeps_the_selection_without_selecting_row_by_row(mc, monkeypatch):
+def test_adding_spectra_selects_them_without_selecting_row_by_row(mc, monkeypatch):
     mc.import_controller._run_import(clear_first=True,
                                      file_paths=[os.path.join(DATA, 'CD_spectra_TBA.txt')])
     mc.spectrum_selector.select_all_items()
@@ -64,5 +65,10 @@ def test_adding_spectra_keeps_the_selection_without_selecting_row_by_row(mc, mon
     app.processEvents()
     assert calls == []                                            # one batched selection instead
     assert len(mc.original_spectra) > len(selected)
-    assert {s['label'] for s in mc.spectrum_selector.get_selected_spectra()} == selected
+    added = {s['label'] for s in mc.original_spectra} - selected
+    assert {s['label'] for s in mc.spectrum_selector.get_selected_spectra()} == added
+    assert {i.text() for i in mc.spectra_list_widget.selectedItems()} == added
+    calls.clear()
+    assert mc.selection_back()                                     # Alt+Left: the one before
+    assert calls == []
     assert {i.text() for i in mc.spectra_list_widget.selectedItems()} == selected

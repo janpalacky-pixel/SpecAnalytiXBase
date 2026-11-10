@@ -267,8 +267,10 @@ class ImportController(QObject):
             self._reset_non_persistent_settings()
             self._show_import_feedback(successful_imports, failed_imports)
             added_spectra = []
-            final_labels  = set(self.spectrum_manager.spectra.keys())
-            for label in final_labels - initial_labels:
+            # in the order they were imported (file by file, column by
+            # column - the manager's dict keeps it); a set difference here
+            # shuffled them, which showed in Sort: In the order added
+            for label in [k for k in self.spectrum_manager.spectra if k not in initial_labels]:
                 spectrum = self.spectrum_manager.spectra[label]
                 added_spectra.append({
                     'label':    label,

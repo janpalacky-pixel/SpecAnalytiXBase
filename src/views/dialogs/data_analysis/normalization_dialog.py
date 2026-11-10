@@ -483,7 +483,7 @@ class NormalizationDialog(QDialog):
         hdr.addWidget(QLabel('Spectra:'))
         self.sort_button = QPushButton('\u25b2')
         self.sort_button.setMaximumWidth(30)
-        self.sort_button.setToolTip('Toggle sort order')
+        self.sort_button.setToolTip('▲ as in the main list, ▼ upside down')
         self.sort_button.clicked.connect(self._toggle_sort)
         hdr.addWidget(self.sort_button)
         hdr.addStretch()
@@ -1086,7 +1086,7 @@ class NormalizationDialog(QDialog):
     def _populate_spectrum_list(self):
         self.spectra_list.clear()
         self._list_to_spectra = {}
-        spectra = sorted(self.selected_spectra, key=lambda x: x.get('label', ''))
+        spectra = list(self.selected_spectra)     # the main list's order
         if not self.sort_ascending:
             spectra = list(reversed(spectra))
         for i, s in enumerate(spectra):

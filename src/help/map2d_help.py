@@ -1390,8 +1390,9 @@ Options include:</p>
       a reminder of which applies where. It's adjustable in the dialog itself, so raise it if you
       need to see more at once.</li>
   <li><b>Send to main list…</b> — adds selected spectra (individually or as their average)
-      to the main spectrum list for further processing. The list is re-sorted afterward
-      (matching the main window's current sort order) and the newly added spectra are
+      to the main spectrum list for further processing. They take their place as the main
+      list is sorted (by name, by a property, ...; in your own order or in the order added:
+      at the end) and the newly added spectra are
       selected, so they're immediately visible and ready to work with.</li>
   <li><b>Export selected…</b> — saves to CSV or Excel.</li>
 </ul>

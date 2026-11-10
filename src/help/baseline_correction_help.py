@@ -146,7 +146,7 @@ def get_baseline_correction_help_content():
             
             <h3>Left Panel - Controls</h3>
             <ul>
-                <li><span class="control">Spectra List:</span> Shows all selected spectra. Click to switch between spectra. Use the sort button (▲/▼) to change sorting order.</li>
+                <li><span class="control">Spectra List:</span> Shows all selected spectra. Click to switch between spectra. The sort button: ▲ the order of the main list, however it is sorted there (by name, in the order added, by a property, by a number in the name or in <a href="help://user_guide#own-order">your own order</a> &mdash; see <a href="help://user_guide#sorting">Sorting the list</a>), ▼ upside down.</li>
                 <li><span class="control">Baseline Correction Settings:</span> Configure correction parameters</li>
                 <li><span class="control">View Mode Controls:</span> Choose what to display</li>
                 <li><span class="control">Clear Baselines:</span> Reset corrections</li>

@@ -212,7 +212,7 @@ class XAxisAlignmentDialog(QDialog):
         hdr.addWidget(QLabel('Spectra:'))
         self.sort_button = QPushButton('▲')
         self.sort_button.setMaximumWidth(30)
-        self.sort_button.setToolTip('Toggle sort order')
+        self.sort_button.setToolTip('▲ as in the main list, ▼ upside down')
         self.sort_button.clicked.connect(self._toggle_sort)
         hdr.addWidget(self.sort_button)
         hdr.addStretch()

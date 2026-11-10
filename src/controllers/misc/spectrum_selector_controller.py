@@ -142,17 +142,8 @@ class SpectrumSelector:
             enable (bool): Whether to enable the groupboxes
             plot_type (str, optional): Current plot type
         """
-        if plot_type == "Single spectrum":
-            enable = True
-
         self.controller.view.groupBox_basic_plot_options.setEnabled(enable)
         self.controller.view.groupBox_link_axes.setEnabled(enable)
-
-    def enforce_single_spectrum_mode(self):
-        """
-        Ensure the UI is in the correct state for 'Single spectrum' mode.
-        """
-        self.controller.interactive_mode_checkbox.setChecked(True)
 
     def on_spectrum_item_changed(self, item):
         """
@@ -200,7 +191,7 @@ class SpectrumSelector:
                 if spectrum_key(spectrum) in selected_ids
             }
     
-            if interactive_mode or plot_type == "Single spectrum":
+            if interactive_mode:
                 # Plot the currently selected spectra
                 self.controller.plot_spectra()
                 self.update_groupbox_states(True, plot_type)
@@ -398,6 +389,7 @@ class SpectrumSelector:
 
     def select_all_items(self):
         """Select all items in the spectra list widget."""
+        self._keep_for_back()
         self.is_handling_selection = True
         try:
             # Select all items
@@ -423,6 +415,7 @@ class SpectrumSelector:
     
     def unselect_all_items(self):
         """Unselect all items in the spectra list widget."""
+        self._keep_for_back()
         self.is_handling_selection = True
         try:
             # Clear all selections
@@ -439,6 +432,13 @@ class SpectrumSelector:
             self.is_handling_selection = False
             self.update_spectra_count_label()
             
+    def _keep_for_back(self):
+        """The selection before Select All / Unselect All / Select spectra
+        is kept for Back (Alt+Left: the previous selection)."""
+        push = getattr(self.controller, 'push_selection', None)
+        if push is not None:
+            push()
+
     def show_spectra_selection_dialog(self):
         """
         Show dialog for selecting spectra by index range, text search, or
@@ -474,6 +474,7 @@ class SpectrumSelector:
         """
         indices = params['indices']
         action = params['action']
+        self._keep_for_back()
         
         self.is_handling_selection = True
         try:
@@ -533,6 +534,9 @@ class SpectrumSelector:
         """
         # Always set red color for the background when selected
         self.controller.spectra_list_widget.setStyleSheet("""
+            QListWidget::item {
+                padding: 2px 4px 2px 18px;   /* room for the move handle at the left */
+            }
             QListWidget::item:selected {
                 background-color: red;
                 color: white;
@@ -653,6 +657,12 @@ class SpectrumSelector:
         if hasattr(self.controller, 'operations_controller'):
             # Register as a "removal" operation
             self.controller.operations_controller.register_removal_operation(selected_spectra)
+            try:                        # Undo: the deleted spectra selected again
+                from src.modules.utils.spectrum_identity import spectrum_key
+                self.controller.operations_controller.remember_selection(
+                    [spectrum_key(s) for s in reversed(selected_spectra)], [])
+            except Exception:
+                pass
         
         # Remove items from original_spectra list
         for index in selected_indices:

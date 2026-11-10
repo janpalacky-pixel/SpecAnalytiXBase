@@ -83,12 +83,6 @@ def create_external_figure(mc):
     band_mgr    = getattr(mc, 'band_marker_manager',      None)
     cl_mgr      = getattr(mc, 'constrained_layout_manager', None)
 
-    if plot_type == 'Single spectrum':
-        sel = mc.spectra_list_widget.selectedItems()
-        if sel:
-            spectra = [mc.original_spectra[mc.spectra_list_widget.row(sel[0])]]
-        else:
-            spectra = spectra[:1]
 
     # Use a throw-away off-screen widget as the graphics_view recipient
     tmp = QWidget()
@@ -179,7 +173,7 @@ def create_external_figure(mc):
                                 'plot_settings')},
             )
 
-        else:  # Overlay / Single spectrum
+        else:  # Overlay
             canvas, _ = overlay_plot_mode(
                 tmp, spectra,
                 grid_manager=grid_mgr,

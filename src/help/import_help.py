@@ -1413,7 +1413,8 @@ spectrum_B    5.5      6.6      7.7      8.8
         imports — see the SPE and SPC sections above.
     </p>
     <div class="info">
-        <strong>The main spectra list sorts labels in "natural" (numeric-aware)
+        <strong>Sorted by name (the usual way; Sort: &#9662; above the list offers
+        others), the main spectra list sorts labels in "natural" (numeric-aware)
         order, not plain alphabetical order</strong> — embedded numbers compare
         as numbers, not character-by-character, so <code>spectrum 4</code>
         already sorts before <code>spectrum 39</code> and

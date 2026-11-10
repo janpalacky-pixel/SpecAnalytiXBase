@@ -46,6 +46,9 @@ _SCREENSHOT_FILES = {
     "SAVE_DIALOG":                 "save_options_dialog.png",
     "SNAPSHOT_CONFIRM_DIALOG":     "snapshot_confirmation_dialog.png",
     "SPECTRUM_PROPERTIES":         "spectrum_properties_dialog.png",
+    "MOVING_SPECTRA":              "moving_spectra.png",
+    "ORDER_MENU":                  "order_menu.png",
+    "SORT_MENU":                   "sort_menu.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -275,7 +278,9 @@ def get_user_guide_help_content():
             settings dialog for whichever operation you chose, and that dialog has its own
             <strong>Apply</strong> and <strong>Add as New</strong> buttons that commit
             immediately — Apply replaces the selected spectra; Add as New keeps the
-            originals and adds the result under a new name. This is true for every
+            originals and adds the result under a new name (the new spectra are then
+            selected &mdash; see <a href="#selection-after">which spectra are selected
+            afterwards</a>). This is true for every
             operation in the Spectra Processing dropdown; there's no separate main-window
             commit step. See <a href="#pipeline">→ Processing Pipeline details</a> for more.
         </div>
@@ -595,8 +600,10 @@ def get_user_guide_help_content():
             <tr><td><strong>Select All</strong></td><td>Select all spectra</td></tr>
             <tr><td><strong>Unselect All</strong></td><td>Deselect all spectra</td></tr>
             <tr><td><strong>Select spectra</strong></td><td>Open a dialog to select spectra by name pattern</td></tr>
-            <tr><td><strong>Rename</strong></td><td>Rename the selected spectrum/spectra. The list is re-sorted afterward, since a new name can change where a spectrum belongs alphabetically.</td></tr>
-            <tr><td><strong>Copy</strong> / <strong>Paste</strong></td><td>Copy and paste like anywhere else: <strong>Copy</strong> (<strong>Ctrl+C</strong>) only remembers the selected spectra (nothing is added yet); <strong>Paste</strong> (<strong>Ctrl+V</strong>) then adds their copies with a <em>_copy</em> suffix (paste again for another set). The menu shows how many copies Paste will add; it is greyed out until something has been copied. Useful for comparing a spectrum before and after an operation. The copy operation is recorded in the Operations History so it can be undone by jumping to the previous state. The list is re-sorted afterward and the copies are selected. No confirmation is asked — a copy never removes or changes anything, so there's nothing to confirm.</td></tr>
+            <tr><td><strong>Previous selection</strong> / <strong>Next selection</strong></td><td>Back and forward through the selections the program changed (e.g. the new spectra of Add as New) and those before Select All / Unselect All / Select spectra; also <span class="kbd">Alt+Left</span> / <span class="kbd">Alt+Right</span>. See <a href="#selection-after">which spectra are selected afterwards</a>.</td></tr>
+            <tr><td><strong>Rename</strong></td><td>Rename the selected spectrum/spectra. The list is re-sorted afterward, since a new name can change where a spectrum belongs alphabetically (with <a href="#own-order">your own order</a> a renamed spectrum keeps its place).</td></tr>
+            <tr><td><strong>Copy</strong> / <strong>Paste</strong></td><td>Copy and paste like anywhere else: <strong>Copy</strong> (<strong>Ctrl+C</strong>) only remembers the selected spectra (nothing is added yet); <strong>Paste</strong> (<strong>Ctrl+V</strong>) then adds their copies with a <em>_copy</em> suffix (paste again for another set). The menu shows how many copies Paste will add; it is greyed out until something has been copied. Useful for comparing a spectrum before and after an operation. The copy operation is recorded in the Operations History so it can be undone by jumping to the previous state. The list is re-sorted afterward (with <a href="#own-order">your own order</a> the copies go to the end) and the copies are selected. No confirmation is asked — a copy never removes or changes anything, so there's nothing to confirm.</td></tr>
+            <tr><td><strong>Order</strong></td><td><strong>Move to top</strong>, <strong>Move up</strong> (<span class="kbd">Alt+Up</span>), <strong>Move down</strong> (<span class="kbd">Alt+Down</span>), <strong>Move to bottom</strong>: the selected spectra get <a href="#own-order">your own order</a>; <strong>Sort by name</strong>: the list sorted by the names again (your own order stays in <strong>Sort:</strong> &#9662; to come back to).</td></tr>
             <tr><td><strong>Delete spectra</strong></td><td>Remove the selected spectra from the list (also <strong>Ctrl+D</strong> or the <strong>Delete</strong> key — see below). Asks for confirmation first, since this visibly removes spectra from the list you're looking at — even though it's also recorded in the Operations History, so jumping to the previous state restores them if you ever need to.</td></tr>
         </table>
 
@@ -727,7 +734,9 @@ def get_user_guide_help_content():
         <h2 id="selection">2. Spectrum Selection</h2>
 
         <p>The left-hand list shows all imported spectra. Selected spectra are
-        highlighted in <strong>red</strong> and plotted on the canvas.</p>
+        highlighted in <strong>red</strong> and plotted on the canvas. The orange
+        <strong>?</strong> next to <em>shorten names</em> above the list sums this section up in
+        short; the one in the <em>Sort</em> row sorting and moving.</p>
 
         <table>
             <tr><th>Action</th><th>How</th></tr>
@@ -740,20 +749,33 @@ def get_user_guide_help_content():
             <tr><td>Toggle one item</td><td><strong>Ctrl+click</strong> &mdash; adds an item to the
                 selection without deselecting others, or removes it if already selected</td></tr>
             <tr><td>Drag to select</td><td>Hold the left mouse button and drag across multiple items</td></tr>
+            <tr><td>One spectrum after another</td><td>The <span class="kbd">&darr;</span> /
+                <span class="kbd">&uarr;</span> arrow keys: only the next (previous) spectrum is
+                selected and shown; <span class="kbd">Shift+&darr;</span> / <span class="kbd">Shift+&uarr;</span>
+                extend the selection</td></tr>
+            <tr><td>Move spectra</td><td>Drag the <strong>handle</strong> (six dots) at the left of a
+                row: the selected spectra move together (a spectrum that is not selected: only it);
+                a blue line shows where they go. Or <span class="kbd">Alt+Up</span> /
+                <span class="kbd">Alt+Down</span>, or right-click &rarr; <strong>Order</strong> &mdash;
+                see <a href="#own-order">Your own order</a></td></tr>
             <tr><td>Select all</td><td><strong>Select All</strong> button or
                 <span class="kbd">Ctrl+A</span></td></tr>
             <tr><td>Deselect all</td><td><strong>Unselect All</strong> or
                 <span class="kbd">Ctrl+U</span></td></tr>
+            <tr><td>Previous / next selection</td><td><span class="kbd">Alt+Left</span> /
+                <span class="kbd">Alt+Right</span> (or right-click &rarr; <strong>Previous
+                selection</strong> / <strong>Next selection</strong>) &mdash; like Back and
+                Forward in a web browser; see below</td></tr>
             <tr><td>Select by range / pattern</td><td><strong>Select spectra</strong> button
                 (or right-click &rarr; <strong>Select spectra</strong>)
                 &mdash; opens a dialog to select by index range with step</td></tr>
-            <tr><td>Sort order</td><td>Natural (numeric-aware) order by label. Tick
-                <strong>reverse sorting</strong>, just above the list next to the
-                spectrum counter, to flip the order.</td></tr>
+            <tr><td>Sort order</td><td><strong>Sort:</strong> &#9662; right above the list &mdash;
+                see <a href="#sorting">Sorting the list</a>; <strong>reverse</strong> next to it
+                turns the list upside down.</td></tr>
         </table>
 
         <div class="info">
-            <strong>Sort order is "natural," not plain alphabetical — embedded
+            <strong>Sorting by name is "natural," not plain alphabetical — embedded
             numbers compare numerically, not character-by-character.</strong>
             A label is split into alternating text/number chunks, and each number
             chunk is compared as an integer rather than as text. So
@@ -770,16 +792,103 @@ def get_user_guide_help_content():
             alphabetical, identical to before.
         </div>
 
-        <div class="info">
-            <strong>There's no way to pin a custom order that isn't derivable
-            from the label itself.</strong> The list is fully rebuilt in
-            sorted order after essentially anything you do — import, rename,
-            copy, running an operation — so there's no drag-and-drop
-            reordering, and any manual arrangement wouldn't survive the next
-            action anyway. If you want spectra in a specific order for
-            reasons unrelated to alphabetical/numeric order, the only lever
-            is renaming them (or adding a numeric prefix) so the labels
-            themselves sort into the order you want.
+        <div class="info" id="selection-after">
+            <strong>Which spectra are selected afterwards.</strong> The selection is the
+            set of spectra you work with; the program changes it only by these rules, the
+            same in every operation:
+            <ul>
+                <li><strong>Apply</strong> (the spectra changed in place), <strong>Rename</strong>,
+                moving, sorting, Spectrum properties: the selection <em>stays</em> as it was.
+                (An Apply that also makes a spectrum, e.g. the mean of Mean-centering: the
+                selection stays and the new spectrum is selected too.)</li>
+                <li><strong>New spectra</strong> &mdash; <strong>Add as New</strong>, Copy /
+                Paste, an added import, results such as Combine, Spectral calculator, peak fit
+                components, NMF / MCR-ALS components, a 2D map export: the <em>new</em>
+                spectra are selected (they are what you look at next); the status bar says
+                how many. <span class="kbd">Alt+Left</span> brings back the selection before,
+                <span class="kbd">Alt+Right</span> goes forward again.</li>
+                <li><strong>Delete</strong>: the deleted spectra are gone, nothing else is
+                selected instead.</li>
+                <li><strong>Undo / Redo / a jump in the History</strong>: the selection you had
+                at that step (also changes you made there by hand).</li>
+                <li><strong>Select All</strong>, <strong>Unselect All</strong> and
+                <strong>Select spectra</strong> keep the selection before for
+                <span class="kbd">Alt+Left</span> as well &mdash; a careful selection is not lost
+                by one Ctrl+U. Single clicks in the list are not kept (each click would be
+                a step).</li>
+            </ul>
+            The spectra are recognised by their permanent identity, not by their names, so
+            renaming, sorting or moving never changes the selection.
+        </div>
+
+        <div class="info" id="own-order">
+            <strong>Your own order.</strong> To put the spectra in an order that is not
+            their names' order (e.g. the order of a series, or the spectra you compare
+            next to each other), select them and <strong>drag the handle</strong> (the six
+            dots at the left of a row) to their place in the list: a blue line shows where
+            they go, all selected spectra move together (the handle of a spectrum that is
+            not selected moves only it), Esc cancels. Dragging anywhere else in the list
+            selects, as always, so selecting and moving never get in each other's way.
+            <div class="screenshot">
+                <img src="$MOVING_SPECTRA" width="$MOVING_SPECTRA_W" height="$MOVING_SPECTRA_H" alt="Moving two spectra with the handle" />
+                <p class="caption">Two selected spectra dragged by the handle (six dots): the blue line shows where they go.</p>
+            </div>
+            <div class="screenshot">
+                <img src="$ORDER_MENU" width="$ORDER_MENU_W" height="$ORDER_MENU_H" alt="Right-click, Order" />
+                <p class="caption">Right-click &rarr; Order: the same without the mouse.</p>
+            </div> The same: <span class="kbd">Alt+Up</span> /
+            <span class="kbd">Alt+Down</span> (one place up / down), or right-click
+            &rarr; <strong>Order</strong> &rarr; <strong>Move to top</strong> /
+            <strong>Move up</strong> / <strong>Move down</strong> / <strong>Move to
+            bottom</strong>. From then on the list keeps your order, and it counts
+            everywhere the order of the list counts: the plot (the order of the colours and
+            of the legend), the tool windows (in the lists of Manual baseline, Normalization,
+            Data range, FFT Denoising and X-axis alignment: &#9650; the order of the main list
+            &mdash; your order here, or however it is sorted &mdash; &#9660; upside down),
+            exports, Save plot for publication.
+            New spectra (an import that adds spectra, copies, results such as Combine) go to
+            the end; processed spectra (baseline, smoothing &hellip;) and renamed ones keep
+            their place. <strong>reverse</strong> turns your order upside down.
+            Your order is saved in snapshots; a new import (not added) starts sorted by name
+            again. Sorting another way (<strong>Sort:</strong> &#9662;, or right-click &rarr;
+            <strong>Order</strong> &rarr; <strong>Sort by name</strong>) keeps your order:
+            <strong>Sort:</strong> &#9662; &rarr; <strong>Your own order</strong> brings it back.
+        </div>
+
+        <div class="info" id="sorting">
+            <strong>Sorting the list.</strong> <strong>Sort:</strong> &#9662; right above the
+            list chooses how the spectra are sorted, <strong>reverse</strong> next to it the
+            direction &mdash; two separate choices (the orange <strong>?</strong> after them
+            explains it in short):
+            <ul>
+                <li><strong>By name</strong> &mdash; alphabetical, numbers compared as numbers
+                (see below); the usual way.</li>
+                <li><strong>In the order added</strong> &mdash; as the spectra came into the list:
+                imports file by file and column by column, then copies and results (e.g. Add as
+                New) after them.</li>
+                <li><strong>By a property</strong> &mdash; by a value stored with each spectrum:
+                temperature, pH, concentration, time &hellip; (those read from the file, e.g. a
+                JASCO temperature scan, and those typed in <a href="#spectrum-properties">Spectrum
+                properties</a>). Every property the spectra have is offered.</li>
+                <li><strong>By a number in the name</strong> &mdash; the last, the first, the
+                second &hellip; number written in the name, e.g. by 25.5 in
+                <em>run3_T=25.5C</em> (the second number).</li>
+                <li><strong>Your own order</strong> &mdash; as you arrange the spectra yourself.
+                Chosen, the list stays as it is now (e.g. as sorted by temperature) and from then on
+                you arrange it: the handles at the left of the rows, Alt+Up / Alt+Down, right-click
+                &rarr; Order; copies and other new spectra go to the end. Moving a spectrum chooses
+                it too.</li>
+            </ul>
+            <div class="screenshot">
+                <img src="$SORT_MENU" width="$SORT_MENU_W" height="$SORT_MENU_H" alt="Sort menu" />
+                <p class="caption">Sort: &#9662; &rarr; By a property: the properties of the spectra (here read from the file).</p>
+            </div>
+            Spectra without the value (e.g. no temperature) go to the end, by name; equal
+            values are sorted by name. The plot (the order of the legend and of the colours) and
+            the tool windows follow the list. The way of sorting is saved in snapshots. A new
+            import (Import data, not Add) starts sorted by name (<strong>reverse</strong> stays as
+            it is); and when no spectrum has the chosen value any more (e.g. the property was
+            removed), the list is sorted by name and the status bar says so.
         </div>
 
         <div class="warning">
@@ -831,11 +940,13 @@ def get_user_guide_help_content():
         <h2 id="visualisation">3. Visualisation</h2>
 
         <h3>Plot Types</h3>
+        <p>To look at the spectra <strong>one by one</strong>, click one in the list and press
+        the <span class="kbd">&darr;</span> / <span class="kbd">&uarr;</span> arrow keys: each
+        press selects only the next (previous) spectrum and the plot shows it (Interactive
+        Update on). (The former plot type <em>Single spectrum</em> did the same; an older
+        snapshot that used it opens as an Overlay plot.)</p>
         <table>
             <tr><th>Mode</th><th>Description</th></tr>
-            <tr><td><strong>Single spectrum</strong></td><td>Display one spectrum at a time.
-                Switching to this mode automatically clears any multi-selection and selects
-                just the first spectrum in the list, since only one can be shown.</td></tr>
             <tr><td><strong>Overlay plot</strong></td><td>All selected spectra on one set of axes, colour-coded</td></tr>
             <tr><td><strong>Grid plot</strong></td><td>Each spectrum in its own subplot; rows and columns
                 configurable via the <em>nrow</em> / <em>ncol</em> spinboxes.
@@ -1335,7 +1446,9 @@ def get_user_guide_help_content():
         <h4>Jumping to a Previous State</h4>
         <p>Select any entry and click <strong>Jump to Selected State</strong> to
         restore the data to how it looked immediately after that operation. This
-        is the primary undo mechanism within a session.</p>
+        is the primary undo mechanism within a session. The selection you had at
+        that step comes back too (e.g. Undo of a delete: the deleted spectra are back
+        and selected).</p>
 
         <div class="warning">
             <strong>No branches:</strong> if you jump back to an earlier state and

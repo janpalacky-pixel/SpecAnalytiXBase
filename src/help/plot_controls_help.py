@@ -108,8 +108,7 @@ def get_plot_controls_help_content():
         shown"</i>). Their calculations always use all spectra. The number is set in the same
         window: <i>Tool windows: draw at most &hellip; spectra</i>.</li>
         <li>Not limited: <b>Heatmap</b> (one image, fast), <b>Mean&nbsp;&plusmn;&nbsp;SD</b> and
-        <b>Difference</b> (their mean must be the mean of all selected spectra) and
-        <b>Single spectrum</b>.</li>
+        <b>Difference</b> (their mean must be the mean of all selected spectra).</li>
         <li>Zooming or panning a plot with all spectra redraws all of them at once again;
         for exploring, the preview is much quicker.</li>
     </ul>

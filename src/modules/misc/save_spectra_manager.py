@@ -671,6 +671,16 @@ class SaveManager:
         except Exception:
             logger.warning("Snapshot: could not store the band markers", exc_info=True)
 
+        # How the list is sorted (Sort: ▾), your own order of the spectra
+        # (dragged in the list) and when each came into the list.
+        mode = getattr(main_controller, 'sort_mode', None)
+        if isinstance(mode, dict) and mode.get('by', 'name') != 'name':
+            state['sort_mode'] = dict(mode)
+        if getattr(main_controller, 'custom_order', None) is not None:
+            state['custom_order'] = list(main_controller.custom_order)
+        if getattr(main_controller, 'added_order', None):
+            state['added_order'] = dict(main_controller.added_order)
+
         # Your own labels on the plot (right-click: band labels, text, arrows).
         notes = getattr(main_controller, 'plot_notes_controller', None)
         try:
@@ -1092,6 +1102,22 @@ class SaveManager:
                 self._restore_map2d_rois(main_controller, state['map2d_rois'])
             if 'band_markers' in state:
                 self._restore_band_markers(main_controller, state['band_markers'])
+            # your own order of the spectra; none in the snapshot: by name
+            order = state.get('custom_order')
+            main_controller.custom_order = list(order) if isinstance(order, (list, tuple)) \
+                else None
+            # how the list was sorted; a snapshot with your own order but no
+            # sorting kept (11-09 builds): your own order; none: by name
+            mode = state.get('sort_mode')
+            if not isinstance(mode, dict):
+                mode = {'by': 'own'} if main_controller.custom_order is not None \
+                    else {'by': 'name'}
+            if hasattr(main_controller, 'sort_mode'):
+                main_controller.sort_mode = dict(mode)
+                added = state.get('added_order')
+                main_controller.added_order = dict(added) if isinstance(added, dict) else {}
+                if hasattr(main_controller, '_update_sort_button'):
+                    main_controller._update_sort_button()
             notes = getattr(main_controller, 'plot_notes_controller', None)
             if notes is not None:                  # none in the snapshot: none now
                 try:
@@ -1285,7 +1311,11 @@ class SaveManager:
                     self._safe_set(ui, 'number_of_columns_spinBox', 'setValue',
                                     s['grid_settings'].get('columns', 1))
                 if 'plot_type' in s:
-                    self._safe_set(ui, 'comboBox_plot_type_choice', 'setCurrentText', s['plot_type'])
+                    # "Single spectrum" (older snapshots) is gone: an Overlay of
+                    # the selected spectrum shows the same
+                    kind = 'Overlay plot' if s['plot_type'] == 'Single spectrum' \
+                        else s['plot_type']
+                    self._safe_set(ui, 'comboBox_plot_type_choice', 'setCurrentText', kind)
                 if 'x_scale' in s:
                     self._safe_set(ui, 'x_scale_comboBox', 'setCurrentText', s['x_scale'])
                 # snapshots from before "reverse x" existed were drawn low to high

@@ -40,7 +40,7 @@ def normalized_dialog_count(value):
 
 # Plot types that draw one line (or panel) per selected spectrum. Not
 # limited: Heatmap (one image), Mean ± SD and Difference (their mean must be
-# the mean of ALL selected spectra, not of a preview) and Single spectrum.
+# the mean of ALL selected spectra, not of a preview).
 LIMITED_PLOT_TYPES = ('Overlay plot', 'Grid plot', 'Waterfall plot')
 
 MODES = ('preview', 'all')

@@ -3211,6 +3211,63 @@ spectra_added = pyqtSignal(object)
             are always re-sorted by label immediately.
         </div>
 
+        <div class="info">
+            <strong>The selection after a change (v1.7.0): one rule.</strong>
+            <code>OperationsController._rebuild_spectra_list_with_selection()</code> (every
+            commit, copies, <code>add_new_spectra</code>, an added import) decides it from the
+            list before the rebuild: new ids (not in the old list) &rarr; the new ones
+            selected; none &rarr; the selection stays; <code>keep_selected=True</code> (Apply
+            with extra outputs, Mean-centering) &rarr; both; nothing selected &rarr; the
+            caller's <code>highlight_ids</code>. It sets <code>selected_spectra</code>, and
+            <code>_redraw_after_operation()</code> takes the selection from the list again,
+            so a caller's own <code>selected_spectra</code> no longer counts. The selection
+            before goes to <code>MainController.push_selection</code> (Back / Forward:
+            <code>selection_back</code> / <code>selection_forward</code>, Alt+Left /
+            Alt+Right; also Select All / Unselect All / Select spectra), and
+            <code>remember_selection(before, after)</code> keeps it with the History
+            (<code>operation['selection']</code>, <code>original_state_selection</code>); a
+            jump stores the selection of the step it leaves and restores the stored one
+            of its target (older Histories without it: the old rule by labels). Delete calls
+            <code>remember_selection(deleted, [])</code>. Tests:
+            <code>tests/test_selection_rules.py</code>.
+        </div>
+
+        <div class="info">
+            <strong>Ways of sorting (v1.7.0).</strong> <code>MainController.sort_mode</code>
+            (<code>{'by': 'name' | 'added' | 'property' (+'key') | 'number' (+'number') |
+            'own'}</code>, the Sort: &#9662; button, <code>set_sort_mode</code>) is used by
+            <code>order_spectra()</code>: 'own' &rarr; <code>spectra_order.apply</code>, the
+            others &rarr; <code>spectra_order.sort</code> (values from
+            <code>color_by_value.value_of</code>; no value &rarr; at the end, by name;
+            ties by name); 'name' the natural sort as before. "In the order added" uses
+            <code>MainController.added_order</code> (id &rarr; number), given in
+            <code>order_spectra()</code> to every id seen for the first time, in the order of
+            the list passed in (imports in file order, new spectra after the others) - by id,
+            so it survives Undo. sort_mode and added_order are saved in snapshots.<br><br>
+            <strong>Your own order (v1.7.0).</strong> Once the user moves spectra (drag in
+            the list, Alt+Up / Alt+Down, right-click &rarr; Order),
+            <code>MainController.custom_order</code> holds their permanent ids
+            (<code>spectrum_key</code>) in that order, and <code>order_spectra()</code>
+            returns <code>spectra_order.apply(...)</code> instead of the natural sort
+            (<code>src/modules/utils/spectra_order.py</code>, Qt-free: <code>apply</code>,
+            <code>from_visible</code>, <code>move_to</code>, <code>step</code>). So every one
+            of the call sites above keeps the user's order with no change of its own. The
+            list is stored as if "reverse" were off (the box only reverses it); ids
+            not yet in it (new spectra) are added at the visible end; ids of deleted spectra
+            stay in it so an Undo puts them back in place. Used only while
+            <code>sort_mode</code> is 'own' (moving sets it); another way of sorting keeps it
+            to come back to. <code>None</code> = none yet: a new import
+            (<code>display_imported_spectra</code>) and <code>reset_plot_state</code>. Saved in snapshots
+            as <code>custom_order</code>. The drag: <code>_SpectraListWidget</code> draws a handle (six
+            dots) at the left of every row (<code>HANDLE</code> px; the items' stylesheet
+            padding makes room) and handles the mouse itself - a press on a handle starts a
+            move (blue line, autoscroll, Esc), anywhere else Qt's normal selection. Not Qt's
+            drag and drop: on Windows a drag of list items reports a "move" and Qt then
+            removed the dragged items from the list. On letting go it emits
+            <code>dropped_at(row)</code>; <code>move_selected_spectra(row)</code> makes the
+            new order and rebuilds the list. Tests: <code>tests/test_spectra_order.py</code>.
+        </div>
+
         <div class="warning">
             <strong>Confirmed real bug (2026-08-18): plain alphabetical sort
             silently broke temperature-series ordering.</strong>

@@ -325,10 +325,12 @@ def get_normalization_help_content():
     <div class="note">
         <strong>Reference spectrum selection:</strong> the "Reference spectrum" dropdown
         (shown only for the Reference spectrum method) lists every spectrum loaded into
-        the dialog by its actual label, numbered from 1 in loading order — not a plain
-        index field. This removes any ambiguity about which spectrum "#3" refers to,
-        especially after sorting the Selected spectra list, since the dropdown always
-        shows the real name.
+        the dialog by its actual label, numbered from 1 in the order of the main
+        spectra list (however it is sorted there: by name, in the order added, by a
+        property, by a number in the name or in your own order) — not a plain index
+        field. This removes any ambiguity about which spectrum "#3" refers to, also when
+        the Selected spectra list is shown upside down (&#9660;), since the dropdown
+        always shows the real name.
     </div>
 
     <h2 id="factors">Per-spectrum factors</h2>
@@ -760,8 +762,8 @@ def get_normalization_help_content():
         <h3>Reference spectrum — algorithm</h3>
         <p><strong>Step 1 — select the reference:</strong>
         The "Reference spectrum" dropdown lists every spectrum loaded into the dialog by
-        its actual label, in the order spectra were loaded (not the possibly-resorted
-        order shown in the Selected spectra list). The dropdown's selected position
+        its actual label, in the order of the main list, however it is sorted (the &#9660; button of the Selected
+        spectra list may show that list upside down). The dropdown's selected position
         already corresponds directly to the 0-based Python list index used internally —
         no offset conversion is needed.</p>
         <p><strong>Step 2 — point-wise division:</strong>

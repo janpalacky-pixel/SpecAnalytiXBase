@@ -172,7 +172,9 @@ class MeanCenteringController:
                     (selected_spectra if add_as_new else centered_spectra) + extra_outputs
                 )
             }
-            self.oc._rebuild_spectra_list_with_selection(highlight_ids)
+            # Apply: the centred spectra stay selected, the mean too
+            self.oc._rebuild_spectra_list_with_selection(highlight_ids,
+                                                         keep_selected=not add_as_new)
 
             self.controller.selected_spectra = (
                 (selected_spectra if add_as_new else centered_spectra)
