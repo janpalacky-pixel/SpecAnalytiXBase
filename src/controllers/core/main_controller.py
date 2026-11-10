@@ -2679,8 +2679,8 @@ class MainController(QMainWindow):
         pub.setIconText("Publication")
         pub.setToolTip("Save plot for publication: the plot in a journal's size, font and "
                        "look - TIFF, PNG, PDF, SVG, EPS or printed")
-        pub.setStatusTip("The plot in the size of a journal column, at 600 dpi (TIFF, PNG) "
-                         "or as PDF / SVG / EPS")
+        pub.setStatusTip("The plot on a whole A4 page or in a journal's column width, at "
+                         "600 dpi (TIFF, PNG) or as PDF / SVG / EPS")
         pub.triggered.connect(self.save_plot_for_publication)
         actions = menu.actions()
         if action in actions and actions.index(action) + 1 < len(actions):
@@ -2699,7 +2699,8 @@ class MainController(QMainWindow):
 
     def save_plot_for_publication(self):
         """File -> Save plot for publication… (also right-click on the plot):
-        the plot in a journal's column width, one text size, 600 dpi."""
+        the plot on a whole A4 page (at first) or in a journal's column width,
+        one text size, 600 dpi."""
         canvas = getattr(self, 'static_canvas', None)
         figure = getattr(canvas, 'figure', None)
         if figure is None or not figure.axes:

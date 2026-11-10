@@ -219,15 +219,18 @@ def test_the_window_moves_the_legend_and_restores_defaults():
     assert 0 in dlg.legend_xy
     dlg.legend_combo.setCurrentIndex(dlg.legend_combo.findData('top'))
     assert dlg.legend_xy == {} and dlg.place_combo.isEnabled()  # a chosen place again
-    k = dlg.column_combo.findText('A4 page, sideways', Qt.MatchStartsWith)
+    k = dlg.column_combo.findText('1 column', Qt.MatchStartsWith)
     dlg.column_combo.setCurrentIndex(k)
-    assert (dlg.width_spin.value(), dlg.height_spin.value()) == (26.7, 18.0)
+    assert dlg.width_spin.value() == 8.5
     dlg.font_spin.setValue(14)
     dlg.restore_defaults()
     s = dlg.settings()
     for key, value in pf_defaults().items():
         assert s[key] == value, key
-    assert pd._SESSION['width_cm'] == 8.5 and dlg.column_combo.currentIndex() == 0
+    # at first: A4 landscape, full page, 12 pt (the user's wish 11-10)
+    assert (pd._SESSION['width_cm'], pd._SESSION['height_cm']) == (26.7, 18.0)
+    assert dlg.column_combo.currentText() == 'A4 landscape, full page (26.7 cm wide \u00d7 18 cm high)'
+    assert s['font_pt'] == 12.0
 
 
 def pf_defaults():
@@ -621,3 +624,48 @@ def test_restore_defaults_puts_back_everything():
             assert value == defaults[key] or (key == 'legend' and value == 'best'), key
     assert after['series'] == [] and dlg.legend_xy == {} and dlg.moved == {}
     assert dlg.caption_edit.text() == ''
+
+
+def test_real_size_uses_the_screens_real_inch(monkeypatch):
+    """Real size: the screen's physical dots per inch divided by the display
+    scaling (logical 96 dpi made the picture about half as large on a fine
+    laptop screen); a nonsense screen size: the logical value."""
+    from src.views.dialogs.visualization import publication_dialog as pd
+    dlg = pd.PublicationDialog(_figure(), None)
+
+    class Screen:
+        value = 282.0
+
+        def physicalDotsPerInchX(self):
+            return Screen.value
+    monkeypatch.setattr(dlg, 'screen', lambda: Screen())
+    monkeypatch.setattr(dlg, 'devicePixelRatioF', lambda: 2.0)
+    assert dlg._real_dpi() == 141.0
+    Screen.value = 5000.0
+    assert dlg._real_dpi() == float(dlg.logicalDpiX() or 96)
+    dlg.deleteLater()
+
+
+def test_paper_is_a4_unless_another_is_chosen():
+    from PyQt5.QtGui import QPageSize
+    from src.views.dialogs.visualization import publication_dialog as pd
+    dlg = pd.PublicationDialog(_figure(), None)
+    assert dlg.settings()['paper'] == 'A4'
+    assert dlg._new_printer().pageLayout().pageSize().id() == QPageSize.A4
+    dlg.paper_combo.setCurrentIndex(dlg.paper_combo.findData('Letter'))
+    assert dlg._new_printer().pageLayout().pageSize().id() == QPageSize.Letter
+    dlg.deleteLater()
+
+
+def test_size_names_say_what_they_are():
+    from src.modules.visualization import publication_figure as pf
+    names = [n for n, w, h in pf.SIZES]
+    assert names[3:6] == ["A4 landscape, full page", "A4 portrait, full page",
+                          "A4 portrait, half page"]
+    assert not any('all of it' in n or 'its width' in n or 'sideways' in n for n in names)
+    sizes = dict((n, (w, h)) for n, w, h in pf.SIZES)
+    assert sizes["A4 portrait, full page"] == (18.0, 26.7)
+    assert sizes["A4 landscape, full page"] == (26.7, 18.0)
+    assert pf.size_text("A4 portrait, half page", 18.0, 13.5) == \
+        "A4 portrait, half page (18 cm wide \u00d7 13.5 cm high)"
+    assert pf.size_text("1 column", 8.5, None) == "1 column (8.5 cm wide)"

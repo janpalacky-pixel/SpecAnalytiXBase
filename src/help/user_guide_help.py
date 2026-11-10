@@ -2870,17 +2870,26 @@ def get_user_guide_help_content():
         <strong>Redo</strong> (also Ctrl+Z and Ctrl+Y) go back and forth through every change in
         the window, dragging included.</p>
         <ul>
-            <li><strong>Page</strong> &mdash; <em>Size</em>: a journal's column (1 column
-            8.5 cm, 1.5 columns 11.4 cm, 2 columns 17.5 cm; only the width changes), a page (A4
-            upright: its width, 18 &times; 13.5 cm; A4, A5 or Letter sideways: all of it), a
-            slide (16:9 or 4:3), or your own <em>Width</em> and <em>Height</em> in cm.
+            <li><strong>Page</strong> &mdash; <em>Size</em> (each shown as "&hellip; cm wide
+            &times; &hellip; cm high"; <em>portrait</em> = the page upright, <em>landscape</em> =
+            on its side, as in Word): at first <em>A4 landscape, full page</em> (26.7 cm wide
+            &times; 18 cm high: the plot fills an A4 sheet inside 1.5 cm margins); <em>A4
+            portrait, full page</em> (18 &times; 26.7 cm); <em>A4 portrait, half page</em> (18
+            &times; 13.5 cm: a plot in a report with text above or below it); A5 and Letter
+            landscape, full page; a journal's column (1 column 8.5 cm, 1.5 columns 11.4 cm, 2
+            columns 17.5 cm wide; only the width changes); a slide (16:9 or 4:3, full slide); or
+            your own <em>Width</em> and
+            <em>Height</em> in cm. This is the size of the <em>picture</em>; the paper it is
+            printed on is chosen in the Printing tab.
             <em>Resolution</em>: 300, 600 (most journals) or 1200 dpi for TIFF and PNG
-            (8.5 &times; 6.5 cm at 600 dpi: 2008 &times; 1535 pixels); PDF, SVG and EPS are sharp
+            (8.5 &times; 6.5 cm at 600 dpi: 2008 &times; 1535 pixels; the whole A4 page: 6307
+            &times; 4252 pixels); PDF, SVG and EPS are sharp
             at any size.</li>
             <li><strong>Text</strong> &mdash; <em>Font</em> (e.g. Arial, Helvetica or Times New
-            Roman &mdash; the fonts on your computer) and <em>Text size</em> for all text (7 pt at first; the
-            plot title 1 pt larger, the legend 1 pt smaller; journals usually ask for
-            6&ndash;9 pt, a page or a slide reads better with 12&ndash;16 pt). <em>Own
+            Roman &mdash; the fonts on your computer) and <em>Text size</em> for all text (12 pt at first, for the
+            A4 page; the plot title 1 pt larger, the legend 1 pt smaller; journals usually ask
+            for 6&ndash;9 pt &mdash; e.g. 7 pt with 1 column &mdash; a page or a slide reads better
+            with 12&ndash;16 pt). <em>Own
             sizes</em>: the axis titles, the numbers on the axes, the legend and the plot title
             can each have their own size (<em>automatic</em>: from Text size &mdash; the axis
             titles, numbers and labels get Text size); the labels' sizes are in the Labels
@@ -2938,9 +2947,12 @@ def get_user_guide_help_content():
             <em>values</em> of the first and last colour (the same range for several pictures
             makes them comparable), and the <em>colour bar title</em>.</li>
             <li><strong>Printing</strong> &mdash; <em>On paper</em>: Fit to page (as large as the
-            page lets it, the text grows with it) or Actual size (its size in cm, as in the
-            journal); <em>Page</em>: automatic (sideways for a wide picture with Fit to page),
-            upright (portrait) or sideways (landscape); <em>Position</em>: centre of the page or
+            paper lets it, the text grows with it &mdash; so the print preview looks much the
+            same whatever the Size) or Actual size (its size in cm, as in the journal, e.g. an
+            8.5 cm picture 8.5 cm wide on the paper); <em>Paper</em>: A4 (at first), A5, A3 or
+            Letter (the printer window can still change it); <em>Page</em>: automatic
+            (landscape for a picture wider than tall with Fit to page), portrait or landscape
+            (also this can be changed in the printer's window, Orientation); <em>Position</em>: centre of the page or
             top left; <em>Grey</em>: in shades of grey, to see whether the lines can still be
             told apart in a black-and-white copy (the preview turns grey too; a saved file stays
             in colour); <em>Caption</em>: a line of text under the picture (not in the saved
@@ -2967,17 +2979,18 @@ def get_user_guide_help_content():
         is opened while the program runs &mdash; not what belongs to one plot (its titles, ranges, the table of
         spectra), and not after the program is closed: each start of the program begins
         <em>as in the plot</em>; what you want to keep longer, save as a profile. <strong>Restore defaults</strong>
-        puts everything back: all choices of all tabs (1 column, 8.5 &times; 6.5 cm, 7 pt, 600 dpi,
+        puts everything back: all choices of all tabs (A4 landscape, full page: 26.7 &times; 18 cm, 12 pt, 600 dpi,
         everything else as in the plot), the table of spectra, dragged legends, titles and labels,
         the caption, and the look of your labels (8 pt, black, not turned, not bold &mdash; their
         texts and places stay); <strong>Undo</strong> takes it back. The window can be maximized
         (not minimized).</p>
         <p><strong>Preview</strong>: <em>Fit the window</em> shows the whole picture as large as
         the window lets it (maximize the window for a larger one) &mdash; the text grows with it,
-        so it looks as it will on paper; <em>Real size</em> shows it about as large as in the
-        paper. <strong>Save&hellip;</strong> asks for the file and its kind (TIFF, PNG, PDF, SVG,
+        so it looks as it will on paper; <em>Real size</em> shows it about as large as on the
+        paper (measured from the screen's real size, also with Windows' display scaling, e.g.
+        150 %; hold a ruler to the screen to check it). <strong>Save&hellip;</strong> asks for the file and its kind (TIFF, PNG, PDF, SVG,
         EPS). <strong>Print preview&hellip;</strong> shows the page first (the paper &mdash; A4,
-        Letter, &hellip; &mdash; upright or sideways, then Print); <strong>Print&hellip;</strong>
+        Letter, &hellip; &mdash; portrait or landscape, then Print); <strong>Print&hellip;</strong>
         goes straight to the printer window (also Microsoft Print to PDF).</p>
         <p>The Save icon in the toolbar under the plot saves the plot just as it is on the
         screen (its size in the window). <strong>Open in New Window</strong> (right-click on

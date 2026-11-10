@@ -16,19 +16,37 @@ CM = 1 / 2.54                                   # inches per cm
 # Sizes (cm): a journal's columns (most journals: 8.3-9 cm, 11-14 cm,
 # 17-18 cm; the height is kept), a page (inside margins of about 1.5 cm)
 # and a slide.
+# portrait / landscape as in Word and the printer's window; "full page": all
+# of the page inside 1.5 cm margins; "half page": that width, about half its
+# height (a plot in a report or a thesis). Shown as (W cm wide × H cm high).
 SIZES = (("1 column", 8.5, None), ("1.5 columns", 11.4, None), ("2 columns", 17.5, None),
-         ("A4 page, upright (its width)", 18.0, 13.5),
-         ("A4 page, sideways (all of it)", 26.7, 18.0),
-         ("A5 page, sideways (all of it)", 18.0, 11.8),
-         ("Letter page, sideways (all of it)", 25.4, 18.6),
-         ("Slide 16:9 (all of it)", 33.9, 19.1),
-         ("Slide 4:3 (all of it)", 25.4, 19.1))
+         ("A4 landscape, full page", 26.7, 18.0),
+         ("A4 portrait, full page", 18.0, 26.7),
+         ("A4 portrait, half page", 18.0, 13.5),
+         ("A5 landscape, full page", 18.0, 11.8),
+         ("Letter landscape, full page", 25.4, 18.6),
+         ("Slide 16:9, full slide", 33.9, 19.1),
+         ("Slide 4:3, full slide", 25.4, 19.1))
+
+
+def size_text(name, width, height):
+    """How a size is shown: "A4 landscape, full page (26.7 cm wide × 18 cm
+    high)"; a column: "1 column (8.5 cm wide)"."""
+    if height is None:
+        return f"{name} ({width:g} cm wide)"
+    return f"{name} ({width:g} cm wide \u00d7 {height:g} cm high)"
+# the paper for printing (Printing tab): A4 unless another is chosen
+PAPERS = (('A4', "A4 (21 × 29.7 cm)"), ('A5', "A5 (14.8 × 21 cm)"), ('A3', "A3 (29.7 × 42 cm)"),
+          ('Letter', "Letter (21.6 × 27.9 cm)"))
 COLUMNS = tuple((name, w) for name, w, h in SIZES[:3])
 DPI_CHOICES = (300, 600, 1200)
 FORMATS = (("TIFF", "tif"), ("PNG", "png"), ("PDF", "pdf"), ("SVG", "svg"), ("EPS", "eps"))
-DEFAULTS = {'width_cm': 8.5, 'height_cm': 6.5, 'dpi': 600, 'font_pt': 7.0, 'line_pt': 1.0,
+# at first: A4 landscape, full page (the user's wish 11-10: a plot printed or
+# saved fills an A4 sheet), with text that reads well on a page; a journal's
+# column is one choice away (Size: 1 column, Text size 7 pt) or a profile
+DEFAULTS = {'width_cm': 26.7, 'height_cm': 18.0, 'dpi': 600, 'font_pt': 12.0, 'line_pt': 1.0,
             'legend': 'best', 'legend_place': 'inside', 'short_names': True,
-            'print_fit': True, 'print_centre': True, 'print_grey': False,
+            'print_fit': True, 'print_centre': True, 'print_grey': False, 'paper': 'A4',
             'print_orientation': 'auto', 'preview_fit': True}
 
 # Where the legend goes; with 'inside' / 'outside' the plot (Best place:

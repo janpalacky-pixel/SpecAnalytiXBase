@@ -570,8 +570,7 @@ class PublicationDialog(QDialog):
         form = QFormLayout()
         self.column_combo = QComboBox()
         for name, width, height in pf.SIZES:
-            size = f"{width:g} cm" if height is None else f"{width:g} × {height:g} cm"
-            self.column_combo.addItem(f"{name} ({size})", (width, height))
+            self.column_combo.addItem(pf.size_text(name, width, height), (width, height))
         self.column_combo.addItem("own size", None)
         self.column_combo.setToolTip("Size: of the picture - see the orange ? for the choices.")
         self.column_combo.currentIndexChanged.connect(lambda *_: self._column_chosen())
@@ -579,11 +578,20 @@ class PublicationDialog(QDialog):
             "<b>1 column (8.5 cm), 1.5 columns (11.4 cm), 2 columns (17.5 cm)</b>: the usual "
             "widths of a picture in a journal - across one column, one and a half, or the "
             "whole width of the page. Only the width changes; the height stays.<br><br>"
-            "<b>A4 page, upright (its width)</b>: 18 × 13.5 cm - as wide as an upright A4 "
-            "page with 1.5 cm margins (a report, a thesis).<br>"
-            "<b>A4 / A5 / Letter page, sideways (all of it)</b>: the whole sideways page "
-            "inside 1.5 cm margins.<br>"
-            "<b>Slide 16:9 / 4:3 (all of it)</b>: a whole PowerPoint slide.<br>"
+            "<b>Portrait</b>: the page standing upright (taller than wide); "
+            "<b>landscape</b>: lying on its side (wider than tall) - as in Word and the "
+            "printer's window.<br>"
+            "<b>A4 landscape, full page</b> (at first): 26.7 cm wide × 18 cm high - all of a "
+            "landscape A4 sheet inside 1.5 cm margins (29.7 - 3 = 26.7, 21 - 3 = 18).<br>"
+            "<b>A4 portrait, full page</b>: 18 cm wide × 26.7 cm high - all of a portrait "
+            "A4 sheet.<br>"
+            "<b>A4 portrait, half page</b>: 18 cm wide × 13.5 cm high - the width of a "
+            "portrait A4 sheet, half its height (a plot in a report or a thesis, with text "
+            "above or below it).<br>"
+            "<b>A5 / Letter landscape, full page</b>: all of that sheet, likewise.<br>"
+            "<b>Slide 16:9 / 4:3, full slide</b>: a whole PowerPoint slide.<br>"
+            "This is the size of the <i>picture</i>; the paper it is printed on is chosen in "
+            "the Printing tab (A4 at first).<br>"
             "<b>own size</b>: shown when Width or Height are typed.<br><br>"
             "For a page or a slide a larger Text size (e.g. 12-16 pt) reads better.")),
             stretch=False))
@@ -992,9 +1000,9 @@ class PublicationDialog(QDialog):
         self.c_min_edit, self.c_max_edit = lo, hi
         form.addRow("Values from:", self._row(lo, QLabel("to"), hi, self._ask(
             "Colour range", (
-                "<b>Values from … to</b>: the values shown by the first and the last colour "
-                "of the colour map. Lower values get the first colour, higher ones the "
-                "last.<br>Empty: as in the plot (from the lowest to the highest value).<br>"
+                "<b>Values from … to</b>: the values of the first and the last colour.<br>"
+                "Lower values get the first colour, higher ones the last.<br>"
+                "Empty: as in the plot (from the lowest to the highest value).<br>"
                 "Use the same range for several pictures to compare them.")), stretch=False))
         self.cbar_edit = self._bind('cbar_label', RichTextButton(title="Colour bar title"),
                                     'text')
@@ -1009,21 +1017,27 @@ class PublicationDialog(QDialog):
                                       (False, "Actual size (Width × Height)")], 'print_fit')
         self.fit_combo.setToolTip("On paper: how large the picture is printed (see the ?).")
         form.addRow("On paper:", self._row(self.fit_combo, self._ask("Printing", (
-            "<b>On paper</b>: <i>Fit to page</i> - as large as the page lets it (the text "
-            "grows with it); <i>Actual size</i> - its size in cm, as it will be in the "
-            "journal.<br><b>Page</b>: <i>automatic</i> - sideways for a wide picture with "
-            "Fit to page; or always <i>upright</i> (portrait) / <i>sideways</i> "
-            "(landscape).<br><b>Position</b>: centre of the page or top left.<br>"
+            "<b>On paper</b>: <i>Fit to page</i> - as large as the paper lets it (the text "
+            "grows with it), so the print preview looks much the same for every Size; "
+            "<i>Actual size</i> - its size in cm (Page tab), as it will be in the journal, "
+            "e.g. 8.5 cm wide on A4.<br><b>Paper</b>: A4 at first; A5, A3, Letter.<br>"
+            "<b>Page</b>: <i>automatic</i> - landscape for a picture wider than tall "
+            "with Fit to page; or always <i>portrait</i> / <i>landscape</i>. The printer's "
+            "window can still change it (Orientation).<br><b>Position</b>: centre of the page or top left.<br>"
             "<b>Grey</b>: in shades of grey - to see whether the lines can still be told "
             "apart in a black-and-white copy.<br><b>Caption</b>: a line of text under the "
             "picture (not in the saved file).<br><br><b>Print preview…</b> shows the page "
-            "first (paper, upright / sideways, then Print); <b>Print…</b> goes straight to "
+            "first (paper, portrait / landscape, then Print); <b>Print…</b> goes straight to "
             "the printer window (also Microsoft Print to PDF).")), stretch=False))
+        self.paper_combo = self._combo(list(pf.PAPERS), 'paper')
+        self.paper_combo.setToolTip("Paper: the paper the picture is printed on (A4 at first).\n"
+                                    "The printer window can still change it.")
+        form.addRow("Paper:", self.paper_combo)
         self.orientation_combo = self._combo([('auto', "automatic"),
-                                              ('portrait', "upright (portrait)"),
-                                              ('landscape', "sideways (landscape)")],
+                                              ('portrait', "portrait (upright)"),
+                                              ('landscape', "landscape (on its side)")],
                                              'print_orientation')
-        self.orientation_combo.setToolTip("Page: upright or sideways (automatic: sideways for\n"
+        self.orientation_combo.setToolTip("Page: portrait or landscape (automatic: landscape for\n"
                                           "a wide picture with Fit to page).")
         form.addRow("Page:", self.orientation_combo)
         self.centre_combo = self._combo([(True, "Centre of the page"), (False, "Top left")],
@@ -1057,7 +1071,7 @@ class PublicationDialog(QDialog):
         self.preview_button.setAutoDefault(False)
         self.preview_button.setToolTip(
             "Print preview: the printed page, before printing - there the paper\n"
-            "(A4, Letter ...), upright or sideways, and then Print.")
+            "(A4, Letter ...), portrait or landscape, and then Print.")
         self.preview_button.clicked.connect(lambda: self.print_preview())
         self.print_button = QPushButton("Print…")
         self.print_button.setIcon(icons.standard('SP_FileDialogDetailedView', self))
@@ -1070,7 +1084,8 @@ class PublicationDialog(QDialog):
         self.defaults_button.setAutoDefault(False)
         self.defaults_button.setToolTip(
             "Restore defaults: all choices back as they were at first\n"
-            "(1 column 8.5 × 6.5 cm, 7 pt, 600 dpi, everything else as in the plot;\n"
+            "(A4 landscape, full page: 26.7 cm wide × 18 cm high, 12 pt, 600 dpi,\n"
+            "everything else as in the plot;\n"
             "your labels: 8 pt, black, not turned, not bold - their texts and places stay).\n"
             "Undo takes it back.")
         self.defaults_button.clicked.connect(lambda: self.restore_defaults())
@@ -1556,9 +1571,29 @@ class PublicationDialog(QDialog):
         if self.zoom_combo.currentData():
             self._timer.start()
 
+    def _real_dpi(self):
+        """The window's pixels in one real inch of the screen, for Real size:
+        from the screen's physical size (its dots per inch divided by the
+        display scaling, e.g. 150 %) - Windows' "logical" 96 dpi is the same
+        on every screen, so on a fine laptop screen the picture was about
+        half as large as on paper. A screen that reports no sensible size
+        (some projectors, TVs): the logical value."""
+        logical = float(self.logicalDpiX() or 96)
+        try:
+            screen = self.screen() if hasattr(self, 'screen') else None
+            if screen is None:
+                from PyQt5.QtWidgets import QApplication
+                screen = QApplication.primaryScreen()
+            physical = float(screen.physicalDotsPerInchX())
+            ratio = float(self.devicePixelRatioF() or 1.0)
+        except Exception:
+            return logical
+        real = physical / ratio
+        return real if 40.0 <= real <= 400.0 else logical
+
     def _preview_dpi(self):
         s = self.settings()
-        real = self.logicalDpiX() or 96
+        real = self._real_dpi()
         if not s['preview_fit']:
             return real
         view = self.scroll.viewport().size()
@@ -1616,6 +1651,10 @@ class PublicationDialog(QDialog):
         s = self.settings()
         with crash_watch_paused():                # asking Windows about printers
             printer = QPrinter(QPrinter.HighResolution)
+            from PyQt5.QtGui import QPageSize
+            paper = {'A4': QPageSize.A4, 'A5': QPageSize.A5, 'A3': QPageSize.A3,
+                     'Letter': QPageSize.Letter}.get(s.get('paper') or 'A4', QPageSize.A4)
+            printer.setPageSize(QPageSize(paper))     # A4 unless another is chosen
             if s['print_orientation'] in ('portrait', 'landscape'):
                 wide = s['print_orientation'] == 'landscape'
             elif s['print_fit']:
@@ -1676,7 +1715,7 @@ class PublicationDialog(QDialog):
         return ok
 
     def print_preview(self, run=True):
-        """The print preview (paper, upright / sideways, Print). Returns the
+        """The print preview (paper, portrait / landscape, Print). Returns the
         preview window."""
         from PyQt5.QtPrintSupport import QPrintPreviewDialog
         from src.modules.utils.app_logger import crash_watch_paused
