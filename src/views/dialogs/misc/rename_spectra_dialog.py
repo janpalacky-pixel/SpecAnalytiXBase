@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import (QDialog, QTableWidget, QTableWidgetItem, QVBoxLayou
                             QShortcut)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
+
+from src.views.table_sorting import sorting_paused
 from src.views.dialogs.misc.spectra_selection_dialog import SpectraSelectionDialog
 from src.modules.utils.app_logger import get_logger
 
@@ -160,21 +162,25 @@ class RenameSpectraDialog(QDialog):
             lines = [ln for ln in text.replace('\r', '').split('\n') if ln != '']
             selected_rows = sorted(it.row() for it in table.selectedItems())
             start_row = selected_rows[0] if selected_rows else max(table.currentRow(), 0)
-            for i, line in enumerate(lines):
-                row = start_row + i
-                if row >= table.rowCount():
-                    break
-                # Spreadsheets paste multi-column selections tab-separated;
-                # take the first token as the new label.
-                token = line.split('\t')[0].strip()
-                table.setItem(row, 1, QTableWidgetItem(token))
+            # sorted by New Label: the rows must not move while pasting
+            # (see src/views/table_sorting.py)
+            with sorting_paused(table):
+                for i, line in enumerate(lines):
+                    row = start_row + i
+                    if row >= table.rowCount():
+                        break
+                    # Spreadsheets paste multi-column selections tab-separated;
+                    # take the first token as the new label.
+                    token = line.split('\t')[0].strip()
+                    table.setItem(row, 1, QTableWidgetItem(token))
         QShortcut(QKeySequence.Paste, table).activated.connect(do_paste)
 
         # Clear all selected New Label cells at once.
         def do_delete():
-            for it in table.selectedItems():
-                if it.column() == 1:
-                    it.setText("")
+            with sorting_paused(table):
+                for it in table.selectedItems():
+                    if it.column() == 1:
+                        it.setText("")
         QShortcut(QKeySequence.Delete, table).activated.connect(do_delete)
 
         # Cut = copy then clear, same as Excel/Word.
@@ -269,17 +275,19 @@ class RenameSpectraDialog(QDialog):
         """Add a prefix to selected items"""
         prefix, ok = QInputDialog.getText(self, "Add Prefix", "Enter prefix to add:")
         if ok and prefix:
-            for row in selected_rows:
-                current_text = self.table.item(row, 1).text()
-                self.table.item(row, 1).setText(prefix + current_text)
+            with sorting_paused(self.table):       # rows stay put (table_sorting.py)
+                for row in selected_rows:
+                    current_text = self.table.item(row, 1).text()
+                    self.table.item(row, 1).setText(prefix + current_text)
     
     def add_suffix(self, selected_rows):
         """Add a suffix to selected items"""
         suffix, ok = QInputDialog.getText(self, "Add Suffix", "Enter suffix to add:")
         if ok and suffix:
-            for row in selected_rows:
-                current_text = self.table.item(row, 1).text()
-                self.table.item(row, 1).setText(current_text + suffix)
+            with sorting_paused(self.table):       # rows stay put (table_sorting.py)
+                for row in selected_rows:
+                    current_text = self.table.item(row, 1).text()
+                    self.table.item(row, 1).setText(current_text + suffix)
     
     def sequential_rename(self, selected_rows):
         """Rename items sequentially using a pattern"""
@@ -327,11 +335,12 @@ class RenameSpectraDialog(QDialog):
             return
         
         # Apply sequential numbering
-        for i, row in enumerate(sorted_rows):
-            num = start_num + i
-            num_str = str(num).zfill(padding)
-            new_name = pattern.replace('#', num_str)
-            self.table.item(row, 1).setText(new_name)
+        with sorting_paused(self.table):           # numbered in the order shown
+            for i, row in enumerate(sorted_rows):
+                num = start_num + i
+                num_str = str(num).zfill(padding)
+                new_name = pattern.replace('#', num_str)
+                self.table.item(row, 1).setText(new_name)
     
     def replace_text(self, selected_rows):
         """Replace text in selected items"""
@@ -344,12 +353,13 @@ class RenameSpectraDialog(QDialog):
             return
         
         replacements_made = 0
-        for row in selected_rows:
-            current_text = self.table.item(row, 1).text()
-            if find_text in current_text:
-                new_text = current_text.replace(find_text, replace_text)
-                self.table.item(row, 1).setText(new_text)
-                replacements_made += 1
+        with sorting_paused(self.table):           # rows stay put (table_sorting.py)
+            for row in selected_rows:
+                current_text = self.table.item(row, 1).text()
+                if find_text in current_text:
+                    new_text = current_text.replace(find_text, replace_text)
+                    self.table.item(row, 1).setText(new_text)
+                    replacements_made += 1
         
         if replacements_made == 0:
             QMessageBox.information(

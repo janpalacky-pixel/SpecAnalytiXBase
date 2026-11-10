@@ -8,6 +8,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 from src.modules.misc import spectrum_properties as sp
@@ -199,3 +200,139 @@ def test_kept_in_snapshots(mc, monkeypatch, tmp_path):
     assert sorted(s['metadata']['concentration_mM'] for s in mc.original_spectra)[:2] == [0.5, 1.0]
     assert mc.operations_controller.operations_manager.operations_chain[-1]['type'] == \
         'Spectrum properties'
+
+
+def test_like_a_spreadsheet(monkeypatch):
+    """Ctrl+C / Ctrl+X / Ctrl+V (one value into all selected cells, a block
+    from the top-left selected cell), Delete, Ctrl+D (fill down), Ctrl+Z,
+    the right-click menu; sorting does not move rows while pasting."""
+    from PyQt5.QtWidgets import QMenu, QTableWidgetSelectionRange as Range
+    spectra = [{'label': f's{i}', 'metadata': {}} for i in range(1, 6)]
+    calls = []
+    dlg = _window(spectra, calls)
+    dlg.add_property('pH')
+    dlg.add_property('conc')
+    t = dlg.table
+    clip = QApplication.clipboard()
+
+    def select(r0, c0, r1, c1):
+        t.clearSelection()
+        t.setRangeSelected(Range(r0, c0, r1, c1), True)
+    # one copied value into all five selected pH cells
+    clip.setText('7.4')
+    select(0, 1, 4, 1)
+    assert dlg.paste() == 5
+    assert [t.item(r, 1).text() for r in range(5)] == ['7.4'] * 5
+    # a block of two columns from Excel, from the top-left selected cell
+    clip.setText('1\t10\n2\t20\n')
+    select(1, 1, 1, 1)
+    dlg.paste()
+    assert [t.item(r, 1).text() for r in range(4)] == ['7.4', '1', '2', '7.4']
+    assert [t.item(r, 2).text() for r in range(4)] == ['', '10', '20', '']
+    # Ctrl+D: the top selected value down
+    select(1, 2, 4, 2)
+    assert dlg.fill_down() == 3
+    assert [t.item(r, 2).text() for r in range(5)] == ['', '10', '10', '10', '10']
+    # Ctrl+C: a block (tabs, lines)
+    select(1, 1, 2, 2)
+    assert dlg.copy_cells() == '1\t10\n2\t10'
+    # Ctrl+X: copied and emptied
+    dlg.cut_cells()
+    assert clip.text() == '1\t10\n2\t10'
+    assert [t.item(r, 1).text() for r in (1, 2)] == ['', '']
+    # Ctrl+Z: back step by step
+    assert dlg.undo()
+    assert [t.item(r, 1).text() for r in (1, 2)] == ['1', '2']
+    dlg.undo()                                                     # the fill down
+    assert t.item(4, 2).text() == ''
+    # a typed value is undone too
+    t.item(0, 2).setText('5')
+    dlg.undo()
+    assert t.item(0, 2).text() == ''
+    # pasting into a sorted column keeps the rows where they are
+    t.sortItems(1)
+    names = [t.item(r, 0).text() for r in range(5)]
+    clip.setText('0')
+    select(0, 1, 4, 1)
+    dlg.paste()
+    assert [t.item(r, 0).text() for r in range(5)] == names
+    # the right-click menu has the same
+    shown = []
+    monkeypatch.setattr(QMenu, 'exec_', lambda m, *a: shown.append(
+        [a.text().split('\t')[0] for a in m.actions() if a.text()]))
+    dlg._table_menu(t.visualItemRect(t.item(0, 1)).center())
+    assert shown[0] == ['Copy', 'Cut', 'Paste', 'Delete', 'Fill down', 'Undo']
+    dlg.apply_button.setEnabled(False)
+    dlg.close()
+
+
+def test_remove_property_takes_the_column_away(monkeypatch):
+    """Remove property: the column goes at once; Apply removes the values
+    from the spectra; Ctrl+Z brings the column back before that."""
+    monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: QMessageBox.Yes))
+    spectra = [{'label': 's1', 'metadata': {'pH': 7.0, 'T': 20.0}},
+               {'label': 's2', 'metadata': {'pH': 8.0, 'T': 30.0}}]
+    calls = []
+    dlg = _window(spectra, calls)
+    assert dlg.keys == ['pH', 'T']
+    dlg.table.setCurrentCell(0, 1)                                 # pH
+    assert dlg.remove_property()
+    assert dlg.keys == ['T'] and dlg.table.columnCount() == 2
+    assert dlg.table.horizontalHeaderItem(1).text() == 'T'
+    assert dlg.apply_button.isEnabled()
+    assert dlg.undo()                                              # back again
+    assert dlg.keys == ['pH', 'T'] and dlg.table.item(0, 1).text() == '7'
+    dlg.table.setCurrentCell(0, 1)
+    dlg.remove_property()
+    assert dlg.apply()
+    assert calls and all(v['pH'] is None and v['T'] is not None for v in calls[-1])
+    assert 'pH' not in dlg.spectra[0]['metadata'] and not dlg.apply_button.isEnabled()
+    dlg.close()
+
+
+def test_delete_in_a_sorted_table_clears_all_and_keeps_the_alignment():
+    """Delete with the table sorted by the column: every selected cell is
+    emptied (the rows used to move under it); a value typed into a cleared
+    cell is right-aligned and sorted as a number like the others."""
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QTableWidgetSelectionRange as Range
+    spectra = [{'label': f's{i}', 'metadata': {'T': float(t)}}
+               for i, t in enumerate((88, 15, 74.88, 60, 74.78, 74.78, 20))]
+    dlg = _window(spectra)
+    t = dlg.table
+    t.sortItems(1)                                                 # sorted by T (empty cells go last)
+    t.clearSelection()
+    t.setRangeSelected(Range(0, 1, 4, 1), True)                    # 5 of the 7 cells
+    chosen = {t.item(r, 0).text() for r in range(5)}
+    assert dlg.clear_cells() == 5
+    texts = [t.item(r, 1).text() for r in range(7)]
+    assert texts.count('') == 5
+    assert {t.item(r, 0).text() for r in range(7) if t.item(r, 1).text() == ''} == chosen
+    for r in range(7):
+        item = t.item(r, 1)
+        assert int(item.textAlignment()) & int(Qt.AlignRight)
+    empty = next(r for r in range(7) if t.item(r, 1).text() == '')
+    t.item(empty, 1).setText('9')                                  # typed in
+    row = next(r for r in range(7) if t.item(r, 1).text() == '9')
+    assert int(t.item(row, 1).textAlignment()) & int(Qt.AlignRight)
+    numbers = [float(t.item(r, 1).text()) for r in range(7) if t.item(r, 1).text()]
+    assert numbers == sorted(numbers)                              # 9 among the numbers
+    dlg.apply_button.setEnabled(False)
+    dlg.close()
+
+
+def test_headings_are_centred_not_right_aligned():
+    """The value cells are right-aligned (the item prototype); the headings
+    must not copy that, also after a property is added."""
+    spectra = [{'label': 's1', 'metadata': {'pH': 7.0}},
+               {'label': 's2', 'metadata': {'pH': 8.0}}]
+    dlg = _window(spectra)
+
+    def right(c):
+        a = dlg.table.horizontalHeaderItem(c).textAlignment()
+        return bool(int(a) & int(Qt.AlignRight))
+    assert not right(0) and not right(1)
+    assert dlg.table.item(0, 1).textAlignment() & int(Qt.AlignRight)
+    dlg.add_property('T')
+    assert not any(right(c) for c in range(dlg.table.columnCount()))
+    dlg.close()

@@ -615,9 +615,14 @@ class MeltingCurveDialog(QDialog):
         guessed default — an empty cell is an obvious, unambiguous
         "needs a value" state: the orange note under the table names it and
         no curve is drawn until it is filled in (_read_temperatures)."""
+        from src.views.table_sorting import sorting_paused
         self._suppress_auto_update = True
-        for r, c in self._selected_temp_cells():
-            self.temps_table.setItem(r, c, QTableWidgetItem(""))
+        # sorted by X or Signal: the rows must not move while clearing
+        # (src/views/table_sorting.py; _fill_curve_data_from does the same)
+        cells = self._selected_temp_cells()
+        with sorting_paused(self.temps_table):
+            for r, c in cells:
+                self.temps_table.setItem(r, c, QTableWidgetItem(""))
         self._suppress_auto_update = False
         self._auto_update_curve()
 

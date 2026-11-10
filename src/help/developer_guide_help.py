@@ -2896,6 +2896,25 @@ for j in np.flatnonzero(needs_nnls):      # only the columns that actually need 
             cannot catch it at all).
         </div>
 
+        <h2 id="sorted-tables">Writing Into a Sortable Table: Pause the Sorting</h2>
+        <div class="rule">
+            <strong>A table with <code>setSortingEnabled(True)</code> that is sorted by a column
+            (the user clicked its heading) is sorted again by Qt after EVERY changed cell of
+            that column.</strong> A loop that writes row by row &mdash; paste, Delete, Cut,
+            fill down, add a prefix / suffix, sequential numbers, replace, refill &mdash;
+            then has the rows moving under it: values land in the wrong rows and some
+            selected cells are never reached (an emptied cell jumps to the top or the
+            bottom). Every such loop runs inside
+            <code>with sorting_paused(table):</code> (<code>src/views/table_sorting.py</code>);
+            the table is sorted once, at the end. A table filled right after it is made (no
+            heading clicked yet) is not affected; one that can be refilled after a click
+            must pause too (most result tables do it with
+            <code>setSortingEnabled(False)</code> around the fill). Found 11-09 in Spectrum
+            properties (Delete), Rename spectra (paste, prefix, suffix, sequential, replace)
+            and Melting curve (Delete / Cut of the temperature table); tests:
+            <code>tests/test_table_sorting.py</code> (they fail when the pause is removed).
+        </div>
+
         <h2 id="deepcopy-pitfall">Avoid <code>copy.deepcopy()</code> on Spectrum Dicts</h2>
 
         <div class="rule">

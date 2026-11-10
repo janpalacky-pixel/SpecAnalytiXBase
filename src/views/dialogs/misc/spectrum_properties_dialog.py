@@ -11,11 +11,12 @@ from PyQt5.QtGui import QBrush, QColor, QKeySequence
 from PyQt5.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
                              QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
                              QHBoxLayout,
-                             QHeaderView, QInputDialog, QLabel, QListWidget,
+                             QHeaderView, QInputDialog, QLabel, QListWidget, QMenu,
                              QMessageBox, QPushButton,
                              QShortcut, QTableWidget, QTableWidgetItem, QTextBrowser, QVBoxLayout)
 
 from src.modules.misc import spectrum_properties as sp
+from src.views.table_sorting import sorting_paused
 from src.modules.visualization import color_by_value as cbv
 from src.views import icons
 
@@ -29,10 +30,14 @@ the <i>Data table</i> (tab Values per spectrum, also in its formulas), the plot 
 property). Values read from the file (e.g. <code>temperature_C</code> of a JASCO
 temperature scan) are shown too and can be corrected.</p>
 <ul>
-<li><b>Type</b> a value into a cell (a decimal comma is fine). An empty cell = no value.
-<b>Delete</b> empties the selected cells.</li>
-<li><b>Paste</b> (Ctrl+V) a column copied from Excel: it fills the cells from the current one
-downward (several columns fill several properties).</li>
+<li><b>Type</b> a value into a cell (a decimal comma is fine). An empty cell = no value.</li>
+<li><b>Like a spreadsheet</b> (also with a right-click on the table): <b>Ctrl+C</b> copies the
+selected cells (e.g. into Excel), <b>Ctrl+X</b> cuts them, <b>Ctrl+V</b> pastes a block copied from
+Excel from the top-left selected cell (several columns fill several properties) &mdash; and
+<b>one</b> copied value pasted into several selected cells fills them all (select a column's cells,
+copy 7.4, Ctrl+V: all 7.4). <b>Ctrl+D</b> fills the top selected value down into the selected
+cells; <b>Delete</b> empties them; <b>Ctrl+Z</b> undoes the last change in this window (also a
+removed property).</li>
 <li><b>Add property&hellip;</b>: a new column. Type its name (completed from the suggestions), pick
 it with the &#9662; arrow of the field, or click it in the list (double-click adds it). It starts with
 a letter and has only letters, digits and _ (e.g. <code>concentration_mM</code>), so it also works
@@ -66,7 +71,8 @@ table: <a href="example:save">save a copy of the example table&hellip;</a> &midd
 The example contains on purpose a row <i>ghost_99</i> (no such spectrum), a cell <i>n.d.</i> (not a
 number) and a text column <i>note</i>, to show what is left out.</li>
 <li><b>Sort</b>: click a heading (values as numbers, empty cells last; names naturally).</li>
-<li><b>Remove property</b> empties its whole column (removed on Apply).</li>
+<li><b>Remove property</b> takes the current column away (from the spectra on Apply;
+Ctrl+Z brings it back here, Undo of the main window after Apply).</li>
 <li><b>Apply</b> stores the values. It is one step in the Operations History, so <b>Undo</b>
 takes it back; snapshots keep the values.</li>
 </ul>
@@ -194,8 +200,8 @@ class SpectrumPropertiesDialog(QDialog):
         top = QHBoxLayout()
         intro = QLabel("Numbers that belong to each spectrum – temperature, pH, concentration, "
                        "time… They are used by Colours by value, the Data table, the Peak list plot, "
-                       "Melting Curve Analysis and Group Statistics. Type, paste (Ctrl+V) or fill "
-                       "them; an empty cell = no value.")
+                       "Melting Curve Analysis and Group Statistics. Type, paste (Ctrl+V), fill them "
+                       "(Ctrl+D fills down) or right-click the table; an empty cell = no value.")
         intro.setWordWrap(True)
         top.addWidget(intro, 1)
         self.help_button = icons.help_button("How to set the properties")
@@ -207,7 +213,8 @@ class SpectrumPropertiesDialog(QDialog):
         self.add_button = QPushButton("Add property…")
         self.add_button.clicked.connect(lambda: self.add_property())   # not clicked(False) as an argument
         self.remove_button = QPushButton("Remove property")
-        self.remove_button.setToolTip("Empty the whole current column (removed on Apply)")
+        self.remove_button.setToolTip("Remove property: the current column (from the spectra "
+                                      "on Apply; Ctrl+Z brings it back)")
         self.remove_button.clicked.connect(self.remove_property)
         self.name_button = QPushButton("Fill from the names…")
         self.name_button.setToolTip("A number written in the names, e.g. 45 from TBA_45C")
@@ -230,6 +237,9 @@ class SpectrumPropertiesDialog(QDialog):
         self.keys = sp.property_keys(self.spectra)
         self.table = QTableWidget(n, 1 + len(self.keys))
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        prototype = _ValueItem('')               # a cell typed into without an item:
+        prototype.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))   # as the others
+        self.table.setItemPrototype(prototype)
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.table.horizontalHeader().resizeSection(0, 340)
@@ -244,8 +254,19 @@ class SpectrumPropertiesDialog(QDialog):
         self._set_headers()
         self.table.itemChanged.connect(self._changed)
         layout.addWidget(self.table, 1)
+        # like a spreadsheet: copy, cut, paste, delete, fill down, undo
+        QShortcut(QKeySequence.Copy, self.table, activated=self.copy_cells)
+        QShortcut(QKeySequence.Cut, self.table, activated=self.cut_cells)
         QShortcut(QKeySequence.Paste, self.table, activated=self.paste)
         QShortcut(QKeySequence.Delete, self.table, activated=self.clear_cells)
+        QShortcut(QKeySequence("Ctrl+D"), self.table, activated=self.fill_down)
+        QShortcut(QKeySequence.Undo, self.table, activated=self.undo)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._table_menu)
+        self.removed = []                # properties taken away (from the spectra on Apply)
+        self._undo = []
+        self._state = None
+        self._recorded = False
 
         self.summary = QLabel("")
         self.summary.setWordWrap(True)
@@ -262,7 +283,10 @@ class SpectrumPropertiesDialog(QDialog):
 
     # -- the table
     def _set_headers(self):
-        self.table.setHorizontalHeaderLabels(["Spectrum"] + self.keys)
+        # own items: setHorizontalHeaderLabels would copy the item prototype,
+        # whose right alignment is meant for the value cells only
+        for c, text in enumerate(["Spectrum"] + self.keys):
+            self.table.setHorizontalHeaderItem(c, QTableWidgetItem(text))
 
     def _row_spectrum(self, row):
         return int(self.table.item(row, 0).data(Qt.UserRole))
@@ -310,11 +334,67 @@ class SpectrumPropertiesDialog(QDialog):
                             item.setBackground(_BAD)
         finally:
             self.table.blockSignals(False)
+        for key in getattr(self, 'removed', []):
+            if key not in self.keys:
+                for v in values:
+                    v[key] = None
         return values, problems
+
+    # -- undo (Ctrl+Z): the whole table before each change
+    def _state_now(self):
+        texts = {}
+        for r in range(self.table.rowCount()):
+            i = self._row_spectrum(r)
+            for c, key in enumerate(self.keys, 1):
+                item = self.table.item(r, c)
+                texts[(i, key)] = item.text() if item is not None else ''
+        return (list(self.keys), list(self.removed), texts)
+
+    def _record(self):
+        """Keep the table for Ctrl+Z before a change by a tool."""
+        if getattr(self, '_undo', None) is None:
+            return
+        self._undo.append(self._state if self._state is not None else self._state_now())
+        del self._undo[:-50]
+        self._recorded = True
+
+    def undo(self):
+        """Ctrl+Z: the table as before the last change in this window."""
+        if not self._undo:
+            self.summary.setText("Nothing to undo in this window.")
+            return False
+        keys, removed, texts = self._undo.pop()
+        sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.keys, self.removed = list(keys), list(removed)
+            self.table.setColumnCount(1 + len(self.keys))
+            self._set_headers()
+            for r in range(self.table.rowCount()):
+                i = self._row_spectrum(r)
+                for c, key in enumerate(self.keys, 1):
+                    item = _ValueItem(texts.get((i, key), ''))
+                    item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                    self.table.setItem(r, c, item)
+        finally:
+            self.table.blockSignals(False)
+            self.table.setSortingEnabled(sorting)
+        self._state = None
+        self._recorded = True                       # not an undo step of its own
+        self._changed()
+        return True
 
     def _changed(self, *_):
         if not hasattr(self, 'apply_button'):             # still being built
             return []
+        if hasattr(self, '_undo'):
+            now = self._state_now()
+            if not self._recorded and self._state is not None and now != self._state:
+                self._undo.append(self._state)          # a typed change: undo-able too
+                del self._undo[:-50]
+            self._recorded = False
+            self._state = now
         values, problems = self.values()
         diff = sp.changes(self.spectra, values)
         self.apply_button.setEnabled(bool(diff) and not problems)
@@ -358,6 +438,9 @@ class SpectrumPropertiesDialog(QDialog):
         if problem:
             QMessageBox.warning(self, "Add property", problem)
             return None
+        self._record()
+        if name in getattr(self, 'removed', []):
+            self.removed.remove(name)              # taken away, now back (empty)
         self.keys.append(name)
         col = self.table.columnCount()
         self.table.insertColumn(col)
@@ -375,11 +458,19 @@ class SpectrumPropertiesDialog(QDialog):
             return False
         key = self.keys[col - 1]
         answer = QMessageBox.question(
-            self, "Remove property", f"Empty “{key}” for all {len(self.spectra)} spectra? "
-            "(It is removed on Apply; Undo brings it back.)")
+            self, "Remove property", f"Remove “{key}” from all {len(self.spectra)} spectra?\n\n"
+            "Its column goes now; the values are removed from the spectra on Apply. "
+            "Ctrl+Z brings it back here (after Apply: Undo in the main window).")
         if answer != QMessageBox.Yes:
             return False
-        self._fill_column(col, [None] * len(self.spectra))
+        self._record()
+        self.table.removeColumn(col)
+        del self.keys[col - 1]
+        if key not in self.removed:
+            self.removed.append(key)
+        self._set_headers()
+        self._changed()
+        self.summary.setText(f"Removed “{key}” – Apply removes it from the spectra.")
         return True
 
     def fill_from_names(self, number=None):
@@ -405,6 +496,7 @@ class SpectrumPropertiesDialog(QDialog):
                 return False
             number = choices[texts.index(text)][0]
         values = sp.from_name(spectra, number)
+        self._record()
         self._fill_column(col, values, rows)
         missing = sum(v is None for v in values)
         if missing:
@@ -437,6 +529,7 @@ class SpectrumPropertiesDialog(QDialog):
             if not dlg.exec_():
                 return False
             start, step = start_box.value(), step_box.value()
+        self._record()
         self._fill_column(col, sp.series(len(rows), start, step), rows)
         return True
 
@@ -456,6 +549,7 @@ class SpectrumPropertiesDialog(QDialog):
             QMessageBox.warning(self, "Fill from a file", f"The table could not be read:\n{exc}")
             return None
         result = sp.from_table(self.spectra, header, rows)
+        self._record()
         where = {self._row_spectrum(r): r for r in range(self.table.rowCount())}
         for key in result['keys']:
             if key not in self.keys:
@@ -484,44 +578,143 @@ class SpectrumPropertiesDialog(QDialog):
             QMessageBox.warning(self, "Fill from a file", report)
         return result
 
+    def _selected_value_cells(self):
+        """(row, column) of the selected value cells (not the names)."""
+        return sorted({(i.row(), i.column()) for i in self.table.selectedIndexes()
+                       if i.column() >= 1})
+
+    def _set_text(self, r, c, text):
+        item = _ValueItem(text)
+        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+        self.table.setItem(r, c, item)
+
+    def copy_cells(self):
+        """Ctrl+C: the selected cells as a block (tabs and lines), e.g. for
+        Excel."""
+        cells = sorted({(i.row(), i.column()) for i in self.table.selectedIndexes()})
+        if not cells:
+            return ''
+        rows = sorted({r for r, _ in cells})
+        cols = sorted({c for _, c in cells})
+        chosen = set(cells)
+        lines = []
+        for r in rows:
+            parts = []
+            for c in cols:
+                item = self.table.item(r, c) if (r, c) in chosen else None
+                parts.append(item.text() if item is not None else '')
+            lines.append('\t'.join(parts))
+        text = '\n'.join(lines)
+        QApplication.clipboard().setText(text)
+        return text
+
+    def cut_cells(self):
+        """Ctrl+X: copy, then empty the selected value cells."""
+        self.copy_cells()
+        self.clear_cells()
+
     def paste(self):
-        """Ctrl+V: a block copied from Excel fills the cells from the current
-        one down (and right, for several columns)."""
+        """Ctrl+V: a block copied from Excel fills the cells from the
+        top-left selected cell down (and right, for several columns); ONE
+        copied value pasted into several selected cells fills them all."""
         text = QApplication.clipboard().text()
         if not text.strip():
             return 0
         lines = [line for line in text.replace('\r', '').split('\n')]
         while lines and not lines[-1].strip():
             lines.pop()
-        r0 = max(self.table.currentRow(), 0)
-        c0 = self._current_column()
-        if c0 is None:
-            return 0
+        block = [line.split('\t') for line in lines]
+        cells = self._selected_value_cells()
+        sorting = self.table.isSortingEnabled()
+        paused = sorting_paused(self.table)          # rows stay where they are while pasting
+        paused.__enter__()
+        self._record()
         self.table.blockSignals(True)
         n = 0
         try:
-            for dr, line in enumerate(lines):
-                for dc, cell in enumerate(line.split('\t')):
-                    r, c = r0 + dr, c0 + dc
-                    if r < self.table.rowCount() and c < self.table.columnCount():
-                        item = _ValueItem(cell.strip())
-                        item.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
-                        self.table.setItem(r, c, item)
-                        n += 1
+            if len(block) == 1 and len(block[0]) == 1 and len(cells) > 1:
+                for r, c in cells:                  # one value into all selected cells
+                    self._set_text(r, c, block[0][0].strip())
+                    n += 1
+            else:
+                if cells:
+                    r0, c0 = min(r for r, _ in cells), min(c for _, c in cells)
+                else:
+                    r0, c0 = max(self.table.currentRow(), 0), self._current_column()
+                if c0 is None:
+                    return 0
+                for dr, row in enumerate(block):
+                    for dc, cell in enumerate(row):
+                        r, c = r0 + dr, c0 + dc
+                        if r < self.table.rowCount() and 1 <= c < self.table.columnCount():
+                            self._set_text(r, c, cell.strip())
+                            n += 1
         finally:
             self.table.blockSignals(False)
+            paused.__exit__(None, None, None)
         self._changed()
         return n
 
-    def clear_cells(self):
-        self.table.blockSignals(True)
-        try:
-            for index in self.table.selectedIndexes():
-                if index.column() >= 1:
-                    self.table.setItem(index.row(), index.column(), _ValueItem(''))
-        finally:
-            self.table.blockSignals(False)
+    def fill_down(self):
+        """Ctrl+D: in each selected column, the top selected value into all
+        selected cells below it."""
+        cells = self._selected_value_cells()
+        if not cells:
+            return 0
+        self._record()
+        n = 0
+        with sorting_paused(self.table):
+            self.table.blockSignals(True)
+            try:
+                for c in sorted({c for _, c in cells}):
+                    rows = sorted(r for r, cc in cells if cc == c)
+                    item = self.table.item(rows[0], c)
+                    text = item.text() if item is not None else ''
+                    for r in rows[1:]:
+                        self._set_text(r, c, text)
+                        n += 1
+            finally:
+                self.table.blockSignals(False)
         self._changed()
+        return n
+
+    def _table_menu(self, pos):
+        menu = QMenu(self.table)
+        has = bool(self.table.selectedIndexes())
+        values = bool(self._selected_value_cells())
+        for text, slot, ok in (("Copy\tCtrl+C", self.copy_cells, has),
+                               ("Cut\tCtrl+X", self.cut_cells, values),
+                               ("Paste\tCtrl+V", self.paste,
+                                bool(QApplication.clipboard().text().strip())),
+                               ("Delete\tDel", self.clear_cells, values),
+                               ("Fill down\tCtrl+D", self.fill_down, values),
+                               (None, None, None),
+                               ("Undo\tCtrl+Z", self.undo, bool(self._undo))):
+            if text is None:
+                menu.addSeparator()
+                continue
+            action = menu.addAction(text)
+            action.setEnabled(ok)
+            action.triggered.connect(lambda _c=False, f=slot: f())
+        menu.exec_(self.table.viewport().mapToGlobal(pos))
+
+    def clear_cells(self):
+        """Delete: empty the selected value cells (all of them: the table is
+        not re-sorted cell by cell meanwhile - it was, when sorted by a
+        column, and rows moved under the clearing)."""
+        cells = self._selected_value_cells()
+        if not cells:
+            return 0
+        self._record()
+        with sorting_paused(self.table):
+            self.table.blockSignals(True)
+            try:
+                for r, c in cells:
+                    self._set_text(r, c, '')        # right-aligned, sorted as a number
+            finally:
+                self.table.blockSignals(False)
+        self._changed()
+        return len(cells)
 
     # -- apply / close
     def apply(self):
@@ -532,6 +725,7 @@ class SpectrumPropertiesDialog(QDialog):
         if ok:
             for s, v in zip(self.spectra, values):        # what is stored now
                 sp.apply_to(s, v)
+            self.removed = [k for k in self.removed if k in self.keys]
             self._changed()
         self.summary.setText(message)
         return ok

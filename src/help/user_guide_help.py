@@ -663,15 +663,22 @@ def get_user_guide_help_content():
             <p class="caption">Spectrum properties: temperature_C read from a JASCO file, pH typed in.</p>
         </div>
         <ul>
-            <li><b>Type</b> a value into a cell (a decimal comma is fine); an empty cell means no value,
-                <b>Delete</b> empties the selected cells. <b>Ctrl+V</b> pastes a column copied from
-                Excel, from the current cell downward.</li>
+            <li><b>Type</b> a value into a cell (a decimal comma is fine); an empty cell means no
+                value.</li>
+            <li><b>Like a spreadsheet</b> (also with a right-click on the table): <b>Ctrl+C</b> copies
+                the selected cells, <b>Ctrl+X</b> cuts them, <b>Ctrl+V</b> pastes a block copied from
+                Excel from the top-left selected cell (several columns fill several properties);
+                <b>one</b> copied value pasted into several selected cells fills them all (e.g. 7.4 into
+                a whole column). <b>Ctrl+D</b> fills the top selected value down into the selected
+                cells, <b>Delete</b> empties them, <b>Ctrl+Z</b> undoes the last change in the
+                window.</li>
             <li><b>Add property&hellip;</b> makes a new column. A small window asks for its name:
                 type it (it is completed from the suggestions), pick it with the &#9662; arrow of the
                 field, or click it in the list of suggestions (a double-click adds it at once). The
                 name starts with a letter and has only letters, digits and _ (e.g.
                 <code>concentration_mM</code>), so it also works in formulas; what is wrong with a
-                name is shown at once. <b>Remove property</b> empties a whole column.</li>
+                name is shown at once. <b>Remove property</b> takes the current column away (from the
+                spectra on Apply; Ctrl+Z brings it back before that).</li>
             <li><b>Fill from the names&hellip;</b> takes a number written in the names (e.g. 45 from
                 <code>TBA_45C</code>); <b>Fill a series&hellip;</b> writes start, start + step, &hellip;
                 down the table (click a heading first to sort it). Both fill the selected rows of the
