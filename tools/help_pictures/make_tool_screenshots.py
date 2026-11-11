@@ -1278,6 +1278,45 @@ def part_map2d():
         shot(d, F, 'dialog_overview.png')
         shot(d, F, 'spectrum_panel.png', panel(), margin=4)
 
+        # right-click on the map: Save plot for publication / Print plot
+        try:
+            from PyQt5.QtWidgets import QMenu
+            grabbed = []
+
+            def grab_menu(menu, *where):
+                menu.popup(where[0] if where else QPoint(0, 0))
+                settle(0.3)
+                grabbed.append((menu.mapToGlobal(QPoint(0, 0)), menu.grab()))
+                menu.hide()
+                return None
+            canvas = d._map_canvas
+            at = canvas.mapTo(d, QPoint(150, 70))       # near the toolbar's button
+            old_exec, old_at = QMenu.exec_, QApplication.widgetAt
+            QMenu.exec_ = grab_menu
+            QApplication.widgetAt = staticmethod(lambda *a: canvas)
+            try:
+                d._show_right_panel_menu(at)
+            finally:
+                QMenu.exec_, QApplication.widgetAt = old_exec, old_at
+            if grabbed:
+                steady.park_mouse()
+                corner, pix = grabbed[0]
+                top_left = d.mapFromGlobal(corner)
+                menu_rect = QRect(top_left, pix.size())
+                # the map's toolbar (its Publication button after the floppy
+                # disk) and the menu below it
+                bar = rect_in(d, d._map_toolbar)
+                region = QRect(QPoint(bar.left() - 4, bar.top() - 4),
+                               QPoint(menu_rect.right() + 90, menu_rect.bottom() + 24))
+                region = region.intersected(d.rect())
+                picture = d.grab(region)
+                painter = QPainter(picture)
+                painter.drawPixmap(top_left - region.topLeft(), pix)
+                painter.end()
+                save(picture, F, 'publication_menu.png')
+        except Exception:
+            log(traceback.format_exc())
+
         @on('Valid map dimensions')
         def _(s):
             shot(s, F, 'suggest_dialog.png')

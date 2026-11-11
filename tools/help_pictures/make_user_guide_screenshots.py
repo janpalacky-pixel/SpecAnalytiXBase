@@ -206,6 +206,80 @@ def sort_menu_picture(mc, view):
     settle()
 
 
+def wait(seconds):
+    """Let timers run (e.g. the publication window's preview, 250 ms)."""
+    import time
+    end = time.time() + seconds
+    while time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+
+
+class _At:
+    """A right-click on the plot at (x, y), as the labels' menu gets it."""
+    button = 3
+
+    def __init__(self, ax, x, y):
+        self.inaxes, self.xdata, self.ydata = ax, float(x), float(y)
+
+
+def publication_pictures(mc, view):
+    """Labels on the main plot (two band labels, a text, a chosen arrow with
+    its two squares), the Save plot for publication window (Page tab with the
+    preview; the Labels tab with the table) and the text editor."""
+    from src.modules.visualization.plot_notes import peak_top
+    load(mc, RAMAN)
+    lw = mc.spectra_list_widget
+    ids = [lw.item(i).data(Qt.UserRole) or lw.item(i).text() for i in range(4, 8)]
+    mc.select_ids(ids)                       # sp005 - sp008: similar heights
+    plot_type(mc, 'Overlay plot')
+    notes = mc.plot_notes_controller
+    notes.clear()
+    ax = notes.target_axes(mc.static_canvas.figure)
+    curves = mc.plot_cursor_controller._curves(ax)
+    (x0, x1), (y0, y1) = ax.get_xlim(), ax.get_ylim()
+    notes.add_at('band', _At(ax, 785, 0), text='785')
+    notes.add_at('band', _At(ax, 1092, 0),
+                 text='1092 PO$\\mathregular{_{2}}$$\\mathregular{^{-}}$')
+    notes.add_at('text', _At(ax, x0 + 0.78 * (x1 - x0), y0 + 0.72 * (y1 - y0)),
+                 text='DNA, 4 concentrations')         # above the curves, right
+    top = peak_top(curves, 1490, (x0, x1))
+    arrow = notes.add_at('arrow', _At(ax, 1490, top if top is not None else y0),
+                         text='G, A')
+    notes.select(arrow)                      # chosen: its two ends as small squares
+    settle()
+    save(view.grab(in_window(view, view.graphicsView)), 'plot_labels.png')
+    notes.select(None)
+    settle()
+
+    from src.views.dialogs.visualization.publication_dialog import PublicationDialog
+    dlg = PublicationDialog(mc.static_canvas.figure, view,
+                            preferences=mc.autosave_controller.preferences, notes=notes)
+    dlg.resize(1500, 860)
+    dlg.show()
+    wait(1.5)
+    save(dlg.grab(), 'publication_window.png')
+    dlg.tabs.setCurrentWidget(dlg.tab_pages['Labels'])
+    dlg.resize(1500, 600)                    # the table without much empty room
+    dlg.splitter.setSizes([780, 720])        # wide enough for the table's columns
+    wait(0.8)
+    save(dlg.splitter.widget(0).grab(), 'publication_labels_tab.png')
+    dlg.close()
+    settle()
+
+    from src.views.dialogs.misc.rich_text import RichTextDialog
+    ed = RichTextDialog('PO$\\mathregular{_{2}}$$\\mathregular{^{-}}$ band, 1092 '
+                        'cm$\\mathregular{^{-1}}$', view, "Label the band",
+                        "Label (e.g. the band's position or a name):")
+    ed.resize(460, 260)
+    ed.show()
+    wait(0.6)
+    save(ed.grab(), 'rich_text_editor.png')
+    ed.close()
+    notes.clear()
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -312,6 +386,12 @@ def main():
 
     # 5b. Sort: > By a property (temperature_C read from the file)
     sort_menu_picture(mc, view)
+
+    # 6. labels on the plot, Save plot for publication, the text editor
+    try:
+        publication_pictures(mc, view)
+    except Exception:
+        log(traceback.format_exc())
 
     mc.autosave_controller.shutdown()
     view.close()

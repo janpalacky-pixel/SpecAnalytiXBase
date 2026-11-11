@@ -49,6 +49,10 @@ _SCREENSHOT_FILES = {
     "MOVING_SPECTRA":              "moving_spectra.png",
     "ORDER_MENU":                  "order_menu.png",
     "SORT_MENU":                   "sort_menu.png",
+    "PLOT_LABELS":                 "plot_labels.png",
+    "PUBLICATION_WINDOW":          "publication_window.png",
+    "PUBLICATION_LABELS":          "publication_labels_tab.png",
+    "RICH_TEXT_EDITOR":            "rich_text_editor.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -1180,6 +1184,12 @@ def get_user_guide_help_content():
             <li><strong>Add an arrow here&hellip;</strong> &mdash; an arrow pointing at that place,
             with an optional text at its tail.</li>
         </ul>
+        <div class="screenshot">
+            <img src="$PLOT_LABELS" width="$PLOT_LABELS_W" height="$PLOT_LABELS_H" alt="Labels on the plot: two band labels, a text and a chosen arrow" />
+            <p class="caption">Two band labels (785 and 1092 PO&#8322;&#8315;), a text (DNA, 4
+            concentrations) and an arrow (G, A) pointing at the band at 1490 &mdash; chosen by a
+            click: a dashed frame around its text and small squares at its two ends, to drag.</p>
+        </div>
         <p>On the plot: <strong>click</strong> a label to choose it (a dashed frame) &mdash; the
         <span class="kbd">Delete</span> key then deletes it; <strong>double-click</strong> it to
         change its text, size, colour, rotation or bold (or delete it); <strong>drag</strong> it to
@@ -2958,6 +2968,19 @@ def get_user_guide_help_content():
             in colour); <em>Caption</em>: a line of text under the picture (not in the saved
             file).</li>
         </ul>
+        <div class="screenshot">
+            <img src="$PUBLICATION_WINDOW" width="$PUBLICATION_WINDOW_W" height="$PUBLICATION_WINDOW_H" alt="Save plot for publication: the Page tab and the preview" />
+            <p class="caption">Save plot for publication: the tabs on the left (here Page: A4
+            landscape, full page), the preview on the right (Fit the window), the buttons
+            Save&hellip;, Print preview&hellip;, Print&hellip; below. The labels of the main
+            plot are in the picture too.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$PUBLICATION_LABELS" width="$PUBLICATION_LABELS_W" height="$PUBLICATION_LABELS_H" alt="Save plot for publication: the Labels tab with the table of your labels" />
+            <p class="caption">The Labels tab: your labels from the main plot in a table &mdash;
+            text (a click opens the editor), size, colour, rotation, bold, an arrow's head,
+            Delete; <em>Add text</em> / <em>Add an arrow</em> below it.</p>
+        </div>
         <p>On a small picture there are fewer numbers on the axes (about one every 1.2 cm, unless
         you set a tick step), so they do not run into each other. Band markers and pinned cursors
         are kept; the cursor box that follows the mouse is left out.</p>
@@ -2970,6 +2993,12 @@ def get_user_guide_help_content():
         &hellip;</strong> a sign (&deg;, &plusmn;, &times;, arrows, &Aring;, &micro; &hellip;),
         <strong>cm&#8315;&#185;</strong> the unit; underneath, the text as it will be drawn in the
         plot. A long text is cut short on its button; all of it is in the button's tooltip.</p>
+        <div class="screenshot">
+            <img src="$RICH_TEXT_EDITOR" width="$RICH_TEXT_EDITOR_W" height="$RICH_TEXT_EDITOR_H" alt="The text editor with subscript and superscript" />
+            <p class="caption">The text editor (here for a band label): PO&#8322;&#8315; with a
+            subscript 2 and a superscript minus, cm&#8315;&#185; with x&sup2;; below, <em>In the
+            plot</em> shows it as it will be drawn.</p>
+        </div>
         <p><strong>Profiles</strong> (at the top): <em>Save as&hellip;</em> keeps all settings
         under a name (e.g. "Journal X, 1 column" or "Thesis, A4"); choosing a profile in the list
         uses its settings at once, also for another plot; <em>Delete</em> removes it. A profile

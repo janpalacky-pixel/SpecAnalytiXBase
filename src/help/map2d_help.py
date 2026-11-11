@@ -58,6 +58,7 @@ _SCREENSHOT_FILES = {
     "UNMIX_GLEN_STACKED":  "unmixing_glen_stacked.png",
     "UNMIX_GLEN_DENOISE":  "unmixing_glen_denoise.png",
     "UNMIX_SUGGEST_HOW":   "unmixing_suggest_explained.png",
+    "PUBLICATION_MENU":    "publication_menu.png",
 }
 
 # Screenshots shown only once the file exists, so a newly documented
@@ -1215,6 +1216,12 @@ ranges, the colour map, the values of its first and last colour and the colour b
 The same button (a page with a plot on it) is in the map's toolbar, right after the
 floppy disk. <b>Right-click on the spectrum panel</b> does the same for the spectrum shown
 there (e.g. the clicked pixel's spectrum).</p>
+<div class="screenshot">
+    <img src="$PUBLICATION_MENU" width="$PUBLICATION_MENU_W" height="$PUBLICATION_MENU_H" alt="Right-click on the map: Save plot for publication, Print plot" />
+    <p class="caption">Right-click on the map: <i>Save plot for publication&hellip;</i> and
+    <i>Print plot&hellip;</i>; the same button is in the map's toolbar, right after the floppy
+    disk.</p>
+</div>
 <p>The map on the screen is not changed: the picture is made from a copy. Its
 <b>marks</b> start as on the screen, and the window's <b>Labels</b> tab can leave out each
 kind: the white <b>+</b> of the clicked pixel, the <b>outlines of the regions</b> (ROI) and
