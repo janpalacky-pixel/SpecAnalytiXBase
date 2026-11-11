@@ -35,7 +35,7 @@ import matplotlib
 matplotlib.use('Qt5Agg')
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from src.views.plot_toolbar import NavigationToolbar   # with Save plot for publication
 from matplotlib.figure import Figure
 import numpy as np
 

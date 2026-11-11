@@ -359,3 +359,26 @@ def test_groups_follow_the_spectrum_not_its_name(monkeypatch):
     assert fresh.groups()[0] == '' and fresh.samples()[0] == ''
     for w in (d, again, fresh):
         w.deleteLater()
+
+
+def test_publication_buttons_open_the_window_with_the_plot(dialog, monkeypatch):
+    """Publication... next to Save plot: no plot yet - a message; after
+    Compute - the Save plot for publication window with the plot."""
+    from src.views.dialogs.visualization.publication_dialog import PublicationDialog
+    from src.views.dialogs.visualization_analysis import group_statistics_dialog as gsd
+    opened, shown = [], []
+    monkeypatch.setattr(PublicationDialog, 'exec_',
+                        lambda self: opened.append(self.windowTitle()) or QDialog.Rejected)
+    monkeypatch.setattr(QMessageBox, 'information',
+                        staticmethod(lambda *a, **k: shown.append(a[2]) or QMessageBox.Ok))
+    dialog.publication_btn.click()
+    assert opened == [] and shown and 'no plot' in shown[-1]
+    monkeypatch.setattr(gsd.NamesToGroupsDialog, 'exec_',
+                        lambda dlg: (dlg.part_radio.setChecked(True),
+                                     dlg.separators_edit.setText('_'),
+                                     dlg.part_spin.setValue(1), QDialog.Accepted)[-1])
+    dialog.groups_from_names()
+    dialog.compute()
+    dialog.publication_btn.click()
+    assert opened == ["Save plot for publication – Group Statistics"]
+    assert dialog.sp_publication_btn.text().startswith("Publication")

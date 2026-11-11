@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGroupBox,
 from PyQt5.QtCore import Qt, QTimer, QEvent
 from PyQt5.QtGui import QKeySequence, QBrush, QColor
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from src.views.plot_toolbar import NavigationToolbar   # with Save plot for publication
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers the 'projection=3d' used

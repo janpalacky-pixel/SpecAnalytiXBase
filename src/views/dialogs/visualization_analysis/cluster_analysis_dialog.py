@@ -11,7 +11,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QEvent, QObject, QThread
 from PyQt5.QtGui import QFont
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from src.views.plot_toolbar import NavigationToolbar   # with Save plot for publication
 from matplotlib.figure import Figure
 from src.modules.utils.app_logger import get_logger
 from src.modules.utils.label_shortening import make_shorten_names_checkbox

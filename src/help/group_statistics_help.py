@@ -551,7 +551,8 @@ pairs the Wilcoxon test gives at least p = 0.0078); after the correction for hun
 points they may find nothing. Use a narrower range, or the t-test / ANOVA.</li>
 <li>Spectra on different x-axes are interpolated onto the points of the coarsest one, within
 the x-range they all share.</li>
-<li><b>Save plot&hellip;</b>; <b>Export table&hellip;</b> saves x, the mean, SD and n of every
+<li><b>Save plot&hellip;</b>; <b>Publication&hellip;</b> (the plot in a journal's size, font and
+look, or printed - the same window as for the main plot); <b>Export table&hellip;</b> saves x, the mean, SD and n of every
 group, p and the corrected p (Excel or CSV).</li>
 </ul>
 

@@ -13,7 +13,7 @@ from PyQt5.QtGui import QKeySequence
 from PyQt5.QtCore import Qt, QTimer, QItemSelectionModel
 from PyQt5.QtGui import QColor, QFont # Import QColor and QFont
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from src.views.plot_toolbar import NavigationToolbar   # with Save plot for publication
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt # Import pyplot
 # matplotlib's default color cycle is hex strings on older versions but

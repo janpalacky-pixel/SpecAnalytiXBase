@@ -2872,7 +2872,19 @@ def get_user_guide_help_content():
         Map</strong> right-click on the map or on the spectrum panel &rarr; <em>Save plot for
         publication&hellip;</em> or <em>Print plot&hellip;</em> (the window opens on its Printing
         tab), or the same button in that plot's toolbar &mdash; see the
-        <a href="help://map2d#publication">2D Map help</a>.
+        <a href="help://map2d#publication">2D Map help</a>. The other windows whose plots are
+        results have the button (a page with a plot) in their plot toolbars, right after the
+        floppy disk: Peak Fitting, the Peak list plot, SVD analysis, PCA / SVD Scores &amp;
+        Loadings, MCR-ALS, NMF, Cluster analysis, SOM, QC / Outlier detection, PLS, Melting
+        curve, Kinetics fitting, Band ratio, Isosbestic points, 2D correlation, Reference
+        matching, Mixture analysis and the ROI spectra viewer; Group Statistics has a
+        <em>Publication&hellip;</em> button next to <em>Save plot&hellip;</em>. The window is
+        titled with the tool's name (e.g. "Save plot for publication &ndash; Peak Fitting");
+        changes made there go only into the saved or printed picture, the plot in the tool
+        stays as it is. Clicked before the tool has drawn a plot (e.g. Mixture analysis before
+        Calculate): "There is no plot to save yet." The
+        processing windows (Baseline, Smoothing, Normalization &hellip;) do not have it: their
+        plots are previews &mdash; after Apply, save the main plot.
         The choices are on tabs on the left, the preview is on the right
         (drag the bar between them to give either side more room); an orange
         <strong>?</strong> explains the less obvious ones. A tab is shown only when the plot

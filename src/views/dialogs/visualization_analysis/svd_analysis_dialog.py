@@ -11,7 +11,7 @@ from PyQt5.QtGui import QKeySequence
 from PyQt5.QtCore import Qt, QTimer, QEvent, QObject, QThread, pyqtSignal
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from src.views.plot_toolbar import NavigationToolbar   # with Save plot for publication
 from matplotlib.figure import Figure
 import os
 from src.modules.utils.app_logger import get_logger
@@ -1399,7 +1399,7 @@ class SVDDiagnosticsDialog(QWidget):
 
         from matplotlib.figure import Figure as MplFigure
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FC
-        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NT
+        from src.views.plot_toolbar import NavigationToolbar as NT   # + publication
 
         self.fig = MplFigure(figsize=(11, 7))
         self.canvas = FC(self.fig)

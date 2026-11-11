@@ -3805,7 +3805,19 @@ def _natural_sort_key(cls, label):
             EllipseSelector / LassoSelector, kept in <code>_selector_artists</code> when the
             tool is made, since they can stay on the axes after the tool is switched off). A new tool window: build its own <code>*_figure_copy()</code>
             naming its marks (add a gid to MARKS if it has a new kind), then the two calls above.
-            Tests: <code>tests/test_publication_tool_windows.py</code>.</li>
+            Tests: <code>tests/test_publication_tool_windows.py</code>.
+            <b>The other result windows</b> import <code>NavigationToolbar</code> from
+            <code>src/views/plot_toolbar.py</code> instead of matplotlib (one line): a subclass that
+            adds the button in <code>__init__</code>, so every plot toolbar they make - also later,
+            on a new tab - has it; its window is titled with <code>window().windowTitle()</code>
+            and gets <code>publication_actions.plot_copy(figure)</code> (no marks of its own;
+            animated artists - selectors and cursors drawn with blitting - left out;
+            <code>has_plot()</code>: a message instead of an empty plot). Group Statistics has
+            no plot toolbar: <code>_publication_button</code>. Processing windows keep
+            matplotlib's toolbar (their plots are previews). Tests:
+            <code>tests/test_plot_toolbar.py</code> (which windows use it), and the smoke test
+            makes a picture of every such plot on real data
+            (<code>_check_publication</code>).</li>
             <li><b>Labels on the plot</b>: <code>src/modules/visualization/plot_notes.py</code>
             (Qt-free: a list of dicts <code>DEFAULT</code>; x, y = the point / an arrow's tip;
             tx, ty = the text / an arrow's tail, all in data units; drawn as annotations with gid

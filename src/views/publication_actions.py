@@ -52,6 +52,40 @@ def figure_copy(figure, marks=(), names=(), hide=()):
                 pass
 
 
+def plot_copy(figure):
+    """figure_copy for a tool window's plot with no marks of its own: what is
+    drawn only for the moment (matplotlib's selectors and cursors drawn with
+    blitting - "animated" artists, e.g. a range being dragged) is left out."""
+    hide = [a for ax in figure.axes for a in ax.get_children()
+            if getattr(a, 'get_animated', lambda: False)()]
+    return figure_copy(figure, hide=hide)
+
+
+def has_plot(figure):
+    """Something to save: a plot with data (lines, a picture, dots, bars),
+    not only a message such as "Press Run"."""
+    for ax in getattr(figure, 'axes', []):
+        if hasattr(ax, '_colorbar'):
+            continue
+        if ax.get_lines() or ax.images or ax.collections or ax.patches:
+            return True
+    return False
+
+
+def save_plot_of(parent, figure, what=None):
+    """The Save plot for publication window for a tool window's plot (a
+    copy, see plot_copy); a message when there is no plot yet."""
+    from PyQt5.QtWidgets import QMessageBox
+    if figure is None or not has_plot(figure):
+        QMessageBox.information(parent, "Save plot for publication",
+                                "There is no plot to save yet.")
+        return None
+    if what is None:
+        window = parent.window() if parent is not None else None
+        what = (window.windowTitle() if window is not None else '') or "plot"
+    return open_publication(parent, plot_copy(figure), what)
+
+
 def preferences_of(widget):
     """The program's preferences (for the window's profiles), found from a
     tool window: its controller's main controller, else None."""

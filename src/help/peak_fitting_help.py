@@ -904,7 +904,7 @@ def get_peak_fitting_help_content():
         </div>
         <div class="screenshot">
             <img src="$PLOT_BAR" width="${PLOT_BAR_W}" height="${PLOT_BAR_H}" alt="The row above the plot: Spectra, previous and next arrows, the shown spectrum, Several selected, Residual, Legend, Data and the toolbar with the hint" />
-            <p class="caption">Above the plot: the list on/off (Spectra), &#9664; &#9654;, the shown spectrum, how several are shown, Residual, Legend, Data (points or line); below them the toolbar and what a click on the plot does.</p>
+            <p class="caption">Above the plot: the list on/off (Spectra), &#9664; &#9654;, the shown spectrum, how several are shown, Residual, Legend, Data (points or line); below them the toolbar (its last button, after the floppy disk: <a href="help://user_guide#publication">Save plot for publication</a>) and what a click on the plot does.</p>
         </div>
         <p id="spectra-list">With several spectra, a <b>list of the spectra</b> is beside the plot (its orange <b>?</b> is above it, next to &#9664; &#9654;) and works as in
         the main window:</p>

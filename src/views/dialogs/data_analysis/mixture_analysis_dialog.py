@@ -22,7 +22,7 @@ class MixtureAnalysisDialog(QDialog):
 
     def __init__(self, parent, spectra):
         super().__init__(parent)
-        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
         self.spectra = list(spectra)
         self.fits, self.columns, self.rows = [], [], []
@@ -109,7 +109,8 @@ class MixtureAnalysisDialog(QDialog):
         pv.setContentsMargins(0, 0, 0, 0)
         self.figure = Figure(figsize=(7, 4.5))
         self.canvas = FigureCanvasQTAgg(self.figure)
-        pv.addWidget(NavigationToolbar2QT(self.canvas, plot))
+        from src.views.plot_toolbar import NavigationToolbar   # + Save plot for publication
+        pv.addWidget(NavigationToolbar(self.canvas, plot))
         pv.addWidget(self.canvas, 1)
         right.addWidget(plot)
         right.setSizes([260, 420])

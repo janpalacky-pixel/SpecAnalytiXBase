@@ -233,7 +233,7 @@ class PeakListDialog(QDialog):
     def _build_plot_tab(self):
         """The tab Plot: x, y and Colour, the ± distance of a band, Join the
         same peak number / band, Only the selected rows, Legend, Copy plot."""
-        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
         from matplotlib.figure import Figure
         page = QWidget()
         v = QVBoxLayout(page)
@@ -309,7 +309,8 @@ class PeakListDialog(QDialog):
         v.addLayout(row)
         self.figure = Figure(figsize=(7, 4.5), layout='constrained')
         self.canvas = FigureCanvasQTAgg(self.figure)
-        v.addWidget(NavigationToolbar2QT(self.canvas, page))
+        from src.views.plot_toolbar import NavigationToolbar   # + Save plot for publication
+        v.addWidget(NavigationToolbar(self.canvas, page))
         v.addWidget(self.canvas, 1)
         # the controls first, then the plot (so it is drawn with them up to date)
         for w in (self.x_combo, self.colour_combo, self.join_by):

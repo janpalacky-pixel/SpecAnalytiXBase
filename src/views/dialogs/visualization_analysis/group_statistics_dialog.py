@@ -160,7 +160,8 @@ _HELP_PLOT = (
     "<p><b>Order of the groups</b>: the order of the group table the groups were read from "
     "(e.g. control, low dose, high dose), otherwise the order of the spectra list.</p>"
     "<p><b>Mark outliers</b> circles values outside 1.5 &times; the interquartile range; they "
-    "are not removed. <b>Save plot&hellip;</b>: PNG, TIFF, SVG, PDF.</p>")
+    "are not removed. <b>Save plot&hellip;</b>: PNG, TIFF, SVG, PDF; <b>Publication&hellip;</b>: "
+    "in a journal's size, font and look, or printed (as for the main plot).</p>")
 _HELP_RESULTS = (
     "<h3>Reading the Test tab</h3><ul>"
     "<li><b>p</b>: below 0.05 is usually read as a significant difference; it says nothing "
@@ -1449,6 +1450,8 @@ class GroupStatisticsDialog(QDialog):
         self.save_plot_btn.setEnabled(False)
         self.save_plot_btn.clicked.connect(self.save_plot)
         plot_row.addWidget(self.save_plot_btn)
+        self.publication_btn = self._publication_button(lambda: self.figure)
+        plot_row.addWidget(self.publication_btn)
         self.outliers_check = QCheckBox("Mark outliers")
         self.outliers_check.setToolTip("Circle the values outside 1.5 × the interquartile range "
                                        "(Tukey's rule; they are not removed — the Test tab "
@@ -1572,6 +1575,8 @@ class GroupStatisticsDialog(QDialog):
         self.sp_save_btn.setEnabled(False)
         self.sp_save_btn.clicked.connect(self.save_spectra_plot)
         row3.addWidget(self.sp_save_btn)
+        self.sp_publication_btn = self._publication_button(lambda: self.sp_figure)
+        row3.addWidget(self.sp_publication_btn)
         self.sp_export_btn = QPushButton("Export table…")
         self.sp_export_btn.setAutoDefault(False)
         self.sp_export_btn.setEnabled(False)
@@ -2186,6 +2191,19 @@ class GroupStatisticsDialog(QDialog):
         self.remembered_settings['mark_outliers'] = self.outliers_check.isChecked()
         if getattr(self, 'data', None) is not None:
             self._show_box_plot()
+
+    def _publication_button(self, figure):
+        """Publication...: the plot in the Save plot for publication window
+        (journal size, fonts, 600 dpi, printing) - as in the main window."""
+        from src.views import icons, publication_actions
+        b = QPushButton("Publication\u2026")
+        b.setIcon(icons.publication_icon())
+        b.setAutoDefault(False)
+        b.setToolTip("<b>Save plot for publication</b><br>The plot in a journal's size, font "
+                     "and look -<br>TIFF, PNG, PDF, SVG, EPS or printed")
+        b.clicked.connect(lambda: publication_actions.save_plot_of(self, figure(),
+                                                                   "Group Statistics"))
+        return b
 
     def save_plot(self):
         path, chosen = QFileDialog.getSaveFileName(

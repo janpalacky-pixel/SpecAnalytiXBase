@@ -234,6 +234,7 @@ class _Driver:
                 self._pump()
                 self._wait_for_threads(dlg)
                 self.context.pop()
+            self._check_publication(dlg)
             self.context.pop()
             result = dlg.result()
             if dlg.isVisible():
@@ -241,6 +242,30 @@ class _Driver:
             return result
         finally:
             self.depth -= 1
+
+    def _check_publication(self, dlg):
+        """Every plot toolbar with Save plot for publication (plot_toolbar):
+        its plot - as the buttons left it - can be copied and made into a
+        picture, as the publication window does."""
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
+        from src.modules.visualization import publication_figure as pf
+        from src.views import publication_actions as pa
+        try:
+            toolbars = dlg.findChildren(NavigationToolbar2QT)
+        except RuntimeError:                       # the window is already gone
+            return
+        for tb in toolbars:
+            if getattr(tb, 'publication_action', None) is None:
+                continue
+            figure = tb.canvas.figure
+            if not pa.has_plot(figure):
+                continue
+            self.context.append('[Save plot for publication]')
+            try:
+                pf.render(pa.plot_copy(figure), 8.5, 6.5, 40, font_pt=7)
+            except Exception:
+                self._exception(*sys.exc_info())
+            self.context.pop()
 
     def run_everything(self, paths, operations, analyses):
         from src.controllers.core.main_controller import MainController
