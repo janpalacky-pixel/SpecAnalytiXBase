@@ -3778,7 +3778,17 @@ def _natural_sort_key(cls, label):
             nothing while the toolbar's Zoom / Pan is on, the Cursor is on, or a press is on a
             label (<code>plot_notes_controller.hit</code>); the wheel always zooms. Hidden
             (invisible) lines are not in <code>publication_style.data_lines</code>, the cursor's
-            values or a publication legend. Tests: <code>tests/test_plot_mouse.py</code>.</li>
+            values or a publication legend. Tests: <code>tests/test_plot_mouse.py</code>.
+            Numbers marking a data point are drawn only while it is in view
+            (<code>src/modules/visualization/view_text.py</code>: <code>ViewText</code> checks its
+            point at every draw and returns an empty tight box when out of view, so constrained
+            layout does not shrink the axes for it): Detect Peaks' numbers
+            (<code>peak_detection_manager</code>), pinned cursors' numbers
+            (<code>plot_cursor_controller._draw_pinned</code>, x only, as <code>RowText</code>: at
+            every draw - and for the layout - a number that would overlap the one to its left goes
+            one line higher, worked out again after a zoom); the user's labels are
+            Annotations with <code>annotation_clip=True</code> (<code>plot_notes.draw</code>).
+            Tests: <code>tests/test_view_text.py</code>.</li>
             <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
             (on a confirmed close: <code>saveGeometry()</code> base64 and the list's width, only
             while the list is shown) and <code>restore_window_layout</code> (in <code>show()</code>;

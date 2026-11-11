@@ -3,6 +3,8 @@
 from scipy.signal import find_peaks
 import numpy as np
 
+from src.modules.visualization.view_text import add_view_text
+
 class PeakDetector:
     def __init__(self):
         self.peak_indices = {}
@@ -85,8 +87,10 @@ class PeakDetector:
                     x_str = self.format_number(x_val, number_format, decimals)
                 y_str = self.format_number(y_val, number_format, decimals)
                 text = f"({x_str}, {y_str})" if format_type == "both" else x_str
-                self.peak_texts.append(ax.text(
-                    x_val, y_val, text, fontsize=font_size,
+                # drawn only while its peak is in the view (zoomed away: not
+                # left floating outside the plot) - view_text.py
+                self.peak_texts.append(add_view_text(
+                    ax, x_val, y_val, text, fontsize=font_size,
                     ha='center', va='bottom' if kind == 'max' else 'top', rotation=rotation))
         canvas.draw()
 

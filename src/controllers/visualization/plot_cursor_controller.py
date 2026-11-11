@@ -21,6 +21,7 @@ by the toolbar under the plot.
 """
 import numpy as np
 
+from src.modules.visualization.view_text import add_row_text
 from src.modules.visualization import cursor_values as cv
 
 CURSOR_GID = 'sax_cursor'          # artists of this controller (not spectra)
@@ -234,8 +235,11 @@ class PlotCursorController:
                     a.remove()                 # the live cursor is made again
             for x in self.pinned:                    # labelled with its x value
                 ax.axvline(x, color='#6D4C41', lw=1.0, ls=':', gid=CURSOR_GID + '_pinned')
-                ax.text(x, 1.0, _label(x), transform=ax.get_xaxis_transform(), va='bottom',
-                        ha='center', fontsize=7.5, color='#6D4C41', gid=CURSOR_GID + '_pinned')
+                # its number only while x is in the view (zoomed away: not
+                # floating beside the plot), one line higher where it would
+                # overlap the number of a cursor next to it - view_text.py
+                add_row_text(ax, x, _label(x), va='bottom', ha='center', fontsize=7.5,
+                             color='#6D4C41', gid=CURSOR_GID + '_pinned')
         self._live = {}
         self.canvas.draw_idle()
 

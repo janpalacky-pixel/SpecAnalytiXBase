@@ -337,7 +337,9 @@ _PAGE = """
     so you see at once what, e.g., a lower Prominence finds. <b>Remove the marks</b> removes
     them (also right-click on the plot &rarr; <b>Clear Peaks</b>, which also removes the fitted
     peaks drawn by <i>Show on the main plot</i>). Marking again replaces the old marks, so none
-    are left behind. The settings are kept for the next time.</p>
+    are left behind. The settings are kept for the next time. A position whose peak is out of
+    view (zoomed, e.g. with the mouse wheel) is not written beside the plot; it is back when you
+    zoom out.</p>
     <p>Opened on this tab, the window lists the peaks only when you open one of the other tabs,
     so marking a large selection (e.g. a map) does not first list thousands of spectra.</p>
 

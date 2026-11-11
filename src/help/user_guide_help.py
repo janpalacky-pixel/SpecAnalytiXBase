@@ -1173,7 +1173,10 @@ def get_user_guide_help_content():
             &mdash; rolling the wheel forward (away from you) zooms in, rolling it back (towards
             you) zooms out; the y axis stays. With <span class="kbd">Ctrl</span> held: the same
             for the y axis, the x axis stays. <em>Back</em> in the toolbar goes back one step,
-            <em>Home</em> to the start.</li>
+            <em>Home</em> to the start. Numbers that mark a point &mdash; a peak's position
+            (Detect Peaks), a pinned cursor's x, your own labels &mdash; are shown only while that
+            point is in view: zoomed away from it they are not left beside the plot, and come
+            back when you zoom out (also with Zoom and Pan of the toolbar).</li>
             <li><strong>Point at a spectrum's line</strong>: its name appears next to the
             mouse. <strong>Click the line</strong>: it is drawn thicker and its row of the
             spectra list is shown in bold with a frame - yellow on a selected (red) row, dark blue
@@ -1217,7 +1220,8 @@ def get_user_guide_help_content():
         lists x and the value of every spectrum there (interpolated between the measured points;
         a spectrum has no value outside its own x-range). With more than 10 spectra the 10 nearest
         to the mouse pointer's height are listed. <strong>Click</strong> to pin a cursor
-        (a dotted line labelled with its x value, e.g. 1004; several can be pinned); right-click
+        (a dotted line labelled with its x value, e.g. 1004; several can be pinned &mdash; the numbers of
+        cursors close together are written one above the other, not on top of each other); right-click
         on the plot &rarr;
         <em>Copy cursor values</em> copies a table (one row per spectrum, one column per pinned
         cursor) to paste into Excel, <em>Clear pinned cursors</em> removes them. Pinned cursors
@@ -1236,6 +1240,9 @@ def get_user_guide_help_content():
             <li><strong>Add an arrow here&hellip;</strong> &mdash; an arrow pointing at that place,
             with an optional text at its tail.</li>
         </ul>
+        <p>A label is shown while the place it marks (a band label's band, an arrow's tip) is in
+        view; zoomed away from it, it is not drawn beside the plot, and it is back when you zoom
+        out.</p>
         <div class="screenshot">
             <img src="$PLOT_LABELS" width="$PLOT_LABELS_W" height="$PLOT_LABELS_H" alt="Labels on the plot: two band labels, a text and a chosen arrow" />
             <p class="caption">Two band labels (785 and 1092 PO&#8322;&#8315;), a text (DNA, 4

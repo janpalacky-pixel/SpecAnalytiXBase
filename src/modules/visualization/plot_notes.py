@@ -131,7 +131,9 @@ class PlotNotes:
             kw = dict(xy=(n['x'], n['y']), xycoords='data', fontsize=n['fontsize'],
                       color=n['color'], rotation=n['rotation'],
                       fontweight='bold' if n['bold'] else 'normal', gid=f"{GID}:{i}",
-                      zorder=12, annotation_clip=False)
+                      # only while the point it labels is in the view: zoomed
+                      # away, not floating outside the plot (nor making room)
+                      zorder=12, annotation_clip=True)
             if place is None:                          # a band label: just above its top
                 kw.update(xytext=(0, BAND_GAP_PT), textcoords='offset points',
                           ha='center', va='bottom')

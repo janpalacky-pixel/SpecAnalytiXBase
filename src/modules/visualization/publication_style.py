@@ -524,6 +524,8 @@ def movable_texts(figure):
             arrow = getattr(t, 'arrow_patch', None) is not None
             if kind is None or not t.get_visible() or not (t.get_text() or arrow):
                 continue
+            if hasattr(t, 'in_view') and not t.in_view():   # its point out of the view
+                continue
             if kind == 'note':                     # your labels: by their own number
                 try:
                     n = int(gid.split(':')[1])
