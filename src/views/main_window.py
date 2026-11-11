@@ -718,6 +718,15 @@ class MainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def _apply_splitter_sizes(self):
+        """The spectra list's width: as when the program was last closed
+        (MainController.restore_window_layout), else 340 of 980."""
+        width = getattr(self, 'saved_list_width', None) or 340
+        total = sum(self.main_splitter.sizes()) or 980
+        # also while the list is hidden (the start page): it gets this width
+        # when it is shown
+        self.main_splitter.setSizes([width, max(100, total - width)])
+
     def showEvent(self, event):
         super().showEvent(event)
         if getattr(self, 'analysisToolBar', None) is not None:
@@ -737,7 +746,7 @@ class MainWindow(QMainWindow):
             self._splitter_sizes_applied = True
             from PyQt5.QtWidgets import QApplication
             QApplication.processEvents()
-            QTimer.singleShot(50, lambda: self.main_splitter.setSizes([340, 640]))
+            QTimer.singleShot(50, self._apply_splitter_sizes)
 
     def setup_ui(self):
         """Set up the user interface directly in Python code."""

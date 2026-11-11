@@ -3779,6 +3779,13 @@ def _natural_sort_key(cls, label):
             label (<code>plot_notes_controller.hit</code>); the wheel always zooms. Hidden
             (invisible) lines are not in <code>publication_style.data_lines</code>, the cursor's
             values or a publication legend. Tests: <code>tests/test_plot_mouse.py</code>.</li>
+            <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
+            (on a confirmed close: <code>saveGeometry()</code> base64 and the list's width, only
+            while the list is shown) and <code>restore_window_layout</code> (in <code>show()</code>;
+            a geometry on a monitor that is gone is moved onto the first screen); the width is set
+            in <code>MainWindow._apply_splitter_sizes</code> (also while the list is hidden on the
+            start page). Preference <code>main_window_layout</code>. Tests:
+            <code>tests/test_window_layout.py</code>.</li>
             <li><b>Paste data</b>: <code>clipboard_table.parse_table()</code> (Qt-free: separators,
             decimal comma, header row, tables in rows); <code>MainController.paste_data_from_clipboard</code>
             stores the spectra in the import <code>SpectrumManager</code> and emits the same signals

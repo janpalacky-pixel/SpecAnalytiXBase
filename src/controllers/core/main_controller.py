@@ -1892,11 +1892,63 @@ class MainController(QMainWindow):
         """Open the current plot in a new external matplotlib window."""
         create_external_figure(self)        
 
+    WINDOW_LAYOUT_KEY = 'main_window_layout'
+
     def show(self):
         """
-        Show the main window.
+        Show the main window - with the size, place and the spectra list's
+        width it had when it was last closed (restore_window_layout).
         """
-        self.view.show()        
+        self.restore_window_layout()
+        self.view.show()
+
+    def remember_window_layout(self):
+        """The window's size and place (also maximized) and the width of
+        the spectra list, kept for the next start (on a normal close)."""
+        import base64
+        prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
+        if prefs is None:
+            return False
+        try:
+            old = prefs.get(self.WINDOW_LAYOUT_KEY)
+            data = {'geometry': base64.b64encode(bytes(self.view.saveGeometry())).decode('ascii')}
+            # the list's width - only while it is shown (on the start page,
+            # without spectra, it is hidden: its width there says nothing)
+            width = self.view.main_splitter.sizes()[0]
+            if self.view.spectrum_selection_frame.isVisible() and width >= 80:
+                data['list_width'] = int(width)
+            elif isinstance(old, dict) and old.get('list_width'):
+                data['list_width'] = int(old['list_width'])
+            prefs.set(self.WINDOW_LAYOUT_KEY, data)
+            return True
+        except Exception:
+            logger.debug("Could not keep the window's size", exc_info=True)
+            return False
+
+    def restore_window_layout(self):
+        """Size, place and the spectra list's width as last time; nothing
+        stored (the first start) or a screen that is gone: as before."""
+        import base64
+        from PyQt5.QtCore import QByteArray
+        prefs = getattr(getattr(self, 'autosave_controller', None), 'preferences', None)
+        data = prefs.get(self.WINDOW_LAYOUT_KEY) if prefs is not None else None
+        if not isinstance(data, dict):
+            return False
+        try:
+            if data.get('geometry'):
+                self.view.restoreGeometry(QByteArray(base64.b64decode(data['geometry'])))
+            if data.get('list_width'):
+                # applied when the window is shown (MainWindow.showEvent)
+                self.view.saved_list_width = int(data['list_width'])
+            from PyQt5.QtWidgets import QApplication
+            screens = [s.availableGeometry() for s in QApplication.screens()]
+            if screens and not any(g.intersects(self.view.frameGeometry()) for g in screens):
+                self.view.move(screens[0].topLeft())   # its screen is gone: onto this one
+            return True
+        except Exception:
+            logger.debug("Could not restore the window's size", exc_info=True)
+            return False
+
     def toggle_grid_controls(self, is_visible):
         """Toggle visibility of grid-specific UI controls."""
         self.view.number_of_rows_spinBox.setVisible(is_visible)
@@ -3755,6 +3807,8 @@ class MainController(QMainWindow):
         if reply != QMessageBox.Yes:
             event.ignore()
             return
+        # the window's size, place and the list's width for the next start
+        self.remember_window_layout()
         # A normal close: remove this session's automatic save, so only an
         # abnormal ending (crash, power cut) is ever offered for restoring.
         try:

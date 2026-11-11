@@ -169,6 +169,11 @@ def get_user_guide_help_content():
             </ol>
         </div>
 
+        <p id="window-layout">The main window opens as you left it: its size and place on the screen
+        (also maximized, or on a second monitor) and the width of the spectra list are kept when
+        the program is closed. If that monitor is no longer there, the window opens on this
+        one.</p>
+
         <h3 id="start-page">The start page</h3>
         <p>While no spectra are loaded, the plot area shows the <strong>start page</strong>
         instead of an empty plot: <strong>Import data&hellip;</strong>, <strong>Open
