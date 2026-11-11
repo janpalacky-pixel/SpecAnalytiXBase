@@ -42,6 +42,7 @@ SHORTCUTS = [
      'The same (as up and down in the list); both work wherever the focus is'),
     ('Plot', 'Mouse wheel', 'Zoom x around the mouse: forward (away from you) in, back out; Home: the start'),
     ('Plot', 'Ctrl+mouse wheel', 'The same for the y axis (the x axis stays)'),
+    ('Plot', 'Left button held + move the mouse', 'Move (pan) the plot; Back: one step back, Home: the start'),
     ('Plot', 'Click a line', 'Its spectrum in the list: the row in bold, framed, scrolled into view'),
     ('Plot', 'Click a name in the legend', 'Hide that spectrum (in every plot type); click again to show it'),
     ('Plot', 'Right-click > Show all spectra', 'Show the hidden spectra again'),

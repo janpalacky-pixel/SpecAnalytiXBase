@@ -406,6 +406,10 @@ class MainController(QMainWindow):
         # the mouse on the plot: wheel zoom, a line's name, a click on the legend
         from src.controllers.visualization.plot_mouse_controller import PlotMouseController
         self.plot_mouse_controller = PlotMouseController(self)
+        # Zoom / Pan of a plot toolbar pressed in: easy to see (also in main.py)
+        from src.views import toolbar_mode
+        from PyQt5.QtWidgets import QApplication as _QApp
+        toolbar_mode.install(_QApp.instance())
         # View -> Theme (light / dark, used from the next start)
         from src.views.theme import build_menu as _build_theme_menu
         _build_theme_menu(self)

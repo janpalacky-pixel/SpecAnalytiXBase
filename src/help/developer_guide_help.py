@@ -3789,6 +3789,22 @@ def _natural_sort_key(cls, label):
             one line higher, worked out again after a zoom); the user's labels are
             Annotations with <code>annotation_clip=True</code> (<code>plot_notes.draw</code>).
             Tests: <code>tests/test_view_text.py</code>.</li>
+            <li><b>Dragging the plot; the toolbar's mode easy to see</b>: a left press in the axes
+            (not on a legend - <code>Legend.contains</code> - nor on a label, nothing busy) is kept
+            in <code>PlotMouseController._drag</code>; moved more than <code>DRAG_PX</code> it
+            becomes a pan with matplotlib's own <code>Axes.start_pan / drag_pan / end_pan</code>
+            (linked Grid axes follow; <code>push_current</code> before and after, so Back / Home
+            work), released without moving it is a click (the line is marked on the release).
+            With the Cursor on a drag still pans; <code>PlotCursorController</code> pins on the
+            release, only if the mouse moved no more than its <code>DRAG_PX</code>, and hides the
+            live cursor while a button is held.
+            <code>src/views/toolbar_mode.py</code>: an application event filter decorates every
+            <code>NavigationToolbar2QT</code> on <code>QEvent.Polish</code> - a
+            <code>QToolButton:checked</code> style sheet on the toolbar and a hidden QLabel before
+            <code>locLabel</code>, shown with the mode's text when the Pan / Zoom actions toggle;
+            installed in <code>main.py</code> and <code>MainController.__init__</code>.
+            <code>_say_busy</code>: a legend click while busy explains it in the status bar.
+            Tests: <code>tests/test_plot_mouse.py</code>.</li>
             <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
             (on a confirmed close: <code>saveGeometry()</code> base64 and the list's width, only
             while the list is shown) and <code>restore_window_layout</code> (in <code>show()</code>;

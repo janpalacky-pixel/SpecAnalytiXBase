@@ -9,6 +9,9 @@ Excel:
   the line draws it thicker and shows its row of the spectra list in bold,
   scrolled into view (the selection stays as it is) until the next click;
   the line nearest to the mouse counts, not the one drawn on top;
+* the left mouse button held and the mouse moved drags the plot, as Pan of
+  the toolbar does (Back / Home go back); a click without moving still
+  marks a line;
 * a click on a name in the legend hides that spectrum (its entry turns
   pale) and a second click shows it again. A hidden spectrum is in no plot:
   Overlay, Waterfall and Grid leave its line out (its legend entry pale);
@@ -17,10 +20,14 @@ Excel:
   plot type is chosen and ends with another selection, or with right-click
   > "Show all spectra". Processing (Apply) still uses the whole selection.
 
-Pointing at lines, clicking lines and clicking the legend do nothing while
-the toolbar's Zoom or Pan is chosen or while the Cursor is on (they use the
-clicks themselves); a click on one of your labels (plot_notes_controller)
-chooses that label. The wheel zooms always. Like the cursor, it is attached
+Pointing at lines, clicking lines, dragging the plot and clicking the legend
+do nothing while the toolbar's Zoom or Pan is chosen (it uses the clicks and
+drags itself; a click on the legend then says so in the status bar). With the
+Cursor on, a click pins a cursor (plot_cursor_controller, on the release) -
+so no line is marked and no spectrum hidden - but a drag still moves the plot
+(and pins nothing). A press on one of your labels (plot_notes_controller) chooses
+or drags that label, a press on the legend's frame drags a movable legend.
+The wheel zooms always. Like the cursor, it is attached
 again after every plot (the canvas is new each time)."""
 
 from contextlib import contextmanager
@@ -31,6 +38,7 @@ HOVER_MS = 120                 # the name shows when the mouse rests this long
 MAX_LINES_TO_POINT = 400       # more lines in one plot: no name on pointing
 PICK_PX = 6                    # how near (screen pixels) the mouse must be to a line
 WHEEL_IN = 0.8                 # one wheel step forward (away from you) zooms in by this
+DRAG_PX = 3                    # moved further with the button held: a drag, not a click
 PALE = 0.3                     # a hidden spectrum's legend entry
 _OWN_GIDS = ('sax_cursor', 'sax_cursor_pinned', 'sax_band')
 # plot types computed from the spectra: a hidden spectrum is left out of
@@ -49,6 +57,7 @@ class PlotMouseController:
         self.marked = None             # (line, its width) drawn thicker
         self._bold_item = None         # its row of the list, in bold
         self._press = None             # (x, y, legend entry) of a press on the legend
+        self._drag = None              # a press on the plot: a click or a drag (pan)
         self._last_move = None
         self._timer = None
 
@@ -114,6 +123,7 @@ class PlotMouseController:
             return ''
 
     def detach(self):
+        self._drag = None
         if self.canvas is not None:
             for cid in self._cids:
                 try:
@@ -133,9 +143,16 @@ class PlotMouseController:
 
     def _busy(self):
         """Zoom / Pan chosen in the toolbar, or the Cursor on."""
+        return self._toolbar_busy() or self._cursor_on()
+
+    def _toolbar_busy(self):
         toolbar = getattr(self.canvas, 'toolbar', None)
-        if toolbar is not None and str(getattr(toolbar, 'mode', '') or ''):
-            return True
+        return bool(toolbar is not None and str(getattr(toolbar, 'mode', '') or ''))
+
+    def _cursor_on(self):
+        """The Cursor ticked: a click pins a cursor (plot_cursor_controller),
+        not marks a line nor hides a spectrum - but a drag still moves the
+        plot (then no cursor is pinned)."""
         cursor = getattr(self.main, 'plot_cursor_controller', None)
         return bool(cursor is not None and cursor.enabled)
 
@@ -253,6 +270,9 @@ class PlotMouseController:
 
     # ------------------------------------------------------------ pointing
     def _on_move(self, event):
+        if self._drag is not None:
+            self._drag_to(event)
+            return
         if getattr(event, 'button', None) is not None:
             return                                 # dragging something
         self._last_move = event
@@ -316,27 +336,130 @@ class PlotMouseController:
 
     def _on_press(self, event):
         self._press = None
-        if event.button != 1 or getattr(event, 'dblclick', False) or self._busy():
+        self._end_drag()
+        if event.button != 1 or getattr(event, 'dblclick', False):
+            return
+        if self._toolbar_busy():
+            if self.legend_entry_at(event) is not None:
+                self._say_busy()
             return
         entry = self.legend_entry_at(event)
+        if entry is not None and self._cursor_on():
+            self._say_busy()
+            return
         if entry is not None:
             self._press = (event.x, event.y, entry)    # a click, unless the legend is dragged
             return
-        if self._on_a_label(event):
+        if self._on_a_label(event) or self._on_a_legend(event):
+            return                                     # the label / the legend is dragged
+        ax = event.inaxes
+        if ax is None or hasattr(ax, '_colorbar') or not ax.get_navigate():
+            if self.marked is not None and not self._cursor_on():
+                self.mark(None)                        # a click off the plot ends the marking
             return
-        line = self.line_at(event)
-        self.mark(line)
-        if line is not None:
-            self.show_in_list(str(line.get_label()))
+        # a click (marks a line, on the release) or a drag (moves the plot)
+        # (with the Cursor on: a click pins a cursor instead, a drag moves the plot)
+        line = None if self._cursor_on() else self.line_at(event)
+        self._drag = {'x': event.x, 'y': event.y, 'ax': ax, 'line': line,
+                      'moving': False, 'cursor': self._cursor_on()}
 
     def _on_release(self, event):
+        drag = self._drag
+        if drag is not None and event.button == 1:
+            self._end_drag()
+            if not drag['moving'] and not drag['cursor']:   # a click: mark the line (or none)
+                line = drag['line']
+                self.mark(line)
+                if line is not None:
+                    self.show_in_list(str(line.get_label()))
+            return
         press, self._press = self._press, None
         if press is None or event.button != 1:
             return
         x, y, (ax, label) = press
-        if abs(event.x - x) > 3 or abs(event.y - y) > 3:
+        if abs(event.x - x) > DRAG_PX or abs(event.y - y) > DRAG_PX:
             return                                     # the legend was moved
         self.toggle(label)
+
+    # ------------------------------------------------------------ dragging the plot
+    def _on_a_legend(self, event):
+        """A press on a legend (its frame): a movable legend is dragged."""
+        if self.canvas is None:
+            return False
+        for ax in self.canvas.figure.axes:
+            leg = ax.get_legend()
+            try:
+                if leg is not None and leg.get_visible() and leg.contains(event)[0]:
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _drag_to(self, event):
+        """The mouse moved with the left button held: the plot follows it,
+        as Pan of the toolbar (Axes.start_pan / drag_pan)."""
+        drag = self._drag
+        if self.canvas is None or event.x is None:
+            return
+        if not drag['moving']:
+            if abs(event.x - drag['x']) <= DRAG_PX and abs(event.y - drag['y']) <= DRAG_PX:
+                return                                 # not yet: maybe a click
+            if self._toolbar_busy():
+                self._drag = None
+                return
+            self._hide_tip()
+            toolbar = getattr(self.canvas, 'toolbar', None)
+            stack = getattr(toolbar, '_nav_stack', None)
+            try:
+                if toolbar is not None and stack is not None and stack() is None:
+                    toolbar.push_current()             # Home: the view before the drag
+            except Exception:
+                pass
+            drag['ax'].start_pan(drag['x'], drag['y'], 1)
+            drag['moving'] = True
+            try:
+                from PyQt5.QtCore import Qt
+                self.canvas.setCursor(Qt.ClosedHandCursor)
+            except Exception:
+                pass
+        drag['ax'].drag_pan(1, None, event.x, event.y)
+        self.canvas.draw_idle()
+
+    def _end_drag(self):
+        drag, self._drag = self._drag, None
+        if drag is None or not drag['moving']:
+            return
+        try:
+            drag['ax'].end_pan()
+        except Exception:
+            pass
+        try:
+            from PyQt5.QtCore import Qt
+            self.canvas.setCursor(Qt.ArrowCursor)
+        except Exception:
+            pass
+        toolbar = getattr(self.canvas, 'toolbar', None)
+        try:
+            if toolbar is not None:
+                toolbar.push_current()                 # Back: before the drag
+        except Exception:
+            pass
+
+    def _say_busy(self):
+        """A click on the legend while a toolbar mode or the Cursor takes
+        the clicks: the status bar says why nothing happens."""
+        status = getattr(self.main, '_status', None)
+        if not callable(status):
+            return
+        toolbar = getattr(self.canvas, 'toolbar', None)
+        mode = str(getattr(getattr(toolbar, 'mode', ''), 'name', '') or '').lower()
+        if mode in ('pan', 'zoom'):
+            what = f"{mode.capitalize()} is on in the toolbar under the plot"
+            end = f"click {mode.capitalize()} there again to turn it off"
+        else:
+            what = "The Cursor is on (Basic plot options)"
+            end = "untick Cursor"
+        status(f"{what}: a click on the legend does not hide a spectrum now - {end}.", 8000)
 
     # ------------------------------------------------------------ hide / show
     def toggle(self, name):

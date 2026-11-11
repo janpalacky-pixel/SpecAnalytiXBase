@@ -1165,9 +1165,12 @@ def get_user_guide_help_content():
         <p>The matplotlib toolbar (below the plot) provides: Home, Back, Forward, Pan,
         Zoom, Axis properties, Curve properties, and Save figure. Its right end shows the
         mouse position (x, y) while the pointer is over the plot. Back and Home also undo zooming
-        with the mouse wheel (below).</p>
+        with the mouse wheel and moving the plot with the mouse (below). While <em>Pan</em> or
+        <em>Zoom</em> is chosen, its button has an orange frame and an orange note next to the
+        buttons says what is on and how to end it &mdash; in every plot toolbar of the program;
+        click the button again to end it.</p>
 
-        <h3 id="plot-mouse">The mouse on the plot (zoom with the wheel, names, the legend)</h3>
+        <h3 id="plot-mouse">The mouse on the plot (zoom with the wheel, drag, names, the legend)</h3>
         <ul>
             <li><strong>Mouse wheel</strong>: zooms the x axis around the point under the mouse
             &mdash; rolling the wheel forward (away from you) zooms in, rolling it back (towards
@@ -1177,6 +1180,10 @@ def get_user_guide_help_content():
             (Detect Peaks), a pinned cursor's x, your own labels &mdash; are shown only while that
             point is in view: zoomed away from it they are not left beside the plot, and come
             back when you zoom out (also with Zoom and Pan of the toolbar).</li>
+            <li><strong>Hold the left button and move the mouse</strong>: the plot moves with it,
+            as with <em>Pan</em> of the toolbar, without choosing Pan first. <em>Back</em> goes
+            back to where it was, <em>Home</em> to the start. A click without moving is still a
+            click (it marks a line, below).</li>
             <li><strong>Point at a spectrum's line</strong>: its name appears next to the
             mouse. <strong>Click the line</strong>: it is drawn thicker and its row of the
             spectra list is shown in bold with a frame - yellow on a selected (red) row, dark blue
@@ -1198,10 +1205,16 @@ def get_user_guide_help_content():
             legends have no entry for a hidden spectrum. Processing (<em>Apply</em>) and the
             other tools still use all the selected spectra.</li>
         </ul>
-        <p>Pointing at a line, clicking a line and clicking the legend do nothing while Zoom or
-        Pan of the toolbar is chosen or the Cursor is ticked (then a click zooms, pans or pins a
-        cursor). A click on one of your own labels (text, an arrow, a band's label) chooses that
-        label, not a line under it. The wheel zooms always.</p>
+        <p>Pointing at a line, clicking a line, dragging the plot and clicking the legend do
+        nothing while Zoom or Pan of the toolbar is chosen (then a press zooms or pans). With the
+        Cursor ticked a click pins a cursor instead of marking a line or hiding a spectrum, but
+        holding the button and moving the mouse still moves the plot (no cursor is pinned
+        then). The pressed-in button has an orange frame and an orange note
+        next to the buttons says so (e.g. <em>Zoom on &ndash; drag a rectangle; click Zoom again to
+        end</em>); a click on the legend then also says it in the status bar. A press on one of
+        your own labels (text, an arrow, a band's label) chooses or drags that label, a press on
+        the frame of a movable legend drags the legend &ndash; not the plot. The wheel zooms
+        always.</p>
         <div class="screenshot">
             <img src="$PLOT_MOUSE_LINE" width="$PLOT_MOUSE_LINE_W" height="$PLOT_MOUSE_LINE_H" alt="A clicked line: thicker, its row of the list bold with a yellow frame" />
             <p class="caption">A click on the line of sp006: the line is drawn thicker and its row
@@ -1221,7 +1234,8 @@ def get_user_guide_help_content():
         a spectrum has no value outside its own x-range). With more than 10 spectra the 10 nearest
         to the mouse pointer's height are listed. <strong>Click</strong> to pin a cursor
         (a dotted line labelled with its x value, e.g. 1004; several can be pinned &mdash; the numbers of
-        cursors close together are written one above the other, not on top of each other); right-click
+        cursors close together are written one above the other, not on top of each other; holding the
+        button and moving the mouse moves the plot instead and pins nothing); right-click
         on the plot &rarr;
         <em>Copy cursor values</em> copies a table (one row per spectrum, one column per pinned
         cursor) to paste into Excel, <em>Clear pinned cursors</em> removes them. Pinned cursors

@@ -22,6 +22,9 @@ by the toolbar under the plot.
 import numpy as np
 
 from src.modules.visualization.view_text import add_row_text
+
+DRAG_PX = 3        # moved further with the button held: the plot dragged, no cursor pinned
+
 from src.modules.visualization import cursor_values as cv
 
 CURSOR_GID = 'sax_cursor'          # artists of this controller (not spectra)
@@ -40,6 +43,7 @@ class PlotCursorController:
         self.main = main_controller
         self.enabled = False
         self.pinned = []               # x positions of the pinned cursors
+        self._press = None             # a press: pinned on the release unless dragged
         self.canvas = None
         self.plot_type = ''
         self._cids = []
@@ -63,6 +67,7 @@ class PlotCursorController:
         self._cids = [
             canvas.mpl_connect('motion_notify_event', self._on_move),
             canvas.mpl_connect('button_press_event', self._on_click),
+            canvas.mpl_connect('button_release_event', self._on_release),
             canvas.mpl_connect('draw_event', self._on_draw),
             canvas.mpl_connect('axes_leave_event', lambda e: self._hide_live()),
             canvas.mpl_connect('figure_leave_event', lambda e: self._hide_live()),
@@ -164,6 +169,9 @@ class PlotCursorController:
         notes = getattr(self.main, 'plot_notes_controller', None)
         if notes is not None and notes.dragging():
             return                             # a label is dragged: the cursor waits
+        if getattr(event, 'button', None) is not None:
+            self._hide_live()                  # the plot is dragged: the cursor waits
+            return
         if not self.enabled or self.canvas is None or event.inaxes is None \
                 or event.xdata is None or self._toolbar_busy():
             return
@@ -210,13 +218,26 @@ class PlotCursorController:
 
     # ------------------------------------------------------------ pinned cursors
     def _on_click(self, event):
+        """A press: a cursor is pinned on the release, if the mouse did not
+        move meanwhile - held and moved, the plot is dragged instead
+        (plot_mouse_controller) and no cursor is pinned."""
+        self._press = None
         if (not self.enabled or event.button != 1 or event.inaxes is None
                 or event.xdata is None or self._toolbar_busy() or event.dblclick):
             return
         notes = getattr(self.main, 'plot_notes_controller', None)
         if notes is not None and notes.hit(event):
             return                             # a label is dragged, no cursor pinned
-        self.pin(float(event.xdata))
+        self._press = (event.x, event.y, float(event.xdata))
+
+    def _on_release(self, event):
+        press, self._press = getattr(self, '_press', None), None
+        if press is None or event.button != 1 or not self.enabled:
+            return
+        x, y, xdata = press
+        if event.x is None or abs(event.x - x) > DRAG_PX or abs(event.y - y) > DRAG_PX:
+            return                             # the plot was dragged
+        self.pin(xdata)
 
     def pin(self, x):
         self.pinned.append(float(x))

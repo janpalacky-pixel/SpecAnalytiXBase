@@ -69,6 +69,12 @@ def _fire(mc, event):
     _pump(0.05)
 
 
+def _click(mc, xdata, ydata):
+    """Press and release at one place: a click (not a drag)."""
+    for name in ('button_press_event', 'button_release_event'):
+        _fire(mc, _event(mc, name, xdata, ydata, button=1))
+
+
 def _line(mc, short):
     return next(l for l in mc.plot_mouse_controller.data_lines(_ax(mc))
                 if str(l.get_label()).endswith(short))
@@ -118,12 +124,12 @@ def test_pointing_and_clicking_a_line(mc):
     assert m.line_at(event) is line                              # its name on pointing
     width = line.get_linewidth()
     before = [i.text() for i in mc.spectra_list_widget.selectedItems()]
-    _fire(mc, event)
+    _click(mc, xs[k], ys[k])
     lw = mc.spectra_list_widget
     assert lw.currentItem().text().endswith('sp006')               # its row of the list
     assert [i.text() for i in lw.selectedItems()] == before       # the selection stays
     assert line.get_linewidth() > width                           # drawn thicker
-    _fire(mc, _event(mc, 'button_press_event', xs[k], ys[k] * 10, button=1))   # elsewhere
+    _click(mc, xs[k], ys[k] * 10)                                 # elsewhere
     assert line.get_linewidth() == width
 
 
@@ -132,7 +138,7 @@ def test_not_while_the_cursor_is_on(mc):
     line = _line(mc, 'sp006')
     xs, ys = line.get_xdata(), line.get_ydata()
     width = line.get_linewidth()
-    _fire(mc, _event(mc, 'button_press_event', xs[10], ys[10], button=1))
+    _click(mc, xs[10], ys[10])
     assert line.get_linewidth() == width
     mc.plot_cursor_controller.set_enabled(False)
 
@@ -213,13 +219,13 @@ def test_the_marked_spectrums_row_is_bold(mc):
     line = _line(mc, 'sp006')
     xs, ys = line.get_xdata(), line.get_ydata()
     k = len(xs) // 2
-    _fire(mc, _event(mc, 'button_press_event', xs[k], ys[k], button=1))
+    _click(mc, xs[k], ys[k])
     lw = mc.spectra_list_widget
     bold = [lw.item(i).text() for i in range(lw.count()) if lw.item(i).font().bold()]
     assert len(bold) == 1 and bold[0].endswith('sp006')
     assert lw.marked_item is not None and lw.marked_item.text().endswith('sp006')  # its frame
     lw.viewport().repaint()                                       # the frame is drawn
-    _fire(mc, _event(mc, 'button_press_event', xs[k], ys[k] * 10, button=1))
+    _click(mc, xs[k], ys[k] * 10)
     assert not any(lw.item(i).font().bold() for i in range(lw.count()))
     assert lw.marked_item is None
 
@@ -369,3 +375,104 @@ def test_open_in_new_window_drops_the_hidden_one():
     PlotMouseController.drop_hidden(fig, {'a'}, _Manager())
     assert [t.get_text() for t in ax.get_legend().get_texts()] == ['b']
     assert not ax.get_lines()[0].get_visible()
+
+
+def _drag(mc, start, end, steps=4):
+    canvas = mc.static_canvas
+    canvas.draw()
+    ax = _ax(mc)
+    (x0, y0), (x1, y1) = ax.transData.transform(start), ax.transData.transform(end)
+    _fire(mc, MouseEvent('button_press_event', canvas, x0, y0, button=1))
+    for i in range(1, steps + 1):
+        x, y = x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps
+        _fire(mc, MouseEvent('motion_notify_event', canvas, x, y, button=1))
+    _fire(mc, MouseEvent('button_release_event', canvas, x1, y1, button=1))
+
+
+def test_the_left_button_held_drags_the_plot_and_back_goes_back(mc):
+    ax = _ax(mc)
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    width = xlim[1] - xlim[0]
+    a = (xlim[0] + 0.5 * width, ylim[0] + 0.5 * (ylim[1] - ylim[0]))
+    b = (xlim[0] + 0.7 * width, a[1])
+    line = _line(mc, 'sp006')
+    lw_before = line.get_linewidth()
+    _drag(mc, a, b)
+    new = ax.get_xlim()
+    assert new[0] == pytest.approx(xlim[0] - 0.2 * width, rel=0.02, abs=0.02 * width)
+    assert new[1] - new[0] == pytest.approx(width, rel=1e-6)       # moved, not zoomed
+    assert ax.get_ylim() == pytest.approx(ylim)
+    assert line.get_linewidth() == lw_before                        # a drag marks no line
+    mc.static_canvas.toolbar.back()                                 # Back: as before
+    assert ax.get_xlim() == pytest.approx(xlim)
+
+
+def test_no_drag_while_zoom_is_on_and_the_legend_click_says_why(mc):
+    toolbar = mc.static_canvas.toolbar
+    toolbar.zoom()                                                  # Zoom on
+    ax = _ax(mc)
+    xlim = ax.get_xlim()
+    _drag(mc, (xlim[0] + 0.5 * (xlim[1] - xlim[0]), 1.0),
+          (xlim[0] + 0.6 * (xlim[1] - xlim[0]), 1.0))
+    mc.plot_mouse_controller._end_drag()
+    _click_legend_name(mc, 'sp006')
+    assert not mc.plot_mouse_controller.hidden
+    message = mc.view.statusBar().currentMessage()
+    assert 'Zoom is on' in message and 'legend' in message
+    toolbar.zoom()                                                  # off again
+
+
+def test_the_pressed_toolbar_button_and_the_note_are_easy_to_see(mc):
+    from src.views import toolbar_mode
+    toolbar = mc.static_canvas.toolbar
+    note = toolbar_mode.decorate(toolbar)
+    assert 'QToolButton:checked' in toolbar.styleSheet()
+    assert not toolbar._sax_mode_action.isVisible()
+    # as a click on the buttons does it: the action is ticked first, then
+    # matplotlib's pan() / zoom() runs (the note named the tool before)
+    pan, zoom = toolbar._actions['pan'], toolbar._actions['zoom']
+    pan.trigger()
+    _pump(0.05)
+    assert toolbar.mode.name == 'PAN'
+    assert toolbar._sax_mode_action.isVisible() and note.text().startswith('Pan on')
+    zoom.trigger()
+    _pump(0.05)
+    assert note.text().startswith('Zoom on')
+    zoom.trigger()
+    _pump(0.05)
+    assert not toolbar._sax_mode_action.isVisible()
+    toolbar.pan()                                                  # also called directly
+    _pump(0.05)
+    assert note.text().startswith('Pan on')
+    toolbar.pan()
+    _pump(0.05)
+    assert not toolbar._sax_mode_action.isVisible()
+    button = toolbar.widgetForAction(toolbar._actions['pan'])
+    toolbar.pan()
+    _pump(0.1)
+    image = button.grab().toImage()
+    edge = image.pixelColor(1, image.height() // 2)
+    assert edge.red() > 180 and edge.blue() < 120                   # the orange frame
+    toolbar.pan()
+
+
+def test_with_the_cursor_on_a_drag_moves_the_plot_and_a_click_pins_a_cursor(mc):
+    cursor = mc.plot_cursor_controller
+    cursor.set_enabled(True)
+    try:
+        ax = _ax(mc)
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        width = xlim[1] - xlim[0]
+        y = ylim[0] + 0.5 * (ylim[1] - ylim[0])
+        _drag(mc, (xlim[0] + 0.5 * width, y), (xlim[0] + 0.7 * width, y))
+        assert ax.get_xlim()[0] == pytest.approx(xlim[0] - 0.2 * width, abs=0.02 * width)
+        assert cursor.pinned == []                                  # dragged: nothing pinned
+        xlim = ax.get_xlim()
+        at = xlim[0] + 0.4 * (xlim[1] - xlim[0])
+        _click(mc, at, y)                                           # a click: pinned
+        assert cursor.pinned == [pytest.approx(at, abs=0.01 * width)]
+        assert ax.get_xlim() == pytest.approx(xlim)                 # and nothing moved
+        assert mc.plot_mouse_controller.marked is None              # no line marked
+    finally:
+        cursor.clear_pinned()
+        cursor.set_enabled(False)

@@ -151,6 +151,9 @@ def main():
     # Long tooltips in several lines instead of one very long line
     from src.views import tooltips
     tooltips.install(app)
+    # Zoom / Pan of a plot toolbar pressed in: easy to see (src/views/toolbar_mode.py)
+    from src.views import toolbar_mode
+    toolbar_mode.install(app)
 
     main_controller = MainController()
     main_controller.show()
