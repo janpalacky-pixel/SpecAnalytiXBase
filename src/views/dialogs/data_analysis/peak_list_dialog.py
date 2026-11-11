@@ -442,8 +442,9 @@ class PeakListDialog(QDialog):
         name = str(spectrum.get('label', ''))
         self.fits_on_plot_info.setText(
             f"On the main plot: {name}, the peak at {x:g}." if shown else
-            f"{name} is not on the main plot now (e.g. a large selection draws only some of "
-            "its spectra), so its peak cannot be shown there.")
+            f"{name} is not on the main plot now (e.g. it is hidden with a click on its name "
+            "in the legend, or a large selection draws only some of its spectra), so its peak "
+            "cannot be shown there.")
         self.fits_on_plot_info.setVisible(True)
         return shown
 

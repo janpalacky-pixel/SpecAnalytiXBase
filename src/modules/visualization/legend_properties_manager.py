@@ -97,9 +97,19 @@ class LegendManager:
                 handles, labels, info = self.limit_entries(handles, labels, settings)
                 ax._legend_entries_info = info      # for the note above the plot
                 
-                # Always recreate the legend to apply any changes
+                # Always recreate the legend to apply any changes. A legend
+                # dragged to another place stays there (e.g. show legend
+                # unticked and ticked again) unless Position was changed.
+                place = (legend._loc if getattr(legend, '_sax_position', None)
+                         == settings['position'] else None)
                 legend.remove()
                 legend = ax.legend(handles, labels, loc=settings['position'], ncol=settings['columns'])
+                if place is not None:
+                    try:
+                        legend._loc = place
+                    except Exception:
+                        pass
+                legend._sax_position = settings['position']
                 
                 # Reapply font properties to new legend
                 for text in legend.get_texts():

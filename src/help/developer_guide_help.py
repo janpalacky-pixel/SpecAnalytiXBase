@@ -3739,6 +3739,46 @@ def _natural_sort_key(cls, label):
             drawn <code>Line2D</code> data (lines with more than 2 points, not the controller's own),
             interpolated, never extrapolated. Pinned cursors are ordinary artists
             (gid <code>sax_cursor_pinned</code>) re-created after each plot.</li>
+            <li><b>The mouse on the plot</b> (v1.7.0, <code>plot_mouse_controller.py</code>, attached
+            after the cursor and the labels): <code>scroll_event</code> zooms the axes under the
+            mouse (x; <code>event.key</code> 'control': y; log axes in their logarithm, a reversed
+            axis keeps its order; <code>toolbar.push_current()</code> before and after, so Back /
+            Home work); a name on pointing via a 120 ms <code>QTimer</code> and
+            <code>Line2D.contains</code> (not with more than 400 lines in the plot); a click on a
+            line - the nearest within 6 px (its distance to each segment in screen pixels, not
+            the one drawn on top) - marks it (wider until the next click) and makes its list row
+            current with <code>QItemSelectionModel.NoUpdate</code> (setCurrentItem would replace
+            the selection) and bold with a frame (<code>_SpectraListWidget.marked_item</code>, drawn
+            in its paintEvent: yellow on a selected row, dark blue on a white one), with the list's signals blocked (a changed font is an
+            "item changed" that redrew the plot); a press + release (within 3 px, so dragging a movable legend is not a
+            click) on a legend entry - its text's and handle's boxes - hides / shows the lines of
+            that spectrum. <code>hidden</code> holds full labels (the legend shows the shortened
+            names: <code>full_label</code> / <code>hidden_names</code> via
+            <code>main._display_labels</code>; a legend entry that is not a spectrum, e.g.
+            "Mean (n = 3)", does nothing). <code>sync_selection</code>, called at the start of
+            <code>_plot_spectra_impl</code>, keeps it for the same selection (in any plot type)
+            and empties it for another. Overlay / Waterfall / Grid: the lines invisible, the legend
+            entries pale (<code>hide_in</code>). <code>LEFT_OUT_IN</code> (Mean &plusmn; SD,
+            Difference, Heatmap): <code>visible()</code> takes the hidden spectra out of the data
+            before plotting (the Difference reference kept; all kept if all are hidden), and a
+            toggle there plots again. <code>external_figure.create_external_figure</code> does the
+            same and <code>drop_hidden</code> takes them out of its legend; Copy plot to clipboard
+            does it for the moment of the copy (<code>hidden_left_out</code>, a context manager:
+            the lines' labels start with "_" meanwhile and the legend is made again). A legend made
+            again (show legend, the Legend window, the orange strip's Show all / Choose...) calls
+            <code>reapply</code>: matplotlib copies the invisible line's visibility to the new
+            legend handle, so <code>hide_in</code> makes the handles visible and pale.
+            <code>LegendManager.apply_settings_to_legend</code> keeps a dragged legend's
+            <code>_loc</code> unless Position changed (<code>legend._sax_position</code>). Detect
+            Peaks skips invisible lines (<code>peak_detection_manager</code>,
+            <code>show_peak_on_plot</code>, <code>show_fits_on_plot</code>) and is run again on a
+            toggle (<code>_peaks_again</code>). Right-click &rarr; "Show all spectra (n hidden)"
+            calls <code>show_all</code>.
+            Processing uses <code>selected_spectra</code>, unchanged. Clicks and pointing do
+            nothing while the toolbar's Zoom / Pan is on, the Cursor is on, or a press is on a
+            label (<code>plot_notes_controller.hit</code>); the wheel always zooms. Hidden
+            (invisible) lines are not in <code>publication_style.data_lines</code>, the cursor's
+            values or a publication legend. Tests: <code>tests/test_plot_mouse.py</code>.</li>
             <li><b>Paste data</b>: <code>clipboard_table.parse_table()</code> (Qt-free: separators,
             decimal comma, header row, tables in rows); <code>MainController.paste_data_from_clipboard</code>
             stores the spectra in the import <code>SpectrumManager</code> and emits the same signals

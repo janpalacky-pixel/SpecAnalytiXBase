@@ -402,6 +402,10 @@ class LargePlotController:
             return
         for ax in canvas.figure.axes:
             manager.apply_settings_to_legend(ax)
+        # hidden spectra (a click on the legend): their entries pale again
+        mouse = getattr(self.main, 'plot_mouse_controller', None)
+        if mouse is not None and mouse.canvas is canvas:
+            mouse.reapply()
         canvas.draw_idle()
         self.update_banner()
 

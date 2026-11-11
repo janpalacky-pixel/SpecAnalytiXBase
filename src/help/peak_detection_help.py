@@ -46,7 +46,9 @@ _PAGE = """
         <li><a href="#band-table"><b>Band table</b></a>: one row per spectrum, one column per
             band &mdash; also <i>Open in the Data table</i>.</li>
         <li><a href="#mark"><b>Mark on the plot</b></a>: a red dot on every peak of the main plot
-            and its position written next to it.</li>
+            and its position written next to it (not on a spectrum hidden with a click on its
+            name in the legend; the List and the other tabs still have all the selected
+            spectra).</li>
     </ul>
     <p><b>Reset to defaults</b> puts every setting back to its default value. The orange
     <b>?</b> shows what each setting and column means; the same text appears when you hold the

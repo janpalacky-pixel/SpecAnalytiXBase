@@ -179,7 +179,7 @@ class PeakDetectionController:
         own = (self.FIT_GID, self.SHOWN_GID)
         for ax in canvas.figure.get_axes():
             for line in ax.get_lines():
-                if line.get_gid() in own:
+                if line.get_gid() in own or not line.get_visible():   # hidden: not on the plot
                     continue
                 offset = pl.line_offset(line.get_xdata(), line.get_ydata(), sx, sy)
                 if offset is None:
@@ -229,7 +229,8 @@ class PeakDetectionController:
         drawn = 0
         if curves:
             for ax in canvas.figure.get_axes():
-                lines = [ln for ln in ax.get_lines() if ln.get_gid() != self.FIT_GID]
+                lines = [ln for ln in ax.get_lines()
+                         if ln.get_gid() != self.FIT_GID and ln.get_visible()]
                 limits = ax.get_xlim(), ax.get_ylim()
                 cache = {}
                 for spectrum, x, y in curves:

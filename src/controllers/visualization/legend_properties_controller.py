@@ -46,6 +46,10 @@ class LegendPropertiesController:
             figure = self.controller.static_canvas.figure
             for ax in figure.get_axes():
                 self.legend_manager.apply_settings_to_legend(ax)
+            # the new legend: hidden spectra pale again (plot_mouse_controller)
+            mouse = getattr(self.controller, 'plot_mouse_controller', None)
+            if mouse is not None and mouse.canvas is self.controller.static_canvas:
+                mouse.reapply()
             
             # Redraw the canvas to show changes
             self.controller.static_canvas.draw()

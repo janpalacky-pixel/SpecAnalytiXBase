@@ -50,8 +50,10 @@ class PeakDetector:
             labels = 'none'
 
         for ax_idx, ax in enumerate(canvas.figure.get_axes()):
+            # not a hidden spectrum's line (a click on its name in the legend)
             lines = [line for line in ax.get_lines()
-                     if line.get_color() not in ('r', 'red') or line.get_marker() != 'o']
+                     if (line.get_color() not in ('r', 'red') or line.get_marker() != 'o')
+                     and line.get_visible()]
             found = []            # (line_idx, line label, peak) of this plot
             for line_idx, line in enumerate(lines):
                 x_data = np.asarray(line.get_xdata(), dtype=float)

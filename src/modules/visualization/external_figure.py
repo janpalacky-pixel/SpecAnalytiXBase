@@ -93,6 +93,16 @@ def create_external_figure(mc):
     shorten_enabled = shorten_enabled.isChecked() if shorten_enabled is not None else False
     display_labels = shorten_spectra_labels(spectra, shorten_enabled)
 
+    # Spectra hidden with a click on the legend (plot_mouse_controller): as
+    # in the main plot - Mean ± SD, Difference, Heatmap computed without them
+    mouse = getattr(mc, 'plot_mouse_controller', None)
+    if mouse is not None and mouse.hidden:
+        from src.controllers.visualization.plot_mouse_controller import LEFT_OUT_IN
+        if plot_type in LEFT_OUT_IN:
+            keep = (mc.view.difference_reference_comboBox.currentText()
+                    if plot_type == 'Difference' else None)
+            spectra = mouse.visible(spectra, keep=keep)
+
     common = dict(
         plot_settings            = settings,
         use_automatic_line_colors = use_auto,
@@ -191,6 +201,8 @@ def create_external_figure(mc):
 
     # ── Detach figure from Qt and show in standalone window ───────────────
     fig = canvas.figure
+    if mouse is not None and mouse.hidden:      # Overlay / Waterfall / Grid
+        mouse.drop_hidden(fig, {display_labels.get(l, l) for l in mouse.hidden}, legend_mgr)
     if 'line_colors' in common:
         colour_by.decorate(fig)
 

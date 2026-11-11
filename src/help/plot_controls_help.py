@@ -128,6 +128,11 @@ def get_plot_controls_help_content():
     <em>show legend</em> in <i>Basic plot options</i> (under the line colours list; it
     hides the legend at once, without plotting again); ☰ Legend opens its settings.</p>
 
+    <p><strong>A click on a name in the legend</strong> hides that spectrum (its name turns
+    pale) and a second click shows it again; right-click on the plot &rarr; <em>Show all
+    spectra</em> shows all hidden ones. See <a href="help://user_guide#plot-mouse">The mouse on
+    the plot</a>.</p>
+
     <h3>When to enable the legend</h3>
     <table>
         <tr><th>Situation</th><th>Legend</th><th>Reason</th></tr>

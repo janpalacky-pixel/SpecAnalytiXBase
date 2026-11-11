@@ -130,8 +130,8 @@ def data_lines(ax):
     out = []
     for line in ax.get_lines():
         label = str(line.get_label())
-        if label.startswith('_') or line.get_gid() in CURSOR_GIDS:
-            continue
+        if label.startswith('_') or line.get_gid() in CURSOR_GIDS or not line.get_visible():
+            continue                       # (not visible: hidden with a click on the legend)
         out.append(line)
     return out
 

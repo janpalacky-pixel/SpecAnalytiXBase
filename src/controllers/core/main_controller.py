@@ -120,6 +120,21 @@ class _SpectraListWidget(QListWidget):
             for dx in (5, 9):                      # six dots: the handle
                 for dy in (-4, 0, 4):
                     painter.drawEllipse(QPointF(rect.left() + dx, cy + dy), 1.1, 1.1)
+        # the spectrum whose line was clicked on the plot (plot_mouse_controller):
+        # a frame that stands out - yellow on a red (selected) row, dark blue on
+        # a white one
+        marked = getattr(self, 'marked_item', None)
+        if marked is not None:
+            try:
+                rect = self.visualItemRect(marked)
+                from PyQt5.QtCore import QRectF
+                from PyQt5.QtGui import QPen
+                colour = QColor('#FFEB3B') if marked.isSelected() else QColor('#0D47A1')
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(colour, 2.5))
+                painter.drawRoundedRect(QRectF(rect).adjusted(1.5, 1.5, -1.5, -1.5), 3, 3)
+            except RuntimeError:                   # the item is gone (list filled again)
+                self.marked_item = None
         painter.end()
 
     def is_moving(self):
@@ -388,6 +403,9 @@ class MainController(QMainWindow):
         # your own labels on the plot: band labels, text, arrows (right-click)
         from src.controllers.visualization.plot_notes_controller import PlotNotesController
         self.plot_notes_controller = PlotNotesController(self)
+        # the mouse on the plot: wheel zoom, a line's name, a click on the legend
+        from src.controllers.visualization.plot_mouse_controller import PlotMouseController
+        self.plot_mouse_controller = PlotMouseController(self)
         # View -> Theme (light / dark, used from the next start)
         from src.views.theme import build_menu as _build_theme_menu
         _build_theme_menu(self)
@@ -2725,9 +2743,15 @@ class MainController(QMainWindow):
         notes = getattr(self, 'plot_notes_controller', None)
         if notes is not None and notes.selected is not None:
             notes.select(None)                     # no frame of a chosen label in the copy
+        from contextlib import nullcontext
         from src.controllers.visualization.plot_clipboard import COPY_DPI, copy_figure
+        mouse = getattr(self, 'plot_mouse_controller', None)
+        # spectra hidden with a click on the legend: not in the copy's legend either
+        hidden = (mouse.hidden_left_out() if mouse is not None and mouse.canvas is canvas
+                  else nullcontext())
         try:
-            image = copy_figure(figure)
+            with hidden:
+                image = copy_figure(figure)
         except Exception:
             logger.exception("Copying the plot to the clipboard failed")
             image = None
@@ -3139,6 +3163,11 @@ class MainController(QMainWindow):
     
         # Create a copy of selected spectra to avoid modifying original data
         plot_spectra = self.selected_spectra.copy()
+        # spectra hidden with a click on the legend (plot_mouse_controller):
+        # kept for the same selection, also in another plot type
+        mouse = getattr(self, 'plot_mouse_controller', None)
+        if mouse is not None:
+            mouse.sync_selection(self.selected_spectra)
         # Thousands of selected spectra: Overlay/Grid/Waterfall draw a
         # preview (an evenly spread subset), or, for "Plot all", the
         # Overlay plot is drawn in portions with progress and Stop. The
@@ -3165,6 +3194,14 @@ class MainController(QMainWindow):
             plot_spectra, self.checkBox_shorten_names.isChecked()
         )
         self._display_labels = display_labels      # Detect Peaks: which line is which spectrum
+        # Mean ± SD, Difference, Heatmap: computed without the hidden spectra
+        # (Overlay / Waterfall / Grid draw them invisible: plot_mouse_controller)
+        from src.controllers.visualization.plot_mouse_controller import LEFT_OUT_IN
+        if mouse is not None and plot_type in LEFT_OUT_IN:
+            keep = (self.view.difference_reference_comboBox.currentText()
+                    if plot_type == "Difference" else None)
+            plot_spectra = mouse.visible(plot_spectra, keep=keep)
+            plotted = plot_spectra
 
         if plot_type == "Grid plot":
 
@@ -3323,6 +3360,8 @@ class MainController(QMainWindow):
         notes = getattr(self, 'plot_notes_controller', None)
         if notes is not None:
             notes.attach(self.static_canvas)
+        if mouse is not None:
+            mouse.attach(self.static_canvas)
         # a window open beside the plot draws its marks again (plot_only_mode)
         lock = getattr(self.view, 'plot_only_lock', None)
         if lock is not None:
@@ -3409,6 +3448,14 @@ class MainController(QMainWindow):
             a.setEnabled(on_plot)
         notes_action = context_menu.addAction("Labels on the plot\u2026")
 
+        # Spectra hidden with a click on their names in the legend
+        mouse = getattr(self, 'plot_mouse_controller', None)
+        show_all_action = None
+        if mouse is not None and mouse.hidden:
+            context_menu.addSeparator()
+            show_all_action = context_menu.addAction(
+                f"Show all spectra ({len(mouse.hidden)} hidden)")
+
         # Pinned cursors (Cursor checkbox above the plot)
         cursor = getattr(self, 'plot_cursor_controller', None)
         copy_cursor_action = clear_cursor_action = None
@@ -3459,6 +3506,8 @@ class MainController(QMainWindow):
             self.plot_notes_controller.add_at('arrow', event)
         elif action == notes_action:
             self.plot_notes_controller.show_dialog()
+        elif show_all_action is not None and action == show_all_action:
+            mouse.show_all()
         elif copy_cursor_action is not None and action == copy_cursor_action:
             n = cursor.copy_table()
             self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "

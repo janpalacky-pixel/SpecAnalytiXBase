@@ -280,6 +280,47 @@ def publication_pictures(mc, view):
     settle()
 
 
+def plot_mouse_pictures(mc, view):
+    """The mouse on the plot: a clicked line (thicker, its row of the list
+    bold with a yellow frame) and a spectrum
+    hidden with a click on its name in the legend (the name pale)."""
+    from matplotlib.backend_bases import MouseEvent
+    load(mc, RAMAN)
+    lw = mc.spectra_list_widget
+    ids = [lw.item(i).data(Qt.UserRole) or lw.item(i).text() for i in range(4, 8)]
+    mc.select_ids(ids)                       # sp005 - sp008
+    plot_type(mc, 'Overlay plot')
+    canvas = mc.static_canvas
+    canvas.draw()
+    m = mc.plot_mouse_controller
+    ax = canvas.figure.axes[0]
+    line = next(l for l in m.data_lines(ax) if str(l.get_label()).endswith('sp006'))
+    xs, ys = line.get_xdata(), line.get_ydata()
+    k = int(len(xs) * 0.62)
+    x, y = ax.transData.transform((xs[k], ys[k]))
+    event = MouseEvent('button_press_event', canvas, x, y, button=1)
+    canvas.callbacks.process('button_press_event', event)   # the click on the line
+    settle()
+    canvas.draw()
+    settle()
+    # (the name that appears when pointing at the line is a tooltip: Windows
+    # fades it in, so it is not in a picture taken at once - the help says it)
+    plot = in_window(view, view.graphicsView)
+    lst = in_window(view, view.spectrum_selection_frame)
+    region = QRect(QPoint(lst.left(), plot.top()), QPoint(plot.right(), plot.bottom()))
+    save(view.grab(region.adjusted(-4, -4, 4, 4)), 'plot_mouse_line.png')
+    m.mark(None)
+    settle()
+    # a click on a name in the legend: that spectrum hidden, its name pale
+    m.toggle(str(next(l for l in m.data_lines(ax)
+                      if str(l.get_label()).endswith('sp007')).get_label()))
+    canvas.draw()
+    settle()
+    save(view.grab(in_window(view, view.graphicsView)), 'plot_mouse_legend.png')
+    m.toggle(next(iter(m.hidden)))
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -390,6 +431,12 @@ def main():
     # 6. labels on the plot, Save plot for publication, the text editor
     try:
         publication_pictures(mc, view)
+    except Exception:
+        log(traceback.format_exc())
+
+    # 7. the mouse on the plot: a clicked line, a spectrum hidden in the legend
+    try:
+        plot_mouse_pictures(mc, view)
     except Exception:
         log(traceback.format_exc())
 

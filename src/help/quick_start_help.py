@@ -194,6 +194,13 @@ def get_quick_start_help_content():
                 GRAMS (.spc), or a full session snapshot.</li>
         </ol>
         <div class="tip">
+            <b>On the plot:</b> the mouse wheel zooms where the mouse is (with Ctrl the y axis;
+            Home in the toolbar under the plot goes back); a click on a line finds its spectrum
+            in the list; a click on a name in the legend hides that spectrum, a second click
+            shows it again &mdash; see <a href="help://user_guide#plot-mouse">The mouse on the
+            plot</a>. The window opens next time with the size and place you left it in.
+        </div>
+        <div class="tip">
             <b>Everything below is a plain link to that topic's own full help
             page</b> — this page intentionally stays short. Every dialog also has
             its own orange/blue <b>Help</b> button that opens the exact same page

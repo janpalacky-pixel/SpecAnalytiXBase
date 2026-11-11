@@ -210,6 +210,11 @@ def copy_for_publication(figure, width_cm, height_cm, font_pt=None, line_pt=None
             own_h, own_l = ax.get_legend_handles_labels()
             if own_l == texts:
                 handles = own_h                    # the plotted lines themselves
+            # spectra hidden with a click on the legend: not in the picture's legend
+            gone = {str(l.get_label()) for l in ax.get_lines() if not l.get_visible()}
+            if gone:
+                kept = [(h, t) for h, t in zip(handles, texts) if t not in gone]
+                handles, texts = [h for h, _ in kept], [t for _, t in kept]
             leg.remove()
             if position != 'none' and handles:
                 legends.append((i, ax, handles, texts))

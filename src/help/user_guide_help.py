@@ -53,6 +53,8 @@ _SCREENSHOT_FILES = {
     "PUBLICATION_WINDOW":          "publication_window.png",
     "PUBLICATION_LABELS":          "publication_labels_tab.png",
     "RICH_TEXT_EDITOR":            "rich_text_editor.png",
+    "PLOT_MOUSE_LINE":             "plot_mouse_line.png",
+    "PLOT_MOUSE_LEGEND":           "plot_mouse_legend.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -1157,7 +1159,52 @@ def get_user_guide_help_content():
         <h3>Navigation Toolbar</h3>
         <p>The matplotlib toolbar (below the plot) provides: Home, Back, Forward, Pan,
         Zoom, Axis properties, Curve properties, and Save figure. Its right end shows the
-        mouse position (x, y) while the pointer is over the plot.</p>
+        mouse position (x, y) while the pointer is over the plot. Back and Home also undo zooming
+        with the mouse wheel (below).</p>
+
+        <h3 id="plot-mouse">The mouse on the plot (zoom with the wheel, names, the legend)</h3>
+        <ul>
+            <li><strong>Mouse wheel</strong>: zooms the x axis around the point under the mouse
+            &mdash; rolling the wheel forward (away from you) zooms in, rolling it back (towards
+            you) zooms out; the y axis stays. With <span class="kbd">Ctrl</span> held: the same
+            for the y axis, the x axis stays. <em>Back</em> in the toolbar goes back one step,
+            <em>Home</em> to the start.</li>
+            <li><strong>Point at a spectrum's line</strong>: its name appears next to the
+            mouse. <strong>Click the line</strong>: it is drawn thicker and its row of the
+            spectra list is shown in bold with a frame - yellow on a selected (red) row, dark blue
+            on a white one - and scrolled into view (the selection stays as it is; a click
+            elsewhere on the plot ends it). Where two lines are close, the one nearest to
+            the mouse counts.</li>
+            <li><strong>Click a name in the legend</strong>: that spectrum is hidden (its name
+            turns pale); click again to show it. A hidden spectrum is in no plot:
+            Overlay, Waterfall and Grid leave its line out; <em>Mean &plusmn; SD</em> and
+            <em>Difference</em> are computed without it and the <em>Heatmap</em> has no row for
+            it (the reference chosen for <em>Difference</em> stays the reference). It is also
+            left out of <a href="#publication">Save plot for publication</a>, <em>Copy plot to
+            clipboard</em> and <em>Open in New Window</em> (also from their legends), of the
+            <a href="#cursor">cursor</a> (no dot, no value in its box) and of the peaks marked by
+            <em>Detect Peaks</em>.</li>
+            <li>The hiding stays when you choose another plot type; it ends when you select
+            other spectra, or with right-click on the plot &rarr; <em>Show all spectra
+            (n hidden)</em> - the way back in Mean &plusmn; SD, Difference and Heatmap, whose
+            legends have no entry for a hidden spectrum. Processing (<em>Apply</em>) and the
+            other tools still use all the selected spectra.</li>
+        </ul>
+        <p>Pointing at a line, clicking a line and clicking the legend do nothing while Zoom or
+        Pan of the toolbar is chosen or the Cursor is ticked (then a click zooms, pans or pins a
+        cursor). A click on one of your own labels (text, an arrow, a band's label) chooses that
+        label, not a line under it. The wheel zooms always.</p>
+        <div class="screenshot">
+            <img src="$PLOT_MOUSE_LINE" width="$PLOT_MOUSE_LINE_W" height="$PLOT_MOUSE_LINE_H" alt="A clicked line: thicker, its row of the list bold with a yellow frame" />
+            <p class="caption">A click on the line of sp006: the line is drawn thicker and its row
+            of the list is bold with a yellow frame (on a white row the frame is dark blue); the
+            four selected spectra stay selected.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$PLOT_MOUSE_LEGEND" width="$PLOT_MOUSE_LEGEND_W" height="$PLOT_MOUSE_LEGEND_H" alt="A spectrum hidden with a click on its name in the legend" />
+            <p class="caption">A click on sp007 in the legend: its line is hidden and its name pale;
+            a second click shows it again.</p>
+        </div>
 
         <h3 id="cursor">Cursor (values of the spectra at one x)</h3>
         <p>Tick <strong>Cursor</strong> in <em>Basic plot options</em>: a dashed vertical line
@@ -1230,12 +1277,13 @@ def get_user_guide_help_content():
             <tr><td><strong>Layout Properties</strong></td><td>Adjust subplot spacing and constrained layout settings; <b>Apply</b> shows them at once</td></tr>
             <tr><td><strong>Axis properties</strong></td><td>Set axis labels, tick marks, and limits; <b>Apply</b> shows them at once</td></tr>
             <tr><td><strong>Line colours</strong></td><td>A submenu: <em>Automatic colours</em>, <em>Own colours</em> or <em>Colours by value</em> (✓ = in use), and <em>Line colours&hellip;</em> for the window &mdash; see <a href="#line-colours">Line colours</a></td></tr>
-            <tr><td><strong>Show Legend</strong></td><td>Show or hide the legend of the plot (✓ = shown, the default)</td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
             <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
             <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
+            <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
+            <tr><td><strong>Copy cursor values</strong>, <strong>Clear pinned cursors</strong></td><td>Only with pinned cursors &mdash; see <a href="#cursor">Cursor</a></td></tr>
         </table>
 
         <h4 id="beside-the-plot">Windows beside the plot: zoom while they are open</h4>
@@ -1282,16 +1330,16 @@ def get_user_guide_help_content():
 
         <h3 id="legend-panel">Legend</h3>
         <p>The <strong>☰ Legend</strong> button (below the spectrum list) opens the
-        Legend Properties dialog. Legend is <strong>disabled by default</strong> to
-        avoid performance issues with large datasets. Enable it and configure font,
-        position, number of columns, and max items there.</p>
+        Legend Properties dialog: font, position, number of columns and the maximum number of
+        entries. The legend is <strong>on by default</strong> (since 1.5) and lists at most 20
+        entries (evenly spread when more spectra are plotted); <em>show legend</em> in
+        <i>Basic plot options</i> switches it off and on. A click on a name in the legend hides
+        that spectrum &mdash; see <a href="#plot-mouse">The mouse on the plot</a>.</p>
         <div class="warning">
-            <strong>Performance tip:</strong> with &gt;50 spectra in overlay or
-            waterfall mode, keep the legend disabled — rendering hundreds of entries
-            significantly slows down plotting and the result is unreadable anyway.
-            Exception: <strong>Grid plot</strong> — the legend is the only way to
-            identify which panel belongs to which spectrum, so enable it whenever
-            you use Grid plot mode.
+            <strong>Performance tip:</strong> avoid <em>Show All Items</em> with hundreds of
+            spectra &mdash; rendering hundreds of entries slows down plotting and the result is
+            unreadable anyway. In a <strong>Grid plot</strong> the legend tells which panel
+            belongs to which spectrum, so keep it on there.
         </div>
         <p>See the <a href="help://plot_controls">Interactive Update &amp; Legend
         Performance Guide</a> for a full decision table.</p>
@@ -2550,7 +2598,11 @@ def get_user_guide_help_content():
         <em>Maximum Items</em> (20) it lists an evenly spread subset, and the orange strip
         above the plot offers <em>Show all</em>, <em>Choose…</em> and <em>Settings…</em>.
         Untick <em>show legend</em> (Basic plot options) to switch it off; avoid <em>Show All Items</em> with
-        hundreds of spectra (slow and unreadable).</p>
+        hundreds of spectra (slow and unreadable). A legend dragged to another place (<em>Movable
+        Legend</em>) stays there when you untick and tick <em>show legend</em> or change a setting
+        other than <em>Position</em>. A click on a name in the legend hides that spectrum, a
+        second click shows it again (its name stays in the legend, pale) &mdash; see
+        <a href="#plot-mouse">The mouse on the plot</a>.</p>
         <p>See the <a href="help://plot_controls">Interactive Update &amp; Legend
         Performance Guide</a> for a full decision table by dataset size and plot type.</p>
 
@@ -2861,7 +2913,8 @@ def get_user_guide_help_content():
         right-click on the plot) puts the plot on the clipboard as a picture: paste it into Word,
         PowerPoint or an e-mail with Ctrl+V. It is copied at 300 dpi (sharp also when printed), on a
         white background, and is pasted in the size it has on the screen &mdash; make the program
-        window larger or smaller first for a larger or smaller picture.</p>
+        window larger or smaller first for a larger or smaller picture. Spectra hidden with a click
+        on the legend are not in the picture, nor in its legend.</p>
         <p id="publication"><strong>Save plot for publication&hellip;</strong> (File menu, or
         right-click on the plot) makes the picture a journal, a thesis or a slide needs. The plot
         in the main window is for a quick look and is not changed: the picture is made from a
