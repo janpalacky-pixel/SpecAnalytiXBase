@@ -117,7 +117,14 @@ jobs:
       # it by hand first.
       - name: Run test suite
         if: steps.changes.outputs.should_build == 'true'
-        run: pytest tests/
+        # -u: every line goes into the log at once (nothing is held back
+        # and lost if the run stops suddenly, as nightly #44 did on
+        # 11-11 with no message); -v: each test's name is written before
+        # it runs, so a sudden stop shows which test it was;
+        # PYTHONFAULTHANDLER: a crash prints where every part was.
+        env:
+          PYTHONFAULTHANDLER: '1'
+        run: python -u -m pytest tests/ -v
 
       # Same invocation as BuildInstaller.bat's first step.
       - name: Build with PyInstaller
