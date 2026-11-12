@@ -1177,7 +1177,8 @@ def get_user_guide_help_content():
         <em>Zoom</em> is chosen, its button has an orange frame and an orange note next to the
         buttons says what is on and how to end it &mdash; in every plot toolbar of the program;
         click the button again or press <span class="kbd">Esc</span> to end it (in a tool window
-        that Esc only ends Zoom / Pan; the window stays open).</p>
+        that Esc only ends Zoom / Pan; pressed again it closes the window, as Esc does in every
+        window &mdash; also after a click on its plot).</p>
 
         <h3 id="plot-mouse">The mouse on the plot (zoom with the wheel, drag, names, the legend)</h3>
         <ul>

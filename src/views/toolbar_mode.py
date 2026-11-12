@@ -37,6 +37,14 @@ def _is_plot_toolbar(widget):
     return isinstance(widget, NavigationToolbar2QT)
 
 
+def _is_canvas(widget):
+    try:
+        from matplotlib.backends.backend_qt import FigureCanvasQT
+    except Exception:
+        return False
+    return isinstance(widget, FigureCanvasQT)
+
+
 def mode_of(toolbar):
     """'pan', 'zoom' or '' - what the toolbar's buttons are set to."""
     name = str(getattr(getattr(toolbar, 'mode', ''), 'name', '') or '').lower()
@@ -165,11 +173,20 @@ class _Filter(QObject):
     def eventFilter(self, obj, event):
         if (event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape
                 and not event.isAutoRepeat() and event.modifiers() == Qt.NoModifier):
-            from PyQt5.QtWidgets import QApplication
-            if QApplication.activePopupWidget() is None:   # a menu / list open: its own Esc
-                window = QApplication.activeWindow()
-                if window is not None and escape(window):
-                    return True
+            from PyQt5.QtWidgets import QApplication, QDialog, QWidget
+            if not isinstance(obj, QWidget) or QApplication.activePopupWidget() is not None:
+                return False                   # a menu / list open: its own Esc
+            window = obj.window()
+            if escape(window):
+                return True
+            # A plot with the keyboard focus (e.g. Manual baseline, SVD
+            # background, Melting curve, 2D Map: the plot takes the focus for
+            # its own keys) kept Esc to itself - matplotlib's canvas takes
+            # every key - so Esc closed some windows and not others. No
+            # window uses Esc on a plot: it closes the window, as everywhere.
+            if _is_canvas(obj) and isinstance(window, QDialog) and window.isVisible():
+                window.reject()
+                return True
             return False
         if event.type() == QEvent.Polish and _is_plot_toolbar(obj):
             try:

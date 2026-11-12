@@ -3837,6 +3837,11 @@ def _natural_sort_key(cls, label):
             (and swallows the key, so a tool window is not closed by it); with none on, a
             handler registered with <code>on_escape(window, handler)</code> (weak references) -
             the main window's is <code>PlotCursorController.escape</code> (the Cursor off).
+            If neither and the key went to a plot canvas of a QDialog, the filter calls
+            <code>reject()</code>: matplotlib's canvas takes every key, so a window whose plot
+            had the focus (Manual baseline, SVD, PCA, Normalization ... - the smoke test found
+            20) did not close on Esc while others (Data range) did; the smoke test now presses
+            Esc on every window, with the focus on its plot (<code>_check_escape</code>).
             <code>set_note(toolbar, text)</code>: a window's own orange note while no mode is on
             (the Cursor's, from <code>PlotCursorController._show_note</code>).
             Tests: <code>tests/test_plot_mouse.py</code>.</li>

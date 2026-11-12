@@ -240,5 +240,34 @@ def test_esc_in_a_tool_window_ends_its_zoom_and_does_not_close_it():
     tb.pan()
     assert toolbar_mode.escape(dlg) and not toolbar_mode.mode_of(tb)
     assert dlg.isVisible()
-    assert not toolbar_mode.escape(dlg)                          # no mode: Esc left to the window
+    assert not toolbar_mode.escape(dlg)                          # no mode: Esc closes it (Qt)
     dlg.close()
+
+
+def test_esc_closes_a_tool_window_also_when_its_plot_has_the_focus():
+    """Manual baseline, SVD, PCA ...: the plot takes the keyboard focus and
+    matplotlib's canvas kept Esc - those windows did not close, others did."""
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
+    from matplotlib.figure import Figure
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtTest import QTest
+    from PyQt5.QtWidgets import QDialog, QVBoxLayout
+    from src.views import toolbar_mode
+    toolbar_mode.install(app)
+    dlg = QDialog()
+    canvas = FigureCanvasQTAgg(Figure())
+    canvas.setFocusPolicy(Qt.StrongFocus)
+    tb = NavigationToolbar2QT(canvas, dlg)
+    lay = QVBoxLayout(dlg)
+    lay.addWidget(canvas)
+    lay.addWidget(tb)
+    dlg.show()
+    canvas.setFocus()
+    _pump(0.05)
+    tb.zoom()
+    QTest.keyClick(canvas, Qt.Key_Escape)                          # first: Zoom off
+    _pump(0.05)
+    assert dlg.isVisible() and not toolbar_mode.mode_of(tb)
+    QTest.keyClick(canvas, Qt.Key_Escape)                          # then: the window closes
+    _pump(0.05)
+    assert not dlg.isVisible()

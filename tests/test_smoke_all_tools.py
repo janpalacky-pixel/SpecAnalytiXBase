@@ -236,6 +236,7 @@ class _Driver:
                 self.context.pop()
             self._check_publication(dlg)
             self._check_navigation(dlg)
+            self._check_escape(dlg)
             self.context.pop()
             result = dlg.result()
             if dlg.isVisible():
@@ -273,6 +274,30 @@ class _Driver:
             except Exception:
                 self._exception(*sys.exc_info())
             self.context.pop()
+
+    def _check_escape(self, dlg):
+        """Esc closes every window (as Cancel / Close) - also when its plot
+        has the keyboard focus (some plots take it for their own keys and
+        kept Esc: Manual baseline did not close, Data range did)."""
+        from matplotlib.backends.backend_qt import FigureCanvasQT
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtTest import QTest
+        try:
+            if not dlg.isVisible():
+                return
+            canvases = [c for c in dlg.findChildren(FigureCanvasQT) if c.isVisible()]
+            target = canvases[0] if canvases else (dlg.focusWidget() or dlg)
+            if canvases:
+                target.setFocus()
+            self.context.append('[Esc]')
+            QTest.keyClick(target, Qt.Key_Escape)
+            self._pump()
+            if dlg.isVisible():
+                self._record('ESC', f"{dlg.windowTitle()}: Esc did not close the window "
+                                    f"(focus: {type(target).__name__})")
+            self.context.pop()
+        except RuntimeError:                       # closed and deleted: fine
+            pass
 
     def _check_publication(self, dlg):
         """Every plot toolbar with Save plot for publication (plot_toolbar):
