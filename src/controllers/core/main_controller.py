@@ -2072,6 +2072,12 @@ class MainController(QMainWindow):
         if hasattr(self.view, 'reverse_x_checkBox'):
             self.view.reverse_x_checkBox.toggled.connect(self._on_reverse_x_toggled)
         self.view.y_scale_comboBox.currentIndexChanged.connect(self.plot_spectra)
+        # "scale each" (scale_each.py): only the drawing changes
+        if hasattr(self.view, 'scale_each_checkBox'):
+            self.view.scale_each_checkBox.toggled.connect(self._on_scale_each_toggled)
+            self.view.y_scale_comboBox.currentIndexChanged.connect(
+                lambda *_: self._update_scale_each_enabled())
+            self._update_scale_each_enabled()
         
         
         # NOTE: QPushButton.clicked emits a bool 'checked' argument. Connecting
@@ -3105,6 +3111,7 @@ class MainController(QMainWindow):
         self.toggle_heatmap_controls(plot_type == "Heatmap")
         if plot_type == "Difference":
             self._update_difference_reference_combobox()
+        self._update_scale_each_enabled()
         
         # Plot the spectra
         self.plot_spectra()
@@ -3418,6 +3425,9 @@ class MainController(QMainWindow):
                     and not progressive:
                 self.static_canvas.draw_idle()
 
+        # "scale each" in Basic plot options: every spectrum from 0 to 1
+        self._apply_scale_each(plot_type, y_scale)
+
         # "reverse x" in Basic plot options: x from high to low
         if self._reverse_x() and getattr(self, 'static_canvas', None) is not None:
             from src.modules.visualization.plotting import apply_x_direction
@@ -3433,6 +3443,7 @@ class MainController(QMainWindow):
         self.graphics_layout.addWidget(plot_widget)
         if large_info is not None:
             large.finish(plot_widget, self.static_canvas, large_info)
+        self._show_scale_each_note()
         cursor = getattr(self, 'plot_cursor_controller', None)
         if cursor is not None:
             cursor.attach(self.static_canvas, plot_type)
@@ -3445,6 +3456,103 @@ class MainController(QMainWindow):
         lock = getattr(self.view, 'plot_only_lock', None)
         if lock is not None:
             lock.plot_redrawn()
+
+    SCALE_EACH_NOTE = "scale each: every spectrum 0\u20131 (only the drawing)"
+    SCALE_EACH_AT_NOTE = "scale each: every spectrum 1 at {x} (only the drawing)"
+    scale_each_at = None        # "scale each" to 1 at this band marker's x (None: 0-1)
+
+    def set_scale_each_at(self, x):
+        """"scale each" with every spectrum 1 at the band marker at x (None:
+        each from 0 to 1); ticks "scale each" if needed, and draws again."""
+        self.scale_each_at = None if x is None else float(x)
+        box = getattr(self.view, 'scale_each_checkBox', None)
+        if box is not None and not box.isChecked() and x is not None:
+            box.setChecked(True)               # -> _on_scale_each_toggled -> plot
+        else:
+            self.plot_spectra()
+        if self.selected_spectra and self.scale_each_on():
+            from src.modules.visualization.plot_notes import fmt
+            self._status(f"Each spectrum drawn 1 at {fmt(self.scale_each_at)} (only the drawing; "
+                         "the data stay as they are)" if self.scale_each_at is not None else
+                         "Each spectrum drawn from 0 to 1 (only the drawing; the data stay as "
+                         "they are)")
+
+    def _scale_each_marker(self):
+        """scale_each_at if a shown X band marker is still there; a removed
+        marker: None (each 0-1 again, the status bar says so)."""
+        at = self.scale_each_at
+        if at is None:
+            return None
+        manager = getattr(self, 'band_marker_manager', None)
+        xs = [x for _, x in manager.x_markers()] if manager is not None else []
+        if any(abs(float(x) - at) <= 1e-9 * max(1.0, abs(at)) for x in xs):
+            return at
+        self.scale_each_at = None
+        from src.modules.visualization.plot_notes import fmt
+        self._status(f"The band marker at {fmt(at)} is gone \u2014 every spectrum from 0 to 1 again")
+        return None
+
+    def scale_each_on(self):
+        """"scale each" ticked and possible in this plot type and Y-scale."""
+        box = getattr(self.view, 'scale_each_checkBox', None)
+        if box is None or not box.isChecked():
+            return False
+        from src.modules.visualization import scale_each
+        return scale_each.available(self.view.comboBox_plot_type_choice.currentText(),
+                                    self.view.y_scale_comboBox.currentText())
+
+    def _update_scale_each_enabled(self):
+        """"scale each" can be ticked in Overlay, Waterfall and Grid plot with
+        a linear Y-scale (otherwise greyed out; the tick is kept for later)."""
+        box = getattr(self.view, 'scale_each_checkBox', None)
+        if box is None:
+            return
+        from src.modules.visualization import scale_each
+        box.setEnabled(scale_each.available(self.view.comboBox_plot_type_choice.currentText(),
+                                            self.view.y_scale_comboBox.currentText()))
+
+    def _on_scale_each_toggled(self, checked):
+        if not checked:
+            self.scale_each_at = None          # next time each 0-1 again
+        self.plot_spectra()
+        if not self.selected_spectra:
+            return
+        self._status("Each spectrum drawn from 0 to 1 (only the drawing; the data "
+                     "stay as they are)" if self.scale_each_on()
+                     else "The spectra drawn with their own values again")
+
+    def _apply_scale_each(self, plot_type, y_scale):
+        """"scale each" on the plot just drawn. See scale_each.py."""
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None or not self.scale_each_on():
+            return
+        from PyQt5.QtCore import QTimer
+        from src.modules.visualization import scale_each
+        if scale_each.apply(canvas.figure, at_x=self._scale_each_marker()):
+            scale_each.follow_x(canvas.figure, lambda f: QTimer.singleShot(0, f))
+
+    def _show_scale_each_note(self):
+        """The orange note beside the plot's toolbar buttons while the plot is
+        scaled (toolbar_mode.set_note) - set once the toolbar is shown (set
+        before, Qt does not show it)."""
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None:
+            return
+        from src.modules.visualization import scale_each
+        try:
+            from src.views import toolbar_mode
+            note = ''
+            if scale_each.is_on(canvas.figure):
+                at = next((getattr(ax, '_sax_scale_at', None) for ax in canvas.figure.axes
+                           if getattr(ax, '_sax_scale_at', None) is not None), None)
+                if at is None:
+                    note = self.SCALE_EACH_NOTE
+                else:
+                    from src.modules.visualization.plot_notes import fmt
+                    note = self.SCALE_EACH_AT_NOTE.format(x=fmt(at))
+            toolbar_mode.set_note(getattr(self, 'static_toolbar', None), note, key='scale_each')
+        except Exception:
+            pass
 
     def _reverse_x(self):
         box = getattr(self.view, 'reverse_x_checkBox', None)
@@ -3523,8 +3631,13 @@ class MainController(QMainWindow):
             f"Label the band here ({xdata:.0f})" if on_plot else "Label the band here")
         add_text_action = context_menu.addAction("Add text here\u2026")
         add_arrow_action = context_menu.addAction("Add an arrow here\u2026")
+        # "scale each": the labels are in the spectra's own units - hidden and
+        # not added while it is on (plot_notes_controller)
+        scaled = self.scale_each_on()
         for a in (label_band_action, add_text_action, add_arrow_action):
-            a.setEnabled(on_plot)
+            a.setEnabled(on_plot and not scaled)
+            if scaled:
+                a.setText(a.text() + "  (not while \u201cscale each\u201d is on)")
         notes_action = context_menu.addAction("Labels on the plot\u2026")
 
         # Spectra hidden with a click on their names in the legend
@@ -3560,6 +3673,26 @@ class MainController(QMainWindow):
         cursor_action = context_menu.addAction("Cursor: a click adds a band marker")
         cursor_action.setCheckable(True)
         cursor_action.setChecked(bool(cursor_box is not None and cursor_box.isChecked()))
+        scale_box = getattr(self.view, 'scale_each_checkBox', None)
+        scale_action = scale_at_action = None
+        scale_at_x, scale_at_was = None, False
+        if scale_box is not None:
+            scaled_at = self.scale_each_at if scale_box.isChecked() else None
+            scale_action = context_menu.addAction("Scale each spectrum 0\u20131 (only the drawing)")
+            scale_action.setCheckable(True)
+            scale_action.setChecked(scale_box.isChecked() and scaled_at is None)
+            scale_action.setEnabled(scale_box.isEnabled())
+            # on a band marker: every spectrum 1 there (e.g. an internal standard)
+            if near is not None and markers.manager.markers[near].get('axis', 'x') == 'x':
+                m = markers.manager.markers[near]
+                scale_at_x = float(m['position'])
+                scale_at_action = context_menu.addAction(
+                    f"Scale each spectrum to 1 at the band marker {m['label']} (only the drawing)")
+                scale_at_action.setCheckable(True)
+                scale_at_was = (scaled_at is not None and
+                                abs(scaled_at - scale_at_x) <= 1e-9 * max(1.0, abs(scale_at_x)))
+                scale_at_action.setChecked(scale_at_was)
+                scale_at_action.setEnabled(scale_box.isEnabled())
 
         # Convert matplotlib event coordinates to global screen coordinates
         canvas = self.static_canvas
@@ -3622,6 +3755,14 @@ class MainController(QMainWindow):
             self._show_band_marker_dialog()
         elif action == cursor_action and cursor_box is not None:
             cursor_box.setChecked(not cursor_box.isChecked())      # on <-> off
+        elif scale_action is not None and action == scale_action:
+            if scale_box.isChecked() and self.scale_each_at is not None:
+                self.set_scale_each_at(None)                       # at a marker -> 0-1
+            else:
+                scale_box.setChecked(not scale_box.isChecked())    # on <-> off
+        elif scale_at_action is not None and action == scale_at_action:
+            # chosen again: each 0-1 again; otherwise 1 at this marker
+            self.set_scale_each_at(None if scale_at_was else scale_at_x)
         elif action == default_points_action:
             # Update the state and redraw the plot
             self.use_default_points = default_points_action.isChecked()

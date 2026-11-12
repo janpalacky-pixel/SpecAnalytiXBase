@@ -323,6 +323,42 @@ def plot_mouse_pictures(mc, view):
     settle()
 
 
+def scale_each_pictures(mc, view):
+    """scale each: the 11 Raman spectra zoomed on 1300-1700 without and with
+    it, and every spectrum 1 at a band marker (1092)."""
+    load(mc, RAMAN)
+    plot_type(mc, 'Overlay plot')
+    canvas = mc.static_canvas
+    ax = canvas.figure.axes[0]
+    ax.set_xlim(1300, 1700)
+    canvas.draw()
+    settle()
+    save(view.grab(in_window(view, view.graphicsView)), 'scale_each_before.png')
+    view.scale_each_checkBox.setChecked(True)
+    settle()
+    ax = mc.static_canvas.figure.axes[0]
+    ax.set_xlim(1300, 1700)                    # (drawn again: zoomed as before)
+    settle()
+    mc.static_canvas.draw()
+    settle()
+    save(view.grab(in_window(view, view.graphicsView)), 'scale_each.png')
+    # 1 at a band marker: the DNA phosphate band at 1092
+    markers = mc.band_markers()
+    markers.add_at(1092.0)
+    mc.set_scale_each_at(1092.0)
+    settle()
+    ax = mc.static_canvas.figure.axes[0]
+    ax.set_xlim(600, 1800)
+    settle()
+    mc.static_canvas.draw()
+    settle()
+    save(view.grab(in_window(view, view.graphicsView)), 'scale_each_at_marker.png')
+    markers.remove_all()
+    mc.set_scale_each_at(None)
+    view.scale_each_checkBox.setChecked(False)
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -439,6 +475,12 @@ def main():
     # 7. the mouse on the plot: a clicked line, a spectrum hidden in the legend
     try:
         plot_mouse_pictures(mc, view)
+    except Exception:
+        log(traceback.format_exc())
+
+    # 8. scale each: the same band without and with it, 1 at a band marker
+    try:
+        scale_each_pictures(mc, view)
     except Exception:
         log(traceback.format_exc())
 

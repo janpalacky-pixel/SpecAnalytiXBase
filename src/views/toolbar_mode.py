@@ -98,15 +98,23 @@ def decorate(toolbar):
     return note
 
 
-def set_note(toolbar, text):
+def set_note(toolbar, text, key='window'):
     """An orange note of the window's own beside the buttons while no
     toolbar mode is on (e.g. "Cursor on - a click adds a band marker; Esc
-    ... to end"); '' removes it."""
+    ... to end"); '' removes it. Several notes (key: who sets it - e.g.
+    the Cursor and "scale each") are shown one after another."""
     if toolbar is None:
         return
     try:
         decorate(toolbar)
-        toolbar._sax_extra_note = text or ''
+        notes = getattr(toolbar, '_sax_extra_notes', None)
+        if notes is None:
+            notes = toolbar._sax_extra_notes = {}
+        if text:
+            notes[key] = text
+        else:
+            notes.pop(key, None)
+        toolbar._sax_extra_note = '   \u00b7   '.join(t for t in notes.values() if t)
         toolbar._sax_update_note()
     except RuntimeError:
         pass

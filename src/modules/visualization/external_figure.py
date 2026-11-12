@@ -246,6 +246,14 @@ def create_external_figure(mc):
     if cd_quality is not None:
         cd_quality.decorate(new_fig, spectra, plot_type)
 
+    # "scale each" in Basic plot options, as in the main window
+    scale_on = getattr(mc, 'scale_each_on', None)
+    if callable(scale_on) and scale_on():
+        from PyQt5.QtCore import QTimer
+        from src.modules.visualization import scale_each
+        if scale_each.apply(new_fig):
+            scale_each.follow_x(new_fig, lambda f: QTimer.singleShot(0, f))
+
     # "reverse x" in Basic plot options, as in the main window
     box = getattr(mc.view, 'reverse_x_checkBox', None)
     if box is not None and box.isChecked():

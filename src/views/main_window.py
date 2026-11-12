@@ -1007,7 +1007,26 @@ class MainWindow(QMainWindow):
             "Draw the x-axis from high to low values (e.g. 4000 \u2192 400 cm\u207b\u00b9, as usual\n"
             "for IR and Raman spectra), in every plot type and in Open in New Window.\n"
             "Only the drawing changes; the data stay as they are.")
-        self.gridLayout_2.addWidget(self.reverse_x_checkBox, 2, 0, 1, 2)
+        # "scale each": every spectrum drawn from 0 to 1 (shapes compared,
+        # only the drawing changes - scale_each.py); beside "reverse x"
+        self.scale_each_checkBox = QCheckBox("scale each", self.groupBox_basic_plot_options)
+        self.scale_each_checkBox.setObjectName("scale_each_checkBox")
+        self.scale_each_checkBox.setToolTip(
+            "<b>scale each</b>: every spectrum drawn from 0 (its lowest point)<br>"
+            "to 1 (its highest point) in the view – spectra of very different<br>"
+            "intensity are compared by their shape.<br>"
+            "<b>Zoomed in</b> on a band: each spectrum fitted to that band.<br>"
+            "Only the drawing changes: the data, the Cursor's values and<br>"
+            "Detect Peaks stay as they are.<br>"
+            "Overlay, Waterfall and Grid plot with a <b>linear</b> Y-scale.<br>"
+            "Also: right-click on the plot; on a band marker:<br>"
+            "<b>Scale each spectrum to 1 at the band marker</b> (e.g. Phe at 1004).")
+        row_x = QHBoxLayout()
+        row_x.setContentsMargins(0, 0, 0, 0)
+        row_x.addWidget(self.reverse_x_checkBox)
+        row_x.addWidget(self.scale_each_checkBox)
+        row_x.addStretch(1)
+        self.gridLayout_2.addLayout(row_x, 2, 0, 1, 2)
         
         self.gridLayout_4.addLayout(self.gridLayout_2, 0, 2, 1, 1)
         

@@ -185,14 +185,17 @@ class PeakDetectionController:
                 if offset is None:
                     continue
                 limits = ax.get_xlim(), ax.get_ylim()
+                # with the line's own transform ("scale each": scale_each.py)
+                tr = line.get_transform()
                 band, = ax.plot(line.get_xdata(), line.get_ydata(), color=line.get_color(),
                                 lw=line.get_linewidth() + 5, alpha=0.3, solid_capstyle='round',
                                 zorder=line.get_zorder() - 0.1, label='_nolegend_',
-                                gid=self.SHOWN_GID)
+                                gid=self.SHOWN_GID, transform=tr)
                 ring, = ax.plot([x], [y + offset], 'o', ms=15, mfc='none', mec='#D84315',
-                                mew=2.2, zorder=7, label='_nolegend_', gid=self.SHOWN_GID)
+                                mew=2.2, zorder=7, label='_nolegend_', gid=self.SHOWN_GID,
+                                transform=tr)
                 name = str(spectrum.get('label', ''))
-                text = ax.annotate(f"{name}\n{x:g}", (x, y + offset), xytext=(0, 16),
+                text = ax.annotate(f"{name}\n{x:g}", (x, y + offset), xycoords=tr, xytext=(0, 16),
                                    textcoords='offset points', ha='center', va='bottom',
                                    fontsize=9, color='#D84315', zorder=8,
                                    bbox=dict(boxstyle='round,pad=0.25', fc='white',
@@ -248,7 +251,7 @@ class PeakDetectionController:
                     offset, _line = hit
                     artist, = ax.plot(x, np.asarray(y, dtype=float) + offset, ls='--', lw=1.2,
                                       color='black', alpha=0.85, zorder=5, label='_nolegend_',
-                                      gid=self.FIT_GID)
+                                      gid=self.FIT_GID, transform=_line.get_transform())
                     self.fit_artists.append(artist)
                     drawn += 1
                 ax.set_xlim(limits[0])

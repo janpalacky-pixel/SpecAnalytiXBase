@@ -3842,9 +3842,41 @@ def _natural_sort_key(cls, label):
             had the focus (Manual baseline, SVD, PCA, Normalization ... - the smoke test found
             20) did not close on Esc while others (Data range) did; the smoke test now presses
             Esc on every window, with the focus on its plot (<code>_check_escape</code>).
-            <code>set_note(toolbar, text)</code>: a window's own orange note while no mode is on
-            (the Cursor's, from <code>PlotCursorController._show_note</code>).
+            <code>set_note(toolbar, text, key)</code>: a window's own orange note while no mode
+            is on (the Cursor's, from <code>PlotCursorController._show_note</code>; "scale each"'s,
+            key <code>'scale_each'</code>) - several keys are shown one after another.
             Tests: <code>tests/test_plot_mouse.py</code>.</li>
+            <li><b>scale each</b> (1.7.0, <code>src/modules/visualization/scale_each.py</code>,
+            Qt-free): <code>apply(figure)</code> on a finished Overlay / Waterfall / Grid plot
+            gives every spectrum line (no gid; band markers, the cursor, peaks have one) the
+            transform <code>ViewScale + ax.transData</code>. <code>ViewScale</code> (an
+            <code>Affine2DBase</code>, child of <code>ax.viewLim</code>, so a new x range
+            invalidates it) works out y &rarr; a&middot;y + b from the line's own data within the
+            view's x range at draw time (lowest at <code>base</code>, highest at base + 1; Waterfall:
+            <code>base = line._sax_shift / ax._sax_waterfall_height</code>, set by
+            <code>waterfall_plot_mode</code>). The lines keep their data, so everything reading
+            <code>get_ydata()</code> gets real values (the Cursor, Copy values, Detect Peaks);
+            what is drawn on a line uses <code>line.get_transform()</code> (peak dots and
+            numbers - <code>ViewText</code> checks its point with its own transform -, the Peak
+            list's shown peak and fits; <code>PlotMouseController.distance</code>); the Cursor's
+            dots and the choice of the 10 listed use <code>scale_each.shown_y</code>. y range:
+            <code>reset_y</code> (-0.05 .. top + 0.05), again after each x change
+            (<code>follow_x</code>: <code>xlim_changed</code> &rarr; a 0 ms QTimer, after a Zoom
+            rectangle has also set y). Pickled copies (Save plot for publication) stay scaled.
+            <code>MainController._apply_scale_each</code> / <code>_show_scale_each_note</code> (the
+            note after the toolbar is shown - set before, Qt does not show it),
+            <code>scale_each_on</code>, <code>_update_scale_each_enabled</code> (greyed out in
+            other plot types and with a non-linear Y-scale); Open in New Window
+            (<code>external_figure.py</code>); your labels are not drawn nor added while on
+            (<code>PlotNotesController.scaled</code>); snapshot key
+            <code>plot_settings.scale_each</code>. 1 at a band marker:
+            <code>MainController.scale_each_at</code> (<code>set_scale_each_at</code>, the
+            right-click item on a marker; checked by <code>_scale_each_marker</code> - a removed
+            marker: 0-1 again, also from <code>BandMarkerController.changed</code>) &rarr;
+            <code>apply(at_x=...)</code>: <code>ViewScale.at_x</code>, the top is the value at
+            the marker; <code>ax._sax_scale_at</code>, <code>y_range</code> then from what the
+            scaled lines reach in view; snapshot key <code>plot_settings.scale_each_at</code>.
+            Tests: <code>tests/test_scale_each.py</code>.</li>
             <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
             <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
             <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the

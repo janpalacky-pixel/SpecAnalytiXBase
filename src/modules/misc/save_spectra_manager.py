@@ -502,6 +502,8 @@ class SaveManager:
             'use_default_points':        main_controller.use_default_points,
             'x_scale':                   self._safe_get(ui, 'x_scale_comboBox', 'currentText'),
             'reverse_x':                 bool(self._safe_get(ui, 'reverse_x_checkBox', 'isChecked')),
+            'scale_each':                bool(self._safe_get(ui, 'scale_each_checkBox', 'isChecked')),
+            'scale_each_at':             getattr(main_controller, 'scale_each_at', None),
             'y_scale':                   self._safe_get(ui, 'y_scale_comboBox', 'currentText'),
             'grid_settings':             main_controller.grid_settings.copy(),
             # The "reverse sorting" checkbox lives on the main controller
@@ -1320,6 +1322,13 @@ class SaveManager:
                     self._safe_set(ui, 'x_scale_comboBox', 'setCurrentText', s['x_scale'])
                 # snapshots from before "reverse x" existed were drawn low to high
                 self._safe_set(ui, 'reverse_x_checkBox', 'setChecked', bool(s.get('reverse_x', False)))
+                # "scale each" (since 1.7.0; older snapshots: off) - drawn with
+                # the spectra restored (no plot of its own now)
+                self._safe_set(ui, 'scale_each_checkBox', 'blockSignals', True)
+                self._safe_set(ui, 'scale_each_checkBox', 'setChecked', bool(s.get('scale_each', False)))
+                self._safe_set(ui, 'scale_each_checkBox', 'blockSignals', False)
+                at = s.get('scale_each_at')
+                main_controller.scale_each_at = float(at) if isinstance(at, (int, float)) else None
                 if 'y_scale' in s:
                     self._safe_set(ui, 'y_scale_comboBox', 'setCurrentText', s['y_scale'])
                 if 'use_automatic_line_colors' in s:

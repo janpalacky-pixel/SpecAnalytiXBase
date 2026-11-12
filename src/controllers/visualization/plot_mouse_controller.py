@@ -173,7 +173,7 @@ class PlotMouseController:
         xy = xy[np.all(np.isfinite(xy), axis=1)]
         if len(xy) == 0:
             return np.inf
-        p = line.axes.transData.transform(xy)
+        p = line.get_transform().transform(xy)    # scale_each: the line's own
         if len(p) == 1:
             return float(np.hypot(*(p[0] - (x, y))))
         a, b = p[:-1], p[1:]

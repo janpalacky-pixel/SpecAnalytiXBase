@@ -1487,6 +1487,14 @@ class PublicationDialog(QDialog):
         if self.notes is None:
             return None
         i = self.notes.add_in_middle(kind, "text" if kind == 'text' else "")
+        if i is None and getattr(self.notes, 'scaled', lambda: False)():
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self, "Labels",
+                "Labels cannot be added while \u201cscale each\u201d is on (Basic plot "
+                "options): they are placed in the spectra's own units.\n\n"
+                "Untick \u201cscale each\u201d to add and see your labels.")
+            return None
         self.notes.select(None)
         self._notes_changed()
         return i

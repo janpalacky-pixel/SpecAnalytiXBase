@@ -482,6 +482,10 @@ def get_normalization_help_content():
         minimum and maximum of the region determine the scaling. Apply baseline correction first
         for best results. Unlike peak-intensity or area normalization, spectra with the same
         shape but different baselines will not overlay exactly.</p>
+        <p><strong>Only to look at the shapes?</strong> <em>scale each</em> in Basic plot
+        options draws every spectrum from 0 to 1 in the view (fitted again when you zoom on a
+        band) without changing the data &mdash; see <a href="help://user_guide#scale-each">scale
+        each</a>.</p>
         <a class="det-link" href="#det-minmax">&#9660; algorithm details</a>
     </div>
 

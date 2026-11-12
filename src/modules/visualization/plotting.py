@@ -515,13 +515,13 @@ def waterfall_plot_mode(
         plot_settings = {}
 
     # Auto offset: 10 % of the largest peak-to-peak range
+    max_range = max(
+        (float(np.nanmax(y) - np.nanmin(y))
+         for y in (np.asarray(s.get('y_scale', []), dtype=float) for s in spectra)
+         if len(y) and np.isfinite(y).any()),
+        default=1.0,
+    )
     if not offset:
-        max_range = max(
-            (float(np.ptp(np.asarray(s.get('y_scale', []), dtype=float)))
-             for s in spectra
-             if len(s.get('y_scale', []))),
-            default=1.0,
-        )
         offset = max_range * 0.10 if max_range > 0 else 1.0
 
     fig, canvas, toolbar = initialize_plot_widget(graphics_view)
@@ -547,10 +547,12 @@ def waterfall_plot_mode(
         lw    = sp.get('linewidth', 1.0)
         ls    = sp.get('linestyle', '-')
 
-        ax.plot(x, y + cumulative_offset, color=color, lw=lw, ls=ls,
-                alpha=0.90, label=label)
+        line, = ax.plot(x, y + cumulative_offset, color=color, lw=lw, ls=ls,
+                        alpha=0.90, label=label)
+        line._sax_shift = cumulative_offset    # "scale each" (scale_each.py)
         cumulative_offset += offset
 
+    ax._sax_waterfall_height = max_range       # "scale each": the offsets in proportion
     ax.set_xlabel('x', fontsize=10)
     ax.set_ylabel('Intensity  (offset)', fontsize=10)
     ax.set_title(f'Waterfall plot  —  {len(spectra)} spectra', fontsize=11)

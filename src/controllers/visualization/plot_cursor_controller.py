@@ -44,6 +44,7 @@ class PlotCursorController:
         self._cids = []
         self._background = None
         self._live = {}                # axes -> (vline, dots, box)
+        self.shown_at = []             # where the listed values are drawn (scale_each)
         self._live_ax = None
 
     # ------------------------------------------------------------ wiring
@@ -116,9 +117,10 @@ class PlotCursorController:
 
     # ------------------------------------------------------------ data
     @staticmethod
-    def _curves(ax):
+    def _curves(ax, lines=None):
         """(label, x, y) of the spectra drawn in ax (not markers, bands or
-        this controller's own lines)."""
+        this controller's own lines) - y their own values, also with
+        "scale each" on. lines: a list that gets each curve's line."""
         out = []
         for ln in ax.get_lines():
             if ln.get_gid() == CURSOR_GID or not ln.get_visible():
@@ -130,6 +132,8 @@ class PlotCursorController:
             if label.startswith('_'):
                 label = '(unnamed line)'
             out.append((label, x, np.asarray(ln.get_ydata(), dtype=float)))
+            if lines is not None:
+                lines.append(ln)
         return out
 
     def all_curves(self):
@@ -153,9 +157,22 @@ class PlotCursorController:
         if not self.shows_values():
             if self.plot_type == 'Waterfall plot':
                 lines.append("(values not listed: the curves are shifted)")
+            self.shown_at = []
             return "\n".join(lines), []
-        vals = cv.values_at(self._curves(ax), x)
-        shown, hidden = cv.listed(vals, pointer_y)
+        drawn = []
+        curves = self._curves(ax, drawn)
+        # "scale each" (scale_each.py): the values listed are the spectra's
+        # own; which ones (the nearest to the pointer) and their order, and
+        # where the dots go (self.shown_at), as they are drawn
+        from src.modules.visualization.scale_each import shown_y
+        vals = []
+        for (label, xd, yd), line in zip(curves, drawn):
+            v = cv.value_at(xd, yd, x)
+            if v is not None:
+                vals.append((label, v, shown_y(line, v)))
+        picked, hidden = cv.listed([(i, at) for i, (_, _, at) in enumerate(vals)], pointer_y)
+        self.shown_at = [vals[i][2] for i, _ in picked]
+        shown = [vals[i][:2] for i, _ in picked]
         for label, v in shown:
             name = label if len(label) <= 32 else '…' + label[-31:]
             lines.append(f"{name}: {cv.fmt(v)}")
@@ -213,7 +230,7 @@ class PlotCursorController:
             a.set_visible(True)
         vline.set_xdata([x, x])
         if shown:
-            dots.set_data([x] * len(shown), [v for _, v in shown])
+            dots.set_data([x] * len(shown), list(self.shown_at))
         else:
             dots.set_data([], [])
         box.set_text(text)

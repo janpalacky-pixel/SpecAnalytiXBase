@@ -55,6 +55,9 @@ _SCREENSHOT_FILES = {
     "RICH_TEXT_EDITOR":            "rich_text_editor.png",
     "PLOT_MOUSE_LINE":             "plot_mouse_line.png",
     "PLOT_MOUSE_LEGEND":           "plot_mouse_legend.png",
+    "SCALE_EACH_BEFORE":           "scale_each_before.png",
+    "SCALE_EACH":                  "scale_each.png",
+    "SCALE_EACH_AT":               "scale_each_at_marker.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -339,6 +342,7 @@ def get_user_guide_help_content():
             <li><a href="#selection">Spectrum Selection</a></li>
             <li><a href="#visualisation">Visualisation</a>
                 <ul>
+                    <li><a href="#scale-each">scale each: compare the shapes</a></li>
                     <li><a href="#band-markers">Band Markers</a></li>
                 </ul>
             </li>
@@ -1045,6 +1049,8 @@ def get_user_guide_help_content():
                 spectra. Works in every plot type and in <em>Open in New Window</em>; the cursor,
                 zoom and band markers keep working. Only the drawing changes, not the data. Saved
                 in snapshots.</li>
+            <li><strong>scale each</strong> (beside reverse x): every spectrum is drawn from 0
+                to 1 &mdash; see <a href="#scale-each">scale each</a>.</li>
             <li><strong>Link x-axes / Link y-axes:</strong> Synchronise zoom across subplots
                 (Grid plot only &mdash; the Link axes box is hidden for other plot types)</li>
             <li><strong>Line colours</strong> (the list directly below the plot-type dropdown):
@@ -1054,6 +1060,112 @@ def get_user_guide_help_content():
             <li><strong>show legend:</strong> show or hide the legend (on by default; below
                 the line colours list). Settings: <strong>☰ Legend</strong> &mdash; see
                 <a href="#legend">Legend</a>.</li>
+        </ul>
+
+        <h3 id="scale-each">scale each: compare the shapes</h3>
+        <p>Spectra of very different intensity are hard to compare in one plot. In the eleven
+        Raman spectra of DNA below one is about three times stronger than the others, and they
+        sit on different backgrounds: the weak ones are nearly flat lines at the bottom and
+        their bands cannot be compared. Tick <strong>scale each</strong> in <em>Basic plot
+        options</em> (beside <em>reverse x</em>), or right-click on the plot &rarr; <em>Scale
+        each spectrum 0&ndash;1 (only the drawing)</em>: every spectrum is drawn from <b>0</b>
+        (its lowest point in the view) to <b>1</b> (its highest point in the view). All of them
+        fill the plot, and differences in their <em>shape</em> &mdash; a band that grows, shifts,
+        broadens or splits &mdash; are seen at a glance.</p>
+        <div class="screenshot">
+            <img src="$SCALE_EACH_BEFORE" width="$SCALE_EACH_BEFORE_W" height="$SCALE_EACH_BEFORE_H" alt="Eleven Raman spectra zoomed on 1300 to 1700, with their own intensities" />
+            <p class="caption">Without scale each: the eleven spectra zoomed on
+            1300&ndash;1700&nbsp;cm<sup>&minus;1</sup> with their own intensities &mdash; the
+            strong one on top, the others squeezed together.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$SCALE_EACH" width="$SCALE_EACH_W" height="$SCALE_EACH_H" alt="The same spectra with scale each: every one from 0 to 1" />
+            <p class="caption">With scale each: every spectrum from 0 to 1 in this range, so
+            their bands lie on top of each other and the differences in shape show. The orange
+            note under the plot and the y-axis title say that the drawing is scaled.</p>
+        </div>
+
+        <h4>How it works</h4>
+        <ul>
+            <li><b>Fitted to what is in view.</b> Zoom on one band (mouse wheel, Zoom, Pan, a
+            drag) and every spectrum is fitted to that band: its lowest point there at 0, its
+            highest at 1. Zoom out (or Home) and the whole spectra are fitted again. The y-axis
+            always shows 0 to 1.</li>
+            <li><b>Only the drawing changes.</b> The data stay as they are: the
+            <a href="#cursor">Cursor</a> lists the spectra's own values, <em>Copy the values at
+            the band markers</em> copies them, Detect Peaks finds the same peaks (their dots and
+            numbers sit on the scaled lines), processing and exports use the real values.</li>
+            <li><b>Plot types:</b> Overlay, Waterfall (the spectra stay stacked, as far apart in
+            proportion as without it) and Grid plot (each panel 0&ndash;1), with a
+            <em>linear</em> Y-scale. In Mean &plusmn; SD, Difference and the Heatmap, or with a
+            log Y-scale, the box is greyed out; if it was ticked it stays ticked and works again
+            when you come back to Overlay, Waterfall or Grid.</li>
+            <li>While it is on, an orange note beside the plot's toolbar buttons says so and the
+            y-axis title ends with <em>each scaled 0&ndash;1</em> &mdash; also in Copy plot, Save
+            plot for publication and Open in New Window, which show the plot as it is.</li>
+            <li>Saved in snapshots: an opened snapshot is drawn the same way.</li>
+        </ul>
+
+        <h4 id="scale-each-at">1 at a band marker: compare to an internal standard</h4>
+        <p>Sometimes one band should be the measure for all the others: a band whose amount does
+        not change between the samples (an <em>internal standard</em>, e.g. phenylalanine at
+        1004&nbsp;cm<sup>&minus;1</sup> in proteins, the phosphate band at
+        1092&nbsp;cm<sup>&minus;1</sup> in DNA, a solvent band). Its height then only reflects
+        the measurement (laser power, focus, path length), and dividing it out shows the real
+        changes of the other bands.</p>
+        <ol>
+            <li>Put a band marker on the top of that band: with the <a href="#cursor">Cursor</a>
+            ticked a click there, or right-click &rarr; <em>Add a band marker here</em>.</li>
+            <li>Right-click on the marker &rarr; <em>Scale each spectrum to 1 at the band marker
+            1092 (only the drawing)</em>.</li>
+        </ol>
+        <p>Every spectrum is drawn with its value <b>at the marker at 1</b> and its lowest point in
+        the view still at 0, so all of them cross 1 exactly at the marker and every other band
+        is seen relative to it. Unlike 0&ndash;1, other bands may now be higher than 1 &mdash;
+        e.g. a band at 1.8 in one spectrum and 1.2 in another is relatively stronger in the
+        first; the y-axis grows to show everything in view. The note and the y-axis title say
+        <em>1 at 1092</em>.</p>
+        <div class="screenshot">
+            <img src="$SCALE_EACH_AT" width="$SCALE_EACH_AT_W" height="$SCALE_EACH_AT_H" alt="Every spectrum 1 at the band marker at 1092" />
+            <p class="caption">Every spectrum 1 at the band marker at 1092: all lines cross 1
+            there; the other bands are compared relative to it and may be above 1.</p>
+        </div>
+        <p>Back to 0&ndash;1: choose the same item again, or <em>Scale each spectrum
+        0&ndash;1</em> in the right-click menu; removing the marker does the same (the status bar
+        says so). Unticking <em>scale each</em> ends both.</p>
+
+        <h4>Good to know</h4>
+        <ul>
+            <li><b>Spikes.</b> One cosmic-ray spike becomes a spectrum's 1 and squeezes the rest of
+            it to the bottom. Remove spikes first (Spike removal), zoom so that the spike is out of
+            view, or use 1 at a band marker.</li>
+            <li><b>Noise is scaled too.</b> A weak, noisy spectrum (or a blank) is stretched to
+            0&ndash;1 like the others, and its noise then looks as large as the bands of a strong
+            spectrum. Before concluding that a band is there, look at the real intensities
+            (untick it).</li>
+            <li><b>The background is part of the shape.</b> 0 is the lowest point in view, not the
+            true zero: a sloping background or fluorescence changes where a spectrum's 0 and 1
+            are. To compare band shapes, correct the baseline first or zoom close to the
+            band.</li>
+            <li><b>Negative values (CD).</b> The lowest point (e.g. the minimum at 208&nbsp;nm)
+            goes to 0, so the zero line of the data is no longer at 0 in the plot and the sign of
+            a band cannot be read from the y-axis. Compare the shapes; untick it to see the real
+            zero line.</li>
+            <li><b>Not a normalization.</b> Nothing is calculated for later steps; peak fitting,
+            statistics and exports use the real values. When the scaled values are needed as data
+            (a table, a calibration), use Normalization (e.g. <em>Min-max [0, 1]</em> or
+            <em>Peak intensity</em> at a region), which changes the spectra.</li>
+            <li><b>1 at a marker</b> reads the value exactly at the marker's x (interpolated), not
+            at the band's top: put the marker on the top (e.g. at the position Detect Peaks
+            gives). Choose a band that does not change between the samples and stands clearly
+            above the noise. A spectrum that does not reach the marker, or whose value there is not
+            above its lowest point in view, is drawn 0&ndash;1.</li>
+            <li><b>In a figure for a paper</b> (Copy plot, Save plot for publication) the y-axis
+            title says <em>each scaled 0&ndash;1</em> (or <em>each 1 at &hellip;</em>); say so in
+            the caption too.</li>
+            <li><b>Your <a href="#plot-labels">labels on the plot</a></b> are placed in the
+            spectra's own units, so they are not drawn while scale each is on (they are kept and
+            come back when you untick it); new labels cannot be added then.</li>
         </ul>
 
         <h3 id="band-markers">Band Markers</h3>
@@ -1334,12 +1446,13 @@ def get_user_guide_help_content():
             <tr><td><strong>Line colours</strong></td><td>A submenu: <em>Automatic colours</em>, <em>Own colours</em> or <em>Colours by value</em> (✓ = in use), and <em>Line colours&hellip;</em> for the window &mdash; see <a href="#line-colours">Line colours</a></td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
-            <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
-            <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
+            <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>            <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
             <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
             <tr><td><strong>Add a band marker here</strong></td><td>A band marker at the x clicked, labelled with its x above the plot &mdash; see <a href="#band-markers">Band Markers</a> (with the Cursor ticked a click on the plot does the same)</td></tr>
             <tr><td><strong>Remove the band marker &hellip;</strong>, <strong>Copy the values at the band markers</strong>, <strong>Remove all band markers&hellip;</strong>, <strong>Band markers&hellip;</strong></td><td>The marker under the mouse removed; the spectra's values at every vertical marker copied as a table for Excel (one column per marker); all markers removed (it asks first); the Band markers window</td></tr>
+            <tr><td><strong>Scale each spectrum 0&ndash;1 (only the drawing)</strong></td><td>Every spectrum drawn from 0 to 1 (&#10003; = on) &mdash; the same as <em>scale each</em> in Basic plot options; see <a href="#scale-each">scale each</a></td></tr>
+            <tr><td><strong>Scale each spectrum to 1 at the band marker &hellip; (only the drawing)</strong></td><td>Only on a vertical band marker: every spectrum drawn 1 at that marker (&#10003; = on; again: 0&ndash;1) &mdash; see <a href="#scale-each">scale each</a></td></tr>
             <tr><td><strong>Cursor: a click adds a band marker</strong></td><td>The <a href="#cursor">Cursor</a> on or off (&#10003; = on) &mdash; the same as its tick box in Basic plot options; <span class="kbd">Esc</span> also switches it off</td></tr>
         </table>
 

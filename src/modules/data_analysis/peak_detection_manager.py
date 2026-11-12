@@ -70,14 +70,18 @@ class PeakDetector:
                 self.peak_indices[(ax_idx, line_idx)] = np.array([p['index'] for p in peaks],
                                                                  dtype=int)
                 for p in peaks:
+                    # "scale each" (scale_each.py): the dot and the number go
+                    # with the line (its own transform); p['y'] is the real value
+                    p['_line'] = line
                     found.append((line_idx, line_label, p))
                     x_str = self.format_number(p['x'], number_format, decimals)
                     # one dot per peak; a label starting with "_" keeps it out of the legend
                     dot = ax.plot([p['x']], [p['y']], 'ro', markersize=8,
+                                  transform=line.get_transform(),
                                   label=f"_Peak at {x_str} from {line_label}")[0]
                     self.peak_lines.append(dot)
 
-            for x_val, y_val, kind in self._label_places(found, labels, current_label, pl):
+            for x_val, y_val, kind, line in self._label_places(found, labels, current_label, pl):
                 if isinstance(x_val, tuple):         # a band that moves: its range
                     lo, hi, _ = x_val
                     x_str = (f"{self.format_number(lo, number_format, decimals)}\u2013"
@@ -91,7 +95,8 @@ class PeakDetector:
                 # left floating outside the plot) - view_text.py
                 self.peak_texts.append(add_view_text(
                     ax, x_val, y_val, text, fontsize=font_size,
-                    ha='center', va='bottom' if kind == 'max' else 'top', rotation=rotation))
+                    ha='center', va='bottom' if kind == 'max' else 'top', rotation=rotation,
+                    transform=line.get_transform() if line is not None else ax.transData))
         canvas.draw()
 
     @staticmethod
@@ -105,9 +110,11 @@ class PeakDetector:
         if labels == 'none' or not found:
             return []
         if labels == 'current':
-            return [(p['x'], p['y'], p['kind']) for _, lab, p in found if lab == current_label]
+            return [(p['x'], p['y'], p['kind'], p.get('_line'))
+                    for _, lab, p in found if lab == current_label]
         if labels != 'band':
-            return [(p['x'], p['y'], p['kind']) for _, _, p in found]
+            return [(p['x'], p['y'], p['kind'], p.get('_line')) for _, _, p in found]
+        from src.modules.visualization.scale_each import shown_y
         out = []
         for kind in ('max', 'min'):
             peaks = [p for _, _, p in found if p['kind'] == kind]
@@ -125,11 +132,13 @@ class PeakDetector:
             for p, c in zip(peaks, centres):
                 bands.setdefault(c, []).append(p)
             for c, members in bands.items():
-                top = (max if kind == 'max' else min)(members, key=lambda p: p['y'])
+                # the top as drawn ("scale each": the spectra scaled)
+                top = (max if kind == 'max' else min)(
+                    members, key=lambda p: shown_y(p.get('_line'), p['y']))
                 lo = min(p['x'] for p in members)
                 hi = max(p['x'] for p in members)
                 written = (lo, hi, c) if hi - lo > tolerance / 2 else c
-                out.append((written, top['y'], kind))
+                out.append((written, top['y'], kind, top.get('_line')))
         return out
 
     def clear_peaks(self, canvas):

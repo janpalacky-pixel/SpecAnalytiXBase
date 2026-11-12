@@ -18,14 +18,16 @@ from matplotlib.transforms import Bbox
 TOL_PX = 0.5          # a point exactly on the axes' edge is in the view
 
 
-def point_in_view(ax, x, y=None):
+def point_in_view(ax, x, y=None, transform=None):
     """Is the data point (x, y) - or, y None, the x position - within the
-    axes' view? Checked in screen pixels, so reversed and log axes work."""
+    axes' view? Checked in screen pixels, so reversed and log axes work.
+    transform: the point's own (e.g. a scaled line's - scale_each.py),
+    otherwise the axes' data."""
     try:
         if y is None:
             px, py = ax.get_xaxis_transform().transform((x, 0.5))
         else:
-            px, py = ax.transData.transform((x, y))
+            px, py = (transform or ax.transData).transform((x, y))
     except Exception:
         return True
     if not (np.isfinite(px) and np.isfinite(py)):
@@ -45,7 +47,7 @@ class ViewText(Text):
         if ax is None:
             return True
         x, y = self.get_position()
-        return point_in_view(ax, x, None if self.only_x else y)
+        return point_in_view(ax, x, None if self.only_x else y, self.get_transform())
 
     def draw(self, renderer):
         if not self.in_view():

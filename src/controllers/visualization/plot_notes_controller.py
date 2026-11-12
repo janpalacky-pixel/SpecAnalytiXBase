@@ -72,7 +72,10 @@ class PlotNotesController:
                         a.remove()                 # labels, an arrow's end squares
             self._artists = []
             ax = self.target_axes(figure)
-            if ax is not None and len(self.notes):
+            # "scale each" (scale_each.py): the labels are in the spectra's own
+            # units, which the scaled plot does not show - kept, not drawn
+            from src.modules.visualization import scale_each
+            if ax is not None and len(self.notes) and not scale_each.is_on(figure):
                 self._artists = self.notes.draw(ax, selected=self.selected)
             if draw:
                 self.canvas.draw_idle()
@@ -197,11 +200,18 @@ class PlotNotesController:
         return bool(result)
 
     # ------------------------------------------------------------------ adding
+    def scaled(self):
+        """"scale each" on in the plot: labels are neither drawn nor added."""
+        from src.modules.visualization import scale_each
+        return self.canvas is not None and scale_each.is_on(self.canvas.figure)
+
     def add_at(self, kind, event, text=None):
         """A new label at the place clicked (`event`: a matplotlib mouse
         event on a plot). `text` None: asked for. Returns its number or None."""
         if event is None or event.inaxes is None or event.xdata is None:
             return None
+        if self.scaled():
+            return None                        # not in the scaled units (redraw)
         x, y = float(event.xdata), float(event.ydata)
         if kind == 'band':
             cursor = getattr(self.main, 'plot_cursor_controller', None)
@@ -221,7 +231,7 @@ class PlotNotesController:
     def add_in_middle(self, kind, text):
         """A new label in the middle of the plot (from Save plot for
         publication); drag it to its place. Returns its number or None."""
-        if self.canvas is None:
+        if self.canvas is None or self.scaled():
             return None
         ax = self.target_axes(self.canvas.figure)
         if ax is None:

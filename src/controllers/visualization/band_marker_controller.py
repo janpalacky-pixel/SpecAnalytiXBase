@@ -83,6 +83,13 @@ class BandMarkerController:
         now (without plotting the spectra again, the zoom stays) and listed
         in the Band markers window if it is open."""
         canvas = self._canvas()
+        main = self.controller
+        at = getattr(main, 'scale_each_at', None)
+        if at is not None and canvas is not None and not any(
+                abs(float(x) - at) <= 1e-9 * max(1.0, abs(at)) for _, x in self.manager.x_markers()):
+            # "scale each" was 1 at the marker just removed: drawn again 0-1
+            main.plot_spectra()
+            canvas = None
         if canvas is not None:
             try:
                 self.manager.redraw(canvas.figure)
