@@ -1309,7 +1309,9 @@ class MainController(QMainWindow):
         # Interactive Update has no room left)
         grid = getattr(self.view, 'gridLayout', None)
         if grid is not None:
-            grid.addWidget(self.cursor_checkbox, 8, 0, 1, 2)
+            # beside it "keep zoom" (main_window.py)
+            grid.addWidget(self.cursor_checkbox, 8, 0, 1,
+                           1 if hasattr(self.view, 'keep_zoom_checkBox') else 2)
         else:
             layout.addWidget(self.cursor_checkbox)
 
@@ -2072,6 +2074,10 @@ class MainController(QMainWindow):
         if hasattr(self.view, 'reverse_x_checkBox'):
             self.view.reverse_x_checkBox.toggled.connect(self._on_reverse_x_toggled)
         self.view.y_scale_comboBox.currentIndexChanged.connect(self.plot_spectra)
+        # "keep zoom" (kept_view.py): remembered from the last time
+        if hasattr(self.view, 'keep_zoom_checkBox'):
+            self.view.keep_zoom_checkBox.setChecked(self._keep_zoom_preference())
+            self.view.keep_zoom_checkBox.toggled.connect(self._on_keep_zoom_toggled)
         # "scale each" (scale_each.py): only the drawing changes
         if hasattr(self.view, 'scale_each_checkBox'):
             self.view.scale_each_checkBox.toggled.connect(self._on_scale_each_toggled)
@@ -3238,6 +3244,8 @@ class MainController(QMainWindow):
         # Get current scale settings
         x_scale = self.view.x_scale_comboBox.currentText()
         y_scale = self.view.y_scale_comboBox.currentText()
+        # "keep zoom": the x range of the plot drawn until now (kept_view.py)
+        self._remember_zoom()
     
         self.clear_graphics_view()
         plot_widget = QWidget()
@@ -3433,6 +3441,9 @@ class MainController(QMainWindow):
             from src.modules.visualization.plotting import apply_x_direction
             apply_x_direction(self.static_canvas.figure, True)
 
+        # "keep zoom": the x range zoomed to before (kept_view.py)
+        self._restore_zoom(plot_type)
+
         # Set up the context menu for the canvas
         self.static_canvas.mpl_connect('button_press_event', self.handle_mouse_click)  
 
@@ -3554,6 +3565,107 @@ class MainController(QMainWindow):
         except Exception:
             pass
 
+    # ------------------------------------------------------------ keep zoom
+    # Plot types whose x-axis is the spectra's x (the Heatmap's is too, but
+    # its zoom is of another picture: shown whole)
+    KEEP_ZOOM_TYPES = ("Overlay plot", "Grid plot", "Waterfall plot", "Mean \u00b1 SD",
+                       "Difference")
+
+    @staticmethod
+    def _keep_zoom_preference():
+        try:
+            from src.modules.misc.session_files import Preferences
+            return bool(Preferences().get('keep_zoom', True))
+        except Exception:
+            return True
+
+    def _on_keep_zoom_toggled(self, checked):
+        try:
+            from src.modules.misc.session_files import Preferences
+            Preferences().set('keep_zoom', bool(checked))
+        except Exception:
+            pass
+        if not checked:
+            self._kept_zoom = None
+
+    def keep_zoom_on(self):
+        box = getattr(self.view, 'keep_zoom_checkBox', None)
+        return bool(box is not None and box.isChecked())
+
+    def forget_zoom(self):
+        """The next plot shows the whole range (Import data > New)."""
+        self._kept_zoom = None
+        self._zoom_from_snapshot = False
+        self._plotted_type = None              # the plot shown now is not remembered
+
+    def zoomed_range(self):
+        """The x range (low, high) the main plot is zoomed to, or None."""
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None or getattr(self, '_plotted_type', None) not in self.KEEP_ZOOM_TYPES:
+            return None
+        from src.modules.visualization import kept_view
+        return kept_view.zoomed_range(canvas.figure)
+
+    def set_zoom_from_snapshot(self, x_range):
+        """An opened snapshot: the next plot shows the x range it was saved
+        with (None: whole), not the one zoomed to before it was opened."""
+        self._kept_zoom = tuple(float(v) for v in x_range) if x_range else None
+        self._zoom_from_snapshot = True
+
+    def _remember_zoom(self):
+        """Before a new plot: the x range zoomed to now (kept while there is
+        no plot, e.g. nothing selected for a moment)."""
+        if getattr(self, '_zoom_from_snapshot', False):
+            return                             # the snapshot's, set_zoom_from_snapshot
+        if not self.keep_zoom_on():
+            self._kept_zoom = None
+            return
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None:
+            return
+        # (nothing selected for a while: the last plot's canvas, still zoomed)
+        if getattr(self, '_plotted_type', None) not in self.KEEP_ZOOM_TYPES:
+            self._kept_zoom = None             # the Heatmap, or forgotten
+            return
+        from src.modules.visualization import kept_view
+        self._kept_zoom = kept_view.zoomed_range(canvas.figure)
+
+    def _restore_zoom(self, plot_type):
+        """After a new plot: its whole range remembered (Home), then the x
+        range zoomed to before, if there is one and the plot has data in it."""
+        canvas = getattr(self, 'static_canvas', None)
+        from_snapshot = getattr(self, '_zoom_from_snapshot', False)
+        self._zoom_from_snapshot = False
+        self._plotted_type = plot_type
+        if canvas is None:
+            return
+        from src.modules.visualization import kept_view
+        figure = canvas.figure
+        kept_view.mark_home(figure)
+        kept = getattr(self, '_kept_zoom', None)
+        if not kept or plot_type not in self.KEEP_ZOOM_TYPES or \
+                not (self.keep_zoom_on() or from_snapshot):
+            return
+        lo, hi = kept
+        if not kept_view.has_data_in(figure, lo, hi):
+            self._kept_zoom = None
+            self._status(f"The spectra shown have no data between {lo:g} and {hi:g} "
+                         f"\u2014 shown whole")
+            return
+        toolbar = getattr(self, 'static_toolbar', None)
+        if toolbar is not None:
+            try:
+                toolbar.push_current()         # Home / Back: the whole range
+            except Exception:
+                pass
+        kept_view.apply(figure, lo, hi)
+        if toolbar is not None:
+            try:
+                toolbar.push_current()
+            except Exception:
+                pass
+        canvas.draw_idle()
+
     def _reverse_x(self):
         box = getattr(self.view, 'reverse_x_checkBox', None)
         return bool(box is not None and box.isChecked())
@@ -3565,11 +3677,16 @@ class MainController(QMainWindow):
         if canvas is None:
             return
         from src.modules.visualization.plotting import apply_x_direction
+        from src.modules.visualization import kept_view
+        zoomed = kept_view.zoomed_range(canvas.figure)
         apply_x_direction(canvas.figure, checked)
         toolbar = getattr(canvas, 'toolbar', None)
         if toolbar is not None:
             try:
                 toolbar.update()          # Home = the view in the new direction
+                if zoomed:
+                    # zoomed in: Home is still the whole range (not the zoom)
+                    kept_view.push_home(canvas.figure, toolbar)
             except Exception:
                 pass
         canvas.draw_idle()

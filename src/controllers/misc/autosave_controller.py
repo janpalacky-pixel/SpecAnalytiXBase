@@ -81,10 +81,17 @@ def _array_fingerprint(a):
     return fp
 
 
+# Kept in a snapshot but not a change of your work: the x range zoomed to
+# ("keep zoom") - zooming alone does not mark the snapshot as changed
+SIGNATURE_IGNORES = ('view',)
+
+
 def state_signature(state):
     """sha1 over the snapshot state, with arrays replaced by
     _array_fingerprint -- whether anything changed since the last
     automatic save, without building the snapshot."""
+    if isinstance(state, dict) and any(k in state for k in SIGNATURE_IGNORES):
+        state = {k: v for k, v in state.items() if k not in SIGNATURE_IGNORES}
     def default(obj):
         if isinstance(obj, np.ndarray):
             return ['nd'] + _array_fingerprint(obj)

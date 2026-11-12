@@ -260,6 +260,10 @@ class ImportController(QObject):
                 sf = getattr(self.main_controller, 'snapshot_file', None)
                 if sf is not None:
                     sf.forget()
+                # new spectra: shown whole ("keep zoom" - kept_view.py)
+                forget_zoom = getattr(self.main_controller, 'forget_zoom', None)
+                if callable(forget_zoom):
+                    forget_zoom()
                 self._show_import_feedback(successful_imports, failed_imports)
                 self.spectra_cleared.emit()
                 self.spectra_imported.emit()

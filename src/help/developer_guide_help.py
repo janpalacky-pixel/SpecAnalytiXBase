@@ -3877,6 +3877,25 @@ def _natural_sort_key(cls, label):
             the marker; <code>ax._sax_scale_at</code>, <code>y_range</code> then from what the
             scaled lines reach in view; snapshot key <code>plot_settings.scale_each_at</code>.
             Tests: <code>tests/test_scale_each.py</code>.</li>
+            <li><b>keep zoom</b> (1.7.0, <code>src/modules/visualization/kept_view.py</code>,
+            Qt-free): <code>MainController._remember_zoom</code> at the start of
+            <code>_plot_spectra_impl</code> reads the x range of the plot drawn until now
+            (<code>kept_view.zoomed_range</code>: differs from <code>ax._sax_home_x</code>, the
+            whole range written by <code>mark_home</code> when it was drawn) into
+            <code>_kept_zoom</code> - only for <code>KEEP_ZOOM_TYPES</code> (not the Heatmap); no
+            plot shown (nothing selected) keeps the last one. <code>_restore_zoom</code> at the end
+            (after scale each and reverse x): <code>mark_home</code>, then - if ticked and
+            <code>has_data_in</code> - <code>toolbar.push_current()</code> (Home / Back = the whole
+            range), <code>kept_view.apply</code> (x in the axes' own direction; y by
+            <code>fit_y</code> from the visible spectra's lines and filled bands drawn in data
+            units, panels sharing y together; not for "scale each" axes), push again.
+            <code>forget_zoom</code> (Import data &rarr; New, <code>ImportController</code>);
+            the tick is the preference <code>keep_zoom</code> (<code>Preferences</code>); a
+            snapshot's <code>state['view']['x']</code> (<code>SaveManager._build_state</code>)
+            is set by <code>set_zoom_from_snapshot</code> just before the load's final plot, and is
+            left out of <code>autosave_controller.state_signature</code>
+            (<code>SIGNATURE_IGNORES</code>: zooming is no change of the work).
+            Tests: <code>tests/test_keep_zoom.py</code>.</li>
             <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
             <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
             <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the

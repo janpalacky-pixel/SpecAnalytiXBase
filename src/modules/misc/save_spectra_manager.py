@@ -540,6 +540,16 @@ class SaveManager:
                 'link_y_direction': self._safe_get(ui, 'comboBox_linking_y_axes', 'currentText', default='all'),
             },
         }
+        # "keep zoom": the x range the plot is zoomed to (None: whole) - shown
+        # so again when the snapshot is opened; not a change of the work
+        # (autosave_controller.SIGNATURE_IGNORES)
+        zoomed = getattr(main_controller, 'zoomed_range', None)
+        try:
+            x_range = zoomed() if callable(zoomed) else None
+        except Exception:
+            x_range = None
+        if x_range:
+            state['view'] = {'x': [float(x_range[0]), float(x_range[1])]}
 
         # selected_spectra is reconstructable from original_spectra +
         # selected_indices in the exact same order
@@ -1170,6 +1180,16 @@ class SaveManager:
                     self._report_progress(
                         progress_callback, self.LOAD_SNAPSHOT_STAGE_COUNT,
                         "Rendering plot…")
+
+            # "keep zoom": this plot shows the snapshot's x range (or the
+            # whole), not the one zoomed to before the snapshot was opened
+            view = state.get('view') if isinstance(state.get('view'), dict) else {}
+            x_range = view.get('x')
+            if not (isinstance(x_range, (list, tuple)) and len(x_range) == 2):
+                x_range = None
+            set_zoom = getattr(main_controller, 'set_zoom_from_snapshot', None)
+            if callable(set_zoom):
+                set_zoom(x_range)
 
             if main_controller.selected_spectra:
                 main_controller.plot_spectra(progress_callback=render_progress_callback)

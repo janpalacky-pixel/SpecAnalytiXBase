@@ -359,6 +359,19 @@ def scale_each_pictures(mc, view):
     settle()
 
 
+def plot_options_picture(mc, view):
+    """Basic plot options with keep zoom and scale each ticked."""
+    load(mc, RAMAN)
+    plot_type(mc, 'Overlay plot')
+    view.keep_zoom_checkBox.setChecked(True)
+    view.scale_each_checkBox.setChecked(True)
+    settle()
+    save(view.grab(in_window(view, view.groupBox_basic_plot_options).adjusted(-4, -4, 4, 4)),
+         'basic_plot_options.png')
+    view.scale_each_checkBox.setChecked(False)
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -481,6 +494,12 @@ def main():
     # 8. scale each: the same band without and with it, 1 at a band marker
     try:
         scale_each_pictures(mc, view)
+    except Exception:
+        log(traceback.format_exc())
+
+    # 9. Basic plot options: keep zoom, scale each
+    try:
+        plot_options_picture(mc, view)
     except Exception:
         log(traceback.format_exc())
 

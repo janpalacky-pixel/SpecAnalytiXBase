@@ -58,6 +58,7 @@ _SCREENSHOT_FILES = {
     "SCALE_EACH_BEFORE":           "scale_each_before.png",
     "SCALE_EACH":                  "scale_each.png",
     "SCALE_EACH_AT":               "scale_each_at_marker.png",
+    "PLOT_OPTIONS_PANEL":          "basic_plot_options.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -342,6 +343,7 @@ def get_user_guide_help_content():
             <li><a href="#selection">Spectrum Selection</a></li>
             <li><a href="#visualisation">Visualisation</a>
                 <ul>
+                    <li><a href="#keep-zoom">keep zoom: stay on a band</a></li>
                     <li><a href="#scale-each">scale each: compare the shapes</a></li>
                     <li><a href="#band-markers">Band Markers</a></li>
                 </ul>
@@ -1051,6 +1053,8 @@ def get_user_guide_help_content():
                 in snapshots.</li>
             <li><strong>scale each</strong> (beside reverse x): every spectrum is drawn from 0
                 to 1 &mdash; see <a href="#scale-each">scale each</a>.</li>
+            <li><strong>keep zoom</strong> (beside Cursor): the zoom stays when you select other
+                spectra &mdash; see <a href="#keep-zoom">keep zoom</a>.</li>
             <li><strong>Link x-axes / Link y-axes:</strong> Synchronise zoom across subplots
                 (Grid plot only &mdash; the Link axes box is hidden for other plot types)</li>
             <li><strong>Line colours</strong> (the list directly below the plot-type dropdown):
@@ -1060,6 +1064,52 @@ def get_user_guide_help_content():
             <li><strong>show legend:</strong> show or hide the legend (on by default; below
                 the line colours list). Settings: <strong>☰ Legend</strong> &mdash; see
                 <a href="#legend">Legend</a>.</li>
+        </ul>
+
+        <h3 id="keep-zoom">keep zoom: stay on a band</h3>
+        <p>Going through a series &mdash; e.g. checking the 1004 band in eleven spectra one after
+        another &mdash; used to mean zooming to the band again after every click, because every
+        new plot showed the whole range. With <strong>keep zoom</strong> (Basic plot options,
+        beside <em>Cursor</em>; ticked at first) the plot stays where you zoomed:</p>
+        <ol>
+            <li>Zoom on the band: the mouse wheel, Zoom of the toolbar, or a drag.</li>
+            <li>Select other spectra, or step through them with <span class="kbd">&uarr;</span> /
+            <span class="kbd">&darr;</span> in the list: the <b>x range stays</b>, and <b>y is
+            fitted</b> to the spectra now shown in it (another selection may be much stronger or
+            weaker), so the band is always seen whole.</li>
+            <li><strong>Home</strong> (&#8962; under the plot) shows the whole range again; not
+            zoomed, the next selection is shown whole too.</li>
+        </ol>
+        <p>The zoom also stays when you switch the plot type (Overlay, Waterfall, Grid,
+        Mean &plusmn; SD, Difference), <em>reverse x</em> or <em>scale each</em>.</p>
+        <div class="screenshot">
+            <img src="$PLOT_OPTIONS_PANEL" width="$PLOT_OPTIONS_PANEL_W" height="$PLOT_OPTIONS_PANEL_H" alt="Basic plot options with keep zoom and scale each ticked" />
+            <p class="caption">Basic plot options: <em>keep zoom</em> beside <em>Cursor</em>,
+            <em>scale each</em> beside <em>reverse x</em>.</p>
+        </div>
+
+        <h4>Good to know</h4>
+        <ul>
+            <li><b>Remember that you are zoomed.</b> The numbers on the x-axis show the range;
+            Copy plot and Save plot for publication show the zoomed plot. Home is one click
+            away.</li>
+            <li><b>Shown whole anyway:</b> after <em>Import data &rsaquo; New</em> (new spectra);
+            in the <em>Heatmap</em> (and back from it in Overlay); and when the spectra now shown
+            have no data in the zoomed range. Example: zoomed on 1000&ndash;1010
+            cm<sup>&minus;1</sup> in Raman spectra, then CD spectra from 190 to 320&nbsp;nm
+            selected &mdash; they are shown whole and the status bar says <em>The spectra shown
+            have no data between 1000 and 1010 &mdash; shown whole</em>.</li>
+            <li><b>Only x is kept.</b> y is fitted again at every new plot; a zoom of y alone
+            (<span class="kbd">Ctrl</span> + wheel) lasts until then.</li>
+            <li><b>Home and Back:</b> after a kept zoom, Home shows the whole range and Back
+            returns to the zoom &mdash; also when <em>reverse x</em> was switched while zoomed.</li>
+            <li><b>Untick it</b> for the way before 1.7.0: every new selection shown whole. The tick
+            is remembered for the next start &mdash; it is a way of working, not a part of one
+            project.</li>
+            <li><b>Snapshots</b> keep the range they were saved with: opened, they show the same
+            band. Zooming alone does not count as a change (no &ldquo;*&rdquo; in the title).</li>
+            <li>Thousands of spectra (a map, the preview of a large selection): the same, and not
+            slower.</li>
         </ul>
 
         <h3 id="scale-each">scale each: compare the shapes</h3>
@@ -1091,6 +1141,9 @@ def get_user_guide_help_content():
             drag) and every spectrum is fitted to that band: its lowest point there at 0, its
             highest at 1. Zoom out (or Home) and the whole spectra are fitted again. The y-axis
             always shows 0 to 1.</li>
+            <li><b>Together with <a href="#keep-zoom">keep zoom</a></b>: zoom on a band once and
+            click through other spectra &mdash; every new selection is shown at the same band and
+            fitted 0&ndash;1 there, so you compare that band's shape across the whole series.</li>
             <li><b>Only the drawing changes.</b> The data stay as they are: the
             <a href="#cursor">Cursor</a> lists the spectra's own values, <em>Copy the values at
             the band markers</em> copies them, Detect Peaks finds the same peaks (their dots and
@@ -1298,7 +1351,8 @@ def get_user_guide_help_content():
             &mdash; rolling the wheel forward (away from you) zooms in, rolling it back (towards
             you) zooms out; the y axis stays. With <span class="kbd">Ctrl</span> held: the same
             for the y axis, the x axis stays. <em>Back</em> in the toolbar goes back one step,
-            <em>Home</em> to the start. Numbers that mark a point &mdash; a peak's position
+            <em>Home</em> to the start. The zoom stays when you select other spectra (see
+            <a href="#keep-zoom">keep zoom</a>). Numbers that mark a point &mdash; a peak's position
             (Detect Peaks), a band marker's label above the plot, your own labels &mdash; are shown only while that
             point is in view: zoomed away from it they are not left beside the plot, and come
             back when you zoom out (also with Zoom and Pan of the toolbar).</li>

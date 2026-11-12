@@ -953,6 +953,20 @@ class MainWindow(QMainWindow):
         self.band_markers_btn.setToolTip(
             "Manage named vertical lines drawn on all plots")
         self.gridLayout.addWidget(self.band_markers_btn, 7, 0, 1, 2)
+        # "keep zoom": the x range zoomed to stays when other spectra are
+        # selected (kept_view.py); row 8 beside the Cursor (MainController)
+        self.keep_zoom_checkBox = QCheckBox("keep zoom", self.groupBox_basic_plot_options)
+        self.keep_zoom_checkBox.setObjectName("keep_zoom_checkBox")
+        self.keep_zoom_checkBox.setChecked(True)
+        self.keep_zoom_checkBox.setToolTip(
+            "<b>keep zoom</b>: zoomed in on a band, the plot stays there<br>"
+            "when you select other spectra (or step through them with the<br>"
+            "arrow keys); y is fitted to the spectra shown.<br>"
+            "<b>Home</b> (\u2302 under the plot): the whole range.<br>"
+            "Unticked: every new selection is shown whole.<br>"
+            "Shown whole anyway: Import data \u203a New, the Heatmap, or when<br>"
+            "the new spectra have no data in the zoomed range.")
+        self.gridLayout.addWidget(self.keep_zoom_checkBox, 8, 1, 1, 1)
 
         self.gridLayout_4.addLayout(self.gridLayout, 0, 1, 1, 1)
         
