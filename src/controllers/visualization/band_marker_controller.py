@@ -140,6 +140,25 @@ class BandMarkerController:
             curves, [x for _, x in markers], names=[n for n, _ in markers]))
         return len(curves), len(markers)
 
+    def pair_around(self, x):
+        """The two neighbouring X markers with x between them, or None
+        (band_between.pair_around)."""
+        from src.modules.visualization import band_between
+        return band_between.pair_around(self.manager.x_markers(), float(x))
+
+    def copy_between(self, curves, pair):
+        """The spectra's values between the two markers `pair` (maximum,
+        minimum, area, the band above the line joining its ends ... -
+        band_between.py) as a table on the clipboard. Returns the number of
+        spectra copied."""
+        from src.modules.visualization import band_between
+        if not curves or not pair:
+            return 0
+        (la, a), (lb, b) = pair
+        from PyQt5.QtWidgets import QApplication
+        QApplication.clipboard().setText(band_between.table_text(curves, a, b, (la, lb)))
+        return len(curves)
+
     # ------------------------------------------------------------------ #
     # Session persistence                                                  #
     # ------------------------------------------------------------------ #

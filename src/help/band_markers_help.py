@@ -164,7 +164,11 @@ def get_band_markers_help_content():
     <p>Right-click on the plot: <strong>Remove the band marker &hellip;</strong> (the one
     under the mouse), <strong>Copy the values at the band markers</strong> (a table of the
     spectra's values at every vertical marker, one column per marker headed by its
-    name, for Excel) and <strong>Remove all band markers&hellip;</strong>. While this
+    name, for Excel), <strong>Copy the values between the band markers &hellip;</strong>
+    (right-click between two markers: the maximum, minimum, area and the band above the line
+    joining its ends, for every spectrum; the item shows the distance &Delta; between the two
+    markers &mdash; see <a href="help://user_guide#between-markers">Between two band
+    markers</a>) and <strong>Remove all band markers&hellip;</strong>. While this
     window is open you can still click on the plot: the new marker appears in the table
     at once.</p>
 

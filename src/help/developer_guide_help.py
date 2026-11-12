@@ -3896,6 +3896,18 @@ def _natural_sort_key(cls, label):
             left out of <code>autosave_controller.state_signature</code>
             (<code>SIGNATURE_IGNORES</code>: zooming is no change of the work).
             Tests: <code>tests/test_keep_zoom.py</code>.</li>
+            <li><b>Values between two band markers</b> (1.7.0,
+            <code>src/modules/visualization/band_between.py</code>, Qt-free):
+            <code>pair_around</code> (the neighbouring X markers around the right-click's x),
+            <code>segment</code> (the spectrum from low to high x with values interpolated at
+            both markers), <code>values_between</code> (<code>COLUMNS</code>: max / min, the area
+            by the trapezoid rule, and against the straight line through the two end values: the
+            point farthest from it, its signed height, the area, the centroid of that side),
+            <code>table_text</code>. <code>BandMarkerController.pair_around / copy_between</code>;
+            the menu item in <code>MainController.handle_mouse_click</code>. The curves are
+            <code>PlotCursorController.all_curves</code>: the spectra's own values (a Waterfall's
+            <code>line._sax_shift</code> taken away - also for Copy the values at the band markers).
+            Tests: <code>tests/test_band_between.py</code>.</li>
             <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
             <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
             <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the

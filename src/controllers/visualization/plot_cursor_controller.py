@@ -137,15 +137,18 @@ class PlotCursorController:
         return out
 
     def all_curves(self):
-        """(label, x, y) of every drawn spectrum, each label once."""
+        """(label, x, y) of every drawn spectrum, each label once - y its own
+        values (a Waterfall plot's offset taken away: line._sax_shift)."""
         if self.canvas is None:
             return []
         seen, out = set(), []
         for ax in self.canvas.figure.axes:
-            for c in self._curves(ax):
+            drawn = []
+            for c, line in zip(self._curves(ax, drawn), drawn):
                 if c[0] not in seen:
                     seen.add(c[0])
-                    out.append(c)
+                    shift = float(getattr(line, '_sax_shift', 0.0) or 0.0)
+                    out.append((c[0], c[1], c[2] - shift) if shift else c)
         return out
 
     def shows_values(self):

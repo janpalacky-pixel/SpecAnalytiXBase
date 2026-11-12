@@ -59,6 +59,9 @@ _SCREENSHOT_FILES = {
     "SCALE_EACH":                  "scale_each.png",
     "SCALE_EACH_AT":               "scale_each_at_marker.png",
     "PLOT_OPTIONS_PANEL":          "basic_plot_options.png",
+    "BAND_MARKER_MENU":            "band_marker_menu.png",
+    "BETWEEN_EXPLAINED":           "between_markers_explained.png",
+    "BETWEEN_TABLE":               "between_markers_table.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -1297,6 +1300,85 @@ def get_user_guide_help_content():
         <div class="tip">Band markers also appear in external figure windows opened via
         right-click &rarr; Open in New Window.</div>
 
+        <h4 id="between-markers">Between two band markers: area, maximum, the band above its background</h4>
+        <p>To get numbers for one band in every spectrum &mdash; its area, its height above the
+        background, where its top is &mdash; put a band marker on each side of the band (with the
+        <a href="#cursor">Cursor</a> ticked two clicks, or right-click &rarr; <em>Add a band
+        marker here</em>) and right-click on the plot <b>between the two markers</b> (or on one of
+        them) &rarr; <em>Copy the values between the band markers 1480 and 1500
+        (&Delta; = 20)</em>. Paste into Excel (<span class="kbd">Ctrl+V</span>): one row per
+        spectrum shown.</p>
+        <div class="screenshot">
+            <img src="$BAND_MARKER_MENU" width="$BAND_MARKER_MENU_W" height="$BAND_MARKER_MENU_H" alt="The band markers' part of the right-click menu on a marker" />
+            <p class="caption">Right-click on the marker at 1500 (markers at 1480 and 1500): remove
+            it, copy the values at all markers, <b>copy the values between 1480 and 1500</b> (with
+            the distance &Delta; = 20), and the scale each items.</p>
+        </div>
+        <p>The menu item also gives the <b>distance</b> between the two markers (&Delta;, in the x
+        units of the data) &mdash; e.g. the splitting of a doublet or the shift between two bands,
+        read without a calculator.</p>
+        <p><b>The columns.</b> Everything is worked out from the spectrum's own points between the
+        markers, with its values exactly at the two markers interpolated:</p>
+        <table>
+            <tr><th>Column</th><th>What it is</th><th>How it is worked out</th></tr>
+            <tr><td>Max position, Max value</td><td>The spectrum's highest point between the
+            markers</td><td>The largest of its values there</td></tr>
+            <tr><td>Min position, Min value</td><td>Its lowest point</td><td>The smallest of its
+            values there</td></tr>
+            <tr><td>Area</td><td>The area under the spectrum between the markers, from y =
+            0</td><td>∫ y dx by the trapezoid rule</td></tr>
+            <tr><td>Band position (above the line)</td><td>Where the band is: the point farthest
+            from <em>the line</em> &mdash; the straight line joining the spectrum's values at the
+            two markers (a local baseline)</td><td>The x where |y &minus; line| is largest</td></tr>
+            <tr><td>Band height (above the line)</td><td>How far the band rises above the line
+            (negative: a band below it)</td><td>y &minus; line at the band position</td></tr>
+            <tr><td>Area above the line</td><td>The band's own area, without the background under
+            it</td><td>∫ (y &minus; line) dx by the trapezoid rule</td></tr>
+            <tr><td>Centroid (above the line)</td><td>The band's centre of mass</td><td>∫
+            x&middot;w dx / ∫ w dx, w = the part of the band on its side of the line</td></tr>
+        </table>
+        <div class="screenshot">
+            <img src="$BETWEEN_EXPLAINED" width="$BETWEEN_EXPLAINED_W" height="$BETWEEN_EXPLAINED_H" alt="How the values between two band markers are worked out" />
+            <p class="caption">One spectrum between the markers at 1480 and 1500. Left: the
+            <em>Area</em>, from y = 0 &mdash; mostly background here. Right: the line joining the
+            values at the markers, the band above it (its area), the band's height and position,
+            and its centroid.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$BETWEEN_TABLE" width="$BETWEEN_TABLE_W" height="$BETWEEN_TABLE_H" alt="The copied table as pasted into Excel" />
+            <p class="caption">The table as pasted into Excel (here six spectra, shortened to five
+            digits): the first cell names the range and the distance.</p>
+        </div>
+        <p><b>Example.</b> Markers at 1480 and 1500 around the 1484&nbsp;cm<sup>&minus;1</sup>
+        band of the eleven Raman spectra: <em>Max value</em> is mostly the background the band
+        sits on, while <em>Band height</em> and <em>Area above the line</em> are the band alone
+        &mdash; one right-click, and they are ready to plot against the concentration.</p>
+        <p><b>Good to know</b></p>
+        <ul>
+            <li><b>Where to put the markers:</b> on the background on both sides of the band, not
+            on its flanks &mdash; the line has to run under the whole band. Markers on the flanks
+            cut the band: its height and area come out too small.</li>
+            <li><b>Overlapping bands</b> are not separated by the line; both are measured
+            together. To separate them use Peak Fitting.</li>
+            <li><b>Noise:</b> <em>Band height</em> and <em>Max value</em> are single points and
+            jump with the noise of a noisy spectrum; the areas sum many points and are steadier.
+            Smoothing first helps too.</li>
+            <li><b>Area from y = 0</b> includes everything under the band down to zero
+            (background, offset): compare it between spectra only when their backgrounds are the
+            same. <em>Area above the line</em> does not depend on a straight background.</li>
+            <li><b>Centroid and band position</b> are equal for a symmetric band; a shoulder or a
+            tail moves the centroid toward it, so a shift of the centroid across a series can show
+            a growing shoulder before the top moves.</li>
+            <li><b>Minima</b> (CD bands, absorption dips): a band below the line gets a negative
+            height and a negative area above the line; its position is its lowest point.</li>
+            <li><b>The spectra's own values:</b> also in a Waterfall plot (the offsets are taken
+            away) and with <a href="#scale-each">scale each</a>. Spectra hidden in the legend are
+            left out; a spectrum that does not reach both markers has empty cells.</li>
+            <li><b>Changed in 1.7.0:</b> <em>Copy the values at the band markers</em> in a
+            Waterfall plot used to copy the values as drawn &mdash; each spectrum shifted up by
+            its offset; now it copies the spectra's own values too.</li>
+        </ul>
+
         <h3 id="line-colours">Line colours</h3>
         <p>The lines of the plot get their colour in one of three ways, chosen in the
         <strong>line colours</strong> list in <i>Basic plot options</i> (below the plot type):</p>
@@ -1504,6 +1586,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
             <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
             <tr><td><strong>Add a band marker here</strong></td><td>A band marker at the x clicked, labelled with its x above the plot &mdash; see <a href="#band-markers">Band Markers</a> (with the Cursor ticked a click on the plot does the same)</td></tr>
+            <tr><td><strong>Copy the values between the band markers &hellip; (&Delta; = &hellip;)</strong></td><td>Only between two neighbouring vertical markers: the maximum, minimum, area and the band above the line joining its ends for every spectrum, as a table for Excel; the menu item shows the distance &mdash; see <a href="#between-markers">Between two band markers</a></td></tr>
             <tr><td><strong>Remove the band marker &hellip;</strong>, <strong>Copy the values at the band markers</strong>, <strong>Remove all band markers&hellip;</strong>, <strong>Band markers&hellip;</strong></td><td>The marker under the mouse removed; the spectra's values at every vertical marker copied as a table for Excel (one column per marker); all markers removed (it asks first); the Band markers window</td></tr>
             <tr><td><strong>Scale each spectrum 0&ndash;1 (only the drawing)</strong></td><td>Every spectrum drawn from 0 to 1 (&#10003; = on) &mdash; the same as <em>scale each</em> in Basic plot options; see <a href="#scale-each">scale each</a></td></tr>
             <tr><td><strong>Scale each spectrum to 1 at the band marker &hellip; (only the drawing)</strong></td><td>Only on a vertical band marker: every spectrum drawn 1 at that marker (&#10003; = on; again: 0&ndash;1) &mdash; see <a href="#scale-each">scale each</a></td></tr>

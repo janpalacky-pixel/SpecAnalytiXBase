@@ -372,6 +372,144 @@ def plot_options_picture(mc, view):
     settle()
 
 
+def between_markers_pictures(mc, view):
+    """Two band markers around the 1490 band: the band markers' part of the
+    right-click menu on the marker at 1500, a figure of how the values are
+    worked out, and the table as pasted into Excel."""
+    import numpy as np
+    from src.modules.visualization import band_between, kept_view
+    load(mc, RAMAN)
+    plot_type(mc, 'Overlay plot')
+    markers = mc.band_markers()
+    markers.add_at(1480.0)
+    markers.add_at(1500.0)
+    canvas = mc.static_canvas
+    ax = canvas.figure.axes[0]
+    ax.set_xlim(1400, 1580)
+    kept_view.fit_y(ax, 1400, 1580)
+    canvas.draw()
+    settle()
+
+    # the right-click menu on the marker at 1500: its band markers' items
+    shown = []
+
+    def keep_menu(self, *args, **kwargs):
+        self.popup(QPoint(200, 200))
+        settle()
+        rows = [(a.text(), self.actionGeometry(a)) for a in self.actions() if not a.isSeparator()]
+        shown.append((self.grab(), rows))
+        self.hide()
+        return None
+    QMenu.exec_ = keep_menu
+    QMenu.exec = keep_menu
+    px, py = ax.transData.transform((1500.0, float(np.mean(ax.get_ylim()))))
+
+    class Click:
+        x, y, button = px, py, 3
+        inaxes, xdata, ydata = ax, 1500.0, float(np.mean(ax.get_ylim()))
+    mc.show_context_menu(Click())
+    QMenu.exec_ = capture_exec
+    QMenu.exec = capture_exec
+    if shown:
+        picture, rows = shown[0]
+        top = next((r.top() for t, r in rows if t.startswith('Add a band marker here')), 0)
+        dpr = picture.devicePixelRatio() or 1.0
+        cut = int(max(0, top - 4) * dpr)
+        part = picture.copy(QRect(0, cut, picture.width(), picture.height() - cut))
+        part.setDevicePixelRatio(dpr)
+        save(part, 'band_marker_menu.png')
+
+    # how the values are worked out: one spectrum between the two markers
+    s = mc.selected_spectra[4]
+    x = np.asarray(s['x_scale'], float)
+    y = np.asarray(s['y_scale'], float)
+    a, b = 1480.0, 1500.0
+    xs, ys = band_between.segment(x, y, a, b)
+    v = band_between.values_between(x, y, a, b)
+    line = ys[0] + (ys[-1] - ys[0]) * (xs - a) / (b - a)
+    near = (x >= 1460) & (x <= 1520)
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    fig = Figure(figsize=(10.0, 3.9), dpi=100)
+    FigureCanvasAgg(fig)
+    left, right = fig.subplots(1, 2)
+    for axis in (left, right):
+        axis.plot(x[near], y[near], color='#1f77b4', lw=1.4)
+        axis.axvline(a, color='#6D4C41', ls=':', lw=1.0)
+        axis.axvline(b, color='#6D4C41', ls=':', lw=1.0)
+        axis.set_xlim(1460, 1520)
+        axis.set_xlabel('x (here cm$^{-1}$)')
+    left.fill_between(xs, 0, ys, color='#90CAF9', alpha=0.6)
+    left.set_ylim(0, float(np.max(y[near])) * 1.08)
+    left.set_title('Area: under the spectrum, from y = 0', fontsize=10)
+    left.set_ylabel('intensity')
+    right.fill_between(xs, line, ys, color='#FFCC80', alpha=0.8)
+    right.plot(xs, line, color='#D84315', ls='--', lw=1.2)
+    bx, bh = v['Band position (above the line)'], v['Band height (above the line)']
+    base = float(np.interp(bx, xs, line))
+    right.annotate('', xy=(bx, base + bh), xytext=(bx, base),
+                   arrowprops=dict(arrowstyle='<->', color='black', lw=1.0))
+    right.text(bx + 0.8, base + bh / 2, 'band height', fontsize=9, va='center')
+    right.plot([bx], [base + bh], 'o', ms=5, color='black')
+    right.text(bx, base + bh, '  band position', fontsize=9, va='bottom')
+    xx = 1493.0
+    right.text(xx, (float(np.interp(xx, xs, line)) + float(np.interp(xx, xs, ys))) / 2,
+               'area above\nthe line', color='#BF360C', fontsize=8, ha='center', va='center')
+    cx = v['Centroid (above the line)']
+    right.axvline(cx, color='#2E7D32', lw=1.0, ymax=0.25)
+    right.text(cx, right.get_ylim()[0], ' centroid', color='#2E7D32', fontsize=9, va='bottom')
+    right.text(a + 0.5, float(np.interp(a, xs, line)), 'the line', color='#D84315',
+               fontsize=9, va='top')
+    lo = float(np.min(y[near]))
+    right.set_ylim(lo - (float(np.max(y[near])) - lo) * 0.08, float(np.max(y[near])) * 1.01)
+    right.set_title('Above the line joining the values at the markers', fontsize=10)
+    fig.tight_layout()
+    from PyQt5.QtGui import QImage
+    canvas_agg = fig.canvas
+    canvas_agg.draw()
+    w, h = canvas_agg.get_width_height()
+    image = QImage(canvas_agg.buffer_rgba(), w, h, QImage.Format_RGBA8888).copy()
+    save(QPixmap.fromImage(image), 'between_markers_explained.png')
+
+    # the table as pasted into Excel (first spectra, values with 5 digits)
+    from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView
+    curves = mc.plot_cursor_controller.all_curves()[:6]
+    text = band_between.table_text(curves, a, b, ('1480', '1500'))
+    rows = [r.split('\t') for r in text.splitlines()]
+    table = QTableWidget(len(rows) - 1, len(rows[0]))
+    import textwrap
+    table.setHorizontalHeaderLabels(['\n'.join(textwrap.wrap(h, 17)) for h in rows[0]])
+    for i, row in enumerate(rows[1:]):
+        for j, cell in enumerate(row):
+            if j == 0:
+                cell = cell.split(' : ')[-1]
+            elif cell:
+                value = float(cell)
+                cell = f"{value:.0f}" if abs(value) >= 1e5 else f"{value:.5g}"
+            item = QTableWidgetItem(cell)
+            if j:
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            table.setItem(i, j, item)
+    table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    table.show()
+    settle()
+    table.resizeColumnsToContents()
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+    table.resizeRowsToContents()
+    settle()
+    width = table.verticalHeader().width() + sum(table.columnWidth(j)
+                                                  for j in range(table.columnCount())) + 4
+    height = table.horizontalHeader().height() + sum(table.rowHeight(i)
+                                                     for i in range(table.rowCount())) + 4
+    table.resize(width, height)
+    settle()
+    save(table.grab(), 'between_markers_table.png')
+    table.close()
+    markers.remove_all()
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -500,6 +638,12 @@ def main():
     # 9. Basic plot options: keep zoom, scale each
     try:
         plot_options_picture(mc, view)
+    except Exception:
+        log(traceback.format_exc())
+
+    # 10. between two band markers: the menu, how the values are made, the table
+    try:
+        between_markers_pictures(mc, view)
     except Exception:
         log(traceback.format_exc())
 

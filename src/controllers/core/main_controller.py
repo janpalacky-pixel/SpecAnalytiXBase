@@ -3782,6 +3782,15 @@ class MainController(QMainWindow):
         if n_x:
             copy_markers_action = context_menu.addAction(
                 f"Copy the values at the band markers ({n_x})")
+        # between two neighbouring markers: max, min, area, the band above
+        # the line joining its ends (band_between.py); the distance in the text
+        between = markers.pair_around(xdata) if on_plot and n_x >= 2 else None
+        copy_between_action = None
+        if between is not None:
+            (la, a), (lb, b) = between
+            copy_between_action = context_menu.addAction(
+                f"Copy the values between the band markers {la} and {lb} "
+                f"(\u0394 = {fmt_x(b - a)})")
         if len(markers.manager):
             remove_all_action = context_menu.addAction(
                 f"Remove all band markers ({len(markers.manager)})\u2026")
@@ -3862,6 +3871,12 @@ class MainController(QMainWindow):
             n, k = markers.copy_values(cursor.all_curves() if cursor is not None else [])
             self._status(f"Values of {n} spectra at {k} band marker{'s' if k != 1 else ''} "
                          f"copied \u2014 paste them into Excel")
+        elif copy_between_action is not None and action == copy_between_action:
+            cursor = getattr(self, 'plot_cursor_controller', None)
+            n = markers.copy_between(cursor.all_curves() if cursor is not None else [], between)
+            (la, a), (lb, b) = between
+            self._status(f"Values of {n} spectra between {fmt_x(a)} and {fmt_x(b)} "
+                         f"(\u0394 = {fmt_x(b - a)}) copied \u2014 paste them into Excel")
         elif remove_all_action is not None and action == remove_all_action:
             if QMessageBox.question(
                     self.view, "Remove all band markers",
