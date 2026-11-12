@@ -347,6 +347,9 @@ class AutosaveController(QObject):
                 f"kept, in case it can be opened later:\n{session['snapshot_path']}")
             return False
         self.main.view.spectrum_selection_frame.setVisible(True)
+        sf = getattr(self.main, 'snapshot_file', None)
+        if sf is not None:
+            sf.mark_unsaved()                  # restored work: in no snapshot yet
         self.manager.discard(session)
         self._last_hash = None
         self.autosave_now(force=True)    # protect the restored work under this session

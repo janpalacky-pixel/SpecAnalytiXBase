@@ -255,6 +255,11 @@ class ImportController(QObject):
                 self.spectrum_manager.id_to_label_map  = work_manager.id_to_label_map
                 self.spectrum_manager.label_to_id_map  = work_manager.label_to_id_map
                 self._reset_non_persistent_settings()
+                # new spectra instead of the current ones: in no snapshot yet
+                # (Save snapshot asks for a name - snapshot_file.py)
+                sf = getattr(self.main_controller, 'snapshot_file', None)
+                if sf is not None:
+                    sf.forget()
                 self._show_import_feedback(successful_imports, failed_imports)
                 self.spectra_cleared.emit()
                 self.spectra_imported.emit()
@@ -405,6 +410,11 @@ class ImportController(QObject):
             if success:
                 self.main_controller.view.spectrum_selection_frame.setVisible(True)
                 self._remember_recent(file_path, 'snapshot')
+                # the snapshot you work in now: its name in the title, Save
+                # snapshot (Ctrl+S) saves into it (snapshot_file.py)
+                sf = getattr(self.main_controller, 'snapshot_file', None)
+                if sf is not None:
+                    sf.mark_saved(file_path)
 
         except Exception as e:
             logger.exception("Traceback:")

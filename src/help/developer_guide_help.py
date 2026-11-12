@@ -3845,6 +3845,25 @@ def _natural_sort_key(cls, label):
             <code>set_note(toolbar, text)</code>: a window's own orange note while no mode is on
             (the Cursor's, from <code>PlotCursorController._show_note</code>).
             Tests: <code>tests/test_plot_mouse.py</code>.</li>
+            <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
+            <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
+            <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the
+            Settings row <code>snapshot_compression</code>); Export spectra&hellip; (Ctrl+E) is the
+            former Save&hellip; (<code>actionSave</code>, <code>SaveController.execute</code>,
+            <code>SaveOptionsDialog</code> without the snapshot - <code>allow_snapshot=False</code>
+            by default now). <code>src/controllers/misc/snapshot_file.py</code>
+            (<code>MainController.snapshot_file</code>): <code>path</code> = the snapshot opened
+            (<code>ImportController.open_snapshot_path</code>) or saved last, <code>forget()</code>
+            on Import data &rarr; New, <code>mark_unsaved()</code> after a crash restore;
+            <code>is_modified()</code> compares <code>autosave_controller.state_signature</code> of
+            <code>SaveManager._build_state</code> with the one at the save / open (checked again
+            0.8 s after it - opening finishes a few things later). The title ("*name.snapx
+            &ndash; SpecAnalytiXBase") is checked 2 s after a click / key / wheel (an application
+            event filter), not while busy, and on a large workspace no more often than 20 times
+            the check's own duration. <code>closeEvent</code>: modified &rarr;
+            <code>QMessageBox.question</code> Save | Discard | Cancel (Save that is cancelled or
+            fails: the window stays), else the old question. Tests:
+            <code>tests/test_save_snapshot_and_export.py</code>.</li>
             <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
             (on a confirmed close: <code>saveGeometry()</code> base64 and the list's width, only
             while the list is shown) and <code>restore_window_layout</code> (in <code>show()</code>;
@@ -4291,7 +4310,7 @@ def _natural_sort_key(cls, label):
             <li><b><code>main.py</code> calls <code>autosave_controller.start()</code></b>
             after the window is shown; merely creating a <code>MainController</code> (as
             the tests do) writes nothing and asks nothing.</li>
-            <li>Snapshot saves (File &rarr; Save, automatic saves) are now written atomically
+            <li>Snapshot saves (File &rarr; Save snapshot, automatic saves) are now written atomically
             (<code>json_store.write_bytes_atomic</code>).</li>
         </ul>
 

@@ -10,9 +10,12 @@ from src.help.help_window import open_help_topic
 
 
 class SaveOptionsDialog(QDialog):
-    def __init__(self, parent=None, allow_snapshot=True):
+    def __init__(self, parent=None, allow_snapshot=False):
         super().__init__(parent)
-        self.setWindowTitle("Save Options")
+        # Export spectra (File > Export spectra..., Ctrl+E): the snapshot is
+        # saved with File > Save snapshot since 1.7.0, so it is not offered
+        # here unless a caller asks for it (allow_snapshot=True).
+        self.setWindowTitle("Export spectra")
         self._setup_ui()
         if not allow_snapshot:
             # Snapshot saves the ENTIRE application state, not a specific
@@ -211,7 +214,7 @@ class SaveOptionsDialog(QDialog):
         self._help_btn.clicked.connect(self._show_help)
         btn_layout.addWidget(self._help_btn)
         btn_layout.addStretch()
-        self.save_btn   = QPushButton("Save")
+        self.save_btn   = QPushButton("Export\u2026")
         self.cancel_btn = QPushButton("Cancel")
         self.save_btn.setDefault(True)
         btn_layout.addWidget(self.save_btn)

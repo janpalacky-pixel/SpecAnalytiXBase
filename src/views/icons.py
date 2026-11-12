@@ -327,6 +327,25 @@ def copy_plot_icon():
     return _tool_icon(draw)
 
 
+def export_icon():
+    """A sheet with a green arrow going out of it (export the spectra to
+    other programs: text, Excel, GRAMS .spc)."""
+    def draw(p, QPen):
+        p.setPen(QColor('#555555'))
+        p.setBrush(QColor('#FFFFFF'))
+        p.drawRoundedRect(QRectF(0.5, 1.5, 9.5, 13), 1.2, 1.2)
+        p.setPen(QPen(QColor('#9AA0A6'), 1.0))
+        for y in (4.5, 7.0, 9.5, 12.0):
+            p.drawLine(QPointF(2.5, y), QPointF(7.5, y))
+        pen = QPen(QColor('#2E7D32'), 2.0)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(6.5, 8.0), QPointF(14.0, 8.0))
+        p.drawLine(QPointF(11.0, 5.0), QPointF(14.0, 8.0))
+        p.drawLine(QPointF(11.0, 11.0), QPointF(14.0, 8.0))
+    return _tool_icon(draw)
+
+
 def publication_icon():
     """A journal's page with a plot on it and a small ribbon (Save plot for
     publication) - not the floppy disk of Save."""

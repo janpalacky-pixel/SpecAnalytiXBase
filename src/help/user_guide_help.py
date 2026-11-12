@@ -320,7 +320,7 @@ def get_user_guide_help_content():
         <table>
             <tr><th>Area</th><th>Location</th><th>Purpose</th></tr>
             <tr><td>Menu bar</td><td>Top</td><td>File, View, Spectra processing, Analysis &amp; Visualization, Help access</td></tr>
-            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save</strong> (Ctrl+S), <strong>Help</strong> (the Help menu), <strong>Copy plot</strong> (Ctrl+Shift+C); <em>Processing</em>: <strong>Data range</strong>, <strong>Smoothing</strong> (Savitzky&ndash;Golay), <strong>Baseline</strong> (automated), <strong>Normalization</strong>; <em>Analysis</em>: <strong>Peak list</strong>, <strong>Peak Fitting</strong>, <strong>SVD analysis</strong>, <strong>2D map</strong>, <strong>Group Statistics</strong>, <strong>Data table</strong> (<a href="#data-table">the selected spectra as a table</a>) &mdash; the same as in the menus (hold the mouse over a button to see what it does). <a href="#toolbars">Hide a group or show only the icons</a></td></tr>
+            <tr><td>Buttons</td><td>Under the menu bar</td><td><strong>Import data</strong> (click: New&hellip;, Ctrl+I; the arrow: New&hellip; / Add to current&hellip;, Ctrl+Shift+I), <strong>Open snapshot</strong> (Ctrl+O), <strong>Save snapshot</strong> (Ctrl+S), <strong>Export</strong> (Export spectra&hellip;, Ctrl+E), <strong>Help</strong> (the Help menu), <strong>Copy plot</strong> (Ctrl+Shift+C); <em>Processing</em>: <strong>Data range</strong>, <strong>Smoothing</strong> (Savitzky&ndash;Golay), <strong>Baseline</strong> (automated), <strong>Normalization</strong>; <em>Analysis</em>: <strong>Peak list</strong>, <strong>Peak Fitting</strong>, <strong>SVD analysis</strong>, <strong>2D map</strong>, <strong>Group Statistics</strong>, <strong>Data table</strong> (<a href="#data-table">the selected spectra as a table</a>) &mdash; the same as in the menus (hold the mouse over a button to see what it does). <a href="#toolbars">Hide a group or show only the icons</a></td></tr>
             <tr><td>Spectrum list</td><td>Left panel</td><td>Select which spectra to view and process</td></tr>
             <tr><td>Plot canvas</td><td>Centre</td><td>Interactive plot of selected spectra</td></tr>
             <tr><td>Basic plot options</td><td>Bottom toolbar</td><td>Plot type, axis scales, line colours, show legend</td></tr>
@@ -2667,15 +2667,29 @@ def get_user_guide_help_content():
              8. SAVING & EXPORT
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="save-export">8. Saving &amp; Export</h2>
+        <p id="save">Two different things, as in other programs:</p>
+        <ul>
+            <li><strong>Your work</strong> is kept in a <a href="#snapshots">snapshot</a> (a
+                <strong>.snapx</strong> file &mdash; every spectrum, the Operations History, the
+                settings): <strong>File &rarr; Save snapshot</strong> (<span class="kbd">Ctrl+S</span>,
+                the <strong>Save snapshot</strong> button), <strong>Save snapshot as&hellip;</strong>
+                (<span class="kbd">Ctrl+Shift+S</span>), <strong>Open snapshot&hellip;</strong>
+                (<span class="kbd">Ctrl+O</span>).</li>
+            <li><strong>Spectra for other programs</strong> are exported:
+                <strong>File &rarr; Export spectra&hellip;</strong> (<span class="kbd">Ctrl+E</span>,
+                the <strong>Export</strong> button) writes the selected spectra as text, Excel or
+                GRAMS (.spc). Until 1.7.0 this was <em>File &rarr; Save&hellip;</em>, which also
+                had the snapshot in it.</li>
+        </ul>
 
-        <h3>Save Spectra <a href="help://save" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
-        <p>File → Save spectra exports processed spectra to text/CSV/Excel files, or
+        <h3>Export Spectra <a href="help://save" style="font-size:8pt; font-weight:normal;">📖 open help</a></h3>
+        <p>File → Export spectra&hellip; exports the selected spectra to text/CSV/Excel files, or
         to GRAMS (.spc) — the same binary Thermo/GRAMS format this app can also
-        import. Choose which spectra to export and the output format.</p>
+        import. Choose the output format and how the spectra are laid out.</p>
 
         <div class="screenshot">
-            <img src="$SAVE_DIALOG" width="$SAVE_DIALOG_W" height="$SAVE_DIALOG_H" alt="Save Options dialog with File Format, Save Mode, X-scale, Layout, and Options groups" />
-            <p class="caption">The Save Options dialog: File Format (Text / Excel / GRAMS (.spc) / Snapshot), Save Mode, X-scale, Layout, and formatting Options.</p>
+            <img src="$SAVE_DIALOG" width="$SAVE_DIALOG_W" height="$SAVE_DIALOG_H" alt="Export spectra dialog with File Format, Save Mode, X-scale, Layout, and Options groups" />
+            <p class="caption">The Export spectra dialog: File Format (Text / Excel / GRAMS (.spc)), Save Mode, X-scale, Layout, and formatting Options.</p>
         </div>
         <div class="info">
             <strong>GRAMS (.spc)</strong> requires every spectrum in a Table-mode
@@ -2721,8 +2735,20 @@ def get_user_guide_help_content():
         </div>
 
         <ul>
-            <li><strong>Save snapshot:</strong> File → Save&hellip; (Ctrl+S, or the <strong>Save</strong> button) → choose
-                <strong>Snapshot</strong> as the File Format</li>
+            <li><strong>Save snapshot:</strong> File → Save snapshot (Ctrl+S, or the <strong>Save
+                snapshot</strong> button) saves into the snapshot you opened or saved last &mdash;
+                at once, without a dialog. The first time (or after Import data &rarr; New&hellip;)
+                it asks for a name.</li>
+            <li><strong>Save snapshot as&hellip;</strong> (Ctrl+Shift+S): your work into a new
+                snapshot of the name you choose; from then on Save snapshot saves into that one.</li>
+            <li><strong>The window's title</strong> names the snapshot you work in, e.g.
+                <em>TBA_series.snapx &ndash; SpecAnalytiXBase</em>, with a <strong>*</strong> in
+                front while there are changes not saved in it (<em>Untitled</em> while your
+                spectra are in no snapshot yet). Closing the program then asks <em>Save the
+                changes&hellip;?</em> &mdash; <strong>Save</strong>, <strong>Discard</strong> or
+                <strong>Cancel</strong>.</li>
+            <li>How hard a snapshot is compressed (fast &ndash; balanced &ndash; maximum):
+                <a href="#settings">File &rarr; Settings and saved items</a>.</li>
             <li><strong>Load snapshot:</strong> File → Open snapshot&hellip; (Ctrl+O, or the <strong>Open snapshot</strong> button)</li>
             <li>Reload an earlier snapshot to go back to the workspace exactly as
                 it was when that snapshot was saved</li>
@@ -2743,7 +2769,7 @@ def get_user_guide_help_content():
                 <strong>Discard</strong> deletes it, <strong>Not now</strong> keeps it
                 and asks again next time.</li>
             <li>When you close the program normally, the automatic save is deleted
-                &mdash; it is a safety net, not a replacement for File → Save.</li>
+                &mdash; it is a safety net, not a replacement for File → Save snapshot.</li>
             <li><strong>File → Automatic saving</strong>: Off, or every 5, 10 (default)
                 or 20 minutes; the menu also shows when the last automatic save
                 happened. Your choice is remembered.</li>
@@ -2763,7 +2789,7 @@ def get_user_guide_help_content():
                 settings, metadata &mdash; with the last automatic save, and if anything
                 differs it saves the <em>whole</em> workspace. (On a 21&nbsp;000-spectrum map
                 this check takes well under a second.)</li>
-            <li><strong>File → Save</strong> (a snapshot you save yourself) always writes
+            <li><strong>File → Save snapshot</strong> (a snapshot you save yourself) always writes
                 the complete current state; no check is involved.</li>
             <li>If a save takes longer than the interval (a very large workspace), the
                 next one is simply skipped; saves never overlap. The files are kept in
@@ -2848,13 +2874,12 @@ def get_user_guide_help_content():
             Every snapshot saved by earlier versions still loads as before; a
             snapshot saved by this version cannot be opened by version 1.4 or
             older.<br><br>
-            When File &rarr; Save&hellip; &rarr; <strong>Snapshot</strong> is
-            selected, the Save dialog shows a <strong>Compression</strong>
-            choice: <strong>Fast</strong> (quickest save, larger file),
-            <strong>Balanced</strong> (the default, and what earlier versions
-            of this note assumed), or <strong>Maximum</strong> (smallest
-            file, slower save &mdash; worth it if you're archiving a
-            snapshot rather than working with it day to day).
+            How hard a snapshot is compressed is set in <strong>File &rarr; Settings
+            and saved items</strong> (<em>Snapshots</em>): <strong>fast</strong> (quickest
+            save, larger file), <strong>balanced</strong> (the default) or
+            <strong>maximum</strong> (smallest file, slower save &mdash; worth it if
+            you're archiving a snapshot rather than working with it day to day). Until
+            1.7.0 this was a choice in the Save dialog.
         </div>
 
         <h4>What Happens When You Load a Snapshot</h4>

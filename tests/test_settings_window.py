@@ -49,8 +49,9 @@ def test_settings_have_their_defaults_until_changed(home):
     by_id = {s.id: s for s in us.SETTINGS}
     assert by_id['autosave'].default_text == 'every 10 minutes'
     assert by_id['cd_ht'].default_text == '700 V' and by_id['theme'].default_text == 'light'
-    assert [g for g, _ in us.groups()][:3] == [
+    assert [g for g, _ in us.groups()][:4] == [
         'Automatic saving (File \u203a Automatic saving)',
+        'Snapshots (File \u203a Save snapshot)',
         'Plotting many spectra (View \u203a Plotting many spectra\u2026)',
         'CD data quality (View \u203a CD data quality)']
     prefs.set('autosave_minutes', 5)

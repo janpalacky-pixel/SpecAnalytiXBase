@@ -190,8 +190,9 @@ def get_quick_start_help_content():
             <li><b>Analyze / visualize</b> with a tool from the
                 <b>Spectra Analysis &amp; Visualization</b> menu (SVD, PCA, NMF,
                 MCR-ALS, Cluster Analysis, ...).</li>
-            <li><b>Save</b> your results — <b>File &rarr; Save</b> — as text, Excel,
-                GRAMS (.spc), or a full session snapshot.</li>
+            <li><b>Save</b> your work — <b>File &rarr; Save snapshot</b> (Ctrl+S): everything,
+                to go on later — and <b>export</b> spectra for other programs — <b>File &rarr;
+                Export spectra&hellip;</b> (Ctrl+E): text, Excel or GRAMS (.spc).</li>
         </ol>
         <div class="tip">
             <b>On the plot:</b> the mouse wheel zooms where the mouse is (with Ctrl the y axis;
@@ -414,12 +415,17 @@ def get_quick_start_help_content():
         <strong>Fit Details</strong> menu instead.</p>
 
         <h2 id="save">5. Saving Your Data</h2>
-        <p>Save your (processed) spectra as delimited text, Excel, or the
-        binary GRAMS (<code>.spc</code>) format — or save a full session
-        <b>Snapshot</b> to pick up exactly where you left off, spectra and
-        Operations History included. <b>File &rarr; Save</b> opens the Save
-        Options dialog:</p>
-        <p><a href="help://save"><b>&#128214; Save — full help</b></a></p>
+        <p><b>Your work:</b> <b>File &rarr; Save snapshot</b> (<b>Ctrl+S</b>) keeps everything in a
+        snapshot (<code>.snapx</code>) &mdash; spectra, Operations History, settings &mdash; to
+        pick up exactly where you left off (<b>File &rarr; Open snapshot&hellip;</b>, Ctrl+O). It
+        saves into the snapshot you opened or saved last; the first time it asks for a name
+        (<b>Save snapshot as&hellip;</b>, Ctrl+Shift+S, any time). The window's title shows its
+        name, with a <b>*</b> while there are unsaved changes.</p>
+        <p><b>Spectra for other programs:</b> <b>File &rarr; Export spectra&hellip;</b>
+        (<b>Ctrl+E</b>) writes the selected spectra as delimited text, Excel or the binary GRAMS
+        (<code>.spc</code>) format:</p>
+        <p><a href="help://save"><b>&#128214; Export spectra — full help</b></a> &middot;
+        <a href="help://user_guide#save-export"><b>Saving &amp; Export in the User Guide</b></a></p>
 
         <h2 id="test-data">6. Try It With Test Datasets</h2>
         <p><b>Help &rarr; Test datasets</b> opens a submenu of small, ready-made

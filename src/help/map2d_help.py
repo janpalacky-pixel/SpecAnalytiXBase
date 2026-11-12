@@ -1312,7 +1312,7 @@ grid shape, only what's computed from it, so regions stay valid there.
 same map (same spectra and size): the regions you drew are back, with their
 Include/Exclude mode and the names given in <i>Compare ROI regions in Group
 Statistics…</i>. They are kept for the session and saved in snapshots
-(File → Save → Snapshot). For a text map whose size you type in, they come
+(File → Save snapshot). For a text map whose size you type in, they come
 back as soon as the same Rows × Cols is entered. A region is restored only if
 all its pixels still exist; removing all regions is remembered too. The regions
 belong to the spectra themselves, not to their names: renamed spectra keep them,

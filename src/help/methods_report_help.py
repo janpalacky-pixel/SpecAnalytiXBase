@@ -122,7 +122,7 @@ def get_methods_report_help_content():
         </ul>
         <div class="tip"><b>Tip:</b> The report always describes the processing as it is
         <i>now</i>. When you make the figures for a paper, save the report right away,
-        next to the figures, and save a snapshot (File &rarr; Save) as well. If you later
+        next to the figures, and save a snapshot (File &rarr; Save snapshot) as well. If you later
         change or continue the processing, the saved report still describes exactly how
         those figures were made, and the snapshot lets you return to that state &mdash; a
         new report can then be generated from it at any time.</div>

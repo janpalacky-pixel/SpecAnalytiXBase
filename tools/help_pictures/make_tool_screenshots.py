@@ -346,7 +346,7 @@ def part_user_guide():
         shot(d, F, 'import_spectra_dialog.png')
     ORIGINAL_IMPORT_RUN(mc.view, dict(mc.import_settings), [RAMAN])
 
-    @on('Save Options')
+    @on('Export spectra')
     def _(d):
         shot(d, F, 'save_options_dialog.png')
     mc.save_controller.execute()

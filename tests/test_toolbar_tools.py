@@ -109,7 +109,8 @@ def test_groups_can_be_hidden_and_the_text_left_out(mc, tmp_path):
     v.show()
     app.processEvents()
     texts = [a.text() for a in v.menuToolbars.actions() if not a.isSeparator()]
-    assert texts == ['Main buttons (Import, Open snapshot, Save, Help, Copy plot, Publication)',
+    assert texts == ['Main buttons (Import, Open snapshot, Save snapshot, Export, Help, Copy plot, '
+                     'Publication)',
                      'Spectra processing', 'Analysis && visualization', 'Text on the buttons',
                      'Back to the default (all groups, text: Automatic)']
     assert [a.text() for a in v.menuToolbarText.actions()] == \
@@ -192,7 +193,8 @@ def test_help_comes_right_after_save(mc):
     tb = mc.view.mainToolBar
     names = [tb.widgetForAction(a).objectName() for a in tb.actions()
              if not a.isSeparator() and tb.widgetForAction(a) is not None]
-    assert names[:5] == ['toolbarImportButton', 'toolbarOpensnapshotButton', 'toolbarSaveButton',
+    assert names[:6] == ['toolbarImportButton', 'toolbarOpensnapshotButton',
+                         'toolbarSavesnapshotButton', 'toolbarExportButton',
                          'toolbarHelpButton', 'toolbarCopyPlotButton']
 
 

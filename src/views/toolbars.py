@@ -7,7 +7,7 @@ leaves the text out group by group (Analysis first) when the window is too
 narrow for all buttons, so no button is hidden behind the "»" of a tool bar.
 The choices are remembered.
 
-  Main:                     Import data, Open snapshot, Save, Help | Copy plot, Publication
+  Main:                     Import data, Open snapshot, Save snapshot, Export, Help | Copy plot, Publication
   Spectra processing:       Data range, Smoothing, Baseline, Normalization
   Analysis & visualization: Peak list, Peak Fitting, SVD analysis, 2D map,
                             Group Statistics, Data table
@@ -183,7 +183,7 @@ def build(view):
     """The four tool bars, the menu icons and View > Toolbars."""
     # Main: Import data (click: New; the arrow: New / Add to current), Open
     # snapshot, Save (Copy plot is added by the controller, which makes it)
-    tb = _toolbar(view, "mainToolBar", "Main buttons (Import, Open snapshot, Save, Help, Copy plot, Publication)")
+    tb = _toolbar(view, "mainToolBar", "Main buttons (Import, Open snapshot, Save snapshot, Export, Help, Copy plot, Publication)")
     view.mainToolBar = tb
     imp = QToolButton(view)
     imp.setObjectName("toolbarImportButton")
@@ -198,13 +198,14 @@ def build(view):
     tb.addWidget(imp)
     view.toolbarImportButton = imp
     for action, text, key in ((view.actionImport_Snapshot, "Open snapshot", "Ctrl+O"),
-                              (view.actionSave, "Save", "Ctrl+S")):
+                              (view.actionSaveSnapshot, "Save snapshot", "Ctrl+S"),
+                              (view.actionSave, "Export", "Ctrl+E")):
         action.setIconText(text)                   # the button: without the menu's "…"
         action.setToolTip(f"{action.statusTip()}  [{key}]")
         tb.addAction(action)
         tb.widgetForAction(action).setObjectName(f"toolbar{text.replace(' ', '')}Button")
 
-    # Help right after Save: near the eyes (the Help menu)
+    # Help right after Export: near the eyes (the Help menu)
     help_btn = QToolButton(view)
     help_btn.setObjectName("toolbarHelpButton")
     help_btn.setText("Help")
@@ -334,7 +335,7 @@ def _build_toolbars_menu(view):
     choice = saved()
     for key, tb in tool_bars(view).items():
         act = tb.toggleViewAction()
-        act.setText({'main': "Main buttons (Import, Open snapshot, Save, Help, Copy plot, Publication)",
+        act.setText({'main': "Main buttons (Import, Open snapshot, Save snapshot, Export, Help, Copy plot, Publication)",
                      'processing': "Spectra processing",
                      'analysis': "Analysis && visualization"}[key])
         tb.setVisible(choice[key])

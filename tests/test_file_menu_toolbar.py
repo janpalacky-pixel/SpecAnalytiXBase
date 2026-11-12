@@ -1,5 +1,5 @@
 """The File menu with icons and keyboard shortcuts, and the row of buttons
-under the menu bar (Import data, Open snapshot, Save, Help), as in
+under the menu bar (Import data, Open snapshot, Save snapshot, Export, Help), as in
 MeltAnalytiX (also icons on the Run, Undo / Redo, History and Refresh Plot
 buttons): the buttons, the menu entries and the shortcuts are the same
 actions, so they always do the same."""
@@ -40,14 +40,19 @@ def test_file_menu_names_icons_and_shortcuts(mc):
     expect = [(v.actionImport_new, 'New…', 'Ctrl+I'),
               (v.actionImport_add, 'Add to current…', 'Ctrl+Shift+I'),
               (v.actionImport_Snapshot, 'Open snapshot…', 'Ctrl+O'),
-              (v.actionSave, 'Save…', 'Ctrl+S')]
+              (v.actionSaveSnapshot, 'Save snapshot', 'Ctrl+S'),
+              (v.actionSaveSnapshotAs, 'Save snapshot as…', 'Ctrl+Shift+S'),
+              (v.actionSave, 'Export spectra…', 'Ctrl+E')]
     for action, text, key in expect:
         assert action.text() == text and action.shortcut().toString() == key
-    for action in (v.actionImport_Snapshot, v.actionSave, v.menuImport.menuAction()):
+    for action in (v.actionImport_Snapshot, v.actionSaveSnapshot, v.actionSave,
+                   v.menuImport.menuAction()):
         assert not action.icon().isNull()
     texts = [a.text() for a in v.menuFile.actions() if not a.isSeparator()]
-    assert texts[:3] == ['Import data', 'Paste data from clipboard (Excel, text)',
-                         'Open snapshot…']
+    # your work (the snapshot), then the exports
+    assert texts[:7] == ['Import data', 'Paste data from clipboard (Excel, text)',
+                         'Open snapshot…', 'Open recent', 'Save snapshot', 'Save snapshot as…',
+                         'Export spectra…']
     assert [a.text() for a in v.menuImport.actions()] == ['New…', 'Add to current…']
 
 
@@ -61,8 +66,8 @@ def test_the_buttons_under_the_menu_bar(mc):
         texts.append([b.text() for b in buttons
                       if b is not None and b.objectName().startswith('toolbar') and
                       isinstance(b, QToolButton)])
-    assert texts == [['Import data', 'Open snapshot', 'Save', 'Help', 'Copy plot',
-                      'Publication'],
+    assert texts == [['Import data', 'Open snapshot', 'Save snapshot', 'Export', 'Help',
+                      'Copy plot', 'Publication'],
                      ['Data range', 'Smoothing', 'Baseline', 'Normalization'],
                      ['Peak list', 'Peak Fitting', 'SVD analysis', '2D map', 'Group Statistics',
                       'Data table']]
@@ -70,22 +75,24 @@ def test_the_buttons_under_the_menu_bar(mc):
     assert imp.menu() is v.menuImport and imp.popupMode() == QToolButton.MenuButtonPopup
     assert 'Ctrl+I' in imp.toolTip()
     assert v.findChild(QToolButton, 'toolbarOpensnapshotButton').toolTip().endswith('[Ctrl+O]')
-    assert v.findChild(QToolButton, 'toolbarSaveButton').toolTip().endswith('[Ctrl+S]')
+    assert v.findChild(QToolButton, 'toolbarSavesnapshotButton').toolTip().endswith('[Ctrl+S]')
+    assert v.findChild(QToolButton, 'toolbarExportButton').toolTip().endswith('[Ctrl+E]')
     assert v.toolbarHelpButton.menu() is v.menuHelp
 
 
 def test_button_and_shortcut_do_the_same_as_the_menu(mc):
     v = mc.view
-    new, snap, save = (_spy(a) for a in (v.actionImport_new, v.actionImport_Snapshot,
-                                         v.actionSave))
+    new, snap, save, export = (_spy(a) for a in (v.actionImport_new, v.actionImport_Snapshot,
+                                                 v.actionSaveSnapshot, v.actionSave))
     v.toolbarImportButton.click()
     v.findChild(QToolButton, 'toolbarOpensnapshotButton').click()
-    v.findChild(QToolButton, 'toolbarSaveButton').click()
-    assert (len(new), len(snap), len(save)) == (1, 1, 1)
+    v.findChild(QToolButton, 'toolbarSavesnapshotButton').click()
+    v.findChild(QToolButton, 'toolbarExportButton').click()
+    assert (len(new), len(snap), len(save), len(export)) == (1, 1, 1, 1)
     v.show()
     v.activateWindow()
     app.processEvents()
-    for key, calls in ((Qt.Key_I, new), (Qt.Key_O, snap), (Qt.Key_S, save)):
+    for key, calls in ((Qt.Key_I, new), (Qt.Key_O, snap), (Qt.Key_S, save), (Qt.Key_E, export)):
         QTest.keyClick(v, key, Qt.ControlModifier)
         app.processEvents()
     # Ctrl released again: otherwise Qt still counts it as held, and a later test
@@ -93,7 +100,7 @@ def test_button_and_shortcut_do_the_same_as_the_menu(mc):
     QTest.keyRelease(v, Qt.Key_Control)
     app.processEvents()
     assert QApplication.keyboardModifiers() == Qt.NoModifier
-    assert (len(new), len(snap), len(save)) == (2, 2, 2)
+    assert (len(new), len(snap), len(save), len(export)) == (2, 2, 2, 2)
     v.hide()                    # (closing would ask about the unsaved work)
 
 

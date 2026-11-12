@@ -162,6 +162,11 @@ def _build_settings():
                 _key('autosave_minutes', DEFAULT_AUTOSAVE_MINUTES)[1],
                 options=[(0, 'off')] + [(m, f'every {m} minutes') for m in (5, 10, 20)],
                 effect='autosave'),
+        Setting('snapshot_compression', 'Snapshots (File \u203a Save snapshot)',
+                'Compression of a saved snapshot', 'choice', 6,
+                *_key('snapshot_compression', 6, int),
+                options=[(1, 'fast (a larger file)'), (6, 'balanced'),
+                         (9, 'maximum (a smaller file, slower)')]),
         Setting('large_max_drawn', g_many, 'Overlay, Grid and Waterfall plots draw at most',
                 'int', ls.DEFAULT_SETTINGS['max_drawn'], *large('max_drawn'),
                 options=dict(minimum=10, maximum=10_000_000, step=100, suffix=' spectra'),
@@ -230,8 +235,13 @@ SETTINGS = _build_settings()
 HELP = {
     'autosave': ("How often the program saves your current work in the background, so that it "
                  "can be restored after a crash or power cut (the next start offers it). Off: "
-                 "never. Saving a snapshot yourself (File \u203a Save) is not affected.",
+                 "never. Saving a snapshot yourself (File \u203a Save snapshot) is not affected.",
                  'help://user_guide#autosave'),
+    'snapshot_compression': ("How hard a snapshot (.snapx) is compressed when you save it (File "
+                             "\u203a Save snapshot / Save snapshot as\u2026). Fast: quicker, a "
+                             "larger file; maximum: a smaller file, noticeably slower for a large "
+                             "workspace (e.g. a 2D map). Balanced suits most work.",
+                             'help://user_guide#save'),
     'large_max_drawn': ("Drawing is slow (about 5 s per 1 000 spectra), so the Overlay, Grid and "
                         "Waterfall plots draw at most this many spectra. Up to this many "
                         "selected: all are drawn. More selected: this many, evenly spread (a "

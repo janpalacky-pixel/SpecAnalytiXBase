@@ -1,7 +1,7 @@
 # src/help/save_help.py
 
 def get_save_help_title():
-    return "Save Spectra — Help"
+    return "Export Spectra — Help"
 
 
 def get_save_help_content():
@@ -32,15 +32,21 @@ def get_save_help_content():
     </head>
     <body>
 
-    <h1>Save Spectra — Help</h1>
+    <h1>Export Spectra — Help</h1>
 
     <h2>Overview</h2>
     <p>
-        The Save dialog lets you export the currently selected spectra to a
-        file, or save the complete application state as a snapshot.
-        Only the spectra highlighted in the spectrum list are saved —
-        unselected spectra are not included.
+        <b>File → Export spectra…</b> (Ctrl+E, the <b>Export</b> button) writes the
+        currently selected spectra to a file for other programs: text, Excel or
+        GRAMS (.spc). Only the spectra highlighted in the spectrum list are
+        exported — unselected spectra are not included.
     </p>
+    <div class="info">
+        <b>Your work</b> &mdash; every spectrum, the Operations History, the settings
+        &mdash; is kept in a <b>snapshot</b> (.snapx): <b>File → Save snapshot</b>
+        (Ctrl+S) and <b>Save snapshot as…</b> (Ctrl+Shift+S), not here. Until 1.7.0 this
+        window was <i>File → Save…</i> and also had the snapshot (see below).
+    </div>
 
     <h2>File Format</h2>
 
@@ -94,9 +100,11 @@ def get_save_help_content():
         text — so those controls are hidden when GRAMS is selected.
     </p>
 
-    <h3>Snapshot</h3>
+    <h3>Snapshot (File → Save snapshot)</h3>
     <p>
-        Saves the <b>complete application state</b> — not just the spectrum
+        Not in this window since 1.7.0: <b>File → Save snapshot</b> (Ctrl+S) /
+        <b>Save snapshot as…</b> (Ctrl+Shift+S). A snapshot saves the <b>complete
+        application state</b> — not just the spectrum
         data, but also which spectra are selected, the full operations history
         (baseline correction, normalisation, data range, etc.), all plot
         settings (also the band markers, axis titles and fonts, legend and grid
@@ -112,8 +120,9 @@ def get_save_help_content():
         <b>File → Open snapshot&hellip;</b> (Ctrl+O).
     </p>
     <div class="info">
-        When Snapshot is selected, all other options (Save Mode, X-scale,
-        Options) are disabled — a snapshot always saves the full state.
+        Save snapshot saves into the snapshot you opened or saved last, without a
+        dialog; the window's title names it, with a * while there are unsaved
+        changes. Its compression: File → Settings and saved items (Snapshots).
     </div>
 
     <h2>Save Mode</h2>

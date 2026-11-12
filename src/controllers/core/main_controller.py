@@ -1,6 +1,7 @@
 
 # src/controllers/core/main_controller.py
 from src.views.plot_only_mode import run_beside_plot  # windows beside the main plot
+import os
 import re
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QCheckBox,
@@ -384,6 +385,10 @@ class MainController(QMainWindow):
         # shown (so creating a MainController -- e.g. in tests -- never
         # writes session files or asks the recovery question).
         self.autosave_controller = AutosaveController(self)
+        # the snapshot you work in: its name (and "*") in the title, Save
+        # snapshot without a dialog, the question on closing (snapshot_file.py)
+        from src.controllers.misc.snapshot_file import SnapshotFile
+        self.snapshot_file = SnapshotFile(self)
         self.cd_quality_controller = CDQualityController(self)
         # Very large selections: preview / drawing in portions with Stop
         # (View -> Plotting many spectra…)
@@ -1909,6 +1914,9 @@ class MainController(QMainWindow):
         """
         self.restore_window_layout()
         self.view.show()
+        sf = getattr(self, 'snapshot_file', None)
+        if sf is not None:
+            sf.start()                         # the snapshot's name in the title
 
     def remember_window_layout(self):
         """The window's size and place (also maximized) and the width of
@@ -2007,6 +2015,12 @@ class MainController(QMainWindow):
         # runs with spectra=None, its intended default (i.e. "use the current
         # selection").
         self.view.actionSave.triggered.connect(lambda checked=False: self.save_controller.execute())
+        # File > Save snapshot (Ctrl+S) / Save snapshot as... (Ctrl+Shift+S): the
+        # snapshot you work in (snapshot_file.py); Export spectra... above
+        self.view.actionSaveSnapshot.triggered.connect(
+            lambda checked=False: self.save_controller.save_snapshot())
+        self.view.actionSaveSnapshotAs.triggered.connect(
+            lambda checked=False: self.save_controller.save_snapshot_as())
     
         # Connect the menu actions to the WebpageController
         self.view.actionOur_Group.triggered.connect(lambda: self.webpage_controller.open_url("https://www.ibp.cz/cs/vyzkum/oddeleni/biofyzika-nukleovych-kyselin/vyzkum"))
@@ -3840,15 +3854,40 @@ class MainController(QMainWindow):
         """
         from PyQt5.QtWidgets import QApplication, QMessageBox
 
-        reply = QMessageBox.question(
-            self.view, "Close SpecAnalytiXBase",
-            "Are you sure you want to close the application?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        if reply != QMessageBox.Yes:
-            event.ignore()
-            return
+        # Changes not saved in the snapshot (snapshot_file.py): Save /
+        # Discard / Cancel, as a document in other programs; otherwise the
+        # usual question.
+        sf = getattr(self, 'snapshot_file', None)
+        if sf is not None and sf.is_modified():
+            if sf.path:
+                text = (f"Save the changes to {os.path.basename(sf.path)} before closing?")
+            else:
+                text = ("Your spectra are not saved in a snapshot.\n"
+                        "Save a snapshot before closing?")
+            reply = QMessageBox.question(
+                self.view, "Close SpecAnalytiXBase",
+                text + "\n\nDiscard: the changes since the last save are lost.",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            if reply in (QMessageBox.Cancel, QMessageBox.No):
+                event.ignore()
+                return
+            if reply == QMessageBox.Save and not self.save_controller.save_snapshot():
+                event.ignore()                 # not saved (cancelled, failed): stay
+                return
+        else:
+            reply = QMessageBox.question(
+                self.view, "Close SpecAnalytiXBase",
+                "Are you sure you want to close the application?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                event.ignore()
+                return
+        if sf is not None:
+            sf.stop()
         # the window's size, place and the list's width for the next start
         self.remember_window_layout()
         # A normal close: remove this session's automatic save, so only an

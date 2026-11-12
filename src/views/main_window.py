@@ -2019,13 +2019,34 @@ class MainWindow(QMainWindow):
         self.actionAbout.setText("About SpecAnalytiXBase")
 
         # Other existing actions
+        # File > Export spectra... (until 1.7.0 "Save...", which also had the
+        # snapshot in it): the selected spectra for other programs. The
+        # snapshot - your own working file - has Save snapshot / Save
+        # snapshot as... (snapshot_file.py), as a document in other programs.
         self.actionSave = QAction(self)
         self.actionSave.setObjectName("actionSave")
-        self.actionSave.setText("Save\u2026")
-        self.actionSave.setShortcut(QKeySequence.Save)
-        self.actionSave.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.actionSave.setText("Export spectra\u2026")
+        self.actionSave.setShortcut(QKeySequence("Ctrl+E"))
+        from src.views import icons as _icons
+        self.actionSave.setIcon(_icons.export_icon())
         self.actionSave.setStatusTip(
-            "Save the selected spectra (text, Excel) or a snapshot of the whole workspace")
+            "Export the selected spectra for other programs: text, Excel or GRAMS (.spc)")
+
+        self.actionSaveSnapshot = QAction(self)
+        self.actionSaveSnapshot.setObjectName("actionSaveSnapshot")
+        self.actionSaveSnapshot.setText("Save snapshot")
+        self.actionSaveSnapshot.setShortcut(QKeySequence.Save)
+        self.actionSaveSnapshot.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.actionSaveSnapshot.setStatusTip(
+            "Save your work in its snapshot (.snapx): spectra, Operations History, settings")
+
+        self.actionSaveSnapshotAs = QAction(self)
+        self.actionSaveSnapshotAs.setObjectName("actionSaveSnapshotAs")
+        self.actionSaveSnapshotAs.setText("Save snapshot as\u2026")
+        self.actionSaveSnapshotAs.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self.actionSaveSnapshotAs.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
+        self.actionSaveSnapshotAs.setStatusTip(
+            "Save your work in a new snapshot (.snapx) - a name of your choice")
         
         self.actionImport_new = QAction(self)
         self.actionImport_new.setObjectName("actionImport_new")
@@ -2152,8 +2173,10 @@ class MainWindow(QMainWindow):
         self.menuFile.addSeparator()
         self.menuFile.addAction(self.menuImport.menuAction())
         self.menuFile.addAction(self.actionImport_Snapshot)
+        self.menuFile.addAction(self.actionSaveSnapshot)       # (Open recent goes before it)
+        self.menuFile.addAction(self.actionSaveSnapshotAs)
         self.menuFile.addSeparator()
-        self.menuFile.addAction(self.actionSave)
+        self.menuFile.addAction(self.actionSave)                # Export spectra...
         
         # Add menus to menu bar
         self.menuBar.addAction(self.menuFile.menuAction())

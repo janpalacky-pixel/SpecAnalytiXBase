@@ -1580,8 +1580,8 @@ spectrum_B    5.5      6.6      7.7      8.8
         <em>individual x-scales</em> use an interlaced layout and require
         <b>Layout: Interlaced</b> to be selected on re-import. Files saved
         with the <b>Rows</b> layout option require <b>Layout: Row-oriented</b>
-        on re-import. The Save dialog shows a reminder when either applies —
-        see <a href="help://save">Save Spectra help</a> for the full list of
+        on re-import. The Export spectra dialog shows a reminder when either applies —
+        see <a href="help://save">Export Spectra help</a> for the full list of
         export options.
     </div>
 

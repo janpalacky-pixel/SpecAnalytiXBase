@@ -48,7 +48,10 @@ class SaveController:
     # ------------------------------------------------------------------
 
     def execute(self, spectra=None):
-        """Execute the save operation.
+        """File > Export spectra... (Ctrl+E): the selected spectra as text,
+        Excel or GRAMS (.spc). Until 1.7.0 this was File > Save..., which
+        also offered the snapshot; the snapshot has Save snapshot / Save
+        snapshot as... now (save_snapshot, save_snapshot_as).
 
         spectra: optional explicit list of spectrum dicts to save instead
         of the main window's current selection — e.g. SVD Interpolation's
@@ -59,22 +62,25 @@ class SaveController:
         """
         selected_spectra = spectra if spectra is not None else self.get_selected_spectra_in_order()
 
-        if not selected_spectra and not self.show_snapshot_option():
+        if not selected_spectra:
             QMessageBox.warning(
                 self.controller.view,
                 "No Selection",
-                "No spectra selected to save."
+                "No spectra selected to export.\n\n"
+                "Select spectra in the list first. To keep all your work (every "
+                "spectrum, the Operations History, the settings), use File › Save "
+                "snapshot (Ctrl+S)."
             )
             return
 
-        dialog = SaveOptionsDialog(self.controller.view, allow_snapshot=(spectra is None))
+        dialog = SaveOptionsDialog(self.controller.view, allow_snapshot=False)
         if dialog.exec_() != QDialog.Accepted:
             return
 
         settings = dialog.get_settings()
         fmt = settings['format']
 
-        if fmt == 'snapshot':
+        if fmt == 'snapshot':                 # (not offered any more; kept for callers)
             self._save_snapshot(settings)
             return
 
@@ -108,15 +114,52 @@ class SaveController:
     # Snapshot save
     # ------------------------------------------------------------------
 
-    def _save_snapshot(self, settings: dict):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self.controller.view,
-            "Save Application Snapshot",
-            "",
-            _FORMAT_FILTERS['snapshot'],
-        )
-        if not file_path:
-            return
+    def _snapshot_file(self):
+        return getattr(self.controller, 'snapshot_file', None)
+
+    def save_snapshot(self) -> bool:
+        """File > Save snapshot (Ctrl+S): into the snapshot opened or saved
+        last, without a dialog; with none yet, as Save snapshot as....
+        Returns True if saved."""
+        sf = self._snapshot_file()
+        path = getattr(sf, 'path', None)
+        if not path:
+            return self.save_snapshot_as()
+        return self._save_snapshot({}, file_path=path, announce=False)
+
+    def save_snapshot_as(self) -> bool:
+        """File > Save snapshot as... (Ctrl+Shift+S): a name, then saved."""
+        return self._save_snapshot({}, announce=False)
+
+    @staticmethod
+    def compression_preference():
+        """The snapshot compression of File > Settings (None: the default)."""
+        try:
+            from src.modules.misc.session_files import Preferences
+            value = Preferences().get('snapshot_compression', None)
+            return int(value) if value is not None else None
+        except Exception:
+            return None
+
+    def _save_snapshot(self, settings: dict, file_path=None, announce=True) -> bool:
+        if file_path is None:
+            sf = self._snapshot_file()
+            # the current snapshot, or a suggested name (the data file's name,
+            # "Untitled.snapx") - the name field is never empty
+            try:
+                start = sf.suggestion() if sf is not None else ""
+            except Exception:
+                start = getattr(sf, 'path', None) or ""
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.controller.view,
+                "Save snapshot as",
+                start if isinstance(start, str) else "",
+                _FORMAT_FILTERS['snapshot'],
+            )
+            if not file_path:
+                return False
+        if 'compression_level' not in settings:
+            settings = dict(settings, compression_level=self.compression_preference())
 
         file_path = _ensure_extension(file_path, 'snapshot')
 
@@ -166,17 +209,25 @@ class SaveController:
             autosave = getattr(self.controller, 'autosave_controller', None)
             if autosave is not None:
                 autosave.record_recent(file_path, 'snapshot')
-            QMessageBox.information(
-                self.controller.view,
-                "Snapshot Saved",
-                f"Application state saved to:\n{file_path}"
-            )
+            sf = self._snapshot_file()
+            if sf is not None and isinstance(file_path, str):
+                sf.mark_saved(file_path)       # the title: its name, no "*"
+            status = getattr(self.controller, '_status', None)
+            if callable(status) and isinstance(file_path, str):
+                status(f"Snapshot saved: {file_path}", 6000)
+            if announce:
+                QMessageBox.information(
+                    self.controller.view,
+                    "Snapshot Saved",
+                    f"Application state saved to:\n{file_path}"
+                )
         else:
             QMessageBox.critical(
                 self.controller.view,
                 "Save Error",
                 f"Failed to save snapshot to:\n{file_path}"
             )
+        return bool(success)
 
     # ------------------------------------------------------------------
     # Table save
