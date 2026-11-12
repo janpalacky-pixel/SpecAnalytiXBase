@@ -2091,6 +2091,8 @@ class MainController(QMainWindow):
         if hasattr(self.view, 'keep_zoom_checkBox'):
             self.view.keep_zoom_checkBox.setChecked(self._keep_zoom_preference())
             self.view.keep_zoom_checkBox.toggled.connect(self._on_keep_zoom_toggled)
+            from src.views import tool_keep_zoom          # the tool windows too
+            tool_keep_zoom.set_enabled(self.view.keep_zoom_checkBox.isChecked())
         # "scale each" (scale_each.py): only the drawing changes
         if hasattr(self.view, 'scale_each_checkBox'):
             self.view.scale_each_checkBox.toggled.connect(self._on_scale_each_toggled)
@@ -3625,6 +3627,8 @@ class MainController(QMainWindow):
             return True
 
     def _on_keep_zoom_toggled(self, checked):
+        from src.views import tool_keep_zoom
+        tool_keep_zoom.set_enabled(checked)
         try:
             from src.modules.misc.session_files import Preferences
             Preferences().set('keep_zoom', bool(checked))

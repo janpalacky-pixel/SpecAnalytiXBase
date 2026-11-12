@@ -1086,6 +1086,16 @@ def get_user_guide_help_content():
         </ol>
         <p>The zoom also stays when you switch the plot type (Overlay, Waterfall, Grid,
         Mean &plusmn; SD, Difference), <em>reverse x</em> or <em>scale each</em>.</p>
+        <p id="keep-zoom-tools"><b>In the tool windows</b> that show one spectrum after another
+        &mdash; Peak Fitting (&#9664; &#9654; and its list), the baseline windows (manual,
+        automated, SNIP), FFT denoising, Normalization, Spike removal and Interactive
+        subtraction &mdash; the same: zoomed in on a band (mouse wheel, Zoom, Pan, a drag), the plot
+        stays there when you choose another spectrum or change a setting, and y is fitted to
+        what is shown. Example: in Peak Fitting zoom on the band you fit and step through the
+        series with &#9654; &mdash; every spectrum is shown at that band. Home shows the whole
+        range; a range the window chooses itself is left as it is; a plot that has no data in the
+        zoomed range (or is another kind of plot, e.g. a power spectrum) is shown whole. The
+        <em>keep zoom</em> tick of the main window switches it for these windows too.</p>
         <div class="screenshot">
             <img src="$PLOT_OPTIONS_PANEL" width="$PLOT_OPTIONS_PANEL_W" height="$PLOT_OPTIONS_PANEL_H" alt="Basic plot options with keep zoom and scale each ticked" />
             <p class="caption">Basic plot options: <em>keep zoom</em> beside <em>Cursor</em>,
@@ -1489,7 +1499,10 @@ def get_user_guide_help_content():
         that plot &mdash; adds a peak or a baseline point, draws a range or a region of the map
         &mdash; it keeps doing that and the plot is not moved (the wheel still zooms); a press on
         a movable legend drags the legend. Naming lines, finding them in the list and hiding
-        spectra with the legend are only in the main plot.</p>
+        spectra with the legend are only in the main plot. In the windows that show one
+        spectrum after another (Peak Fitting, the baseline windows, Normalization &hellip;) the zoom
+        stays when you choose another spectrum &mdash; see <a href="#keep-zoom-tools">keep zoom in
+        the tool windows</a>.</p>
         <div class="screenshot">
             <img src="$PLOT_MOUSE_LINE" width="$PLOT_MOUSE_LINE_W" height="$PLOT_MOUSE_LINE_H" alt="A clicked line: thicker, its row of the list bold with a yellow frame" />
             <p class="caption">A click on the line of sp006: the line is drawn thicker and its row

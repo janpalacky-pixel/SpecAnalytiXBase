@@ -206,6 +206,14 @@ class _Filter(QObject):
                 plot_navigation.attach(getattr(obj, 'canvas', None))
             except Exception:
                 pass
+        if event.type() in (QEvent.Polish, QEvent.Show) and _is_plot_toolbar(obj):
+            # keep zoom in some windows (tool_keep_zoom.py) - also at Show: at
+            # Polish a toolbar may not be in its window yet
+            try:
+                from src.views import tool_keep_zoom
+                tool_keep_zoom.attach(obj)
+            except Exception:
+                pass
         return False
 
 

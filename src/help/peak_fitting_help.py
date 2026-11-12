@@ -375,6 +375,11 @@ def get_peak_fitting_help_content():
             <li>The <b>mouse wheel</b> scrolls the left part, the table of peaks or the list
             &mdash; it never changes a drop-down list (e.g. Background or the Model of a peak)
             the mouse happens to be over. To change one, click it.</li>
+            <li>On the plot the <b>mouse wheel</b> zooms. Zoomed in on a band, the plot <b>stays
+            there</b> when you step to another spectrum (&#9664; &#9654;, the list) or change a
+            setting, y fitted to what is shown &mdash; Home shows the whole range (as <em>keep
+            zoom</em> in the main window, whose tick switches it here too; see the <a
+            href="help://user_guide#keep-zoom-tools">User Guide</a>).</li>
             <li>The <b>tooltips</b> (hold the mouse over a control) name the choices in bold,
             e.g. <b>Automatic (default)</b>: chosen for each spectrum&hellip;</li>
         </ul>

@@ -216,7 +216,17 @@ class PlotNavigation:
                     ax.set_xlim(*zoomed(*ax.get_xlim(), xd, factor, ax.get_xscale() == 'log'))
                     done.add(key)
         self._push()
+        self._remember()
         self.canvas.draw_idle()
+
+    def _remember(self):
+        """The view the user chose: kept when the window draws the plot
+        again (tool_keep_zoom.py - only in the windows that keep it)."""
+        try:
+            from src.views import tool_keep_zoom
+            tool_keep_zoom.record(self.canvas)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------ dragging
     def _on_press(self, event):
@@ -268,6 +278,7 @@ class PlotNavigation:
         except Exception:
             pass
         self._push()
+        self._remember()
         self.canvas.draw_idle()
 
 

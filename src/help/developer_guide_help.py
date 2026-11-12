@@ -3896,6 +3896,25 @@ def _natural_sort_key(cls, label):
             left out of <code>autosave_controller.state_signature</code>
             (<code>SIGNATURE_IGNORES</code>: zooming is no change of the work).
             Tests: <code>tests/test_keep_zoom.py</code>.</li>
+            <li><b>keep zoom in the tool windows</b> (1.7.0,
+            <code>src/views/tool_keep_zoom.py</code>): for the windows in <code>WINDOWS</code>
+            (by class name: Peak Fitting, the baseline windows, FFT denoising, Normalization,
+            Spike removal, Interactive subtraction) toolbar_mode's filter calls
+            <code>attach(toolbar)</code> at Polish and Show (at Polish a toolbar may not be in its
+            window yet). <code>KeepZoom</code> wraps the canvas's <code>draw</code>: before every
+            draw <code>fix()</code> puts back the x range the user zoomed to (<code>kept</code>: by
+            the plot's place in the figure, with its x-axis title) on a plot that shows its whole
+            data range again (<code>is_zoomed</code>: not 0.5 % inside the spectra lines' x
+            extent) - only if it has data there and the same title; a range the window narrows
+            itself is left. Then <code>kept_view.fit_y</code>, and the toolbar's history starts
+            again (<code>toolbar.update</code> + <code>kept_view.push_home</code>: Home = the whole
+            range - the old history is of the axes drawn before). <code>record()</code> after the
+            user's own change: <code>PlotNavigation</code> (wheel, drag) and the toolbar's
+            <code>_update_view</code> (Home, Back, Forward), <code>release_zoom</code>,
+            <code>release_pan</code> (wrapped on the instance - the buttons hold the bound methods
+            made before). <code>set_enabled</code> from MainController's keep zoom tick. Tests:
+            <code>tests/test_tool_keep_zoom.py</code> (a dummy window, Peak Fitting's arrows,
+            Normalization's list).</li>
             <li><b>Values between two band markers</b> (1.7.0,
             <code>src/modules/visualization/band_between.py</code>, Qt-free):
             <code>pair_around</code> (the neighbouring X markers around the right-click's x),
