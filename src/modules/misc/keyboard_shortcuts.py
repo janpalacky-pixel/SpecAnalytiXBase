@@ -46,6 +46,11 @@ SHORTCUTS = [
     ('Plot', 'Click a line', 'Its spectrum in the list: the row in bold, framed, scrolled into view'),
     ('Plot', 'Click a name in the legend', 'Hide that spectrum (in every plot type); click again to show it'),
     ('Plot', 'Right-click > Show all spectra', 'Show the hidden spectra again'),
+    ('Plots in tool windows', 'Mouse wheel / Ctrl+mouse wheel',
+     'Zoom x / y around the mouse, as in the main plot; Home: the start'),
+    ('Plots in tool windows', 'Left button held + move the mouse',
+     'Move (pan) the plot - not where a click or a drag already does something there '
+     '(adds a point, draws a range)'),
     ('Plot (your labels)', 'Delete', 'Delete the chosen label (a click on it chooses it)'),
     ('Save plot for publication', 'Ctrl+Z', 'Undo: the last change in the window'),
     ('Save plot for publication', 'Ctrl+Y', 'Redo: the undone change again'),

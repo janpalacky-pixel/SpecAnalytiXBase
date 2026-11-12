@@ -235,6 +235,7 @@ class _Driver:
                 self._wait_for_threads(dlg)
                 self.context.pop()
             self._check_publication(dlg)
+            self._check_navigation(dlg)
             self.context.pop()
             result = dlg.result()
             if dlg.isVisible():
@@ -242,6 +243,36 @@ class _Driver:
             return result
         finally:
             self.depth -= 1
+
+    def _check_navigation(self, dlg):
+        """Every shown plot of the window: the mouse wheel and a drag (as the
+        user does them, plot_navigation.py) run without an error, and Home
+        brings the view back."""
+        from matplotlib.backend_bases import MouseEvent
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT
+        try:
+            toolbars = [t for t in dlg.findChildren(NavigationToolbar2QT) if t.isVisible()]
+        except RuntimeError:
+            return
+        for tb in toolbars:
+            canvas = tb.canvas
+            axes = [a for a in canvas.figure.axes if a.get_navigate() and a.has_data()]
+            if not axes or getattr(canvas, '_sax_navigation', None) is None:
+                continue
+            self.context.append('[mouse wheel, drag]')
+            try:
+                box = axes[0].bbox
+                x, y = (box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2
+                canvas.callbacks.process('scroll_event', MouseEvent(
+                    'scroll_event', canvas, x, y, button='up', step=1))
+                for name, dx in (('button_press_event', 0), ('motion_notify_event', 20),
+                                 ('button_release_event', 20)):
+                    canvas.callbacks.process(name, MouseEvent(
+                        name, canvas, x + dx, y, button=1))
+                tb.home()
+            except Exception:
+                self._exception(*sys.exc_info())
+            self.context.pop()
 
     def _check_publication(self, dlg):
         """Every plot toolbar with Save plot for publication (plot_toolbar):

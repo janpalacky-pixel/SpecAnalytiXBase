@@ -10,7 +10,8 @@ a line or on a name in the legend does nothing then (plot_mouse_controller
 also says so in the status bar). Before, users did not see why.
 
 Installed once for the application (main.py, MainController): an event
-filter decorates every plot toolbar when it is first shown (QEvent.Polish),
+filter decorates every plot toolbar when it is first shown (QEvent.Polish)
+and gives its plot the wheel zoom and dragging (plot_navigation.py),
 the main plot's and those of the tool windows alike - no window has to do
 anything. The look only changes while a button is pressed in, so pictures
 of the windows are the same as before."""
@@ -89,6 +90,11 @@ class _Filter(QObject):
         if event.type() == QEvent.Polish and _is_plot_toolbar(obj):
             try:
                 decorate(obj)
+            except Exception:
+                pass
+            try:                               # the wheel zoom and dragging (plot_navigation.py)
+                from src.views import plot_navigation
+                plot_navigation.attach(getattr(obj, 'canvas', None))
             except Exception:
                 pass
         return False

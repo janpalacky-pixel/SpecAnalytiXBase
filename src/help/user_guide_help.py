@@ -1215,6 +1215,17 @@ def get_user_guide_help_content():
         your own labels (text, an arrow, a band's label) chooses or drags that label, a press on
         the frame of a movable legend drags the legend &ndash; not the plot. The wheel zooms
         always.</p>
+        <p id="tool-window-plots"><strong>The plots of the tool windows</strong> (Peak Fitting,
+        Baseline, SVD, PCA, NMF, 2D Map, MCR-ALS, Kinetics, <em>Open in New Window</em> &hellip;
+        &mdash; every plot with a toolbar)
+        have the same: the <strong>mouse wheel</strong> zooms x around the mouse (with
+        <span class="kbd">Ctrl</span> y), <strong>the left button held</strong> moves the plot,
+        <em>Back</em> / <em>Home</em> of the plot's toolbar go back, and a pressed Zoom or Pan
+        button has the orange frame and note. Where a click or a drag already does something on
+        that plot &mdash; adds a peak or a baseline point, draws a range or a region of the map
+        &mdash; it keeps doing that and the plot is not moved (the wheel still zooms); a press on
+        a movable legend drags the legend. Naming lines, finding them in the list and hiding
+        spectra with the legend are only in the main plot.</p>
         <div class="screenshot">
             <img src="$PLOT_MOUSE_LINE" width="$PLOT_MOUSE_LINE_W" height="$PLOT_MOUSE_LINE_H" alt="A clicked line: thicker, its row of the list bold with a yellow frame" />
             <p class="caption">A click on the line of sp006: the line is drawn thicker and its row

@@ -68,6 +68,7 @@ class PlotMouseController:
         self.canvas = canvas
         if canvas is None:
             return
+        canvas._sax_main_plot = True           # plot_navigation.py leaves it to us
         self._cids = [canvas.mpl_connect('scroll_event', self._on_scroll),
                       canvas.mpl_connect('motion_notify_event', self._on_move),
                       canvas.mpl_connect('button_press_event', self._on_press),

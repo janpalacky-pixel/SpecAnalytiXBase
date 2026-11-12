@@ -3802,7 +3802,21 @@ def _natural_sort_key(cls, label):
             <code>NavigationToolbar2QT</code> on <code>QEvent.Polish</code> - a
             <code>QToolButton:checked</code> style sheet on the toolbar and a hidden QLabel before
             <code>locLabel</code>, shown with the mode's text when the Pan / Zoom actions toggle;
-            installed in <code>main.py</code> and <code>MainController.__init__</code>.
+            installed in <code>main.py</code> and <code>MainController.__init__</code>. The same
+            filter attaches <code>src/views/plot_navigation.py</code> to each such toolbar's canvas
+            (the tool windows, Open in New Window): wheel zoom (all axes under the mouse, an axis
+            shared by twin axes once) and left-drag pan (<code>start_pan / drag_pan /
+            end_pan</code>). Decided at each press / wheel: nothing on the main plot
+            (<code>canvas._sax_main_plot</code>, set by <code>PlotMouseController.attach</code>),
+            nothing while the toolbar has a mode; no drag when the canvas has a
+            <code>button_press_event</code> handler of the window itself (a bound method or
+            function not from matplotlib - the toolbar, Figure.pick and
+            <code>backend_bases</code> are matplotlib's; a <code>matplotlib.widgets</code>
+            selector only while <code>get_active()</code>) or the press is on a draggable legend /
+            annotation; no wheel zoom with such a <code>scroll_event</code> handler (selectors'
+            on_scroll ignored). The smoke test drives the wheel and a drag on every shown plot of
+            every tool window (<code>_check_navigation</code>); tests:
+            <code>tests/test_plot_navigation.py</code>.
             <code>_say_busy</code>: a legend click while busy explains it in the status bar.
             Tests: <code>tests/test_plot_mouse.py</code>.</li>
             <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
