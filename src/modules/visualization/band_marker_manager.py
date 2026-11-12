@@ -33,7 +33,12 @@ Each marker has:
                           labels at different heights when several sit
                           close together on the axis.
     orientation: str   — how the LABEL TEXT itself is drawn: 'vertical'
-                          (default) or 'horizontal'. This is independent
+                          (default), 'horizontal' or 'above' (an X
+                          marker's label written horizontally just above
+                          the plot - as a click with the Cursor ticked
+                          makes it; labels there that would overlap go one
+                          line higher, view_text.RowText; a Y marker
+                          treats 'above' as 'horizontal'). This is independent
                           of axis above (which controls the LINE's
                           direction) — any combination of axis and
                           orientation is valid. 'vertical' text reads
@@ -62,6 +67,14 @@ Two settings apply to every marker at once (see __init__):
 
 from matplotlib.transforms import offset_copy
 
+from src.modules.visualization.view_text import add_row_text
+
+
+def _fmt(x):
+    """A position as a label: 1004, 12.35 (as plot_notes.fmt)."""
+    from src.modules.visualization.plot_notes import fmt
+    return fmt(x)
+
 from src.modules.utils.app_logger import get_logger
 logger = get_logger(__name__)
 
@@ -86,6 +99,15 @@ class BandMarkerManager:
     # for every dataset and would stop working correctly after zooming.
     DEFAULT_LABEL_LINE_GAP = 3.0
 
+    # The look of a new marker - added with a click on the plot (Cursor
+    # ticked; a "pinned cursor" before 1.7.0) or with Add in the Band
+    # markers window alike: its x as the label, above the plot, a dotted
+    # brown line. Restyled in the window like any other marker.
+    CLICK_STYLE = dict(color='#6D4C41', linestyle=':', linewidth=1.0,
+                       fontsize=7.5, orientation='above')
+    DEFAULT_COLOR = CLICK_STYLE['color']
+    ORIENTATIONS = ('vertical', 'horizontal', 'above')
+
     def __init__(self):
         self._markers = []   # list of dicts
         self.visible  = True # global toggle
@@ -104,24 +126,24 @@ class BandMarkerManager:
     # ------------------------------------------------------------------ #
 
     def add(self, position: float, label: str = '',
-            color: str = None, linestyle: str = '--',
-            linewidth: float = 1.0, orientation: str = 'vertical',
-            axis: str = 'x', fontsize: float = 7.0,
+            color: str = None, linestyle: str = ':',
+            linewidth: float = 1.0, orientation: str = 'above',
+            axis: str = 'x', fontsize: float = 7.5,
             label_offset: float = None) -> int:
-        """Add a marker. Returns its index."""
+        """Add a marker (by default in the look of CLICK_STYLE). Returns its
+        index."""
         if color is None:
-            color = self.DEFAULT_COLORS[self._next_color_index % len(self.DEFAULT_COLORS)]
-            self._next_color_index += 1
+            color = self.DEFAULT_COLOR
         self._markers.append({
             'position':     float(position),
             'axis':         axis if axis in ('x', 'y') else 'x',
-            'label':        label or f'{position:.6g}',
+            'label':        label or _fmt(position),
             'color':        color,
             'linestyle':    linestyle,
             'linewidth':    linewidth,
             'fontsize':     fontsize,
             'label_offset': label_offset if label_offset is not None else self.DEFAULT_LABEL_OFFSET,
-            'orientation':  orientation if orientation in ('vertical', 'horizontal') else 'vertical',
+            'orientation':  orientation if orientation in self.ORIENTATIONS else 'vertical',
             'visible':      True,
         })
         logger.debug("BandMarkerManager: added %s marker '%s' at %.6g",
@@ -142,6 +164,59 @@ class BandMarkerManager:
     @property
     def markers(self):
         return list(self._markers)
+
+    def add_at_click(self, x: float) -> int:
+        """A marker at x added with a click on the plot (Cursor ticked)."""
+        from src.modules.visualization.plot_notes import fmt
+        return self.add(x, label=fmt(x), axis='x', **self.CLICK_STYLE)
+
+    def x_markers(self):
+        """[(label, x)] of the X markers drawn now (shown, all markers
+        shown) - where Copy values reads the spectra."""
+        if not self.visible:
+            return []
+        return [(m['label'], m['position']) for m in self._markers
+                if m.get('axis', 'x') == 'x' and m.get('visible', True)]
+
+    def nearest_x_marker(self, ax, x_pixel, px=6):
+        """The index of the shown X marker within `px` screen pixels of
+        x_pixel on `ax` (the nearest), or None."""
+        if not self.visible:
+            return None
+        best, best_d = None, float(px)
+        for i, m in enumerate(self._markers):
+            if m.get('axis', 'x') != 'x' or not m.get('visible', True):
+                continue
+            try:
+                xp = ax.get_xaxis_transform().transform((m['position'], 0.5))[0]
+            except Exception:
+                continue
+            d = abs(xp - x_pixel)
+            if d <= best_d:
+                best, best_d = i, d
+        return best
+
+    def redraw(self, figure):
+        """Draw the markers again on a plot already shown (after a marker
+        was added or removed with the mouse) - without plotting the
+        spectra again; the view (zoom) stays."""
+        axes = [a for a in figure.axes
+                if not hasattr(a, '_colorbar') and a.get_label() != '<colorbar>']
+        had = [a for a in axes if any(t.get_gid() == 'sax_band'
+                                      for t in list(a.lines) + list(a.texts))]
+        for ax in axes:
+            for a in list(ax.lines) + list(ax.texts):
+                if a.get_gid() == 'sax_band':
+                    a.remove()
+        targets = had or [a for a in axes if a.has_data()]
+        for ax in targets:
+            limits = ax.get_xlim(), ax.get_ylim()
+            auto = ax.get_autoscalex_on(), ax.get_autoscaley_on()
+            self.apply_to_axes(ax)
+            ax.set_xlim(limits[0])
+            ax.set_ylim(limits[1])
+            ax.set_autoscalex_on(auto[0])
+            ax.set_autoscaley_on(auto[1])
 
     def __len__(self):
         return len(self._markers)
@@ -187,6 +262,14 @@ class BandMarkerManager:
             zorder    = 10,
             gid       = 'sax_band',     # for Save plot for publication
         )
+        if m.get('orientation') == 'above':
+            # its label in one row above the plot, only while x is in the
+            # view; one line higher where it would overlap the label of a
+            # marker next to it (view_text.RowText)
+            add_row_text(ax, pos, m['label'], va='bottom', ha='center',
+                         fontsize=m.get('fontsize', 7.0), color=m['color'],
+                         zorder=11, gid='sax_band')
+            return
         ylim = ax.get_ylim()
         y_pos = ylim[1] - (ylim[1] - ylim[0]) * m.get('label_offset', self.DEFAULT_LABEL_OFFSET)
         rotation = 90 if m.get('orientation', 'vertical') == 'vertical' else 0

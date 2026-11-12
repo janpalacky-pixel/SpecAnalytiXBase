@@ -630,7 +630,7 @@ class PublicationDialog(QDialog):
             "labels get it, the plot title 1 pt more, the legend 1 pt less.<br>"
             "Each kind of text can have its own size instead (below): <b>Axis titles</b>, "
             "<b>Numbers</b> on the axes, <b>Legend</b>, <b>Plot title</b>; the labels in the "
-            "Labels tab (band markers' labels, pinned cursors' values; your own labels: "
+            "Labels tab (band markers' labels; your own labels: "
             "each its own size). <i>automatic</i> = from Text size.<br>Journals usually want 6-9 pt in the printed size; for a slide "
             "14-20 pt.")), stretch=False))
         form.addRow(QLabel("<b>Own sizes</b> (automatic: from Text size)"))
@@ -907,11 +907,10 @@ class PublicationDialog(QDialog):
         hint.setStyleSheet("color: #555;")
         form.addRow(hint)
         form.addRow(self._row(QLabel(""), self._ask("Labels", (
-            "<b>Band markers</b> (main window › Band markers…): their labels shown or "
-            "hidden, horizontal or vertical, and their lines shown or hidden - e.g. only "
+            "<b>Band markers</b> (main window › Band markers…, right-click › Add a band "
+            "marker here, or a click on the plot with the Cursor ticked): their labels shown "
+            "or hidden, horizontal or vertical, and their lines shown or hidden - e.g. only "
             "the number above a band, as in many papers.<br>"
-            "<b>Pinned cursors</b> (Cursor tick box, a click on the plot): kept in the "
-            "picture or left out (shown here only when the plot has some).<br>"
             "<b>Marks on the plot</b> (a tool window's plot, e.g. 2D Map): the + of the "
             "clicked pixel, the outlines of the regions (ROI), the numbered reference "
             "pixels, a spectrum's shaded range - each kept in the picture or left out "
@@ -922,10 +921,10 @@ class PublicationDialog(QDialog):
             "Their text, size, colour, rotation and bold in the table; in the preview click "
             "one to choose it (the Delete key deletes it), double-click to change it, drag "
             "it to move it (an arrow: its text or tail - the arrow turns).<br>"
-            "<b>Drag</b> a band marker's label, a pinned cursor's value, the plot title or "
+            "<b>Drag</b> a band marker's label, the plot title or "
             "the legend in the preview to move it - only in the picture.<br>"
             "<b>Undo</b> (Ctrl+Z) takes back any of these changes.<br>"
-            "Sizes: band markers' labels and pinned cursors' values here (automatic: Text "
+            "Sizes: band markers' labels here (automatic: Text "
             "size); your own labels: each its own size in the table."))))
         return self._page(form)
 

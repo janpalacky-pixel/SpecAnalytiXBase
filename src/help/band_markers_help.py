@@ -144,7 +144,29 @@ def get_band_markers_help_content():
     <hr>
     <h2>Opening the dialog</h2>
     <p>Click <strong>Band markers&hellip;</strong> in the Basic plot options
-    panel to open the Band Marker Manager.</p>
+    panel (or right-click on the plot &rarr; <strong>Band markers&hellip;</strong>)
+    to open the Band Marker Manager.</p>
+
+    <h2>Adding a marker with the mouse</h2>
+    <p>With <strong>Cursor</strong> ticked (Basic plot options), a click on the
+    plot adds a marker at that x; right-click on the plot &rarr; <strong>Add a band
+    marker here</strong> does the same without the Cursor. It is labelled with its
+    x <em>above the plot</em> (labels close together go one line higher) and drawn
+    as a dotted brown line &mdash; and it is in this table like any other marker:
+    give it a name, another colour or style here. Until 1.7.0 these were separate
+    &ldquo;pinned cursors&rdquo;. A marker added with <strong>Add</strong> below starts with the
+    same look (dotted, brown, font 7.5, its label above the plot) &mdash; change any of it in
+    the bottom row before Add, or afterwards.</p>
+    <p>To stop adding markers with clicks: <strong>Esc</strong> in the main window, untick
+    <strong>Cursor</strong>, or right-click on the plot &rarr; <strong>Cursor: a click adds a band
+    marker</strong>. While the Cursor is on, an orange note beside the toolbar buttons under the
+    plot says so.</p>
+    <p>Right-click on the plot: <strong>Remove the band marker &hellip;</strong> (the one
+    under the mouse), <strong>Copy the values at the band markers</strong> (a table of the
+    spectra's values at every vertical marker, one column per marker headed by its
+    name, for Excel) and <strong>Remove all band markers&hellip;</strong>. While this
+    window is open you can still click on the plot: the new marker appears in the table
+    at once.</p>
 
     <hr>
     <h2>Adding a marker</h2>
@@ -181,7 +203,10 @@ def get_band_markers_help_content():
             default) reads bottom-to-top alongside the line and takes almost
             no space along the line; <em>Horizontal</em> is easier to read
             but takes more room and can run into a neighbouring marker if two
-            are close together. Independent of Axis — any combination of the
+            are close together. <em>Above the plot</em> (an X marker): written
+            horizontally just above the plot, one line higher where it would
+            overlap a neighbour's label &mdash; as a marker added with the mouse
+            is made. Independent of Axis — any combination of the
             two is valid.</td></tr>
         <tr><td><strong>Color&hellip;</strong></td><td>Opens the color
             picker for the line and label together.</td></tr>

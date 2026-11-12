@@ -226,7 +226,7 @@ def test_main_passes_only_file_arguments():
         ['a.txt', 'b.snapx']
 
 
-def test_cursor_lists_values_and_copies_pinned_ones(mc):
+def test_cursor_lists_values_and_a_click_adds_band_markers(mc):
     mc.view.resize(1400, 900)
     mc.view.show()
     mc.import_controller._run_import(clear_first=True, file_paths=[DATA])
@@ -252,15 +252,21 @@ def test_cursor_lists_values_and_copies_pinned_ones(mc):
     px, py = ax.transData.transform((1200.0, np.mean(ax.get_ylim())))
     mc.static_canvas.callbacks.process('motion_notify_event',
                                        MouseEvent('motion_notify_event', mc.static_canvas, px, py))
+    # a click (the former pinned cursor) adds a band marker - one list with
+    # the Band markers window's ones; Copy values reads at all X markers
+    markers = mc.band_markers()
+    markers.manager.add(1004.0, label='Phe')            # made in the window
     cc.pin(800.0)
     cc.pin(1500.0)
-    assert cc.copy_table() == 11
+    assert [m['label'] for m in markers.manager.markers] == ['Phe', '800', '1500']
+    assert markers.copy_values(cc.all_curves()) == (11, 3)
     rows = QApplication.clipboard().text().strip().split('\n')
-    assert rows[0] == 'Spectrum\tx = 800\tx = 1500' and len(rows) == 12
-    mc.plot_spectra()                                   # pinned cursors stay
+    assert rows[0] == 'Spectrum\tPhe (x = 1004)\tx = 800\tx = 1500' and len(rows) == 12
+    assert len(rows[1].split('\t')) == 4
+    mc.plot_spectra()                                   # the markers stay
     _pump()
-    assert mc.plot_cursor_controller.pinned == [800.0, 1500.0]
-    cc.clear_pinned()
+    assert mc.plot_cursor_controller.pinned == [1004.0, 800.0, 1500.0]
+    markers.remove_all()
     assert cc.pinned == []
 
 

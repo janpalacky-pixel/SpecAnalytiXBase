@@ -16,16 +16,17 @@ the main plot's and those of the tool windows alike - no window has to do
 anything. The look only changes while a button is pressed in, so pictures
 of the windows are the same as before."""
 
-from PyQt5.QtCore import QEvent, QObject, QTimer
+from PyQt5.QtCore import QEvent, QObject, Qt, QTimer
 from PyQt5.QtWidgets import QLabel
 
 ORANGE = '#E65100'
 CHECKED_STYLE = ("QToolButton:checked { background-color: #FFE0B2; "
                  f"border: 2px solid {ORANGE}; border-radius: 3px; }}")
-NOTES = {'pan': "Pan on – drag moves the plot; click Pan again to end",
-         'zoom': "Zoom on – drag a rectangle; click Zoom again to end"}
+NOTES = {'pan': "Pan on – drag moves the plot; Esc or click Pan again to end",
+         'zoom': "Zoom on – drag a rectangle; Esc or click Zoom again to end"}
 
 _filter = None
+_escape_handlers = []      # (window, handler): Esc in that window, after the toolbar modes
 
 
 def _is_plot_toolbar(widget):
@@ -66,10 +67,14 @@ def decorate(toolbar):
     def update(*_):
         try:
             mode = mode_of(toolbar)
-            note.setText(NOTES.get(mode, ''))
-            action.setVisible(bool(mode))
+            # no toolbar mode: what a window put there (set_note - e.g. the
+            # main plot's Cursor)
+            text = NOTES.get(mode, '') or getattr(toolbar, '_sax_extra_note', '')
+            note.setText(text)
+            action.setVisible(bool(text))
         except RuntimeError:                   # the toolbar is gone
             pass
+    toolbar._sax_update_note = update
     def update_later(*_):
         # A click on the button first ticks it (toggled) and only then runs
         # matplotlib's pan() / zoom(), which sets the mode: read right away,
@@ -85,8 +90,87 @@ def decorate(toolbar):
     return note
 
 
+def set_note(toolbar, text):
+    """An orange note of the window's own beside the buttons while no
+    toolbar mode is on (e.g. "Cursor on - a click adds a band marker; Esc
+    ... to end"); '' removes it."""
+    if toolbar is None:
+        return
+    try:
+        decorate(toolbar)
+        toolbar._sax_extra_note = text or ''
+        toolbar._sax_update_note()
+    except RuntimeError:
+        pass
+
+
+def end_mode(toolbar):
+    """Zoom or Pan of the toolbar switched off (Esc). True if one was on."""
+    mode = mode_of(toolbar)
+    if mode == 'pan':
+        toolbar.pan()
+    elif mode == 'zoom':
+        toolbar.zoom()
+    else:
+        return False
+    try:
+        toolbar._sax_update_note()
+    except Exception:
+        pass
+    return True
+
+
+def on_escape(window, handler):
+    """Esc in `window` (when no Zoom / Pan was there to end) calls handler();
+    it returns True if it did something (then Esc goes no further - e.g.
+    the main plot's Cursor switched off). Both are held weakly: a closed
+    window is not kept alive by it."""
+    import weakref
+    ref = (weakref.WeakMethod(handler) if hasattr(handler, '__self__')
+           else (lambda h=handler: h))
+    _escape_handlers.append((weakref.ref(window), ref))
+
+
+def escape(window):
+    """Esc in `window`: Zoom / Pan of its shown plot toolbars switched off;
+    if none was on, a handler of that window (on_escape). True if handled -
+    then the key does nothing else (e.g. it does not close a tool window
+    while it only ended its Zoom)."""
+    from matplotlib.backends.backend_qt import NavigationToolbar2QT
+    handled = False
+    try:
+        for tb in window.findChildren(NavigationToolbar2QT):
+            if tb.isVisible() and end_mode(tb):
+                handled = True
+    except RuntimeError:
+        return False
+    if handled:
+        return True
+    for entry in list(_escape_handlers):
+        win, handler = entry[0](), entry[1]()
+        if win is None or handler is None:     # gone
+            _escape_handlers.remove(entry)
+            continue
+        try:
+            if win is window and handler():
+                return True
+        except RuntimeError:                   # the window is gone
+            _escape_handlers.remove(entry)
+        except Exception:
+            pass
+    return False
+
+
 class _Filter(QObject):
     def eventFilter(self, obj, event):
+        if (event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape
+                and not event.isAutoRepeat() and event.modifiers() == Qt.NoModifier):
+            from PyQt5.QtWidgets import QApplication
+            if QApplication.activePopupWidget() is None:   # a menu / list open: its own Esc
+                window = QApplication.activeWindow()
+                if window is not None and escape(window):
+                    return True
+            return False
         if event.type() == QEvent.Polish and _is_plot_toolbar(obj):
             try:
                 decorate(obj)

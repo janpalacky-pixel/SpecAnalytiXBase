@@ -298,8 +298,10 @@ def plot_mouse_pictures(mc, view):
     xs, ys = line.get_xdata(), line.get_ydata()
     k = int(len(xs) * 0.62)
     x, y = ax.transData.transform((xs[k], ys[k]))
-    event = MouseEvent('button_press_event', canvas, x, y, button=1)
-    canvas.callbacks.process('button_press_event', event)   # the click on the line
+    # the click on the line: a press and a release at the same place (a line
+    # is marked on the release - a press that moves on drags the plot)
+    for name in ('button_press_event', 'button_release_event'):
+        canvas.callbacks.process(name, MouseEvent(name, canvas, x, y, button=1))
     settle()
     canvas.draw()
     settle()

@@ -6,11 +6,13 @@
   every spectrum there (at most cursor_values.MAX_LISTED, those nearest the
   mouse pointer's height, when more are drawn). Values are interpolated
   between measured points; a spectrum has none outside its x-range.
-* A left click pins a cursor at that x (several can be pinned: a "multi-
-  cursor"); right-click on the plot -> 'Copy cursor values' puts a table
-  (one row per spectrum, one column per pinned cursor) on the clipboard for
-  Excel, 'Clear pinned cursors' removes them. Pinned cursors stay when the
-  plot is drawn again (e.g. another selection) until cleared.
+* A left click (without moving) adds a band marker at that x - its x as
+  the label, above the plot (until 1.7.0 a separate "pinned cursor"; now
+  one list with the markers of the Band markers window, see
+  band_marker_controller). Right-click on the plot -> 'Copy the values at
+  the band markers' puts a table (one row per spectrum, one column per X
+  marker) on the clipboard for Excel. Held and moved, the plot is dragged
+  instead (plot_mouse_controller) and no marker is added.
 * Waterfall: the curves are shifted, so no values are listed (only x);
   Heatmap: x only.
 
@@ -21,19 +23,13 @@ by the toolbar under the plot.
 """
 import numpy as np
 
-from src.modules.visualization.view_text import add_row_text
-
-DRAG_PX = 3        # moved further with the button held: the plot dragged, no cursor pinned
+DRAG_PX = 3        # moved further with the button held: the plot dragged, no marker added
 
 from src.modules.visualization import cursor_values as cv
 
 CURSOR_GID = 'sax_cursor'          # artists of this controller (not spectra)
 
 
-def _label(x):
-    """A pinned cursor's label: its x without needless decimals (1004, 12.35)."""
-    from src.modules.visualization.plot_notes import fmt
-    return fmt(x)
 _NO_VALUES_TYPES = ('Waterfall plot', 'Heatmap')
 
 
@@ -42,8 +38,7 @@ class PlotCursorController:
     def __init__(self, main_controller):
         self.main = main_controller
         self.enabled = False
-        self.pinned = []               # x positions of the pinned cursors
-        self._press = None             # a press: pinned on the release unless dragged
+        self._press = None             # a press: a marker on the release unless dragged
         self.canvas = None
         self.plot_type = ''
         self._cids = []
@@ -56,6 +51,38 @@ class PlotCursorController:
         self.enabled = bool(on)
         if not self.enabled:
             self._hide_live()
+        self._show_note()
+
+    NOTE = "Cursor on \u2013 a click adds a band marker; Esc or untick Cursor to end"
+
+    def _show_note(self):
+        """The orange note beside the plot's toolbar buttons while the Cursor
+        is on (as for Zoom / Pan, toolbar_mode.py): what a click does and how
+        to end it."""
+        toolbar = getattr(self.canvas, 'toolbar', None) if self.canvas is not None else None
+        if toolbar is None:
+            return
+        try:
+            from src.views import toolbar_mode
+            toolbar_mode.set_note(toolbar, self.NOTE if self.enabled else '')
+        except Exception:
+            pass
+
+    def escape(self):
+        """Esc in the main window (toolbar_mode's Esc, after Zoom / Pan of
+        the toolbar): the Cursor off, its tick box unticked. True if it was on."""
+        if not self.enabled:
+            return False
+        box = getattr(self.main, 'cursor_checkbox', None)
+        if box is not None:
+            box.setChecked(False)              # -> set_enabled(False)
+        else:
+            self.set_enabled(False)
+        status = getattr(self.main, '_status', None)
+        if callable(status):
+            status("Cursor off (Esc) - tick Cursor in Basic plot options to add band "
+                   "markers with a click again")
+        return True
 
     def attach(self, canvas, plot_type=''):
         """Called after every plot (the canvas is new each time)."""
@@ -72,8 +99,7 @@ class PlotCursorController:
             canvas.mpl_connect('axes_leave_event', lambda e: self._hide_live()),
             canvas.mpl_connect('figure_leave_event', lambda e: self._hide_live()),
         ]
-        if self.pinned:
-            self._draw_pinned()
+        self._show_note()
 
     def detach(self):
         if self.canvas is not None:
@@ -216,18 +242,18 @@ class PlotCursorController:
             pass
         self._live_ax = None
 
-    # ------------------------------------------------------------ pinned cursors
+    # ------------------------------------------------------------ a click: a band marker
     def _on_click(self, event):
-        """A press: a cursor is pinned on the release, if the mouse did not
+        """A press: a band marker is added on the release, if the mouse did not
         move meanwhile - held and moved, the plot is dragged instead
-        (plot_mouse_controller) and no cursor is pinned."""
+        (plot_mouse_controller) and no marker is added."""
         self._press = None
         if (not self.enabled or event.button != 1 or event.inaxes is None
                 or event.xdata is None or self._toolbar_busy() or event.dblclick):
             return
         notes = getattr(self.main, 'plot_notes_controller', None)
         if notes is not None and notes.hit(event):
-            return                             # a label is dragged, no cursor pinned
+            return                             # a label is dragged, no marker added
         self._press = (event.x, event.y, float(event.xdata))
 
     def _on_release(self, event):
@@ -240,36 +266,15 @@ class PlotCursorController:
         self.pin(xdata)
 
     def pin(self, x):
-        self.pinned.append(float(x))
-        self._draw_pinned()
+        """A click: a band marker at x (band_marker_controller.add_at)."""
+        markers = getattr(self.main, 'band_markers', None)
+        if callable(markers):
+            markers().add_at(float(x))
+        self._live = {}                        # the live cursor is made again
 
-    def clear_pinned(self):
-        self.pinned = []
-        self._draw_pinned()
-
-    def _draw_pinned(self):
-        if self.canvas is None:
-            return
-        for ax in self.canvas.figure.axes:
-            for a in list(ax.lines) + list(ax.texts):
-                if a.get_gid() in (CURSOR_GID, CURSOR_GID + '_pinned'):
-                    a.remove()                 # the live cursor is made again
-            for x in self.pinned:                    # labelled with its x value
-                ax.axvline(x, color='#6D4C41', lw=1.0, ls=':', gid=CURSOR_GID + '_pinned')
-                # its number only while x is in the view (zoomed away: not
-                # floating beside the plot), one line higher where it would
-                # overlap the number of a cursor next to it - view_text.py
-                add_row_text(ax, x, _label(x), va='bottom', ha='center', fontsize=7.5,
-                             color='#6D4C41', gid=CURSOR_GID + '_pinned')
-        self._live = {}
-        self.canvas.draw_idle()
-
-    def copy_table(self):
-        """The pinned cursors' values as a tab-separated table on the
-        clipboard. Returns the number of spectra (0 = nothing copied)."""
-        curves = self.all_curves()
-        if not curves or not self.pinned:
-            return 0
-        from PyQt5.QtWidgets import QApplication
-        QApplication.clipboard().setText(cv.table_text(curves, self.pinned))
-        return len(curves)
+    @property
+    def pinned(self):
+        """The x of the X band markers shown now (formerly the pinned
+        cursors) - where Copy values reads the spectra."""
+        manager = getattr(self.main, 'band_marker_manager', None)
+        return [x for _, x in manager.x_markers()] if manager is not None else []

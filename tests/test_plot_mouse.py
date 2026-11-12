@@ -474,5 +474,5 @@ def test_with_the_cursor_on_a_drag_moves_the_plot_and_a_click_pins_a_cursor(mc):
         assert ax.get_xlim() == pytest.approx(xlim)                 # and nothing moved
         assert mc.plot_mouse_controller.marked is None              # no line marked
     finally:
-        cursor.clear_pinned()
+        mc.band_markers().remove_all()
         cursor.set_enabled(False)

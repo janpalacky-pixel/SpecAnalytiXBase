@@ -1066,6 +1066,14 @@ def get_user_guide_help_content():
         <em>Axis</em> column. The dialog has its own dedicated
         <a href="help://band_markers">Band Markers help page</a> (also reachable via its
         own Help button) with full detail; this section is a quick summary.</p>
+        <p>A marker can also be added with the mouse: with <a href="#cursor">Cursor</a> ticked a
+        click on the plot adds one at that x, and right-click &rarr; <em>Add a band marker
+        here</em> does the same without the Cursor. Such a marker is labelled with its x above
+        the plot (<em>Label dir</em>: <em>Above the plot</em>) as a dotted brown line &mdash; it
+        is in the window's table like the others, so you can give it a name (e.g. <em>Phe</em>)
+        and its own style there. A marker added with <em>Add</em> in the window starts with the
+        same look; change it there before or after. Right-click &rarr; <em>Copy the values at the band markers</em>
+        copies the spectra's values at every vertical marker for Excel.</p>
 
         <div class="screenshot">
             <img src="$BAND_MARKERS" width="$BAND_MARKERS_W" height="$BAND_MARKERS_H" alt="Band Marker Manager dialog with a table of named vertical and horizontal line markers" />
@@ -1168,7 +1176,8 @@ def get_user_guide_help_content():
         with the mouse wheel and moving the plot with the mouse (below). While <em>Pan</em> or
         <em>Zoom</em> is chosen, its button has an orange frame and an orange note next to the
         buttons says what is on and how to end it &mdash; in every plot toolbar of the program;
-        click the button again to end it.</p>
+        click the button again or press <span class="kbd">Esc</span> to end it (in a tool window
+        that Esc only ends Zoom / Pan; the window stays open).</p>
 
         <h3 id="plot-mouse">The mouse on the plot (zoom with the wheel, drag, names, the legend)</h3>
         <ul>
@@ -1177,7 +1186,7 @@ def get_user_guide_help_content():
             you) zooms out; the y axis stays. With <span class="kbd">Ctrl</span> held: the same
             for the y axis, the x axis stays. <em>Back</em> in the toolbar goes back one step,
             <em>Home</em> to the start. Numbers that mark a point &mdash; a peak's position
-            (Detect Peaks), a pinned cursor's x, your own labels &mdash; are shown only while that
+            (Detect Peaks), a band marker's label above the plot, your own labels &mdash; are shown only while that
             point is in view: zoomed away from it they are not left beside the plot, and come
             back when you zoom out (also with Zoom and Pan of the toolbar).</li>
             <li><strong>Hold the left button and move the mouse</strong>: the plot moves with it,
@@ -1207,11 +1216,11 @@ def get_user_guide_help_content():
         </ul>
         <p>Pointing at a line, clicking a line, dragging the plot and clicking the legend do
         nothing while Zoom or Pan of the toolbar is chosen (then a press zooms or pans). With the
-        Cursor ticked a click pins a cursor instead of marking a line or hiding a spectrum, but
-        holding the button and moving the mouse still moves the plot (no cursor is pinned
+        Cursor ticked a click adds a band marker instead of marking a line or hiding a spectrum,
+        but holding the button and moving the mouse still moves the plot (no marker is added
         then). The pressed-in button has an orange frame and an orange note
-        next to the buttons says so (e.g. <em>Zoom on &ndash; drag a rectangle; click Zoom again to
-        end</em>); a click on the legend then also says it in the status bar. A press on one of
+        next to the buttons says so (e.g. <em>Zoom on &ndash; drag a rectangle; Esc or click Zoom
+        again to end</em>); a click on the legend then also says it in the status bar. A press on one of
         your own labels (text, an arrow, a band's label) chooses or drags that label, a press on
         the frame of a movable legend drags the legend &ndash; not the plot. The wheel zooms
         always.</p>
@@ -1243,16 +1252,24 @@ def get_user_guide_help_content():
         follows the mouse, a dot marks where it crosses each drawn spectrum, and a box next to it
         lists x and the value of every spectrum there (interpolated between the measured points;
         a spectrum has no value outside its own x-range). With more than 10 spectra the 10 nearest
-        to the mouse pointer's height are listed. <strong>Click</strong> to pin a cursor
-        (a dotted line labelled with its x value, e.g. 1004; several can be pinned &mdash; the numbers of
-        cursors close together are written one above the other, not on top of each other; holding the
-        button and moving the mouse moves the plot instead and pins nothing); right-click
-        on the plot &rarr;
-        <em>Copy cursor values</em> copies a table (one row per spectrum, one column per pinned
-        cursor) to paste into Excel, <em>Clear pinned cursors</em> removes them. Pinned cursors
-        stay when the plot is drawn again, e.g. for another selection. In a Waterfall plot only x
-        is shown (the curves are shifted); Pan and Zoom of the toolbar switch the cursor off while
-        they are active.</p>
+        to the mouse pointer's height are listed. <strong>Click</strong> (without moving) to
+        keep that place: a <a href="#band-markers">band marker</a> is added there &mdash; a dotted
+        line labelled with its x value above the plot, e.g. 1004; the numbers of markers close
+        together are written one above the other, not on top of each other. (Holding the button and
+        moving the mouse moves the plot instead and adds nothing.) Right-click on the plot &rarr;
+        <em>Copy the values at the band markers</em> copies a table (one row per spectrum, one column
+        per marker, headed by its name, e.g. <em>Phe (x = 1004)</em>) to paste into Excel. Until
+        1.7.0 these were separate &ldquo;pinned cursors&rdquo;; now they are band markers like those
+        of the Band markers window: listed there, renamed and restyled there, saved in snapshots,
+        removed with right-click &rarr; <em>Remove the band marker &hellip;</em> or <em>Remove all
+        band markers</em>. In a Waterfall plot only x is shown (the curves are shifted); Pan and
+        Zoom of the toolbar switch the cursor off while they are active.</p>
+        <p><strong>While the Cursor is on</strong> an orange note beside the toolbar buttons under
+        the plot says so: <em>Cursor on &ndash; a click adds a band marker; Esc or untick Cursor to
+        end</em>. To stop adding markers: press <span class="kbd">Esc</span> (anywhere in the main
+        window; if Zoom or Pan is on, the first Esc ends that), untick <em>Cursor</em>, or
+        right-click on the plot &rarr; <em>Cursor: a click adds a band marker</em> (a tick: on;
+        the same item switches it on again).</p>
 
         <h3 id="plot-labels">Labels on the plot (band labels, text, arrows)</h3>
         <p>To mark only the bands you need &mdash; e.g. the band positions above the peaks, as in
@@ -1285,7 +1302,7 @@ def get_user_guide_help_content():
         text; <em>Rotation</em> turns only its text; its <em>Head</em>: at the tip (pointing
         at the place), at the text, at both ends, or none. A label's text: a click on it in the list opens the editor (superscript,
         subscript, Greek letters, signs &mdash; see <a href="#rich-text">Texts</a>). (With the Cursor ticked, a click on the plot
-        pins a cursor &mdash; but not a click on a label.) <strong>Labels on the
+        adds a band marker &mdash; but not a click on a label.) <strong>Labels on the
         plot&hellip;</strong> (also in the right-click menu) lists them all: change the text,
         size, colour, rotation or bold, or delete one or all. The labels are kept in the plot's own units: they stay on their
         band when you zoom or make the window larger,
@@ -1320,7 +1337,9 @@ def get_user_guide_help_content():
             <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
             <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
-            <tr><td><strong>Copy cursor values</strong>, <strong>Clear pinned cursors</strong></td><td>Only with pinned cursors &mdash; see <a href="#cursor">Cursor</a></td></tr>
+            <tr><td><strong>Add a band marker here</strong></td><td>A band marker at the x clicked, labelled with its x above the plot &mdash; see <a href="#band-markers">Band Markers</a> (with the Cursor ticked a click on the plot does the same)</td></tr>
+            <tr><td><strong>Remove the band marker &hellip;</strong>, <strong>Copy the values at the band markers</strong>, <strong>Remove all band markers&hellip;</strong>, <strong>Band markers&hellip;</strong></td><td>The marker under the mouse removed; the spectra's values at every vertical marker copied as a table for Excel (one column per marker); all markers removed (it asks first); the Band markers window</td></tr>
+            <tr><td><strong>Cursor: a click adds a band marker</strong></td><td>The <a href="#cursor">Cursor</a> on or off (&#10003; = on) &mdash; the same as its tick box in Basic plot options; <span class="kbd">Esc</span> also switches it off</td></tr>
         </table>
 
         <h4 id="beside-the-plot">Windows beside the plot: zoom while they are open</h4>
@@ -3039,8 +3058,8 @@ def get_user_guide_help_content():
             <em>title</em> above the names. Its text is 1 pt smaller than Text size.</li>
             <li><strong>Labels</strong> &mdash; the band markers' labels shown or hidden,
             horizontal or vertical, their size, and their lines shown or hidden (e.g. only the
-            number above a band); the pinned cursors kept or left out and the size of their values
-            (each part only when the plot has them; sizes <em>automatic</em>: Text size).
+            number above a band) &mdash; also those added with a click (each part only when the plot
+            has them; sizes <em>automatic</em>: Text size).
             <em>Your labels</em> (see <a href="#plot-labels">Labels on the plot</a>): the same
             labels as on the main plot &mdash; a change here changes them there too: their text,
             size, colour, rotation, bold and an arrow's head in the table (<em>Delete</em> at
@@ -3048,7 +3067,7 @@ def get_user_guide_help_content():
             <em>Add text</em> / <em>Add an arrow</em> in the middle of the plot; in the preview
             click one to choose it (<span class="kbd">Delete</span> deletes it), double-click to
             change it, drag to move it (an arrow: its tip, its tail or its middle, as on the
-            main plot). <strong>Drag</strong> a band marker's label, a pinned cursor's value, the plot
+            main plot). <strong>Drag</strong> a band marker's label, the plot
             title or the legend in the preview to move it &mdash; only in the picture.
             <em>Marks on the plot</em> (a tool window's plot): e.g. on a 2D map the + of the
             clicked pixel, the outlines of the regions (ROI) and the numbered reference pixels,
@@ -3084,8 +3103,8 @@ def get_user_guide_help_content():
             Delete; <em>Add text</em> / <em>Add an arrow</em> below it.</p>
         </div>
         <p>On a small picture there are fewer numbers on the axes (about one every 1.2 cm, unless
-        you set a tick step), so they do not run into each other. Band markers and pinned cursors
-        are kept; the cursor box that follows the mouse is left out.</p>
+        you set a tick step), so they do not run into each other. Band markers are
+        kept; the cursor box that follows the mouse is left out.</p>
         <p id="rich-text"><strong>Texts</strong> (axis titles, the plot title, the legend's title and
         names, the colour bar's title, your labels) are buttons showing the text; a click opens a
         small editor where the text looks as it will: <strong>x&sup2;</strong> raises the chosen

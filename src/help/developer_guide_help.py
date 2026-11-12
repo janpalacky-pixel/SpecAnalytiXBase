@@ -3737,8 +3737,22 @@ def _natural_sort_key(cls, label):
             artists drawn with blitting (background saved on <code>draw_event</code>), so a mouse
             move never redraws the spectra (thousands of lines take seconds). Values come from the
             drawn <code>Line2D</code> data (lines with more than 2 points, not the controller's own),
-            interpolated, never extrapolated. Pinned cursors are ordinary artists
-            (gid <code>sax_cursor_pinned</code>) re-created after each plot.</li>
+            interpolated, never extrapolated. A click (release without moving) adds a band
+            marker (since 1.7.0; before, separate "pinned cursors"): <code>pin(x)</code> &rarr;
+            <code>MainController.band_markers()</code> (<code>BandMarkerController</code>, made on
+            first use) <code>.add_at(x)</code> &rarr; <code>BandMarkerManager.add_at_click</code>
+            (<code>CLICK_STYLE</code>, also the defaults of <code>add()</code> and of the window's
+            bottom row: label = x, orientation <code>'above'</code> - drawn as a
+            <code>view_text.RowText</code> above the axes - dotted brown), then
+            <code>changed()</code>: <code>manager.redraw(figure)</code> (the sax_band artists
+            removed and drawn again, the limits kept - no replot) and the open window's table
+            refilled. <code>pinned</code> is now the x of the shown X markers. Right-click:
+            Add a band marker here, Remove the band marker under the mouse
+            (<code>nearest_x_marker</code>, 6 px), Copy the values at the band markers
+            (<code>cursor_values.table_text</code> with the markers' names), Remove all (asks),
+            Band markers... The publication window's "Pinned cursors" part
+            (gid <code>sax_cursor_pinned</code>) no longer has anything to show. Tests:
+            <code>tests/test_band_markers_one_list.py</code>.</li>
             <li><b>The mouse on the plot</b> (v1.7.0, <code>plot_mouse_controller.py</code>, attached
             after the cursor and the labels): <code>scroll_event</code> zooms the axes under the
             mouse (x; <code>event.key</code> 'control': y; log axes in their logarithm, a reversed
@@ -3783,8 +3797,8 @@ def _natural_sort_key(cls, label):
             (<code>src/modules/visualization/view_text.py</code>: <code>ViewText</code> checks its
             point at every draw and returns an empty tight box when out of view, so constrained
             layout does not shrink the axes for it): Detect Peaks' numbers
-            (<code>peak_detection_manager</code>), pinned cursors' numbers
-            (<code>plot_cursor_controller._draw_pinned</code>, x only, as <code>RowText</code>: at
+            (<code>peak_detection_manager</code>), band markers' labels above the plot
+            (<code>BandMarkerManager._draw_vertical_marker</code>, x only, as <code>RowText</code>: at
             every draw - and for the layout - a number that would overlap the one to its left goes
             one line higher, worked out again after a zoom); the user's labels are
             Annotations with <code>annotation_clip=True</code> (<code>plot_notes.draw</code>).
@@ -3818,6 +3832,13 @@ def _natural_sort_key(cls, label):
             every tool window (<code>_check_navigation</code>); tests:
             <code>tests/test_plot_navigation.py</code>.
             <code>_say_busy</code>: a legend click while busy explains it in the status bar.
+            Esc: the same application filter takes a KeyPress Esc (no popup open) for the active
+            window - <code>toolbar_mode.escape</code> ends Zoom / Pan of its shown plot toolbars
+            (and swallows the key, so a tool window is not closed by it); with none on, a
+            handler registered with <code>on_escape(window, handler)</code> (weak references) -
+            the main window's is <code>PlotCursorController.escape</code> (the Cursor off).
+            <code>set_note(toolbar, text)</code>: a window's own orange note while no mode is on
+            (the Cursor's, from <code>PlotCursorController._show_note</code>).
             Tests: <code>tests/test_plot_mouse.py</code>.</li>
             <li><b>The window as it was left</b>: <code>MainController.remember_window_layout</code>
             (on a confirmed close: <code>saveGeometry()</code> base64 and the list's width, only

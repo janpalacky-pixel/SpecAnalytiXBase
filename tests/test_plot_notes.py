@@ -128,12 +128,13 @@ def test_labels_on_the_main_plot(mc, monkeypatch):
     from src.modules.visualization import publication_figure as pf
     _, boxes = pf.render(mc.static_canvas.figure, 8.5, 6.5, 100, font_pt=8)
     assert 'note:0:0' in [b[0] for b in boxes]                       # draggable in the picture
-    # a pinned cursor is labelled with its x value
+    # a click with the Cursor on adds a band marker labelled with its x value
     mc.cursor_checkbox.setChecked(True)
     mc.plot_cursor_controller.pin(800.0)
     pinned = [t.get_text() for t in mc.static_canvas.figure.axes[0].texts
-              if t.get_gid() == 'sax_cursor_pinned']
+              if t.get_gid() == 'sax_band']
     assert pinned == ['800']
+    mc.band_markers().remove_all()
     dlg.close()
 
 

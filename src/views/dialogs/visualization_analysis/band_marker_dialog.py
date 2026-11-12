@@ -43,7 +43,11 @@ Existing markers can be edited three ways, kept in sync with each other:
 "Label dir" controls how each marker's label is drawn: "Vertical" (the
 default) reads bottom-to-top alongside the line and takes almost no
 space along the line; "Horizontal" is easier to read but takes more
-room and can run into a neighbouring marker if two are close together.
+room and can run into a neighbouring marker if two are close together;
+"Above the plot" (an X marker) writes it horizontally just above the
+plot, one line higher where it would overlap a neighbour's - as a marker
+added with a click on the plot (Cursor ticked) or right-click > Add a
+band marker here is made. Those are in this table like the others.
 This applies the same way to both X and Y markers.
 
 "Label offset" is per-marker: it sets how far down from the top of the
@@ -70,13 +74,14 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QBrush
 
 from src.modules.utils.app_logger import get_logger
+from src.modules.visualization.band_marker_manager import BandMarkerManager
 logger = get_logger(__name__)
 
 _LINESTYLES = ['--', '-', ':', '-.']
 _LINESTYLE_LABELS = ['Dashed (--)', 'Solid (-)', 'Dotted (:)', 'Dash-dot (-.)']
 
-_ORIENTATIONS = ['vertical', 'horizontal']
-_ORIENTATION_LABELS = ['Vertical', 'Horizontal']
+_ORIENTATIONS = ['vertical', 'horizontal', 'above']
+_ORIENTATION_LABELS = ['Vertical', 'Horizontal', 'Above the plot']
 
 _AXES = ['x', 'y']
 _AXIS_LABELS = ['X (vertical line)', 'Y (horizontal line)']
@@ -261,7 +266,7 @@ class BandMarkerDialog(QDialog):
         self._fontsize_spin.setRange(1.0, 72.0)
         self._fontsize_spin.setDecimals(1)
         self._fontsize_spin.setSingleStep(1.0)
-        self._fontsize_spin.setValue(7.0)
+        self._fontsize_spin.setValue(BandMarkerManager.CLICK_STYLE['fontsize'])
         self._fontsize_spin.setMinimumWidth(70)
         style_row.addWidget(self._fontsize_spin)
         style_row.addWidget(QLabel('Label offset:'))
@@ -283,15 +288,23 @@ class BandMarkerDialog(QDialog):
         style_row.addWidget(QLabel('Label dir:'))
         self._orientation_combo = QComboBox()
         self._orientation_combo.addItems(_ORIENTATION_LABELS)
+        self._orientation_combo.setToolTip(
+            "How the label is written:<br>"
+            "<b>Vertical</b>: along the line, inside the plot<br>"
+            "<b>Horizontal</b>: across the line, inside the plot<br>"
+            "<b>Above the plot</b>: across, above the plot (labels close<br>"
+            "together go one line higher) - as a marker added with a click<br>"
+            "on the plot (Cursor ticked) is made")
         self._orientation_combo.setMinimumWidth(100)
         style_row.addWidget(self._orientation_combo)
         self._color_btn = QPushButton('Color…')
         self._color_btn.setMinimumWidth(70)
-        self._selected_color = '#E65100'
+        self._selected_color = BandMarkerManager.DEFAULT_COLOR
         self._color_btn.setStyleSheet(
             f'background-color:{self._selected_color}; color:white;')
         self._color_btn.clicked.connect(self._pick_color)
         style_row.addWidget(self._color_btn)
+        self._set_new_marker_look()            # a new marker: as one added with a click
         style_row.addStretch()
         self._add_btn = QPushButton('Add')
         self._add_btn.setMinimumWidth(120)
@@ -656,13 +669,20 @@ class BandMarkerDialog(QDialog):
         self._label_edit.setPlaceholderText('e.g. Phe 1004')
         self._label_edit.clear()
         self._axis_combo.setCurrentIndex(0)
-        self._style_combo.setCurrentIndex(0)
-        self._width_spin.setValue(1.0)
-        self._fontsize_spin.setValue(7.0)
         self._label_offset_spin.setValue(
             getattr(self._mgr, 'DEFAULT_LABEL_OFFSET', 0.02) * 100.0)
-        self._orientation_combo.setCurrentIndex(0)
-        self._selected_color = '#E65100'
+        self._set_new_marker_look()
+
+    def _set_new_marker_look(self):
+        """The bottom row in the look of a new marker - the same as a marker
+        added with a click on the plot (BandMarkerManager.CLICK_STYLE):
+        dotted, brown, its label above the plot."""
+        look = BandMarkerManager.CLICK_STYLE
+        self._style_combo.setCurrentIndex(_LINESTYLES.index(look['linestyle']))
+        self._width_spin.setValue(look['linewidth'])
+        self._fontsize_spin.setValue(look['fontsize'])
+        self._orientation_combo.setCurrentIndex(_ORIENTATIONS.index(look['orientation']))
+        self._selected_color = look['color']
         self._color_btn.setStyleSheet(
             f'background-color:{self._selected_color}; color:white;')
 

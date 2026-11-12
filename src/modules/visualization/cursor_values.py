@@ -67,10 +67,14 @@ def fmt(v):
     return f"{v:.4g}"              # 1.2e-05, 3.4e+08
 
 
-def table_text(curves, xs):
+def table_text(curves, xs, names=None):
     """Tab-separated table (for Excel): one row per curve, one column per
-    pinned cursor; an empty cell where a curve has no value at that x."""
-    head = ["Spectrum"] + [f"x = {fmt(x)}" for x in xs]
+    marker at x; an empty cell where a curve has no value at that x. A
+    marker's own name (e.g. "Phe") heads its column with its x."""
+    names = list(names) if names is not None else [None] * len(xs)
+    head = ["Spectrum"] + [
+        f"{n} (x = {fmt(x)})" if n and str(n) != fmt(x) else f"x = {fmt(x)}"
+        for x, n in zip(xs, names)]
     rows = ["\t".join(head)]
     for label, xd, yd in curves:
         cells = []

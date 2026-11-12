@@ -39,6 +39,7 @@ class BandMarkerController:
 
     def __init__(self, main_controller):
         self.controller = main_controller
+        self.dialog = None
         self.manager = getattr(main_controller, 'band_marker_manager', None)
         if self.manager is None:
             from src.modules.visualization.band_marker_manager import BandMarkerManager
@@ -65,8 +66,72 @@ class BandMarkerController:
             band_marker_manager=self.manager,
             on_change=on_change,
         )
+        self.dialog = dialog                   # its table follows clicks on the plot
         run_beside_plot(dialog)
         return dialog
+
+    # ------------------------------------------------------------------ #
+    # Markers made with the mouse (since 1.7.0 the former "pinned        #
+    # cursors" are band markers like any other)                           #
+    # ------------------------------------------------------------------ #
+
+    def _canvas(self):
+        return getattr(self.controller, 'static_canvas', None)
+
+    def changed(self):
+        """A marker added / removed with the mouse: drawn on the plot shown
+        now (without plotting the spectra again, the zoom stays) and listed
+        in the Band markers window if it is open."""
+        canvas = self._canvas()
+        if canvas is not None:
+            try:
+                self.manager.redraw(canvas.figure)
+                canvas.draw_idle()
+            except Exception:
+                logger.exception("Band markers: drawing them again failed")
+        dialog = getattr(self, 'dialog', None)
+        try:
+            if dialog is not None and dialog.isVisible():
+                dialog._populate_table()
+        except RuntimeError:                   # the window is gone
+            self.dialog = None
+
+    def add_at(self, x):
+        """A click with the Cursor ticked: a marker at x (its x as label)."""
+        index = self.manager.add_at_click(x)
+        self.changed()
+        return index
+
+    def marker_near(self, event, px=6):
+        """The index of the X marker under the mouse (right-click), or None."""
+        ax = getattr(event, 'inaxes', None)
+        if ax is None or getattr(event, 'x', None) is None:
+            return None
+        try:
+            dpr = float(self._canvas().device_pixel_ratio)
+        except Exception:
+            dpr = 1.0
+        return self.manager.nearest_x_marker(ax, event.x, px * dpr)
+
+    def remove(self, index):
+        self.manager.remove(index)
+        self.changed()
+
+    def remove_all(self):
+        self.manager.clear()
+        self.changed()
+
+    def copy_values(self, curves):
+        """The spectra's values at the X markers as a tab-separated table on
+        the clipboard (for Excel). Returns (spectra, markers) copied."""
+        from src.modules.visualization import cursor_values as cv
+        markers = self.manager.x_markers()
+        if not curves or not markers:
+            return 0, 0
+        from PyQt5.QtWidgets import QApplication
+        QApplication.clipboard().setText(cv.table_text(
+            curves, [x for _, x in markers], names=[n for n, _ in markers]))
+        return len(curves), len(markers)
 
     # ------------------------------------------------------------------ #
     # Session persistence                                                  #

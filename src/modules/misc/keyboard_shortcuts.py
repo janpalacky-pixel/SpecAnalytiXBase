@@ -51,6 +51,9 @@ SHORTCUTS = [
     ('Plots in tool windows', 'Left button held + move the mouse',
      'Move (pan) the plot - not where a click or a drag already does something there '
      '(adds a point, draws a range)'),
+    ('Plot', 'Esc', 'End Zoom / Pan of the toolbar; pressed again: the Cursor off '
+     '(no more band markers with a click)'),
+    ('Plots in tool windows', 'Esc', 'End Zoom / Pan of the toolbar (the window stays open)'),
     ('Plot (your labels)', 'Delete', 'Delete the chosen label (a click on it chooses it)'),
     ('Save plot for publication', 'Ctrl+Z', 'Undo: the last change in the window'),
     ('Save plot for publication', 'Ctrl+Y', 'Redo: the undone change again'),

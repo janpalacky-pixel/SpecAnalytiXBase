@@ -410,6 +410,8 @@ class MainController(QMainWindow):
         from src.views import toolbar_mode
         from PyQt5.QtWidgets import QApplication as _QApp
         toolbar_mode.install(_QApp.instance())
+        # Esc in the main window: Zoom / Pan of the plot's toolbar off, else the Cursor off
+        toolbar_mode.on_escape(self.view, self.plot_cursor_controller.escape)
         # View -> Theme (light / dark, used from the next start)
         from src.views.theme import build_menu as _build_theme_menu
         _build_theme_menu(self)
@@ -1288,11 +1290,13 @@ class MainController(QMainWindow):
         # plot_cursor_controller.py)
         self.cursor_checkbox = QCheckBox("Cursor")
         self.cursor_checkbox.setToolTip(
-            "A vertical line follows the mouse over the plot and lists x and the value of\n"
-            "every drawn spectrum there (the 10 nearest to the pointer when more are drawn).\n"
-            "Click to pin a cursor (several possible); right-click on the plot \u2192\n"
-            "'Copy cursor values' copies their values as a table for Excel.\n"
-            "The mouse position (x, y) is also shown in the toolbar under the plot.")
+            "<b>Cursor</b>: a vertical line follows the mouse<br>"
+            "and lists x and the value of every drawn spectrum<br>"
+            "(the 10 nearest to the pointer when more are drawn).<br>"
+            "<b>Click</b>: a band marker at that x.<br>"
+            "Right-click on the plot \u203a <b>Copy the values at the band markers</b>:<br>"
+            "a table for Excel.<br>"
+            "<b>Esc</b> on the plot (or untick): the Cursor off.")
         self.cursor_checkbox.toggled.connect(
             lambda on: getattr(self, 'plot_cursor_controller', None)
             and self.plot_cursor_controller.set_enabled(on))
@@ -2537,13 +2541,18 @@ class MainController(QMainWindow):
         from src.help.help_window import open_help_topic
         open_help_topic(self.view, 'spike_removal')
 
-    def _show_band_marker_dialog(self):
-        """Open the Band Marker Manager dialog."""
-        if not hasattr(self, 'band_marker_controller'):
+    def band_markers(self):
+        """The band markers' controller (made on first use): the window, and
+        markers added / removed / read with the mouse."""
+        if getattr(self, 'band_marker_controller', None) is None:
             from src.controllers.visualization.band_marker_controller import (
                 BandMarkerController)
             self.band_marker_controller = BandMarkerController(self)
-        self.band_marker_controller.show_dialog()
+        return self.band_marker_controller
+
+    def _show_band_marker_dialog(self):
+        """Open the Band Marker Manager dialog."""
+        self.band_markers().show_dialog()
 
     def show_resolution_help(self):
         from src.help.help_window import open_help_topic
@@ -3512,15 +3521,31 @@ class MainController(QMainWindow):
             show_all_action = context_menu.addAction(
                 f"Show all spectra ({len(mouse.hidden)} hidden)")
 
-        # Pinned cursors (Cursor checkbox above the plot)
-        cursor = getattr(self, 'plot_cursor_controller', None)
-        copy_cursor_action = clear_cursor_action = None
-        if cursor is not None and cursor.pinned:
-            context_menu.addSeparator()
-            n_pin = len(cursor.pinned)
-            copy_cursor_action = context_menu.addAction(
-                f"Copy cursor values ({n_pin} pinned cursor{'s' if n_pin != 1 else ''})")
-            clear_cursor_action = context_menu.addAction("Clear pinned cursors")
+        # Band markers (since 1.7.0 also the former pinned cursors): add one
+        # here, remove the one under the mouse, copy the values at them
+        from src.modules.visualization.plot_notes import fmt as fmt_x
+        markers = self.band_markers()
+        context_menu.addSeparator()
+        add_marker_action = context_menu.addAction(
+            f"Add a band marker here ({fmt_x(xdata)})" if on_plot else "Add a band marker here")
+        add_marker_action.setEnabled(on_plot)
+        near = markers.marker_near(event)
+        remove_marker_action = copy_markers_action = remove_all_action = None
+        if near is not None:
+            remove_marker_action = context_menu.addAction(
+                f"Remove the band marker {markers.manager.markers[near]['label']}")
+        n_x = len(markers.manager.x_markers())
+        if n_x:
+            copy_markers_action = context_menu.addAction(
+                f"Copy the values at the band markers ({n_x})")
+        if len(markers.manager):
+            remove_all_action = context_menu.addAction(
+                f"Remove all band markers ({len(markers.manager)})\u2026")
+        band_window_action = context_menu.addAction("Band markers\u2026")
+        cursor_box = getattr(self, 'cursor_checkbox', None)
+        cursor_action = context_menu.addAction("Cursor: a click adds a band marker")
+        cursor_action.setCheckable(True)
+        cursor_action.setChecked(bool(cursor_box is not None and cursor_box.isChecked()))
 
         # Convert matplotlib event coordinates to global screen coordinates
         canvas = self.static_canvas
@@ -3564,12 +3589,25 @@ class MainController(QMainWindow):
             self.plot_notes_controller.show_dialog()
         elif show_all_action is not None and action == show_all_action:
             mouse.show_all()
-        elif copy_cursor_action is not None and action == copy_cursor_action:
-            n = cursor.copy_table()
-            self._status(f"Values of {n} spectra at {len(cursor.pinned)} cursor(s) copied "
-                         f"\u2014 paste them into Excel")
-        elif clear_cursor_action is not None and action == clear_cursor_action:
-            cursor.clear_pinned()
+        elif action == add_marker_action:
+            markers.add_at(float(xdata))
+        elif remove_marker_action is not None and action == remove_marker_action:
+            markers.remove(near)
+        elif copy_markers_action is not None and action == copy_markers_action:
+            cursor = getattr(self, 'plot_cursor_controller', None)
+            n, k = markers.copy_values(cursor.all_curves() if cursor is not None else [])
+            self._status(f"Values of {n} spectra at {k} band marker{'s' if k != 1 else ''} "
+                         f"copied \u2014 paste them into Excel")
+        elif remove_all_action is not None and action == remove_all_action:
+            if QMessageBox.question(
+                    self.view, "Remove all band markers",
+                    f"Remove all {len(markers.manager)} band markers (also those made in the "
+                    "Band markers window)?") == QMessageBox.Yes:
+                markers.remove_all()
+        elif action == band_window_action:
+            self._show_band_marker_dialog()
+        elif action == cursor_action and cursor_box is not None:
+            cursor_box.setChecked(not cursor_box.isChecked())      # on <-> off
         elif action == default_points_action:
             # Update the state and redraw the plot
             self.use_default_points = default_points_action.isChecked()
