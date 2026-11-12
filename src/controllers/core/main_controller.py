@@ -2837,6 +2837,38 @@ class MainController(QMainWindow):
             self._status(f"Saved for publication: {dlg.saved_path}")
         return dlg
 
+    def _view_x_range(self):
+        """(low, high) of the main plot's x range in view, or None (no plot
+        with spectra' lines, e.g. the Heatmap)."""
+        figure = getattr(getattr(self, 'static_canvas', None), 'figure', None)
+        if figure is None:
+            return None
+        from src.modules.visualization import kept_view
+        for ax in kept_view.plot_axes(figure):
+            if kept_view._spectrum_lines(ax):
+                return kept_view.x_range(ax)
+        return None
+
+    def copy_data_in_view(self):
+        """Right-click on the plot > Copy the data in view: the shown spectra
+        within the x range in view as a table on the clipboard (their own
+        values). Returns (spectra, rows) copied."""
+        view_range = self._view_x_range()
+        cursor = getattr(self, 'plot_cursor_controller', None)
+        if view_range is None or cursor is None:
+            self._status("There are no spectra on the plot to copy.")
+            return 0, 0
+        from src.modules.visualization import data_in_view
+        from src.modules.visualization.plot_notes import fmt
+        text, n, rows = data_in_view.table_text(cursor.all_curves(), *view_range)
+        if not n:
+            self._status("The spectra shown have no data in the view.")
+            return 0, 0
+        QApplication.clipboard().setText(text)
+        self._status(f"{n} spectra, {rows} rows (x {fmt(view_range[0])} \u2013 "
+                     f"{fmt(view_range[1])}) copied \u2014 paste them into Excel")
+        return n, rows
+
     def copy_plot_to_clipboard(self):
         """The main plot as a picture on the clipboard (Ctrl+Shift+C)."""
         canvas = getattr(self, 'static_canvas', None)
@@ -3751,6 +3783,13 @@ class MainController(QMainWindow):
         context_menu.addSeparator()
         new_figure_action = context_menu.addAction("Open in New Window")        
         copy_plot_action = context_menu.addAction("Copy plot to clipboard\tCtrl+Shift+C")
+        # the spectra's values within the x range in view, for Excel (data_in_view.py)
+        from src.modules.visualization.plot_notes import fmt as fmt_v
+        view_range = self._view_x_range()
+        copy_data_action = context_menu.addAction(
+            "Copy the data in view" + (" (x {} \u2013 {})".format(*[fmt_v(v) for v in view_range])
+                                       if view_range else ""))
+        copy_data_action.setEnabled(view_range is not None)
         publication_action = context_menu.addAction("Save plot for publication\u2026")
 
         # Your own labels: a band's label, text, an arrow - at the place clicked
@@ -3863,6 +3902,8 @@ class MainController(QMainWindow):
             self.open_external_figure()
         elif action == copy_plot_action:
             self.copy_plot_to_clipboard()
+        elif action == copy_data_action:
+            self.copy_data_in_view()
         elif action == publication_action:
             self.save_plot_for_publication()
         elif action == label_band_action:

@@ -1593,7 +1593,9 @@ def get_user_guide_help_content():
             <tr><td><strong>Line colours</strong></td><td>A submenu: <em>Automatic colours</em>, <em>Own colours</em> or <em>Colours by value</em> (✓ = in use), and <em>Line colours&hellip;</em> for the window &mdash; see <a href="#line-colours">Line colours</a></td></tr>
             <tr><td><strong>Default Points</strong></td><td>Toggle point markers on spectral lines</td></tr>
             <tr><td><strong>Open in New Window</strong></td><td>Open the current plot in a separate full matplotlib window — use this for publication-quality export (PNG, PDF, SVG, EPS)</td></tr>
-            <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>            <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
+            <tr><td><strong>Copy plot to clipboard</strong></td><td>The plot as a picture, to paste straight into Word, PowerPoint or an e-mail (also <span class="kbd">Ctrl+Shift+C</span> and the File menu) &mdash; see <a href="#plot-export">Plot Export</a></td></tr>
+            <tr><td><strong>Copy the data in view (x &hellip; &ndash; &hellip;)</strong></td><td>The spectra shown, only within the x range in view (zoomed on a band: that band), as a table for Excel: one x column and a column per spectrum when they share x, otherwise x and values for each; the spectra's own values (also in a Waterfall plot and with <a href="#scale-each">scale each</a>), hidden spectra left out. Not in the Heatmap.</td></tr>
+            <tr><td><strong>Save plot for publication&hellip;</strong></td><td>The plot in a journal's size, font and look, saved as TIFF, PNG, PDF, SVG or EPS, or printed &mdash; see <a href="#publication">Save plot for publication</a></td></tr>
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
             <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
             <tr><td><strong>Add a band marker here</strong></td><td>A band marker at the x clicked, labelled with its x above the plot &mdash; see <a href="#band-markers">Band Markers</a> (with the Cursor ticked a click on the plot does the same)</td></tr>
@@ -3258,6 +3260,15 @@ def get_user_guide_help_content():
         white background, and is pasted in the size it has on the screen &mdash; make the program
         window larger or smaller first for a larger or smaller picture. Spectra hidden with a click
         on the legend are not in the picture, nor in its legend.</p>
+        <p id="copy-data"><strong>Copy the data in view</strong> (right-click on the plot) copies
+        the numbers behind the plot: the spectra shown, only within the x range in view &mdash;
+        zoomed on a band, just that band; after Home, the whole spectra &mdash; as a table for
+        Excel. When all spectra share the same x values: one x column and a column per spectrum;
+        otherwise an x column and a value column for each spectrum. The values are the spectra's
+        own (also in a Waterfall plot and with <a href="#scale-each">scale each</a>); spectra
+        hidden in the legend are left out; in the Heatmap it is greyed out. The menu item shows
+        the range, e.g. <em>Copy the data in view (x 1450 &ndash; 1520)</em>. Good for a quick
+        graph in Excel or a check of some values; whole spectra as files: Export spectra.</p>
         <p id="publication"><strong>Save plot for publication&hellip;</strong> (File menu, or
         right-click on the plot) makes the picture a journal, a thesis or a slide needs. The plot
         in the main window is for a quick look and is not changed: the picture is made from a

@@ -3918,6 +3918,14 @@ def _natural_sort_key(cls, label):
             <code>attach</code>); hidden lines and plots with more than
             <code>MAX_LINES_TO_POINT</code> lines are left alone. Tests:
             <code>tests/test_list_hover.py</code>.</li>
+            <li><b>Copy the data in view</b> (1.7.0,
+            <code>src/modules/visualization/data_in_view.py</code>, Qt-free):
+            <code>table_text(curves, lo, hi)</code> - the curves of
+            <code>PlotCursorController.all_curves</code> (own values, hidden left out) cut to
+            the x range of <code>MainController._view_x_range</code> (the first plot with
+            spectrum lines; None for the Heatmap); one x column when all share x
+            (<code>np.allclose</code>), otherwise x / y pairs. <code>MainController.copy_data_in_view</code>,
+            the right-click item. Tests: <code>tests/test_data_in_view.py</code>.</li>
             <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
             <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
             <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the
