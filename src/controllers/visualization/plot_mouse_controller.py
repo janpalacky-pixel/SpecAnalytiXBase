@@ -55,6 +55,7 @@ class PlotMouseController:
         self.hidden = set()            # (full) labels hidden with a click on the legend
         self._selection = None         # the selection's labels when `hidden` was made
         self.marked = None             # (line, its width) drawn thicker
+        self._hovered = []             # (line, width, zorder): the mouse over its row of the list
         self._bold_item = None         # its row of the list, in bold
         self._press = None             # (x, y, legend entry) of a press on the legend
         self._drag = None              # a press on the plot: a click or a drag (pan)
@@ -75,6 +76,7 @@ class PlotMouseController:
                       canvas.mpl_connect('button_release_event', self._on_release),
                       canvas.mpl_connect('figure_leave_event', lambda e: self._hide_tip())]
         self.marked = None
+        self._hovered = []
         self._bold_row(None)
         self._apply_hidden(draw=bool(self.hidden))
 
@@ -603,6 +605,37 @@ class PlotMouseController:
                         pass
 
     # ------------------------------------------------------------ the list
+    def hover(self, label):
+        """The mouse over a spectrum's row of the list (`label`: its full
+        label; None: it left the list): its line(s) drawn thicker and on top
+        meanwhile - which one is sp007 among many lines. Not with more than
+        MAX_LINES_TO_POINT lines in a plot (drawing again would be slow)."""
+        if self._hovered:
+            for line, width, zorder in self._hovered:
+                try:
+                    line.set_linewidth(width)
+                    line.set_zorder(zorder)
+                except Exception:
+                    pass
+            self._hovered = []
+            if label is None and self.canvas is not None:
+                self.canvas.draw_idle()
+        if label is None or self.canvas is None:
+            return False
+        shown = (getattr(self.main, '_display_labels', None) or {}).get(label, label)
+        lines = []
+        for ax in self.canvas.figure.axes:
+            data = self.data_lines(ax)
+            if len(data) > MAX_LINES_TO_POINT:
+                continue
+            lines += [l for l in data if l.get_label() == shown and l.get_visible()]
+        for line in lines:
+            self._hovered.append((line, line.get_linewidth(), line.get_zorder()))
+            line.set_linewidth(max(2.5, line.get_linewidth() * 2.5))
+            line.set_zorder(line.get_zorder() + 5)
+        self.canvas.draw_idle()
+        return bool(lines)
+
     def mark(self, line):
         """Draw `line` thicker (the one before back to its width; its row
         of the list no longer bold)."""

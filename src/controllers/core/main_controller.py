@@ -80,7 +80,12 @@ class _SpectraListWidget(QListWidget):
     dragged items from the list.
     """
     dropped_at = pyqtSignal(int)        # the row the selected spectra go before
+    left = pyqtSignal()                 # the mouse left the list (its row's line back)
     HANDLE = 16                         # the handle's width (pixels) at the left of a row
+
+    def leaveEvent(self, event):
+        self.left.emit()
+        super().leaveEvent(event)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -773,6 +778,14 @@ class MainController(QMainWindow):
     def create_spectra_list_widget(self):
         self.spectra_list_widget = _SpectraListWidget()
         self.spectra_list_widget.dropped_at.connect(self.move_selected_spectra)
+        # the mouse over a row: that spectrum's line thicker on the plot
+        # (plot_mouse_controller.hover); mouse tracking is on (the handles)
+        self.spectra_list_widget.itemEntered.connect(
+            lambda item: getattr(self, 'plot_mouse_controller', None) is not None
+            and self.plot_mouse_controller.hover(item.text()))
+        self.spectra_list_widget.left.connect(
+            lambda: getattr(self, 'plot_mouse_controller', None) is not None
+            and self.plot_mouse_controller.hover(None))
         self.spectra_list_widget.setToolTip(
             "<b>Move spectra</b>: drag the handle (six dots) at the left of a row -<br>"
             "the selected spectra move together (or Alt+Up / Alt+Down, right-click › Order).<br>"

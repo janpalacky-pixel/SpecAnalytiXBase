@@ -3908,6 +3908,16 @@ def _natural_sort_key(cls, label):
             <code>PlotCursorController.all_curves</code>: the spectra's own values (a Waterfall's
             <code>line._sax_shift</code> taken away - also for Copy the values at the band markers).
             Tests: <code>tests/test_band_between.py</code>.</li>
+            <li><b>A row of the list under the mouse marks its line</b> (1.7.0):
+            <code>_SpectraListWidget</code> has mouse tracking (its handles), so
+            <code>itemEntered</code> &rarr; <code>PlotMouseController.hover(item.text())</code>
+            (the full label, mapped to the line's legend label by
+            <code>MainController._display_labels</code>; width x2.5, zorder +5, kept in
+            <code>_hovered</code> and put back on the next row, on the list's
+            <code>left</code> signal from <code>leaveEvent</code>, and dropped by
+            <code>attach</code>); hidden lines and plots with more than
+            <code>MAX_LINES_TO_POINT</code> lines are left alone. Tests:
+            <code>tests/test_list_hover.py</code>.</li>
             <li><b>Your work and exports apart</b> (1.7.0): File &rarr; Save snapshot (Ctrl+S,
             <code>actionSaveSnapshot</code>) / Save snapshot as&hellip; (Ctrl+Shift+S) &rarr;
             <code>SaveController.save_snapshot / save_snapshot_as</code> (the compression from the

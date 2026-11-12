@@ -62,6 +62,7 @@ _SCREENSHOT_FILES = {
     "BAND_MARKER_MENU":            "band_marker_menu.png",
     "BETWEEN_EXPLAINED":           "between_markers_explained.png",
     "BETWEEN_TABLE":               "between_markers_table.png",
+    "LIST_HOVER":                  "list_hover.png",
 }
 
 # Cap displayed screenshot width at this many pixels — see
@@ -1448,6 +1449,11 @@ def get_user_guide_help_content():
             on a white one - and scrolled into view (the selection stays as it is; a click
             elsewhere on the plot ends it). Where two lines are close, the one nearest to
             the mouse counts.</li>
+            <li><strong>The other way round &mdash; the mouse over a name in the spectra
+            list</strong>: that spectrum's line is drawn thicker and on top on the plot while the
+            mouse is there (e.g. which line is <em>sp007</em> among eleven); it is back as it was
+            when the mouse moves to another row or leaves the list. Nothing is selected by it. (Not
+            with more than 400 lines in one plot, where drawing them again would be slow.)</li>
             <li><strong>Click a name in the legend</strong>: that spectrum is hidden (its name
             turns pale); click again to show it. A hidden spectrum is in no plot:
             Overlay, Waterfall and Grid leave its line out; <em>Mean &plusmn; SD</em> and
@@ -1489,6 +1495,11 @@ def get_user_guide_help_content():
             <p class="caption">A click on the line of sp006: the line is drawn thicker and its row
             of the list is bold with a yellow frame (on a white row the frame is dark blue); the
             four selected spectra stay selected.</p>
+        </div>
+        <div class="screenshot">
+            <img src="$LIST_HOVER" width="$LIST_HOVER_W" height="$LIST_HOVER_H" alt="The mouse over sp006 in the list: its line thicker on the plot" />
+            <p class="caption">The mouse over <em>sp006</em> in the spectra list: its line is drawn
+            thicker and on top among the eleven &mdash; back as it was when the mouse moves on.</p>
         </div>
         <div class="screenshot">
             <img src="$PLOT_MOUSE_LEGEND" width="$PLOT_MOUSE_LEGEND_W" height="$PLOT_MOUSE_LEGEND_H" alt="A spectrum hidden with a click on its name in the legend" />

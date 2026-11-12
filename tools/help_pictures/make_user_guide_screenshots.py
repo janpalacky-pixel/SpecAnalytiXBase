@@ -510,6 +510,36 @@ def between_markers_pictures(mc, view):
     settle()
 
 
+def list_hover_picture(mc, view):
+    """The mouse over a name in the spectra list (sp006): its line thicker
+    on the plot (a mouse pointer drawn where the mouse is)."""
+    from PyQt5.QtGui import QBrush, QPen, QPolygon
+    load(mc, RAMAN)
+    plot_type(mc, 'Overlay plot')
+    lw = mc.spectra_list_widget
+    item = lw.item(5)
+    mc.plot_mouse_controller.hover(item.text())
+    mc.static_canvas.draw()
+    settle()
+    plot = in_window(view, view.graphicsView)
+    lst = in_window(view, view.spectrum_selection_frame)
+    region = QRect(QPoint(lst.left(), plot.top()), QPoint(plot.right(), plot.bottom())).adjusted(-4, -4, 4, 4)
+    picture = view.grab(region)
+    row = lw.visualItemRect(item)
+    at = lw.viewport().mapTo(view, row.center()) - region.topLeft()
+    painter = QPainter(picture)
+    painter.setRenderHint(QPainter.Antialiasing)
+    points = [(0, 0), (0, 17), (4, 13), (7, 20), (10, 19), (7, 12), (12, 12)]
+    painter.setPen(QPen(Qt.black, 1))
+    painter.setBrush(QBrush(Qt.white))
+    right = lw.viewport().mapTo(view, row.topRight()).x() - region.left()
+    painter.drawPolygon(QPolygon([QPoint(right - 70 + px, at.y() - 4 + py) for px, py in points]))
+    painter.end()
+    save(picture, 'list_hover.png')
+    mc.plot_mouse_controller.hover(None)
+    settle()
+
+
 def main():
     mc = MainController()
     view = mc.view
@@ -644,6 +674,12 @@ def main():
     # 10. between two band markers: the menu, how the values are made, the table
     try:
         between_markers_pictures(mc, view)
+    except Exception:
+        log(traceback.format_exc())
+
+    # 11. the mouse over a name in the spectra list: its line thicker
+    try:
+        list_hover_picture(mc, view)
     except Exception:
         log(traceback.format_exc())
 
