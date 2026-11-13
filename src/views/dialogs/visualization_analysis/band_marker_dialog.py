@@ -295,7 +295,7 @@ class BandMarkerDialog(QDialog):
             "<b>Above the plot</b>: across, above the plot (labels close<br>"
             "together go one line higher) - as a marker added with a click<br>"
             "on the plot (Cursor ticked) is made")
-        self._orientation_combo.setMinimumWidth(100)
+        self._orientation_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         style_row.addWidget(self._orientation_combo)
         self._color_btn = QPushButton('Color…')
         self._color_btn.setMinimumWidth(70)
