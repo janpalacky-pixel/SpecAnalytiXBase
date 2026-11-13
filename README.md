@@ -18,7 +18,7 @@ SpecAnalytiXBase is built around a single spectra list: import data from several
 | JWB (JASCO temperature scan) | `.jwb` | CD melting experiments — one spectrum per temperature (and channel), labelled with its temperature |
 | MAT (WITec/Project FIVE map) | `.mat` | Hyperspectral Raman/IR map — one spectrum per pixel, row/col + µm position kept in metadata |
 
-Spectra can also be exported back out to text, Excel, and SPC.
+Spectra can also be exported back out to text, Excel, and SPC (File › Export spectra…).
 
 ## Processing Operations (19)
 
@@ -40,7 +40,7 @@ Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it o
 
 **Visualization** — SVD Analysis, PCA Scores, NMF, MCR-ALS, Cluster Analysis, Self-Organizing Map (SOM), 2D Map (incl. peak-fit maps and endmember unmixing), 2D Correlation, PLS/PLS-DA
 
-**Data Analysis** — Peaks (Detect Peaks and the Peak list), Peak Fitting (also of a whole series), Band Ratio, Group Statistics, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection, Mixture Analysis (known components), Data Table (the spectra and values per spectrum as a spreadsheet, with formulas and plots)
+**Data Analysis** — Peaks (Detect Peaks and the Peak list), Peak Fitting (with a fitted background, ± uncertainties, fixed and linked values, a series fitted one by one or together), Band Ratio, Group Statistics, Reference Matching, Melting Curve Analysis, Isosbestic Point Detection, Kinetics Fitting, QC/Outlier Detection, Mixture Analysis (known components), Data Table (the spectra and values per spectrum as a spreadsheet, with formulas and plots)
 
 ## Other Features
 
@@ -50,17 +50,23 @@ Plus **Batch Pipeline Replay** — save a sequence of operations and re-run it o
 - Undo / Redo and a full History of the operations; copy / paste of spectra
 - Each spectrum handled independently — its own name, metadata, properties (temperature, pH, concentration, …) and plot styling
 - Line colours by value (e.g. by temperature, with a colour bar)
+- Save plot for publication: a journal's column width, a page or a slide; TIFF / PNG at 300–1200 dpi or PDF / SVG / EPS; legend anywhere, texts such as cm⁻¹ or H₂O, printing — also for the 2D Map and the analysis windows
+- The mouse on the plot: the wheel zooms, the left button held moves the plot, a click on the legend hides a spectrum; *keep zoom* keeps a zoomed band while you go through the spectra; *scale each* draws every spectrum from 0 to 1 to compare shapes
+- Band markers: the spectra's values at the markers or between two of them (area, the band above its background, centroid) as a table for Excel; labels and arrows on the plot; copy the data in view
+- The spectra list in your own order (drag and drop) or sorted by name, a property or a number in the name
+- Search all help pages at once (F1) or find a tool by a word; a start page with the files opened last
 - Most tool windows stay open beside the plot: zoom, pan and save the plot meanwhile
 - Buttons for the most used tools under the menu bar (groups can be hidden; icons only on small screens), keyboard shortcuts
 - Copy the plot to the clipboard (Ctrl+Shift+C), PDF report export from analysis dialogs, a Methods report for publications
-- Snapshots: save and reopen a whole working session; automatic saving and crash recovery
+- Snapshots: save (Ctrl+S) and reopen a whole working session; automatic saving and crash recovery
+- Tells you when a new version is released (one short request to GitHub; can be switched off)
 - Light or dark theme
 
 ## Downloads
 
 The [Releases page](../../releases) has two kinds of build:
 
-- **Stable releases** (e.g. `v1.6.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
+- **Stable releases** (e.g. `v1.7.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
 - **[Nightly build](../../releases/tag/nightly)** — rebuilt automatically once a day from whatever is on `main` (or on demand). Always has the newest fixes, but isn't a tested release. Useful if you need a fix that hasn't made it into a numbered release yet; not recommended as your everyday install.
 
 ## Installation
