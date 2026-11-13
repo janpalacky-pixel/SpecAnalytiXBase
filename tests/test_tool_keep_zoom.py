@@ -223,3 +223,80 @@ def test_normalization_list_keeps_the_zoom():
     ax = canvas.figure.axes[0]
     assert tuple(sorted(ax.get_xlim())) == pytest.approx(zoom, rel=1e-6)
     dlg.close()
+
+
+# ------------------------------------------------- the real processing windows
+WINDOW_LISTS = [('Manual baseline', 'spectra_list'), ('Automated Baseline', 'spectra_list'),
+                ('SNIP Baseline', '_list'), ('FFT Denoising', 'spectra_list'),
+                ('Spike removal', 'spectrum_list'), ('Interactive subtraction', 'minuend_list')]
+
+
+@pytest.mark.parametrize('operation, list_name', WINDOW_LISTS)
+def test_processing_windows_keep_the_zoom_and_fit_y(operation, list_name, monkeypatch, tmp_path):
+    """Opened from the main window on the 11 Raman spectra: zoomed on the 1004
+    band of sp001 (by far the strongest), sp005 chosen in the window's list -
+    the plot stays at the band, y fitted to sp005 (not left at sp001's height)."""
+    from PyQt5.QtWidgets import QMessageBox
+    monkeypatch.setenv('SPECANALYTIXBASE_DATA_DIR', str(tmp_path / 'appdata'))
+    for n in ('information', 'warning', 'critical'):
+        monkeypatch.setattr(QMessageBox, n, staticmethod(lambda *a, **k: QMessageBox.Ok))
+    monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: QMessageBox.Yes))
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    data = os.path.join(root, 'resources', 'test_data', 'real', 'Raman_DNA_conc_dep.txt')
+    from src.views.dialogs.misc import import_dialog
+    monkeypatch.setattr(import_dialog.ImportDialog, 'run', staticmethod(
+        lambda view, settings, file_paths=None: (True, [data], [{}])))
+    from src.controllers.core.main_controller import MainController
+    mc = MainController()
+    mc.import_controller._run_import(clear_first=True, file_paths=[data])
+    _pump()
+    mc.spectrum_selector.select_all_items()
+    _pump()
+    seen = {}
+
+    def drive(dlg):
+        dlg.resize(1300, 850)
+        dlg.show()
+        _pump(0.5)
+        lst = getattr(dlg, list_name)
+        lst.setCurrentRow(0)
+        lst.itemClicked.emit(lst.item(0))           # (some windows follow the click only)
+        _pump(0.5)
+        canvases = [c for c in dlg.findChildren(FigureCanvasQTAgg)
+                    if tool_keep_zoom.keeper(c) is not None and c.isVisible()
+                    and c.figure.axes and tool_keep_zoom._full(c.figure.axes[0]) is not None]
+        assert canvases, 'no plot that keeps the zoom'
+        canvas = canvases[0]
+        ax = canvas.figure.axes[0]
+        canvas.draw()
+        px, py = ax.transData.transform((1004, np.mean(ax.get_ylim())))
+        for _ in range(6):
+            canvas.callbacks.process('scroll_event', MouseEvent(
+                'scroll_event', canvas, px, py, button='up', step=1))
+        _pump(0.3)
+        zoom = tuple(sorted(ax.get_xlim()))
+        top_before = ax.get_ylim()[1]
+        lst.setCurrentRow(4)
+        lst.itemClicked.emit(lst.item(4))
+        _pump(1.0)
+        canvas.draw()
+        _pump(0.2)
+        ax = canvas.figure.axes[0]
+        seen['zoom'] = zoom
+        seen['after'] = tuple(sorted(ax.get_xlim()))
+        seen['top_before'], seen['top_after'] = top_before, ax.get_ylim()[1]
+        dlg.close()
+        return 0
+    from PyQt5.QtWidgets import QDialog
+    monkeypatch.setattr(QDialog, 'exec_', drive)
+    monkeypatch.setattr(QDialog, 'exec', drive)
+    try:
+        mc.operations_controller.show_parameters_dialog_for(operation)
+        _pump(0.3)
+    finally:
+        mc.autosave_controller.shutdown()
+        mc.view.close()
+    assert seen, 'the window did not open'
+    assert seen['zoom'][1] - seen['zoom'][0] < 1000
+    assert seen['after'] == pytest.approx(seen['zoom'], rel=1e-6)
+    assert seen['top_after'] < 0.8 * seen['top_before']     # sp005 is much weaker: y fitted
