@@ -203,6 +203,12 @@ class _Driver:
         while time.time() - t0 < limit:
             app.processEvents()
             if not [t for t in widget.findChildren(QThread) if t.isRunning()]:
+                # The thread's "done" signal reaches the window only through
+                # the event queue: deliver it, so the window has finished
+                # (e.g. SOM closes its progress window - while that is open
+                # the window gets no keys, and the Esc check failed on a slow
+                # computer: GitHub's nightly build).
+                self._pump(0.1)
                 return
             time.sleep(0.01)
         self._record('HANG', f'still computing after {limit} s')
