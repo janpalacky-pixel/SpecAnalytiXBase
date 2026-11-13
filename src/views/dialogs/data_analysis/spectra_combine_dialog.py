@@ -408,7 +408,8 @@ class CombineSpectraDialog(QDialog):
         Export the current preview result using the same save pipeline as
         the Spectral Calculator's Save button (SaveOptionsDialog +
         SaveManager) — the same one used by Normalization's "Save
-        selected spectra..." and by File > Save in the main window. Does
+        selected spectra..." and by File > Export spectra... in the main
+        window. Does
         not apply the operation or close this dialog.
         """
         to_save = [self._last_result] if getattr(self, '_last_result', None) else []

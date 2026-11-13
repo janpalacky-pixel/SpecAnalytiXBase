@@ -1693,8 +1693,8 @@ class NormalizationDialog(QDialog):
         Export the normalized result for the spectra currently selected in
         the "Selected spectra" list at the top of the dialog — the same list
         used for viewing convenience — using the existing save pipeline
-        (SaveOptionsDialog + SaveManager), the same one used by File > Save
-        in the main window. No changes are made to that pipeline; we simply
+        (SaveOptionsDialog + SaveManager), the same one used by File > Export
+        spectra... in the main window. No changes are made to that pipeline; we simply
         call it directly with our own spectrum list instead of going through
         SaveController.execute(), which gathers spectra from the main
         window's selection rather than this dialog's normalized preview.

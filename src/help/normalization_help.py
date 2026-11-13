@@ -304,8 +304,8 @@ def get_normalization_help_content():
     already have other regions defined.</p>
     <p>A <strong>Save selected spectra&hellip;</strong> button below the Preview plot exports
     the normalized result for whichever spectra are currently selected in the "Selected
-    spectra" list, using the same Save dialog (text/Excel, table or individual files) as
-    File &gt; Save in the main window. This lets you export a normalized result for
+    spectra" list, using the same dialog (text, Excel or GRAMS; a table or individual files) as
+    File &rarr; Export spectra&hellip; in the main window. This lets you export a normalized result for
     inspection without needing to click Apply first.</p>
 
     <div class="screenshot">

@@ -706,7 +706,7 @@ class SpectralCalculatorDialog(QDialog):
         currently produces, computed in self.preview_canvas._last_spectra
         — using the existing save pipeline (SaveOptionsDialog +
         SaveManager), the same one used by Normalization's "Save selected
-        spectra..." and by File > Save in the main window. This does not
+        spectra..." and by File > Export spectra... in the main window. This does not
         apply the operation or close the dialog; it's purely a way to
         export the preview result(s) to a file directly.
         """
