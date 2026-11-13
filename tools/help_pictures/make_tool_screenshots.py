@@ -1562,7 +1562,53 @@ def beside_the_plot(mc):
     mc.peak_detection_controller.show_dialog()
 
 
-PARTS = {'peak_detection': part_peak_detection, 'user_guide': part_user_guide, 'map2d': part_map2d, 'melting_curve': part_melting_curve, 'svd_analysis': part_svd_analysis,
+def part_band_markers():
+    """The Band markers help page: the window with four markers (three X
+    markers, one Y marker), one row selected (Update selected), three rows
+    selected (Update 3 selected) and the plot with an X and a Y marker."""
+    import numpy as np
+    F = 'band_markers'
+    mc = load([RAMAN])
+    mc.view.comboBox_plot_type_choice.setCurrentText('Overlay plot')
+    settle(0.3)
+    ys = [np.asarray(s['y_scale'], float) for s in mc.selected_spectra]
+    level = float(f"{float(np.median([y.max() for y in ys])):.1g}")   # a round number
+    mgr = mc.band_marker_manager
+    mgr.clear()
+    mgr.add(1004, label='Phe 1004', color='#1565C0', linestyle='--', orientation='vertical')
+    mgr.add(1092, label='PO2- 1092', color='#2E7D32', linestyle='--', orientation='vertical')
+    mgr.add(1485)                                       # as a click adds it
+    mgr.add(level, label='threshold', axis='y', color='#C62828', linestyle='-.')
+    mc.plot_spectra()                                   # the markers drawn
+    settle(0.3)
+
+    @on('Band Marker')
+    def _(d):
+        d.resize(1023, 501)
+        settle(0.3)
+        d._table.clearSelection()
+        settle(0.2)
+        shot(d, F, 'dialog_overview.png')
+        d._table.selectRow(0)
+        settle(0.3)
+        shot(d, F, 'single_row_edit.png')
+        d._select_rows([0, 1, 2])
+        d._on_selection()                               # (_select_rows blocks the signal)
+        settle(0.3)
+        shot(d, F, 'bulk_edit.png')
+        d._table.clearSelection()
+        settle(0.2)
+    mc.view.band_markers_btn.click()
+    settle(0.3)
+    mc.plot_spectra()
+    settle(0.3)
+    shot(mc.view, F, 'markers_on_plot.png', [mc.view.graphicsView])
+    mgr.clear()
+    mc.plot_spectra()
+    settle(0.2)
+
+
+PARTS = {'band_markers': part_band_markers, 'peak_detection': part_peak_detection, 'user_guide': part_user_guide, 'map2d': part_map2d, 'melting_curve': part_melting_curve, 'svd_analysis': part_svd_analysis,
          'pca_scores': part_pca_scores, 'svd_baseline': part_svd_baseline,
          'band_ratio': part_band_ratio, 'nmf': part_nmf, 'mcr_als': part_mcr_als, 'data_range': part_data_range,
          'manual_baseline': part_manual_baseline, 'normalization': part_normalization,
