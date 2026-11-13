@@ -27,6 +27,7 @@ WINDOWS = ('PeakFittingDialog', 'BaselineCorrectionDialog', 'AutomatedBaselineDi
            'InteractiveSubtractionDialog')
 INSIDE = 0.005           # a range this far (of the data's span) inside the data: zoomed
 _OWN = '_sax_keep_zoom'
+ZOOM_NOTE = "Zoomed: {lo}\u2013{hi} \u2013 Home shows all"
 enabled = True           # MainController: the "keep zoom" tick of the main window
 
 
@@ -92,6 +93,24 @@ class KeepZoom:
             rng = kept_view.x_range(ax)
             if is_zoomed(rng, full):
                 self.kept[i] = (rng[0], rng[1], ax.get_xlabel())
+        self.note()
+
+    def note(self):
+        """The orange "Zoomed: ... - Home shows all" note beside the plot's
+        toolbar buttons while a zoom is kept (as in the main window)."""
+        toolbar = getattr(self.canvas, 'toolbar', None)
+        if toolbar is None:
+            return
+        text = ''
+        if enabled and self.kept:
+            from src.modules.visualization.plot_notes import fmt
+            lo, hi, _label = self.kept[min(self.kept)]
+            text = ZOOM_NOTE.format(lo=fmt(lo), hi=fmt(hi))
+        try:
+            from src.views import toolbar_mode
+            toolbar_mode.set_note(toolbar, text, key='zoom')
+        except Exception:
+            pass
 
     def fix(self):
         """Just before a draw: a plot drawn anew (its whole range) goes back

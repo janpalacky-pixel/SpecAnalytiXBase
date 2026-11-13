@@ -3502,6 +3502,7 @@ class MainController(QMainWindow):
         if large_info is not None:
             large.finish(plot_widget, self.static_canvas, large_info)
         self._show_scale_each_note()
+        self._show_zoom_note()
         cursor = getattr(self, 'plot_cursor_controller', None)
         if cursor is not None:
             cursor.attach(self.static_canvas, plot_type)
@@ -3629,6 +3630,7 @@ class MainController(QMainWindow):
     def _on_keep_zoom_toggled(self, checked):
         from src.views import tool_keep_zoom
         tool_keep_zoom.set_enabled(checked)
+        self._show_zoom_note()
         try:
             from src.modules.misc.session_files import Preferences
             Preferences().set('keep_zoom', bool(checked))
@@ -3640,6 +3642,62 @@ class MainController(QMainWindow):
     def keep_zoom_on(self):
         box = getattr(self.view, 'keep_zoom_checkBox', None)
         return bool(box is not None and box.isChecked())
+
+    ZOOM_NOTE = "Zoomed: {lo}\u2013{hi} \u2013 Home shows all"
+
+    def _zoom_note_later(self):
+        """x changed (zoom, pan, Home ...): the note once the change is done."""
+        if getattr(self, '_zoom_note_pending', False):
+            return
+        self._zoom_note_pending = True
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(0, self._show_zoom_note)
+
+    def _show_zoom_note(self):
+        """An orange note beside the plot's toolbar buttons while the plot is
+        zoomed and keep zoom keeps it: "Zoomed: 1450-1520 - Home shows all"
+        (forgetting the zoom is the risk of keep zoom). Not in pictures of the
+        plot: it is a part of the window."""
+        self._zoom_note_pending = False
+        # called later by a timer (_zoom_note_later): the window may be gone by
+        # then - an error here, in a Qt callback, would end the program
+        try:
+            toolbar = getattr(self, 'static_toolbar', None)
+            if toolbar is None:
+                return
+            text = ''
+            zoomed = self.zoomed_range() if self.keep_zoom_on() else None
+            if zoomed:
+                from src.modules.visualization.plot_notes import fmt
+                text = self.ZOOM_NOTE.format(lo=fmt(zoomed[0]), hi=fmt(zoomed[1]))
+            from src.views import toolbar_mode
+            toolbar_mode.set_note(toolbar, text, key='zoom')
+        except Exception:
+            pass
+
+    def zoom_to(self, lo, hi, margin=0.05):
+        """The main plot shows x from lo to hi (and a margin on both sides),
+        y fitted - e.g. right-click between two band markers > Zoom to the band
+        markers. Back / Home as for any zoom."""
+        canvas = getattr(self, 'static_canvas', None)
+        if canvas is None or not hi > lo:
+            return False
+        from src.modules.visualization import kept_view
+        pad = (hi - lo) * margin
+        toolbar = getattr(self, 'static_toolbar', None)
+        try:
+            if toolbar is not None:
+                toolbar.push_current()
+        except Exception:
+            pass
+        kept_view.apply(canvas.figure, lo - pad, hi + pad)
+        try:
+            if toolbar is not None:
+                toolbar.push_current()
+        except Exception:
+            pass
+        canvas.draw_idle()
+        return True
 
     def forget_zoom(self):
         """The next plot shows the whole range (Import data > New)."""
@@ -3691,6 +3749,9 @@ class MainController(QMainWindow):
         from src.modules.visualization import kept_view
         figure = canvas.figure
         kept_view.mark_home(figure)
+        # the "Zoomed: ..." note follows every change of x (_show_zoom_note)
+        for ax in kept_view.plot_axes(figure):
+            ax.callbacks.connect('xlim_changed', lambda _ax: self._zoom_note_later())
         kept = getattr(self, '_kept_zoom', None)
         if not kept or plot_type not in self.KEEP_ZOOM_TYPES or \
                 not (self.keep_zoom_on() or from_snapshot):
@@ -3847,6 +3908,10 @@ class MainController(QMainWindow):
             copy_between_action = context_menu.addAction(
                 f"Copy the values between the band markers {la} and {lb} "
                 f"(\u0394 = {fmt_x(b - a)})")
+        zoom_between_action = None
+        if between is not None and getattr(self, '_plotted_type', None) in self.KEEP_ZOOM_TYPES:
+            zoom_between_action = context_menu.addAction(
+                f"Zoom to the band markers {la} \u2013 {lb}")
         if len(markers.manager):
             remove_all_action = context_menu.addAction(
                 f"Remove all band markers ({len(markers.manager)})\u2026")
@@ -3929,6 +3994,9 @@ class MainController(QMainWindow):
             n, k = markers.copy_values(cursor.all_curves() if cursor is not None else [])
             self._status(f"Values of {n} spectra at {k} band marker{'s' if k != 1 else ''} "
                          f"copied \u2014 paste them into Excel")
+        elif zoom_between_action is not None and action == zoom_between_action:
+            (_la, a), (_lb, b) = between
+            self.zoom_to(min(a, b), max(a, b))
         elif copy_between_action is not None and action == copy_between_action:
             cursor = getattr(self, 'plot_cursor_controller', None)
             n = markers.copy_between(cursor.all_curves() if cursor is not None else [], between)

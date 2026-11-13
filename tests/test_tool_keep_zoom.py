@@ -300,3 +300,18 @@ def test_processing_windows_keep_the_zoom_and_fit_y(operation, list_name, monkey
     assert seen['zoom'][1] - seen['zoom'][0] < 1000
     assert seen['after'] == pytest.approx(seen['zoom'], rel=1e-6)
     assert seen['top_after'] < 0.8 * seen['top_before']     # sp005 is much weaker: y fitted
+
+
+def test_the_zoomed_note_in_a_tool_window():
+    dlg = _open()
+    note = dlg.toolbar._sax_mode_note
+    assert 'Zoomed' not in note.text()
+    zoom = _wheel_zoom(dlg)
+    assert note.text().startswith('Zoomed: ') and 'Home shows all' in note.text()
+    dlg.show_spectrum(2.0)
+    _pump()
+    assert note.text().startswith('Zoomed: ')
+    dlg.toolbar.home()
+    _pump()
+    assert 'Zoomed' not in note.text()
+    dlg.close()

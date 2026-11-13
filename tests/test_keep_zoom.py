@@ -193,3 +193,105 @@ def test_home_after_reverse_x_while_zoomed(mc):
     mc.static_toolbar.back()                             # (Home is a new step: Back)
     _pump()
     assert _xr(ax) == pytest.approx((1450.0, 1520.0))
+
+
+def _note(mc):
+    return mc.static_toolbar._sax_mode_note.text()
+
+
+def test_the_zoomed_note(mc):
+    mc.view.resize(1400, 900)
+    mc.view.show()
+    _pump()
+    assert 'Zoomed' not in _note(mc)
+    _zoom(mc)
+    _pump()
+    assert 'Zoomed: 1450–1520 – Home shows all' in _note(mc)
+    mc.selected_spectra = mc.original_spectra[:3]           # kept: the note too
+    mc.plot_spectra()
+    _pump()
+    assert 'Zoomed: 1450–1520' in _note(mc)
+    mc.view.keep_zoom_checkBox.setChecked(False)           # nothing kept: no note
+    _pump()
+    assert 'Zoomed' not in _note(mc)
+    mc.view.keep_zoom_checkBox.setChecked(True)
+    _pump()
+    assert 'Zoomed' in _note(mc)
+    mc.static_toolbar.home()
+    _pump()
+    assert 'Zoomed' not in _note(mc)
+    mc.view.close()
+
+
+def _menu(mc, x, monkeypatch, choose=None):
+    from PyQt5.QtWidgets import QMenu
+    from matplotlib.backend_bases import MouseEvent
+    texts = []
+
+    def fake_exec(menu, *a, **k):
+        chosen = None
+        for act in menu.actions():
+            texts.append(act.text())
+            if choose and act.text().startswith(choose):
+                chosen = act
+        return chosen
+    monkeypatch.setattr(QMenu, 'exec_', fake_exec)
+    canvas = mc.static_canvas
+    ax = canvas.figure.axes[0]
+    canvas.draw()
+    px, py = ax.transData.transform((x, np.mean(ax.get_ylim())))
+    mc.handle_mouse_click(MouseEvent('button_press_event', canvas, px, py, button=3))
+    _pump()
+    return texts
+
+
+def test_zoom_to_the_band_markers(mc, monkeypatch):
+    markers = mc.band_markers()
+    markers.add_at(1480.0)
+    markers.add_at(1500.0)
+    texts = _menu(mc, 1490.0, monkeypatch, choose='Zoom to the band markers')
+    assert 'Zoom to the band markers 1480 – 1500' in texts
+    ax = _ax(mc)
+    assert _xr(ax) == pytest.approx((1479.0, 1501.0))      # a margin of 5 % each side
+    line = [l for l in ax.get_lines() if not l.get_gid()][0]
+    x, y = np.asarray(line.get_xdata()), np.asarray(line.get_ydata())
+    assert ax.get_ylim()[1] < 1.2 * y.max()                # y fitted to the band
+    mc.static_toolbar.back()                               # Back: as before
+    _pump()
+    assert _xr(_ax(mc))[1] > 2400
+    # kept for the next spectra
+    _menu(mc, 1490.0, monkeypatch, choose='Zoom to the band markers')
+    mc.selected_spectra = mc.original_spectra[4:6]
+    mc.plot_spectra()
+    _pump()
+    assert _xr(_ax(mc)) == pytest.approx((1479.0, 1501.0))
+    # not between two markers, or in the Heatmap: no such item
+    assert not [t for t in _menu(mc, 1200.0, monkeypatch) if t.startswith('Zoom to')]
+    mc.view.comboBox_plot_type_choice.setCurrentText("Heatmap")
+    _pump()
+    assert not [t for t in _menu(mc, 1490.0, monkeypatch) if t.startswith('Zoom to')]
+
+
+def test_the_note_after_the_window_is_gone(tmp_path, monkeypatch):
+    """The note is shown a moment after x changes (a timer): the window may be
+    gone by then - nothing must happen (an error in a Qt callback ends the
+    program; on Windows the whole test run stopped at it)."""
+    monkeypatch.setenv('SPECANALYTIXBASE_DATA_DIR', str(tmp_path / 'appdata'))
+    for n in ('information', 'warning', 'critical'):
+        monkeypatch.setattr(QMessageBox, n, staticmethod(lambda *a, **k: QMessageBox.Ok))
+    monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: QMessageBox.Yes))
+    from src.views.dialogs.misc import import_dialog
+    monkeypatch.setattr(import_dialog.ImportDialog, 'run', staticmethod(
+        lambda view, settings, file_paths=None: (True, [DATA], [{}])))
+    from src.controllers.core.main_controller import MainController
+    import sip
+    ctrl = MainController()
+    ctrl.import_controller._run_import(clear_first=True, file_paths=[DATA])
+    _pump()
+    ctrl.spectrum_selector.select_all_items()
+    _pump()
+    ctrl.static_canvas.figure.axes[0].set_xlim(1400, 1500)    # the note: a moment later
+    ctrl.autosave_controller.shutdown()
+    sip.delete(ctrl.view)
+    _pump()                                                   # still running
+    ctrl._show_zoom_note()

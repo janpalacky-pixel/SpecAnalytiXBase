@@ -3914,7 +3914,15 @@ def _natural_sort_key(cls, label):
             <code>release_pan</code> (wrapped on the instance - the buttons hold the bound methods
             made before). <code>set_enabled</code> from MainController's keep zoom tick. Tests:
             <code>tests/test_tool_keep_zoom.py</code> (a dummy window, Peak Fitting's arrows,
-            Normalization's list).</li>
+            Normalization's list). The orange note <em>Zoomed: lo&ndash;hi &ndash; Home shows
+            all</em> (<code>ZOOM_NOTE</code>, <code>KeepZoom.note</code> after
+            <code>record</code>; key <code>'zoom'</code> of <code>toolbar_mode.set_note</code>); in
+            the main window <code>MainController._show_zoom_note</code> - after a plot and on
+            <code>xlim_changed</code> of its axes (<code>_zoom_note_later</code>: a 0 ms QTimer),
+            and when the keep zoom tick changes; shown only while keep zoom is on and
+            <code>zoomed_range()</code> is not None. <code>MainController.zoom_to(lo, hi)</code>:
+            right-click between two band markers &rarr; Zoom to the band markers (5 % margin,
+            <code>kept_view.apply</code>, pushed to the toolbar's history).</li>
             <li><b>Values between two band markers</b> (1.7.0,
             <code>src/modules/visualization/band_between.py</code>, Qt-free):
             <code>pair_around</code> (the neighbouring X markers around the right-click's x),

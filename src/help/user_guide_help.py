@@ -1095,7 +1095,8 @@ def get_user_guide_help_content():
         series with &#9654; &mdash; every spectrum is shown at that band. Home shows the whole
         range; a range the window chooses itself is left as it is; a plot that has no data in the
         zoomed range (or is another kind of plot, e.g. a power spectrum) is shown whole. The
-        <em>keep zoom</em> tick of the main window switches it for these windows too.</p>
+        <em>keep zoom</em> tick of the main window switches it for these windows too; the same
+        orange <em>Zoomed: &hellip;</em> note shows it.</p>
         <div class="screenshot">
             <img src="$PLOT_OPTIONS_PANEL" width="$PLOT_OPTIONS_PANEL_W" height="$PLOT_OPTIONS_PANEL_H" alt="Basic plot options with keep zoom and scale each ticked" />
             <p class="caption">Basic plot options: <em>keep zoom</em> beside <em>Cursor</em>,
@@ -1104,9 +1105,10 @@ def get_user_guide_help_content():
 
         <h4>Good to know</h4>
         <ul>
-            <li><b>Remember that you are zoomed.</b> The numbers on the x-axis show the range;
-            Copy plot and Save plot for publication show the zoomed plot. Home is one click
-            away.</li>
+            <li><b>Remember that you are zoomed.</b> While a zoom is kept, an orange note beside
+            the plot's toolbar buttons says so, e.g. <em>Zoomed: 1450&ndash;1520 &ndash; Home shows
+            all</em> (it is part of the window, not of Copy plot or Save plot for publication,
+            which show the zoomed plot). Home is one click away; the note goes with it.</li>
             <li><b>Shown whole anyway:</b> after <em>Import data &rsaquo; New</em> (new spectra);
             in the <em>Heatmap</em> (and back from it in Overlay); and when the spectra now shown
             have no data in the zoomed range. Example: zoomed on 1000&ndash;1010
@@ -1328,6 +1330,12 @@ def get_user_guide_help_content():
         <p>The menu item also gives the <b>distance</b> between the two markers (&Delta;, in the x
         units of the data) &mdash; e.g. the splitting of a doublet or the shift between two bands,
         read without a calculator.</p>
+        <p id="zoom-to-markers"><b>Zoom to the band markers 1480 &ndash; 1500</b> (the next item of
+        the same menu) shows exactly that band &mdash; with a small margin (5&nbsp;%) on both sides
+        so the marker lines stay in view &mdash; and fits y to it. With <a href="#keep-zoom">keep
+        zoom</a> every other spectrum you select is then shown at that band; with <a
+        href="#scale-each">scale each</a> each one is fitted 0&ndash;1 inside it. Back returns to
+        the view before. (Not in the Heatmap.)</p>
         <p><b>The columns.</b> Everything is worked out from the spectrum's own points between the
         markers, with its values exactly at the two markers interpolated:</p>
         <table>
@@ -1612,6 +1620,7 @@ def get_user_guide_help_content():
             <tr><td><strong>Label the band here</strong>, <strong>Add text here&hellip;</strong>, <strong>Add an arrow here&hellip;</strong>, <strong>Labels on the plot&hellip;</strong></td><td>Your own labels at the place clicked &mdash; see <a href="#plot-labels">Labels on the plot</a></td></tr>
             <tr><td><strong>Show all spectra (n hidden)</strong></td><td>Only when spectra are hidden (a click on their names in the legend): shows them all again &mdash; see <a href="#plot-mouse">The mouse on the plot</a></td></tr>
             <tr><td><strong>Add a band marker here</strong></td><td>A band marker at the x clicked, labelled with its x above the plot &mdash; see <a href="#band-markers">Band Markers</a> (with the Cursor ticked a click on the plot does the same)</td></tr>
+            <tr><td><strong>Zoom to the band markers &hellip; &ndash; &hellip;</strong></td><td>Only between two neighbouring vertical markers: the plot shows that band (with a small margin), y fitted &mdash; see <a href="#zoom-to-markers">Zoom to the band markers</a></td></tr>
             <tr><td><strong>Copy the values between the band markers &hellip; (&Delta; = &hellip;)</strong></td><td>Only between two neighbouring vertical markers: the maximum, minimum, area and the band above the line joining its ends for every spectrum, as a table for Excel; the menu item shows the distance &mdash; see <a href="#between-markers">Between two band markers</a></td></tr>
             <tr><td><strong>Remove the band marker &hellip;</strong>, <strong>Copy the values at the band markers</strong>, <strong>Remove all band markers&hellip;</strong>, <strong>Band markers&hellip;</strong></td><td>The marker under the mouse removed; the spectra's values at every vertical marker copied as a table for Excel (one column per marker); all markers removed (it asks first); the Band markers window</td></tr>
             <tr><td><strong>Scale each spectrum 0&ndash;1 (only the drawing)</strong></td><td>Every spectrum drawn from 0 to 1 (&#10003; = on) &mdash; the same as <em>scale each</em> in Basic plot options; see <a href="#scale-each">scale each</a></td></tr>
