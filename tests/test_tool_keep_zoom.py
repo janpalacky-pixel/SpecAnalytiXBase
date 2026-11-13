@@ -315,3 +315,36 @@ def test_the_zoomed_note_in_a_tool_window():
     _pump()
     assert 'Zoomed' not in note.text()
     dlg.close()
+
+
+def test_automated_baseline_follows_the_arrow_keys(monkeypatch):
+    """Its list: ↓ shows the next spectrum once the keys stop (ROW_WAIT_MS);
+    several rows in a row (a held key) are computed once, for the last."""
+    from src.views.dialogs.data_analysis.automated_baseline_dialog import AutomatedBaselineDialog
+    spectra = [{'label': f'r : {i}', 'x_scale': X.copy(), 'y_scale': _spectrum(1 + i),
+                'metadata': {}} for i in range(6)]
+    dlg = AutomatedBaselineDialog(selected_spectra=spectra)
+    dlg.show()
+    _pump(0.4)
+    computed = []
+    original = dlg.update_preview
+    monkeypatch.setattr(dlg, 'update_preview', lambda: (computed.append(dlg.current_spectrum_index),
+                                                         original()))
+    lst = dlg.spectra_list
+    lst.setCurrentRow(0)
+    _pump(0.3)
+    computed.clear()
+    lst.setCurrentRow(1)
+    _pump(0.4)
+    assert computed == [1] and 'r : 1' in dlg.canvas.ax.get_title()
+    for row in (2, 3, 4, 5):                       # as a held key: no pause between
+        lst.setCurrentRow(row)
+        _pump(0.03)
+    _pump(0.4)
+    assert computed == [1, 5]
+    # a click shows it at once, and not a second time after the wait
+    lst.setCurrentRow(2)
+    lst.itemClicked.emit(lst.item(2))
+    _pump(0.4)
+    assert computed == [1, 5, 2]
+    dlg.close()

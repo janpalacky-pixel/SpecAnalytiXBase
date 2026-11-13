@@ -86,7 +86,11 @@ def get_automated_baseline_help_content():
 
         <h2>Workflow</h2>
         <ol>
-            <li>Select a spectrum from the list on the left to preview it.</li>
+            <li>Select a spectrum from the list on the left to preview it &mdash; a click, or the
+            <span class="kbd">&uarr;</span> / <span class="kbd">&darr;</span> keys (also Page Up /
+            Page Down, Home / End): the preview follows once the keys stop for a moment, so holding
+            &darr; through many spectra computes only the one you stop on (a slow method such as
+            mpspline takes about half a second per spectrum).</li>
             <li>Pick a <b>Baseline Method</b> from the grouped dropdown: ALS, airPLS, arPLS, iarPLS, asPLS, drPLS, or psalsa under ALS / Whittaker-smoothing family; I-ModPoly under Polynomial; or Morphological Opening, mpls, Morphology + Mollification, mpspline, or jbcd under Morphological family (see below for the difference).</li>
             <li>Define the regions for the baseline calculation using one of the two modes below —
                 optionally start from a <b>Region Shortcut</b> checkbox (e.g. the water band, for

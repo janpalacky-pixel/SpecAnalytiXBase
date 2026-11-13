@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QGr
                              QComboBox, QStackedWidget, QTabWidget, QFrame,
                              QTreeWidget, QTreeWidgetItem, QTreeWidgetItemIterator,
                              QAbstractItemView, QApplication, QMessageBox, QSpinBox)
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QTimer
 from PyQt5.QtGui import QFont
 import os
 import time
@@ -765,6 +765,15 @@ class AutomatedBaselineDialog(QDialog):
             make_shortened_name_delegate(self.spectra_list, self._shorten_names_enabled)
         )
         self.spectra_list.itemClicked.connect(self.on_spectrum_selected)
+        # the arrow keys (Page Up / Down, Home / End) too, as in the other
+        # windows' lists: the preview follows once the keys stop for a moment
+        # (ROW_WAIT_MS) - held down, the rows passed over are not computed
+        # one after another (a slow method, e.g. mpspline, takes ~0.4 s)
+        self._row_timer = QTimer(self)
+        self._row_timer.setSingleShot(True)
+        self._row_timer.setInterval(self.ROW_WAIT_MS)
+        self._row_timer.timeout.connect(self._show_current_row)
+        self.spectra_list.currentRowChanged.connect(lambda _row: self._row_timer.start())
         spectra_layout.addWidget(self.spectra_list)
         self.checkBox_shorten_names = make_shorten_names_checkbox()
         self.checkBox_shorten_names.stateChanged.connect(
@@ -1327,8 +1336,19 @@ class AutomatedBaselineDialog(QDialog):
         from src.modules.utils.label_shortening import compute_distinguishing_labels
         return compute_distinguishing_labels(all_labels).get(label, label)
 
+    ROW_WAIT_MS = 150      # the arrow keys: the preview after the keys stop this long
+
     def on_spectrum_selected(self, item):
         self.current_spectrum_index = self.spectra_list.row(item)
+        self.update_preview()
+
+    def _show_current_row(self):
+        """The list's current row changed (the arrow keys) and the keys
+        stopped: its preview - unless a click has shown it already."""
+        row = self.spectra_list.currentRow()
+        if row < 0 or row >= len(self.selected_spectra) or row == self.current_spectrum_index:
+            return
+        self.current_spectrum_index = row
         self.update_preview()
 
     def _range_entry(self, start, end, source='manual'):
