@@ -271,3 +271,31 @@ def test_esc_closes_a_tool_window_also_when_its_plot_has_the_focus():
     QTest.keyClick(canvas, Qt.Key_Escape)                          # then: the window closes
     _pump(0.05)
     assert not dlg.isVisible()
+
+
+def test_the_update_button_shows_its_whole_text():
+    """Several markers selected: "Update 3 selected" (with its icon) was cut
+    off to "Update 3 selecte" - the button kept a fixed minimum of 120 px."""
+    from PyQt5.QtWidgets import QApplication
+    from src.views import button_icons
+    from src.modules.visualization.band_marker_manager import BandMarkerManager
+    from src.views.dialogs.visualization_analysis.band_marker_dialog import BandMarkerDialog
+    app = QApplication.instance()
+    button_icons.install(app)
+    mgr = BandMarkerManager()
+    for x in (1004, 1092, 1485):
+        mgr.add(x)
+    d = BandMarkerDialog(None, mgr)
+    try:
+        d.show()
+        for rows in ([0], [0, 1, 2]):
+            d._select_rows(rows)
+            d._on_selection()
+            for _ in range(20):
+                app.processEvents()
+            b = d._add_btn
+            assert b.text().startswith('Update')
+            assert b.width() >= b.sizeHint().width(), (b.text(), b.width(), b.sizeHint().width())
+    finally:
+        d.close()
+        d.deleteLater()

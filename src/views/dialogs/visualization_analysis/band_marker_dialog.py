@@ -307,7 +307,10 @@ class BandMarkerDialog(QDialog):
         self._set_new_marker_look()            # a new marker: as one added with a click
         style_row.addStretch()
         self._add_btn = QPushButton('Add')
-        self._add_btn.setMinimumWidth(120)
+        # wide enough for its longest text with its icon ("Update 12 selected"):
+        # a minimum width overrides the text's own, so a fixed 120 cut it off
+        self._add_btn.setMinimumWidth(max(
+            120, self._add_btn.fontMetrics().horizontalAdvance('Update 99 selected') + 16 + 24))
         self._add_btn.clicked.connect(self._add_or_update_marker)
         style_row.addWidget(self._add_btn)
         self._cancel_edit_btn = QPushButton('Cancel edit')
