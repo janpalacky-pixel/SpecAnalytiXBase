@@ -115,7 +115,7 @@ def get_installation_help_content():
 
         <h3>Requirements</h3>
         <ul>
-            <li>Python 3.9&ndash;3.12 recommended, from
+            <li>Python 3.11 or newer (numpy 2.5 needs it), from
                 <a href="https://www.python.org/downloads/">python.org/downloads</a>.
                 PyQt5 5.15.x — this application's GUI toolkit — has the
                 most reliable pre-built wheels in that range; a very new
@@ -127,18 +127,29 @@ def get_installation_help_content():
                 and why each is needed.</li>
         </ul>
 
-        <h3>Steps</h3>
+        <h3>Windows - the easy way</h3>
+        <p>Double-click <code>setup_env.bat</code> in the project folder: it
+        creates the project's own environment <code>SpecAnalytiXBase_env</code>
+        (inside the project folder), installs exactly the versions of
+        <code>requirements-lock.txt</code> and puts a shortcut
+        <i>SpecAnalytiXBase_env Terminal</i> on the desktop - a command prompt in
+        the project folder with the environment active, for
+        <code>python main.py</code>, <code>python -m pytest -q</code> or
+        <code>BuildInstaller.bat</code>. On a second computer (e.g. a laptop): get
+        the project with git and double-click <code>setup_env.bat</code> there - an
+        environment cannot be copied, it is rebuilt with the same versions.
+        Every project has its own environment named <code>&lt;Project&gt;_env</code>.</p>
+
+        <h3>Steps (by hand)</h3>
         <p>From a command prompt/terminal opened in the project folder
         (the one containing <code>main.py</code>):</p>
         <ol>
-            <li>Create a virtual environment — recommended, so these
-                packages are kept separate from anything else on your
-                system:
-                <pre>python -m venv venv</pre>
+            <li>Create the environment:
+                <pre>python -m venv SpecAnalytiXBase_env --prompt SpecAnalytiXBase_env</pre>
             </li>
             <li>Activate it:
-                <pre>venv\\Scripts\\activate            (Windows)
-source venv/bin/activate         (macOS / Linux)</pre>
+                <pre>SpecAnalytiXBase_env\\Scripts\\activate            (Windows)
+source SpecAnalytiXBase_env/bin/activate         (macOS / Linux)</pre>
             </li>
             <li>Install the required packages:
                 <pre>pip install -r requirements.txt</pre>

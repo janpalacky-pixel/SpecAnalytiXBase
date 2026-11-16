@@ -50,3 +50,6 @@ resources/test_data/real/Tetraselmis.mat
 # Glenodinium data read once for the Unmixing pictures (tools/help_pictures/glenodinium_data.py)
 tools/logs/
 tools/help_pictures/cache/
+
+# this project's own environment, made by setup_env.bat (<Project>_env)
+*_env/

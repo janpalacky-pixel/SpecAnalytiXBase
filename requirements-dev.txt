@@ -1,0 +1,7 @@
+# Everything to run, test and build SpecAnalytiXBase (setup_env.bat installs this
+# the first time and writes requirements-lock.txt from it).
+-r requirements.txt
+# the test suite (python -m pytest -q, Help > Run tests)
+pytest
+# builds the installer (BuildInstaller.bat)
+pyinstaller

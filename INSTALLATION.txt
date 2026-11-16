@@ -55,7 +55,8 @@ you simply prefer not to run a pre-built .exe at all.
 
 Requirements:
 
-  - Python 3.9-3.12 recommended, from https://www.python.org/downloads/
+  - Python 3.11 or newer (numpy 2.5 needs it), from
+    https://www.python.org/downloads/
     (PyQt5 5.15.x, this application's GUI toolkit, has the most
     reliable pre-built wheels in that range; a very new Python version
     may not yet have a matching PyQt5 wheel available - if installation
@@ -63,20 +64,48 @@ Requirements:
   - The packages listed in requirements.txt (see that file for exactly
     which ones, and why each is needed).
 
-Steps, from a command prompt/terminal opened in the project folder (the
-one containing main.py):
+Windows - the easy way (also on a second computer, e.g. a laptop):
 
-  1. Create a virtual environment - recommended, so these packages are
-     kept separate from anything else on your system:
+  1. Double-click setup_env.bat in the project folder. It creates the
+     project's own environment SpecAnalytiXBase_env (inside the project
+     folder), installs exactly the versions listed in
+     requirements-lock.txt, and puts a shortcut "SpecAnalytiXBase_env
+     Terminal" on the desktop. Run it again after a git pull that changed
+     requirements-lock.txt.
 
-         python -m venv venv
+  2. Double-click the desktop shortcut (or "SpecAnalytiXBase_env
+     Terminal.bat" in the project folder): a command prompt opens in the
+     project folder with the environment active - the prompt starts with
+     (SpecAnalytiXBase_env). Then:
+
+         python main.py                    the program
+         python -m pytest -q               the tests
+         BuildInstaller.bat                the installer (section 3)
+
+  Naming: each project has its own environment named <Project>_env
+  (here SpecAnalytiXBase_env), so they never share
+  library versions. An environment cannot be copied to another computer
+  (it contains fixed paths): copy the project (git) and run setup_env.bat
+  there. requirements-lock.txt (in git) makes both computers use the same
+  versions, also of the libraries the ones in requirements.txt need. To
+  update the libraries on purpose: change requirements.txt, delete
+  requirements-lock.txt and the SpecAnalytiXBase_env folder, run
+  setup_env.bat, run the tests, commit the new requirements-lock.txt.
+
+By hand (any system), from a command prompt/terminal opened in the project
+folder (the one containing main.py):
+
+  1. Create the environment:
+
+         python -m venv SpecAnalytiXBase_env --prompt SpecAnalytiXBase_env
 
   2. Activate it:
 
-         venv\Scripts\activate            (Windows)
-         source venv/bin/activate         (macOS / Linux)
+         SpecAnalytiXBase_env\Scripts\activate            (Windows)
+         source SpecAnalytiXBase_env/bin/activate         (macOS / Linux)
 
-  3. Install the required packages:
+  3. Install the required packages (requirements-dev.txt adds pytest and
+     PyInstaller):
 
          pip install -r requirements.txt
 
@@ -118,10 +147,10 @@ lives in a different place on their own machine, the environment from
 section 2 above is not hard-coded into this script; instead, activate
 it yourself first, in the same terminal, before running the script:
 
-         venv\Scripts\activate            (Windows)
+         SpecAnalytiXBase_env\Scripts\activate            (Windows)
 
-(substituting your own environment's actual name/path if different
-from the "venv" example in section 2). Then, from that same terminal,
+(or simply use the "SpecAnalytiXBase_env Terminal" shortcut from section
+2, which opens a terminal with it active). Then, from that same terminal,
 with the project root as the current folder, run:
 
          BuildInstaller.bat
