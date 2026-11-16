@@ -74,7 +74,7 @@ The [Releases page](../../releases) has two kinds of build:
 See [`INSTALLATION.txt`](INSTALLATION.txt) for full details. In short:
 
 - **Windows, easiest:** download and run the installer `.exe` from the [Releases](../../releases) page.
-- **Windows, from source:** double-click `setup_env.bat` once (creates the project's own environment `SpecAnalytiXBase_env` with the versions of `requirements-lock.txt` and a desktop shortcut "SpecAnalytiXBase_env Terminal"; the same on a second computer), then in that terminal: `python main.py`.
+- **Windows, from source:** double-click `setup_env.bat` once (creates the project's own environment `SpecAnalytiXBase_env` with the versions of `requirements-lock.txt` and the desktop folder "SpecAnalytiXBase (Python)" with shortcuts for the program, a terminal with the environment active, the tests and the installer; the same on a second computer), then in that terminal: `python main.py`.
 - **Any OS, from source:**
   ```
   python -m venv SpecAnalytiXBase_env

@@ -69,14 +69,18 @@ Windows - the easy way (also on a second computer, e.g. a laptop):
   1. Double-click setup_env.bat in the project folder. It creates the
      project's own environment SpecAnalytiXBase_env (inside the project
      folder), installs exactly the versions listed in
-     requirements-lock.txt, and puts a shortcut "SpecAnalytiXBase_env
-     Terminal" on the desktop. Run it again after a git pull that changed
-     requirements-lock.txt.
+     requirements-lock.txt, and puts the folder "SpecAnalytiXBase (Python)"
+     on the desktop with four shortcuts:
+         SpecAnalytiXBase  ...  starts the program
+         SpecAnalytiXBase_env Terminal  ...  command prompt (step 2)
+         Run tests  ...  that terminal, running  python -m pytest -q
+         Build installer  ...  that terminal, running  BuildInstaller.bat
+     Run it again after a git pull that changed requirements-lock.txt.
 
-  2. Double-click the desktop shortcut (or "SpecAnalytiXBase_env
-     Terminal.bat" in the project folder): a command prompt opens in the
-     project folder with the environment active - the prompt starts with
-     (SpecAnalytiXBase_env). Then:
+  2. Double-click "SpecAnalytiXBase_env Terminal" in that folder (or
+     "SpecAnalytiXBase_env Terminal.bat" in the project folder): a
+     command prompt opens in the project folder with the environment
+     active - the prompt starts with (SpecAnalytiXBase_env). Then:
 
          python main.py                    the program
          python -m pytest -q               the tests
@@ -149,8 +153,8 @@ it yourself first, in the same terminal, before running the script:
 
          SpecAnalytiXBase_env\Scripts\activate            (Windows)
 
-(or simply use the "SpecAnalytiXBase_env Terminal" shortcut from section
-2, which opens a terminal with it active). Then, from that same terminal,
+(or simply use the "Build installer" shortcut in the desktop folder
+"SpecAnalytiXBase (Python)" from section 2, which does both). Then, from that same terminal,
 with the project root as the current folder, run:
 
          BuildInstaller.bat

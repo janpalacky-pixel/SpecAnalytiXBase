@@ -131,11 +131,13 @@ def get_installation_help_content():
         <p>Double-click <code>setup_env.bat</code> in the project folder: it
         creates the project's own environment <code>SpecAnalytiXBase_env</code>
         (inside the project folder), installs exactly the versions of
-        <code>requirements-lock.txt</code> and puts a shortcut
-        <i>SpecAnalytiXBase_env Terminal</i> on the desktop - a command prompt in
-        the project folder with the environment active, for
+        <code>requirements-lock.txt</code> and puts the folder
+        <i>SpecAnalytiXBase (Python)</i> on the desktop with four shortcuts:
+        <i>SpecAnalytiXBase</i> (the program), <i>SpecAnalytiXBase_env Terminal</i>
+        (a command prompt in the project folder with the environment active, for
         <code>python main.py</code>, <code>python -m pytest -q</code> or
-        <code>BuildInstaller.bat</code>. On a second computer (e.g. a laptop): get
+        <code>BuildInstaller.bat</code>), <i>Run tests</i> and <i>Build installer</i>
+        (that terminal, running the tests or the installer build). On a second computer (e.g. a laptop): get
         the project with git and double-click <code>setup_env.bat</code> there - an
         environment cannot be copied, it is rebuilt with the same versions.
         Every project has its own environment named <code>&lt;Project&gt;_env</code>.</p>
