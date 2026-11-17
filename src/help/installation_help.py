@@ -170,21 +170,16 @@ source SpecAnalytiXBase_env/bin/activate         (macOS / Linux)</pre>
             <li><b>PyInstaller</b>, installed into the same environment:
                 <pre>pip install pyinstaller</pre>
             </li>
-            <li><b>Inno Setup 6</b> (free), which turns the PyInstaller
+            <li><b>Inno Setup 7 or 6</b> (free), which turns the PyInstaller
                 output into a proper Windows installer. Download from the
                 official site:
                 <a href="https://jrsoftware.org/isdl.php">jrsoftware.org/isdl.php</a>
             </li>
         </ul>
-        <div class="warning">
-            <b><code>BuildInstaller.bat</code> currently expects Inno
-            Setup at its default install location for version 6</b> —
-            <code>C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe</code>.
-            If you install a newer major version (7 or later) instead,
-            either install Inno Setup 6 alongside it, or edit that path
-            in <code>BuildInstaller.bat</code> to point at wherever
-            <code>ISCC.exe</code> actually is on your machine.
-        </div>
+        <p>Install Inno Setup in its default folder:
+            <code>BuildInstaller.bat</code> looks for <code>ISCC.exe</code>
+            in <i>Inno Setup 7</i> or <i>Inno Setup 6</i> under Program Files
+            or Program Files (x86), and otherwise on PATH.</p>
         <p>Then, from the project root, simply run:</p>
         <pre>BuildInstaller.bat</pre>
         <p>This does two things in sequence:</p>

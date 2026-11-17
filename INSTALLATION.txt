@@ -132,17 +132,14 @@ In addition to the Python environment set up in section 2, you need:
 
          pip install pyinstaller
 
-  - Inno Setup 6 (free), which turns the PyInstaller output into a
-    proper Windows installer. Download from the official site:
+  - Inno Setup 7 or 6 (free), which turns the PyInstaller output into
+    a proper Windows installer. Download from the official site:
 
          https://jrsoftware.org/isdl.php
 
-    Note: BuildInstaller.bat currently expects Inno Setup at its
-    default install location for version 6:
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe". If you install a
-    newer major version (7 or later) instead, either install Inno
-    Setup 6 alongside it, or edit that path in BuildInstaller.bat to
-    point at wherever ISCC.exe actually is on your machine.
+    Install it in its default folder: BuildInstaller.bat looks for
+    ISCC.exe in "Inno Setup 7" or "Inno Setup 6" under Program Files
+    or Program Files (x86), and otherwise on PATH.
 
 BuildInstaller.bat itself does not activate any virtual environment -
 it simply runs whatever "pyinstaller" command it finds active in the
