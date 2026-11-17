@@ -873,6 +873,27 @@ class TwoDCorrelationDialog(QDialog):
     # Plots                                                                #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _drop_colorbar(canvas):
+        """Remove the colorbar axes of the previous redraw, if any.
+
+        Called BEFORE ax.clear(). Removing a colorbar makes matplotlib
+        restore the size of the plot it belongs to, which it finds through
+        the plotted contours; once ax.clear() has removed those, matplotlib
+        3.11 fails with "'NoneType' object has no attribute 'get_position'"
+        (2D Correlation > Run, the second time). If the plot was already
+        cleared anyway (e.g. a message drawn on the Difference tab), the
+        colorbar axes is taken out of the figure directly."""
+        cax = getattr(canvas, '_cbar_ax', None)
+        canvas._cbar_ax = None
+        if cax is None:
+            return
+        try:
+            cax.remove()
+        except AttributeError:
+            if cax in canvas.fig.axes:
+                canvas.fig.delaxes(cax)
+
     def _contour_plot(self, canvas, x, matrix, title):
         """Shared rendering for the Synchronous/Asynchronous/Difference
         contour maps — a colormap symmetric about zero (so positive and
@@ -881,6 +902,7 @@ class TwoDCorrelationDialog(QDialog):
         explicitly (rather than always reading self._mgr.x_axis) since the
         Difference tab plots a comparison between two stored snapshots,
         not necessarily the current self._mgr."""
+        self._drop_colorbar(canvas)
         ax = canvas.ax
         ax.clear()
 
@@ -911,8 +933,8 @@ class TwoDCorrelationDialog(QDialog):
         # remove it and recreate it (with a fresh divider) every redraw, so
         # each call starts from ax's actual current box rather than from
         # whatever a previous extend='both' call left cax looking like.
-        if getattr(canvas, '_cbar_ax', None) is not None:
-            canvas._cbar_ax.remove()
+        # (The old cax is removed by _drop_colorbar() at the top, before
+        # ax.clear() - see there.)
         divider = make_axes_locatable(ax)
         canvas._cbar_ax = divider.append_axes('right', size='4%', pad=0.4)
         canvas.fig.colorbar(cf, cax=canvas._cbar_ax, label='Correlation intensity')
@@ -977,6 +999,7 @@ class TwoDCorrelationDialog(QDialog):
         different numbers of wavenumber points and different axes
         entirely), so there's no diagonal line and the two axes are
         genuinely independent rather than "the same wavenumber, twice"."""
+        self._drop_colorbar(canvas)
         ax = canvas.ax
         ax.clear()
 
@@ -989,8 +1012,6 @@ class TwoDCorrelationDialog(QDialog):
         cf = ax.contourf(y_axis, x_axis, matrix, levels=levels, cmap='RdBu_r', extend='both')
         ax.contour(y_axis, x_axis, matrix, levels=levels, colors='#00000022', linewidths=0.4)
 
-        if getattr(canvas, '_cbar_ax', None) is not None:
-            canvas._cbar_ax.remove()
         divider = make_axes_locatable(ax)
         canvas._cbar_ax = divider.append_axes('right', size='4%', pad=0.4)
         canvas.fig.colorbar(cf, cax=canvas._cbar_ax, label='Correlation intensity')
@@ -1094,6 +1115,7 @@ class TwoDCorrelationDialog(QDialog):
     def _refresh_difference(self, *_):
         canvas = self._diff_canvas
         if self._snapshot_a is None or self._snapshot_b is None:
+            self._drop_colorbar(canvas)
             ax = canvas.ax
             ax.clear()
             ax.text(0.5, 0.5, 'Store a result as A and another as B to see their difference',
@@ -1104,6 +1126,7 @@ class TwoDCorrelationDialog(QDialog):
 
         a, b = self._snapshot_a, self._snapshot_b
         if len(a['x_axis']) != len(b['x_axis']) or not np.allclose(a['x_axis'], b['x_axis']):
+            self._drop_colorbar(canvas)
             ax = canvas.ax
             ax.clear()
             ax.text(0.5, 0.5, 'A and B have different x-axes and can\u2019t be compared',
