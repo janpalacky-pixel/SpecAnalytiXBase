@@ -86,6 +86,31 @@ See [`INSTALLATION.txt`](INSTALLATION.txt) for full details. In short:
 
 **A note on antivirus warnings:** some antivirus software (including Windows Defender SmartScreen, ESET, AVG, and Avast) may flag the installer `.exe` as a potential threat. This is a known false positive that commonly affects applications packaged with PyInstaller, the tool used to build this installer, and is not a sign of actual malicious content. If this happens, you can safely add an exception for the file in your antivirus software. If you'd prefer not to, you can instead run the application directly from source using the "Any OS, from source" instructions above, which don't involve the compiled installer at all.
 
+## Editing the code (VS Code or Spyder)
+
+Only for working on the code - running the program, the tests and the
+installer need none of this. Keep the editor outside the project's
+environment, so `SpecAnalytiXBase_env` stays exactly as `requirements-lock.txt` says.
+
+- **VS Code** (recommended): install it and its *Python* extension (by
+  Microsoft), open the project folder (File > Open Folder), and choose the
+  interpreter `SpecAnalytiXBase_env\Scripts\python.exe` (View > Command Palette >
+  *Python: Select Interpreter*). Nothing has to be installed into the
+  environment; run `main.py` with the Run button, debug with breakpoints,
+  run the tests in the Testing panel.
+- **Spyder**: install it with its own Windows installer (not with pip). Spyder
+  needs its helper in the environment - add it without changing any locked
+  library, in the project's "SpecAnalytiXBase_env Terminal":
+  ```
+  pip install spyder-kernels -c requirements-lock.txt
+  ```
+  (`-c` keeps every library of the lock file at its version; pip stops with
+  an error rather than change one.) Then in Spyder: Tools > Preferences >
+  Python interpreter > `SpecAnalytiXBase_env\Scripts\python.exe`, and run `main.py` with
+  Run > Configuration per file > *Execute in an external system terminal*
+  (the program is a Qt window, like Spyder itself). Repeat the pip command
+  after rebuilding the environment.
+
 ## Documentation
 
 Full documentation is built into the application itself — open the **Help** menu once running for the User Guide, Quick Start, Installation, Developer Guide, and per-dialog help pages.
