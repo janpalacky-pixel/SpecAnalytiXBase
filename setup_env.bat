@@ -72,6 +72,15 @@ if exist requirements-lock.txt (
     echo Wrote requirements-lock.txt - commit it, so that other computers get the same versions.
 )
 
+REM --- first start made fast: load the libraries once now (Windows Defender checks
+REM     every new file the first time it is loaded; matplotlib builds its font list)
+echo.
+echo Preparing for a fast first start - takes a few minutes only the first time ...
+"%EPY%" -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot, matplotlib.font_manager; import numpy, scipy.optimize, scipy.signal, scipy.linalg, pandas, PyQt5.QtWidgets, sklearn, openpyxl" 2>nul
+if errorlevel 1 echo (not every library could be loaded now - that is fine, it happens at the first start instead)
+"%EPY%" -m compileall -q src >nul
+echo Ready.
+
 echo Creating the desktop folder "%APP_NAME% (Python)" with four shortcuts ...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$d=[Environment]::GetFolderPath('Desktop'); $f=Join-Path $d '%APP_NAME% (Python)';" ^
