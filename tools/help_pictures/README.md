@@ -24,7 +24,8 @@ Run it whenever you like — after changing a window, or before a release.
 - Problems: `tools/logs/pictures_problems.txt` lists a picture that could not be
   taken ("NOT TAKEN": a button or tab was not found, e.g. after it was renamed —
   the old picture stays), an error, or a part that was skipped.
-- Python: `%SAX_PYTHON%` if set, else `%USERPROFILE%\fresh_env`, else `python`.
+- Python: `%SAX_PYTHON%` if set, else `SpecAnalytiXBase_env` in the project folder
+  (made by `setup_env.bat`), else `%USERPROFILE%\fresh_env`, else `python`.
   `SAX_PYTHON` is a Windows setting (environment variable) with the path of
   another `python.exe` - not set by default. Use it when the environment is in
   another folder (another computer), or to try new library versions in a second

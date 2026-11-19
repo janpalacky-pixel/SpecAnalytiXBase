@@ -9,6 +9,8 @@ rem ===========================================================================
 cd /d "%~dp0.."
 set "PY=python"
 if exist "%USERPROFILE%\fresh_env\Scripts\python.exe" set "PY=%USERPROFILE%\fresh_env\Scripts\python.exe"
+rem the project's own environment (setup_env.bat) comes before fresh_env
+if exist "%CD%\SpecAnalytiXBase_env\Scripts\python.exe" set "PY=%CD%\SpecAnalytiXBase_env\Scripts\python.exe"
 if defined SAX_PYTHON set "PY=%SAX_PYTHON%"
 set QT_QPA_PLATFORM=windows
 set PYTHONIOENCODING=utf-8

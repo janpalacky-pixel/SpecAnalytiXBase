@@ -4850,7 +4850,11 @@ pytest tests/ -v
                     <li><code>SAX_PYTHON</code> &ndash; a Windows setting (environment variable)
                         holding the path of a <code>python.exe</code>. Not set by default; set it
                         only when the bats should use another environment;</li>
-                    <li><code>%USERPROFILE%\\fresh_env\\Scripts\\python.exe</code> &ndash; the usual
+                    <li><code>SpecAnalytiXBase_env\\Scripts\\python.exe</code> in the project
+                        folder &ndash; the project's own environment, made by
+                        <code>setup_env.bat</code> (the same Python as the desktop shortcuts
+                        &ldquo;SpecAnalytiXBase&rdquo; and &ldquo;Run tests&rdquo;);</li>
+                    <li><code>%USERPROFILE%\\fresh_env\\Scripts\\python.exe</code> &ndash; the older usual
                         environment (e.g. <code>C:\\Users\\&lt;name&gt;\\fresh_env</code>), installed
                         from <code>requirements.txt</code>;</li>
                     <li><code>python</code> &ndash; whatever Python Windows finds first, possibly

@@ -9,12 +9,14 @@ rem  changed; the others come out exactly the same and are not listed.
 rem  Logs: tools\logs\pictures_*.txt; problems (a picture not taken, an error):
 rem  tools\logs\pictures_problems.txt. See tools\help_pictures\README.md.
 rem
-rem  Python: the one in %%SAX_PYTHON%% if set, else %%USERPROFILE%%\fresh_env,
-rem  else "python" on the PATH.
+rem  Python: the one in %%SAX_PYTHON%% if set, else SpecAnalytiXBase_env in this
+rem  folder (setup_env.bat), else %%USERPROFILE%%\fresh_env, else "python" on the PATH.
 rem ===========================================================================
 cd /d "%~dp0.."
 set "PY=python"
 if exist "%USERPROFILE%\fresh_env\Scripts\python.exe" set "PY=%USERPROFILE%\fresh_env\Scripts\python.exe"
+rem the project's own environment (setup_env.bat) comes before fresh_env
+if exist "%CD%\SpecAnalytiXBase_env\Scripts\python.exe" set "PY=%CD%\SpecAnalytiXBase_env\Scripts\python.exe"
 if defined SAX_PYTHON set "PY=%SAX_PYTHON%"
 rem real Windows windows (the Windows look), UTF-8 in the logs
 set QT_QPA_PLATFORM=windows
