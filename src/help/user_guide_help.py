@@ -3477,7 +3477,9 @@ def get_user_guide_help_content():
              ═══════════════════════════════════════════════════════════ -->
         <h2 id="keyboard">9. Keyboard Shortcuts</h2>
         <p>Also in the program: <strong>Help &rarr; Keyboard shortcuts&hellip;</strong>. On a Mac, Ctrl
-        is the Cmd key.</p>
+        is the Cmd key. The most used keys, the mouse on the plot and the right-click menus on
+        one page to print: <a href="help://quick_reference">Quick reference</a>
+        (Help &rarr; Quick reference).</p>
         $SHORTCUTS_TABLE
 
         <!-- ═══════════════════════════════════════════════════════════

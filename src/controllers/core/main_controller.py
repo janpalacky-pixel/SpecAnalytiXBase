@@ -2318,6 +2318,8 @@ class MainController(QMainWindow):
                 lambda *_: self.check_for_update(automatic=False))
         if hasattr(self.view, 'actionKeyboardShortcuts'):
             self.view.actionKeyboardShortcuts.triggered.connect(self.show_keyboard_shortcuts)
+        if hasattr(self.view, 'actionQuickReference'):
+            self.view.actionQuickReference.triggered.connect(self.show_quick_reference)
         if hasattr(self.view, 'actionRunTests'):
             from src.modules.utils.self_test import availability
             ok, why = availability()
@@ -3059,6 +3061,12 @@ class MainController(QMainWindow):
         self._whats_new_window = dlg
         dlg.show()
         return dlg
+
+    def show_quick_reference(self):
+        """Help -> Quick reference: the mouse, the keys and the right-click
+        menus on one printable page (src/help/quick_reference_help.py)."""
+        from src.help.help_window import open_help_topic
+        open_help_topic(self.view, 'quick_reference')
 
     def show_keyboard_shortcuts(self):
         """Help -> Keyboard shortcuts... (a window that can stay open)."""

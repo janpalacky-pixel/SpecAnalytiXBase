@@ -1681,6 +1681,13 @@ class MainWindow(QMainWindow):
         self.actionQuickStart = QAction(self)
         self.actionQuickStart.setObjectName("actionQuickStart")
         self.actionQuickStart.setText("Quick Start")
+        # Quick reference: the mouse, the keys and the right-click menus on one
+        # printable page (src/help/quick_reference_help.py)
+        self.actionQuickReference = QAction(self)
+        self.actionQuickReference.setObjectName("actionQuickReference")
+        self.actionQuickReference.setText("Quick reference")
+        self.actionQuickReference.setStatusTip("The mouse, the keys and the right-click menus on one "
+                                               "page - to print")
 
         # Search the help: a word in all help pages at once (F1)
         self.actionSearchHelp = QAction(self)
@@ -2185,6 +2192,7 @@ class MainWindow(QMainWindow):
         self.menuHelp.addAction(self.actionQuickStart)
         self.menuHelp.addAction(self.actionWhatsNew)
         self.menuHelp.addAction(self.actionKeyboardShortcuts)
+        self.menuHelp.addAction(self.actionQuickReference)
         self.menuHelp.addAction(self.actionInstallationHelp)
         self.menuHelp.addAction(self.actionCheckUpdate)
         self.menuHelp.addAction(self.actionDeveloperGuide)

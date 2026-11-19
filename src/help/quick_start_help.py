@@ -172,7 +172,8 @@ def get_quick_start_help_content():
         <a href="help://developer_guide">Developer Guide</a>. Need to
         install, reinstall, or run the application itself from source? See
         <a href="help://installation">Installation</a>. What changed in this version:
-        <a href="help://whats_new">What's New</a>.</p>
+        <a href="help://whats_new">What's New</a>. The mouse, the keys and the right-click
+        menus on one page to print: <a href="help://quick_reference">Quick reference</a>.</p>
 
         <h2>1. The Basic Workflow</h2>
         <ol>

@@ -254,6 +254,7 @@ HELP_ICONS = {
     'actionUserGuide': icons.book_icon, 'actionQuickStart': icons.quick_start_icon,
     'actionSearchHelp': icons.search_icon,
     'actionWhatsNew': icons.whats_new_icon, 'actionKeyboardShortcuts': icons.keyboard_icon,
+    'actionQuickReference': icons.quick_reference_icon,
     'actionCheckUpdate': icons.update_icon,
     'actionInstallationHelp': icons.installation_icon,
     'actionDeveloperGuide': icons.developer_icon, 'actionOur_Group': icons.group_icon,

@@ -93,6 +93,7 @@ _REGISTRY = {
     'two_d_correlation':       ('src.help.two_d_correlation_help', 'get_two_d_correlation_help_title', 'get_two_d_correlation_help_content'),
     'band_markers':            ('src.help.band_markers_help', 'get_band_markers_help_title', 'get_band_markers_help_content'),
     'quick_start':             ('src.help.quick_start_help', 'get_quick_start_help_title', 'get_quick_start_help_content'),
+    'quick_reference':         ('src.help.quick_reference_help', 'get_quick_reference_help_title', 'get_quick_reference_help_content'),
     'whats_new':               ('src.help.whats_new_help', 'get_whats_new_help_title', 'get_whats_new_help_content'),
     'installation':            ('src.help.installation_help', 'get_installation_help_title', 'get_installation_help_content'),
     'license':                 ('src.help.license_help', 'get_license_help_title', 'get_license_help_content'),
@@ -262,6 +263,7 @@ def _declare_help_modules_for_bundlers():
     import src.help.pls_help  # noqa: F401
     import src.help.qc_outlier_help  # noqa: F401
     import src.help.quick_start_help  # noqa: F401
+    import src.help.quick_reference_help  # noqa: F401
     import src.help.reference_matching_help  # noqa: F401
     import src.help.resolution_enhancement_help  # noqa: F401
     import src.help.save_help  # noqa: F401

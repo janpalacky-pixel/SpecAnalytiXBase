@@ -4430,7 +4430,12 @@ def _natural_sort_key(cls, label):
             <code>src/modules/misc/keyboard_shortcuts.py</code>: Help &rarr; Keyboard
             shortcuts&hellip; and the User Guide's table are made from it, and
             <code>tests/test_keyboard_shortcuts.py</code> fails when a main-window shortcut is
-            missing there (or listed but gone).
+            missing there (or listed but gone). If it is one of the most used, add it to the
+            Quick reference too (<code>COLUMNS</code> in
+            <code>src/help/quick_reference_help.py</code>, one printable page:
+            mouse, keys, right-click menus). <code>tests/test_quick_reference.py</code> fails when
+            a key combination written there is not in <code>SHORTCUTS</code>, or a menu item
+            written there is no longer in the right-click menus.
         </div>
         <div class="tip">
             <b>A new remembered setting?</b> Everything kept between sessions in

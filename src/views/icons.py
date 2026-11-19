@@ -854,6 +854,17 @@ def quick_start_icon():
     return _tool_icon(draw)
 
 
+def quick_reference_icon():
+    """A page with two columns of rows and an orange heading (Quick reference)."""
+    def draw(p, QPen):
+        _box(p, QPen, (0.8, 1, 14.4, 14), '#FFFFFF', DARK, 1.0, 0.8)
+        p.fillRect(QRectF(2.2, 2.6, 11.6, 2.2), QColor('#E65100'))
+        for y in (7, 9.5, 12):
+            _line(p, QPen, (2.4, y), (6.6, y), '#2C3E6B', 1.1)
+            _line(p, QPen, (8.4, y), (13.6, y), '#90A4AE', 0.9)
+    return _tool_icon(draw)
+
+
 def whats_new_icon():
     """A yellow star."""
     def draw(p, QPen):
