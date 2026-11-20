@@ -5,7 +5,7 @@ REM  environment "SpecAnalytiXBase_env" in this folder, and the desktop folder
 REM  "SpecAnalytiXBase (Python)" with four shortcuts:
 REM      "SpecAnalytiXBase"              starts the program (pythonw.exe, no console)
 REM      "SpecAnalytiXBase_env Terminal" command prompt here, environment active
-REM      "Run tests"                     that terminal, running  python -m pytest -q
+REM      "Run tests"                     that terminal, running  pytest -v  (log: tools\logs\tests_last_run.txt)
 REM      "Build installer"               that terminal, running  BuildInstaller.bat
 REM
 REM  Naming: every project has its own environment called <Project>_env
@@ -90,7 +90,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "function L($n, $t, $a, $i, $c) { $s=$w.CreateShortcut((Join-Path $f ($n+'.lnk'))); $s.TargetPath=$t; $s.Arguments=$a; $s.WorkingDirectory=$p; $s.IconLocation=$i; $s.Description=$c; $s.Save() };" ^
   "L '%APP_NAME%' ($p+'%ENV_NAME%\Scripts\pythonw.exe') ($q+$p+'main.py'+$q) ($p+'resources\icons\app_icon.ico') 'Starts %APP_NAME% from the source code';" ^
   "L '%ENV_NAME% Terminal' $term '' ($p+'resources\icons\app_icon.ico') 'Command prompt in the project folder, environment active';" ^
-  "L 'Run tests' $term 'python -m pytest -q' ($env:SystemRoot+'\System32\cmd.exe') 'Runs the tests (python -m pytest -q)';" ^
+  "L 'Run tests' $term 'python -m pytest -v' ($env:SystemRoot+'\System32\cmd.exe') 'Runs all tests (pytest -v); log in tools\logs\tests_last_run.txt';" ^
   "L 'Build installer' $term 'BuildInstaller.bat' ($p+'installer_assets\setupicon.ico') 'Builds the installer (BuildInstaller.bat)'"
 if errorlevel 1 (
     echo Creating the shortcuts failed - use "%ENV_NAME% Terminal.bat" in this folder instead.
@@ -98,13 +98,13 @@ if errorlevel 1 (
     echo On the desktop, folder "%APP_NAME% (Python)":
     echo     "%APP_NAME%"               starts the program
     echo     "%ENV_NAME% Terminal"      command prompt here, environment active
-    echo     "Run tests"                python -m pytest -q
+    echo     "Run tests"                pytest -v
     echo     "Build installer"          BuildInstaller.bat
 )
 
 echo.
 echo Done. Or use "%ENV_NAME% Terminal.bat" in this folder, then:
-echo     python main.py      or      python -m pytest -q
+echo     python main.py      or      pytest -v
 pause
 exit /b 0
 

@@ -9,8 +9,8 @@ and prints one line per library and a summary:
 or
     WARNING - LIBRARIES DIFFER from the GitHub build: ...
 
-Used at the start of tools/run_tests_windows.bat and
-tools/make_all_help_pictures.bat. It only reports; it never installs anything.
+Shown at the top of every pytest run (tests/conftest.py) and used at the
+start of tools/make_all_help_pictures.bat. It only reports; it never installs anything.
 Run by hand:  python tools/check_libraries.py
 """
 import os
