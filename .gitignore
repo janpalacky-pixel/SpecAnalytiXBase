@@ -53,3 +53,6 @@ tools/help_pictures/cache/
 
 # this project's own environment, made by setup_env.bat (<Project>_env)
 *_env/
+
+# VS Code settings of each computer (e.g. launch.json for F5)
+.vscode/
