@@ -5,7 +5,7 @@ Python version named in .github/workflows/nightly-build.yml. This compares
 them, one by one, with what is installed in the Python that runs this script,
 and prints one line per library and a summary:
 
-    Libraries OK: Python 3.12 and all 7 libraries as in the GitHub build.
+    Libraries OK: Python 3.15 and all 7 libraries as in the GitHub build.
 or
     WARNING - LIBRARIES DIFFER from the GitHub build: ...
 
