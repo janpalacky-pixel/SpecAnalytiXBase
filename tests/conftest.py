@@ -30,6 +30,7 @@ SOURCE_FILE_CHECKS = {
     'test_operation_errors_are_logged.py': None,
     'test_about_info.py': {'test_app_version_matches_installer_version'},
     'test_methods_report.py': {'test_every_operation_in_the_app_is_described'},
+    'test_version_info.py': None,
 }
 _SOURCE_ONLY_REASON = ("checks the program's source files, which the installed version "
                        "does not contain")

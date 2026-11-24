@@ -35,6 +35,10 @@ def test_every_build_command_uses_the_hook(path):
     commands = [c for c in commands if 'main.py' in c]
     assert commands, path
     assert all('--additional-hooks-dir=build_hooks' in c for c in commands), path
+    # the name and version inside the .exe (tools/version_info.py), which
+    # Windows' Smart App Control and code signing need
+    assert all(re.search(r'--version-file=build[\\/]version_info\.txt', c) for c in commands), path
+    assert re.search(r'python tools[\\/]version_info\.py', text), path
 
 
 def test_the_source_file_checks_exist():

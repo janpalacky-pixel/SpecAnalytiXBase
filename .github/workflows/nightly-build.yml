@@ -126,14 +126,22 @@ jobs:
           PYTHONFAULTHANDLER: '1'
         run: python -u -m pytest tests/ -v
 
-      # Same invocation as BuildInstaller.bat's first step.
+      # The name and version inside SpecAnalytiXBase.exe (Properties >
+      # Details), from src/version.py -- Windows (Smart App Control) and
+      # code signing need them. Same as BuildInstaller.bat.
+      - name: Write the version info for the .exe
+        if: steps.changes.outputs.should_build == 'true'
+        run: python tools/version_info.py
+
+      # Same invocation as BuildInstaller.bat's PyInstaller step.
       - name: Build with PyInstaller
         if: steps.changes.outputs.should_build == 'true'
         run: >-
           pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
           --add-data "resources;resources"
           --additional-hooks-dir=build_hooks
-          --icon="resources/icons/app_icon.ico" main.py
+          --icon="resources/icons/app_icon.ico"
+          --version-file=build/version_info.txt main.py
 
       # windows-latest doesn't ship Inno Setup — install it via
       # Chocolatey, which does ship on every windows-latest runner.
@@ -141,7 +149,7 @@ jobs:
         if: steps.changes.outputs.should_build == 'true'
         run: choco install innosetup --no-progress -y
 
-      # Same invocation as BuildInstaller.bat's second step.
+      # Same invocation as BuildInstaller.bat's Inno Setup step.
       - name: Build installer with Inno Setup
         if: steps.changes.outputs.should_build == 'true'
         run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'

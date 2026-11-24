@@ -1,8 +1,16 @@
 @echo off
 
+REM The name and version inside SpecAnalytiXBase.exe (Properties - Details), from src\version.py
+python tools\version_info.py
+if errorlevel 1 (
+    echo tools\version_info.py failed - stopping.
+    pause
+    exit /b 1
+)
+
 REM Build executable with PyInstaller
 REM (build_hooks adds the program's own tests, so that Help - Run tests works in the installed version)
-pyinstaller --name="SpecAnalytiXBase" --windowed --onedir --add-data "resources;resources" --additional-hooks-dir=build_hooks --icon="resources/icons/app_icon.ico" main.py
+pyinstaller --name="SpecAnalytiXBase" --windowed --onedir --add-data "resources;resources" --additional-hooks-dir=build_hooks --icon="resources/icons/app_icon.ico" --version-file=build\version_info.txt main.py
 if errorlevel 1 (
     echo PyInstaller build failed - stopping.
     pause

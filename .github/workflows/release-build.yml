@@ -75,20 +75,27 @@ jobs:
           PYTHONFAULTHANDLER: '1'
         run: python -u -m pytest tests/ -v
 
-      # Same invocation as BuildInstaller.bat's first step.
+      # The name and version inside SpecAnalytiXBase.exe (Properties >
+      # Details), from src/version.py -- Windows (Smart App Control) and
+      # code signing need them. Same as BuildInstaller.bat.
+      - name: Write the version info for the .exe
+        run: python tools/version_info.py
+
+      # Same invocation as BuildInstaller.bat's PyInstaller step.
       - name: Build with PyInstaller
         run: >-
           pyinstaller --name="SpecAnalytiXBase" --windowed --onedir
           --add-data "resources;resources"
           --additional-hooks-dir=build_hooks
-          --icon="resources/icons/app_icon.ico" main.py
+          --icon="resources/icons/app_icon.ico"
+          --version-file=build/version_info.txt main.py
 
       # windows-latest doesn't ship Inno Setup — install it via
       # Chocolatey, which does ship on every windows-latest runner.
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
-      # Same invocation as BuildInstaller.bat's second step. No
+      # Same invocation as BuildInstaller.bat's Inno Setup step. No
       # version-independent copy step here (unlike the nightly build) —
       # a real release's filename is meant to carry its version number,
       # and it's already unique per tag.
