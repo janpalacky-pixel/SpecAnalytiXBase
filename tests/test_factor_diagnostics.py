@@ -111,8 +111,14 @@ def test_safe_tight_layout_skips_a_zero_size_figure():
 def test_2d_map_diagnostics_opens_in_its_own_window(monkeypatch):
     for name in ('information', 'warning', 'critical'):
         monkeypatch.setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.Ok))
+    # an error in a Qt slot (e.g. a redraw) goes to sys.excepthook: kept with
+    # its traceback, so a failure says in which line it happened (a GitHub
+    # run on 11-24 failed with 4 x "IndexError: list index out of range" and
+    # nothing more, while the test passed on the computer)
+    import traceback
     errors = []
-    monkeypatch.setattr(sys, 'excepthook', lambda t, v, tb: errors.append(v))
+    monkeypatch.setattr(sys, 'excepthook', lambda t, v, tb: errors.append(
+        ''.join(traceback.format_exception(t, v, tb))))
     from src.controllers.visualization_analysis.map2d_controller import Map2DController
     from src.views.dialogs.visualization_analysis.map2d_dialog import Map2DDialog
     X, x = _mixture(n_sp=20 * 30, n_pts=150, k=3)
@@ -123,24 +129,31 @@ def test_2d_map_diagnostics_opens_in_its_own_window(monkeypatch):
         view = None
 
     d = Map2DDialog(None, Map2DController(_Main()), spectra)
-    d._rows_spin.setValue(20)
-    d._cols_spin.setValue(30)
-    d.show()
-    app.processEvents()
-    d._radio_svd.setChecked(True)
-    d._on_mode_changed(d._radio_svd)
-    d._compute_map()
-    d._show_diagnostics()
-    app.processEvents()
-    win, panel = d._diagnostics_window, d._diagnostics_panel
-    assert win.isWindow() and panel.canvas.height() > 100
-    for mode in ("Single metric", "Compare two metrics", "Overview (all)"):
-        panel.mode_combo.setCurrentText(mode)
+    win = None
+    try:
+        d._rows_spin.setValue(20)
+        d._cols_spin.setValue(30)
+        d.show()
         app.processEvents()
-    panel._refresh_plot()
-    assert not errors
-    assert fd.ind_minimum(panel.data['IND']) == 3        # 600 spectra x 150 points
-    assert panel.noise is not None and panel.noise['n'] == 3
-    assert 'Above the noise:</b> 3' in panel._summary_label.text()
-    win.close()
-    d.close()
+        d._radio_svd.setChecked(True)
+        d._on_mode_changed(d._radio_svd)
+        d._compute_map()
+        d._show_diagnostics()
+        app.processEvents()
+        win, panel = d._diagnostics_window, d._diagnostics_panel
+        assert win.isWindow() and panel.canvas.height() > 100
+        for mode in ("Single metric", "Compare two metrics", "Overview (all)"):
+            panel.mode_combo.setCurrentText(mode)
+            app.processEvents()
+        panel._refresh_plot()
+        assert not errors, f"{len(errors)} error(s) in the window; the first:\n{errors[0]}"
+        assert fd.ind_minimum(panel.data['IND']) == 3        # 600 spectra x 150 points
+        assert panel.noise is not None and panel.noise['n'] == 3
+        assert 'Above the noise:</b> 3' in panel._summary_label.text()
+    finally:
+        # closed also when the test fails: windows left open took the keyboard
+        # from the next test (test_file_menu_toolbar: its Ctrl+I/O/S/E did nothing)
+        if win is not None:
+            win.close()
+        d.close()
+        app.processEvents()
