@@ -37,7 +37,9 @@ def mc(tmp_path, monkeypatch):
     ctrl.spectrum_selector.select_all_items()
     app.processEvents()
     errors = []
-    monkeypatch.setattr(sys, 'excepthook', lambda t, v, tb: errors.append(f"{t.__name__}: {v}"))
+    import traceback                                   # the error with its file and line
+    monkeypatch.setattr(sys, 'excepthook', lambda t, v, tb: errors.append(
+        ''.join(traceback.format_exception(t, v, tb))))
     ctrl.errors = errors
     yield ctrl
     ctrl.autosave_controller.shutdown()

@@ -288,3 +288,30 @@ def pytest_sessionfinish(session, exitstatus):
         _rl_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), totals or 'no tests', int(exitstatus)))
     fh.close()
     _rl['file'] = None
+
+
+# ---------------------------------------------------------------------------
+# An error in a Qt slot (a button, a timer, a redraw) does not stop the test
+# that caused it: PyQt hands it to sys.excepthook - by default printed and lost
+# in the output, or (PyQt 5.5+) ending the whole test run without a word. Here
+# every test gets a hook that keeps such an error WITH ITS TRACEBACK (file and
+# line), and the test fails at its end showing it. A test that installs its own
+# hook (monkeypatch.setattr(sys, 'excepthook', ...)) replaces this one for
+# itself - and should keep the traceback too (traceback.format_exception).
+# Errors of the test itself (an assert, an exception in the test code) are
+# shown with their lines by pytest anyway (--tb=short in pytest.ini).
+# ---------------------------------------------------------------------------
+import traceback as _qt_tb
+
+
+@pytest.fixture(autouse=True)
+def _errors_in_qt_slots(monkeypatch):
+    errors = []
+
+    def hook(etype, value, tb):
+        errors.append(''.join(_qt_tb.format_exception(etype, value, tb)))
+    monkeypatch.setattr(sys, 'excepthook', hook)
+    yield errors
+    if errors:
+        pytest.fail('%d error(s) in a Qt slot (button, timer, redraw) during this test; '
+                    'the first:\n%s' % (len(errors), errors[0]), pytrace=False)

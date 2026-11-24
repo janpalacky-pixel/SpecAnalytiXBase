@@ -39,7 +39,9 @@ def test_timer_is_a_child_of_the_main_window():
 def test_no_error_after_the_window_is_deleted(monkeypatch):
     from src.controllers.core.main_controller import MainController
     errors = []
-    monkeypatch.setattr(sys, 'excepthook', lambda *exc: errors.append(exc))
+    import traceback                                       # the error with its file and line
+    monkeypatch.setattr(sys, 'excepthook', lambda *exc: errors.append(
+        ''.join(traceback.format_exception(*exc))))
     mc = MainController()
     oc = mc.operations_controller
     mc.autosave_controller.shutdown()

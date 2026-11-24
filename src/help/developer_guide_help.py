@@ -4820,9 +4820,13 @@ pytest tests/ -v
             <li>A crash in test X that does not happen when X runs alone comes from an earlier test:
             run each earlier file together with X (<code>pytest tests/test_a.py
             tests/test_x.py::test_name</code>) to find the one that matters.</li>
-            <li>To see errors inside Qt callbacks (which abort on Windows), run the suite with a
-            small pytest plugin that sets <code>sys.excepthook</code> to write each error with its
-            traceback to a file; on Linux this shows the same errors without the crash.</li>
+            <li>Errors inside Qt callbacks (a button, a timer, a redraw) would abort the run on
+            Windows without a word. <code>tests/conftest.py</code> gives every test a
+            <code>sys.excepthook</code> (fixture <code>_errors_in_qt_slots</code>) that keeps each
+            such error with its traceback and fails that test at its end, showing the file and
+            line. A test that sets its own hook replaces it for itself and must keep the
+            traceback too (<code>traceback.format_exception</code>) &ndash; a hook that kept only
+            the message once left a GitHub failure without the line.</li>
             <li>LAPACK's "On entry to DLASCL parameter number 4 had an illegal value" means a matrix
             calculation received NaN. Found the same way: <code>np.polyfit</code> of a line through
             points that all lie at x&nbsp;=&nbsp;0 in Melting Curve Analysis (now refused before the
