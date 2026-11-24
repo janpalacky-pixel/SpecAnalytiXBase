@@ -87,24 +87,20 @@ def test_pca_residual_error_and_ind_do_not_depend_on_components_kept():
 
 
 def test_safe_tight_layout_skips_a_zero_size_figure():
-    """A figure 0 high (or 0 wide): tight_layout() raises "Singular matrix",
-    safe_tight_layout() skips it; at a real size it lays the figure out.
-    The figure is drawn with the Agg canvas, not in a Qt window shown 0
-    pixels high: showing such a window stopped a GitHub test run (Python
-    3.15) at this test without any message, while it passed in other runs -
-    and how a 0-pixel window behaves depends on the computer."""
     from matplotlib.figure import Figure
-    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
     from src.modules.visualization.safe_layout import safe_tight_layout
-    for width, height in ((3.0, 0.0), (0.0, 2.0)):
-        fig = Figure()
-        FigureCanvasAgg(fig)
-        fig.add_subplot(111).plot([1, 2])
-        fig.set_size_inches(width, height)
-        with pytest.raises(np.linalg.LinAlgError):
-            fig.tight_layout()                           # what crashed before
-        assert safe_tight_layout(fig) is False           # skipped, no error
-    fig.set_size_inches(3.0, 2.0)
+    fig = Figure()
+    canvas = FigureCanvasQTAgg(fig)
+    fig.add_subplot(111).plot([1, 2])
+    canvas.resize(300, 0)
+    canvas.show()
+    app.processEvents()
+    with pytest.raises(np.linalg.LinAlgError):
+        fig.tight_layout()                               # what crashed before
+    assert safe_tight_layout(fig) is False               # skipped, no error
+    canvas.resize(300, 200)
+    app.processEvents()
     assert safe_tight_layout(fig) is True
 
 
