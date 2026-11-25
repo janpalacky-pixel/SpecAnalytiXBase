@@ -25,7 +25,8 @@ REM  again, run the tests, commit the new lock file.
 REM
 REM  Which Python: set PYTHON to choose one, e.g.
 REM      set PYTHON=C:\Python312\python.exe  &  setup_env.bat
-REM  otherwise the newest Python 3 found by the "py" launcher, else "python".
+REM  otherwise Python 3.13 through the "py" launcher, else "python" (the library files of
+REM  Python 3.15 are blocked by Windows' Smart App Control on the laptop).
 REM ======================================================================
 setlocal
 cd /d "%~dp0"
@@ -35,14 +36,14 @@ set "ENV_DIR=%~dp0%ENV_NAME%"
 
 if defined PYTHON goto :have_python
 set "PYTHON=python"
-where py >nul 2>nul && set "PYTHON=py -3"
+where py >nul 2>nul && set "PYTHON=py -3.13"
 :have_python
 
 echo Python used to build the environment:
 %PYTHON% --version
 if errorlevel 1 (
     echo.
-    echo No Python found. Install Python 3.11 or newer from https://www.python.org/downloads/
+    echo No Python found. Install Python 3.13 from https://www.python.org/downloads/
     echo ^(tick "Add python.exe to PATH"^), or set PYTHON to the python.exe to use.
     goto :fail
 )

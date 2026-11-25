@@ -97,7 +97,7 @@ jobs:
         if: steps.changes.outputs.should_build == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.15'
+          python-version: '3.13'
           cache: 'pip'
           cache-dependency-path: requirements.txt
 

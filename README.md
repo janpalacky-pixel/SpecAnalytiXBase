@@ -69,7 +69,7 @@ The [Releases page](../../releases) has two kinds of build:
 - **Stable releases** (e.g. `v1.7.0`) — tested, versioned snapshots. This is what most users want. GitHub marks the newest one **Latest** automatically — grab the installer `.exe` from that one.
 - **[Nightly build](../../releases/tag/nightly)** — rebuilt automatically once a day from whatever is on `main` (or on demand). Always has the newest fixes, but isn't a tested release. Useful if you need a fix that hasn't made it into a numbered release yet; not recommended as your everyday install.
 
-The stable releases will be signed by the SignPath Foundation (application in progress) — see the [Code signing policy](CODE_SIGNING_POLICY.md), which also says what the program sends over the internet.
+The stable releases will be signed by the SignPath Foundation (not applied for yet) — see the [Code signing policy](CODE_SIGNING_POLICY.md), which also says what the program sends over the internet.
 
 ## Installation
 

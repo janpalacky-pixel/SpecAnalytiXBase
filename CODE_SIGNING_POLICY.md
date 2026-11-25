@@ -2,7 +2,7 @@
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
 
-**Status:** SpecAnalytiXBase is applying to the SignPath Foundation for free code signing. Until it is accepted, the releases are not signed (and Windows Smart App Control may block them). This page will say from which version the releases are signed.
+**Status:** SpecAnalytiXBase has not applied to the SignPath Foundation yet; the releases are not signed (and Windows Smart App Control may block them). This page will say from which version the releases are signed.
 
 ## What is signed
 
